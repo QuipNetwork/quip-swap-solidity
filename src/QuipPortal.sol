@@ -113,6 +113,7 @@ contract QuipPortal is Context, IQuipPortal {
     }
   }
 
+  /// @notice reverts if the caller is not the admin
   function _onlyAdmin() internal view {
     if (_msgSender() != admin) {
       revert NotAdmin();

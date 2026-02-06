@@ -27,16 +27,21 @@ contract Quip is Context, Initializable, IQuip {
     emit PartyCommitment(_termsDigest);
   }
 
-  function claim(bytes calldata key) external {
+  /// @notice claims the party's assets by providing the key and terms
+  /// @param key the secret that unlocks the quip
+  /// @param terms the terms of the quip agreement
+  function claim(bytes calldata key, QuipTerms calldata terms) external {
     _verifyKey(key);
-    _enforceExpiration();
+    TermsLib.verifyTerms(termsDigest, terms);
+    TermsLib.enforceTermFreshness(terms.partyExpiry);
+    TermsLib.fulfillPartyTerms(address(this), terms);
 
-    AssetLib.transferAssets(terms.counterpartyAssets, address(this), terms.counterpartyRecipient);
-
-    emit AssetsClaimed(terms.counterpartyRecipient, terms.counterpartyAssets);
+    emit PartyTermsFulfilled(key, terms.counterpartyRecipient, terms.partyAssets);
   }
 
-  function _verifyKey(bytes calldata key) internal pure {
+  /// @notice reverts if the provided key does not match the lock
+  /// @param key the key to verify
+  function _verifyKey(bytes calldata key) internal view {
     if (EfficientHashLib.hash(key) != lock) {
       revert InvalidKey();
     }

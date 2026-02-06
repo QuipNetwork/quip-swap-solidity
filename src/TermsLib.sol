@@ -61,6 +61,12 @@ library TermsLib {
   /// @notice thrown when an erc1155 asset has invalid fields
   error InvalidERC1155Asset();
 
+  /// @notice thrown when provided terms do not match the stored digest
+  error InvalidTerms();
+
+  /// @notice thrown when the terms have expired
+  error TermsExpired();
+
   /// @notice computes the keccak256 digest of quip terms
   /// @param terms the terms to hash
   /// @return digest the keccak256 hash of the encoded terms
@@ -77,6 +83,22 @@ library TermsLib {
         terms.counterpartyAssets
       )
     );
+  }
+
+  /// @notice reverts if the provided terms do not match the stored digest
+  /// @param termsDigest the stored digest to verify against
+  /// @param terms the terms to verify
+  function verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) internal pure {
+    if (termsDigest != digestTerms(terms)) {
+      revert InvalidTerms();
+    }
+  }
+
+  /// @notice transfers party assets from the quip to the counterparty recipient
+  /// @param quip the quip contract holding the assets
+  /// @param terms the terms containing the transfer details
+  function fulfillPartyTerms(address quip, QuipTerms calldata terms) internal {
+    transferAssets(terms.partyAssets, quip, terms.counterpartyRecipient);
   }
 
   /// @notice validates that an asset's fields are consistent with its type
@@ -148,6 +170,14 @@ library TermsLib {
   function totalNativeAmount(Asset[] memory assets) internal pure returns (uint256 total) {
     for (uint256 i; i < assets.length; ++i) {
       if (assets[i].assetType == AssetType.Native) total += assets[i].amount;
+    }
+  }
+
+  /// @notice reverts if the expiry timestamp has passed
+  /// @param expiry the expiry timestamp to check
+  function enforceTermFreshness(uint64 expiry) internal view {
+    if (block.timestamp >= expiry) {
+      revert TermsExpired();
     }
   }
 }
