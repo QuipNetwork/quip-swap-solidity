@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset} from '../AssetLib.sol';
+import {QuipTerms} from '../TermsLib.sol';
 
 /// @notice the status of a quip
 enum Status {
@@ -11,26 +11,6 @@ enum Status {
   Claimed,
   Reclaimed,
   Slashed
-}
-
-/// @notice the terms of a quip agreement
-struct QuipTerms {
-  /// @notice the address that creates the quip
-  address party;
-  /// @notice the address that receives the counterparty's assets
-  address partyRecipient;
-  /// @notice the address that accepts the quip
-  address counterparty;
-  /// @notice the address that receives the party's assets
-  address counterpartyRecipient;
-  /// @notice the deadline for the party to commit
-  uint64 partyExpiry;
-  /// @notice the deadline for the counterparty to accept
-  uint64 counterpartyExpiry;
-  /// @notice the assets offered by the party
-  Asset[] partyAssets;
-  /// @notice the assets offered by the counterparty
-  Asset[] counterpartyAssets;
 }
 
 interface IQuip {

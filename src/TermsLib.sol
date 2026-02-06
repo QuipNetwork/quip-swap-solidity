@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
+import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
-import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 /// @notice the type of asset
 enum AssetType {
   Native,
@@ -25,7 +25,27 @@ struct Asset {
   uint256 amount;
 }
 
-library AssetLib {
+/// @notice the terms of a quip agreement
+struct QuipTerms {
+  /// @notice the address that creates the quip
+  address party;
+  /// @notice the address that receives the counterparty's assets
+  address partyRecipient;
+  /// @notice the address that accepts the quip
+  address counterparty;
+  /// @notice the address that receives the party's assets
+  address counterpartyRecipient;
+  /// @notice the deadline for the party to commit
+  uint64 partyExpiry;
+  /// @notice the deadline for the counterparty to accept
+  uint64 counterpartyExpiry;
+  /// @notice the assets offered by the party
+  Asset[] partyAssets;
+  /// @notice the assets offered by the counterparty
+  Asset[] counterpartyAssets;
+}
+
+library TermsLib {
   /// @notice thrown when an asset has zero amount
   error ZeroAmount();
 
@@ -40,6 +60,24 @@ library AssetLib {
 
   /// @notice thrown when an erc1155 asset has invalid fields
   error InvalidERC1155Asset();
+
+  /// @notice computes the keccak256 digest of quip terms
+  /// @param terms the terms to hash
+  /// @return digest the keccak256 hash of the encoded terms
+  function digestTerms(QuipTerms calldata terms) internal pure returns (bytes32 digest) {
+    digest = keccak256(
+      abi.encode(
+        terms.party,
+        terms.partyRecipient,
+        terms.counterparty,
+        terms.counterpartyRecipient,
+        terms.partyExpiry,
+        terms.counterpartyExpiry,
+        terms.partyAssets,
+        terms.counterpartyAssets
+      )
+    );
+  }
 
   /// @notice validates that an asset's fields are consistent with its type
   /// @param asset the asset to validate
@@ -104,7 +142,10 @@ library AssetLib {
     }
   }
 
-  function totalNativeAmount(Asset[] memory assets) internal returns (uint256 total) {
+  /// @notice calculates the total native amount in an array of assets
+  /// @param assets the assets to sum
+  /// @return total the total native amount
+  function totalNativeAmount(Asset[] memory assets) internal pure returns (uint256 total) {
     for (uint256 i; i < assets.length; ++i) {
       if (assets[i].assetType == AssetType.Native) total += assets[i].amount;
     }

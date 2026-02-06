@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset} from './AssetLib.sol';
-import {IQuip, QuipTerms} from './interfaces/IQuip.sol';
+import {QuipTerms, TermsLib} from './TermsLib.sol';
+import {IQuip} from './interfaces/IQuip.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
@@ -25,5 +25,20 @@ contract Quip is Context, Initializable, IQuip {
     termsDigest = _termsDigest;
 
     emit PartyCommitment(_termsDigest);
+  }
+
+  function claim(bytes calldata key) external {
+    _verifyKey(key);
+    _enforceExpiration();
+
+    AssetLib.transferAssets(terms.counterpartyAssets, address(this), terms.counterpartyRecipient);
+
+    emit AssetsClaimed(terms.counterpartyRecipient, terms.counterpartyAssets);
+  }
+
+  function _verifyKey(bytes calldata key) internal pure {
+    if (EfficientHashLib.hash(key) != lock) {
+      revert InvalidKey();
+    }
   }
 }

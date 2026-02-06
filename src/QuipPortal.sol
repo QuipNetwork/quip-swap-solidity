@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetLib} from './AssetLib.sol';
-import {IQuip, QuipTerms} from './interfaces/IQuip.sol';
+import {QuipTerms, TermsLib} from './TermsLib.sol';
+import {IQuip} from './interfaces/IQuip.sol';
 import {IQuipPortal} from './interfaces/IQuipPortal.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
@@ -35,19 +35,19 @@ contract QuipPortal is Context, IQuipPortal {
     creationFee = _creationFee;
   }
 
-  /// @notice creates a new quip with the given secret digest and terms
+  /// @notice creates a new quip with the given lock and terms
   /// @param lock the hash of the secret used for deterministic deployment
   /// @param terms the terms of the quip agreement
   function createQuip(bytes32 lock, QuipTerms calldata terms) external payable {
     _enforceValidLock(lock);
     _validateQuipCreation(terms);
-    _ensureCorrectNative(creationFee + AssetLib.totalNativeAmount(terms.partyAssets));
+    _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
     address quip = _deployQuip(lock);
-    IQuip(quip).initialize(lock, _digestTerms(terms));
+    IQuip(quip).initialize(lock, TermsLib.digestTerms(terms));
 
     accumulatedFees += creationFee;
-    AssetLib.transferAssets(terms.partyAssets, _msgSender(), quip);
+    TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
     emit QuipCreated(quip, terms);
   }
@@ -74,7 +74,7 @@ contract QuipPortal is Context, IQuipPortal {
     emit CreationFeeUpdated(newFee);
   }
 
-  /// @notice deploys a new quip clone using the secret digest as the salt
+  /// @notice deploys a new quip clone using the lock as the salt
   /// @param lock the salt for deterministic deployment
   /// @return quip the address of the deployed quip
   function _deployQuip(bytes32 lock) internal returns (address quip) {
@@ -97,19 +97,19 @@ contract QuipPortal is Context, IQuipPortal {
   }
 
   /// @notice validates the quip terms provided during creation
-  /// @param quip the terms to validate
-  function _validateQuipCreation(QuipTerms calldata quip) internal view {
-    if (quip.party == address(0) || quip.counterparty == address(0)) revert EmptyParty();
-    if (quip.partyRecipient == address(0) || quip.counterpartyRecipient == address(0)) revert EmptyRecipient();
-    if (quip.partyExpiry <= block.timestamp || quip.counterpartyExpiry <= block.timestamp) revert InvalidExpiry();
-    if (quip.partyAssets.length == 0 || quip.counterpartyAssets.length == 0) revert EmptyAssets();
+  /// @param terms the terms to validate
+  function _validateQuipCreation(QuipTerms calldata terms) internal view {
+    if (terms.party == address(0) || terms.counterparty == address(0)) revert EmptyParty();
+    if (terms.partyRecipient == address(0) || terms.counterpartyRecipient == address(0)) revert EmptyRecipient();
+    if (terms.partyExpiry <= block.timestamp || terms.counterpartyExpiry <= block.timestamp) revert InvalidExpiry();
+    if (terms.partyAssets.length == 0 || terms.counterpartyAssets.length == 0) revert EmptyAssets();
 
-    for (uint256 i; i < quip.partyAssets.length; ++i) {
-      AssetLib.validateAsset(quip.partyAssets[i]);
+    for (uint256 i; i < terms.partyAssets.length; ++i) {
+      TermsLib.validateAsset(terms.partyAssets[i]);
     }
 
-    for (uint256 i; i < quip.counterpartyAssets.length; ++i) {
-      AssetLib.validateAsset(quip.counterpartyAssets[i]);
+    for (uint256 i; i < terms.counterpartyAssets.length; ++i) {
+      TermsLib.validateAsset(terms.counterpartyAssets[i]);
     }
   }
 
@@ -117,23 +117,5 @@ contract QuipPortal is Context, IQuipPortal {
     if (_msgSender() != admin) {
       revert NotAdmin();
     }
-  }
-
-  /// @notice computes the keccak256 digest of quip terms
-  /// @param _terms the terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function _digestTerms(QuipTerms calldata _terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        _terms.party,
-        _terms.partyRecipient,
-        _terms.counterparty,
-        _terms.counterpartyRecipient,
-        _terms.partyExpiry,
-        _terms.counterpartyExpiry,
-        _terms.partyAssets,
-        _terms.counterpartyAssets
-      )
-    );
   }
 }

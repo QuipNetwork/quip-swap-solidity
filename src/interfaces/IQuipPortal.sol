@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import { QuipTerms } from "./IQuip.sol";
+import {QuipTerms} from '../TermsLib.sol';
+
 interface IQuipPortal {
   /// @notice thrown when a lock is empty
   error EmptyLock();
