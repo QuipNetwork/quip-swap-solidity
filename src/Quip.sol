@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {Asset} from './AssetLib.sol';
 import {IQuip, QuipTerms} from './interfaces/IQuip.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
@@ -11,15 +12,22 @@ contract Quip is Context, Initializable, IQuip {
   bytes32 public termsDigest;
   QuipTerms public terms;
 
+  /// @notice returns the version of this quip, stored as an immutable clone argument
   function version() public view returns (uint256) {
     return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (uint256));
   }
 
+  /// @notice initializes the quip with a secret digest and terms
+  /// @param _secretDigest the hash of the secret
+  /// @param _terms the terms of the quip agreement
   function initialize(bytes32 _secretDigest, QuipTerms calldata _terms) external initializer {
     secretDigest = _secretDigest;
     terms = _terms;
   }
 
+  /// @notice computes the keccak256 digest of quip terms
+  /// @param _terms the terms to hash
+  /// @return digest the keccak256 hash of the encoded terms
   function _extractTermDigest(QuipTerms calldata _terms) internal pure returns (bytes32 digest) {
     digest = keccak256(
       abi.encode(

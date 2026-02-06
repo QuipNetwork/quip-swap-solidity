@@ -32,11 +32,14 @@ interface IQuipPortal {
   /// @notice thrown when no counterparty assets are provided
   error NoCounterpartyAssets();
 
-  /// @notice thrown when msg.value does not match the creation fee
-  error InvalidFee();
+  /// @notice thrown when msg.value does not match expected native amount
+  error IncorrectNativeAmount();
 
   /// @notice thrown when fee exceeds MAX_FEE
   error FeeExceedsMax();
+
+  /// @notice thrown when withdrawal amount exceeds accumulated fees
+  error InsufficientFees();
 
   /// @notice thrown when caller is not admin
   error NotAdmin();
@@ -50,5 +53,8 @@ interface IQuipPortal {
   /// @notice emitted when the creation fee is updated
   event CreationFeeUpdated(uint256 newFee);
 
+  /// @notice returns whether a secret digest has already been used
+  /// @param digest the secret digest to check
+  /// @return isSpent true if the digest has been used
   function isDigestSpent(bytes32 digest) external view returns (bool isSpent);
 }
