@@ -34,12 +34,15 @@ struct QuipTerms {
 }
 
 interface IQuip {
+  /// @notice emitted when the party commits their assets to a quip
+  event PartyCommitment(QuipTerms terms);
+
   /// @notice returns the version of this quip
   /// @return the version number stored as an immutable clone argument
   function version() external view returns (uint256);
 
   /// @notice initializes the quip with a secret digest and terms
-  /// @param secretDigest the hash of the secret
+  /// @param lock the hash of the secret
   /// @param terms the terms of the quip agreement
-  function initialize(bytes32 secretDigest, QuipTerms calldata terms) external;
+  function initialize(bytes32 lock, QuipTerms calldata terms) external;
 }

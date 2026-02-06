@@ -15,7 +15,7 @@ contract QuipPortal is Context, IQuipPortal {
   uint256 public accumulatedFees;
   address public admin;
   address immutable QUIP_IMPLEMENTATION;
-  mapping(bytes32 digest => bool ispent) public isDigestSpent;
+  mapping(bytes32 lock => bool ispent) public isLockSpent;
 
   modifier onlyAdmin() {
     _onlyAdmin();
@@ -36,15 +36,15 @@ contract QuipPortal is Context, IQuipPortal {
   }
 
   /// @notice creates a new quip with the given secret digest and terms
-  /// @param secretDigest the hash of the secret used for deterministic deployment
+  /// @param lock the hash of the secret used for deterministic deployment
   /// @param terms the terms of the quip agreement
-  function createQuip(bytes32 secretDigest, QuipTerms calldata terms) external payable {
-    _enforceValidSecret(secretDigest);
+  function createQuip(bytes32 lock, QuipTerms calldata terms) external payable {
+    _enforceValidLock(lock);
     _validateQuipCreation(terms);
     _ensureCorrectNative(creationFee + AssetLib.totalNativeAmount(terms.partyAssets));
 
-    address quip = _deployQuip(secretDigest);
-    IQuip(quip).initialize(secretDigest, terms);
+    address quip = _deployQuip(lock);
+    IQuip(quip).initialize(lock, terms);
 
     accumulatedFees += creationFee;
     AssetLib.transferAssets(terms.partyAssets, _msgSender(), quip);
@@ -75,10 +75,10 @@ contract QuipPortal is Context, IQuipPortal {
   }
 
   /// @notice deploys a new quip clone using the secret digest as the salt
-  /// @param secretDigest the salt for deterministic deployment
+  /// @param lock the salt for deterministic deployment
   /// @return quip the address of the deployed quip
-  function _deployQuip(bytes32 secretDigest) internal returns (address quip) {
-    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(VERSION), secretDigest);
+  function _deployQuip(bytes32 lock) internal returns (address quip) {
+    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(VERSION), lock);
   }
 
   /// @notice reverts if msg.value does not match the expected amount
@@ -89,55 +89,23 @@ contract QuipPortal is Context, IQuipPortal {
     }
   }
 
-  /// @notice reverts if the secret digest is empty or has already been used
-  /// @param digest the secret digest to validate
-  function _enforceValidSecret(bytes32 digest) internal view {
-    if (digest == bytes32(0)) {
-      revert DigestEmpty();
-    }
-
-    if (isDigestSpent[digest]) {
-      revert SecretNotFresh();
-    }
+  /// @notice reverts if the lock is empty or has already been used
+  /// @param lock the lock to validate
+  function _enforceValidLock(bytes32 lock) internal view {
+    if (lock == bytes32(0)) revert EmptyLock();
+    if (isLockSpent[lock]) revert LockSpent();
   }
 
   /// @notice validates the quip terms provided during creation
   /// @param quip the terms to validate
-  function _validateQuipCreation(QuipTerms calldata quip) internal pure {
-    if (quip.party == address(0)) {
-      revert NoParty();
-    }
-
-    if (quip.partyRecipient == address(0)) {
-      revert NoPartyRecipient();
-    }
-
-    if (quip.partyExpiry == 0) {
-      revert NoPartyExpiry();
-    }
-
-    if (quip.partyAssets.length == 0) {
-      revert NoPartyAssets();
-    }
+  function _validateQuipCreation(QuipTerms calldata quip) internal view {
+    if (quip.party == address(0) || quip.counterparty == address(0)) revert EmptyParty();
+    if (quip.partyRecipient == address(0) || quip.counterpartyRecipient == address(0)) revert EmptyRecipient();
+    if (quip.partyExpiry <= block.timestamp || quip.counterpartyExpiry <= block.timestamp) revert InvalidExpiry();
+    if (quip.partyAssets.length == 0 || quip.counterpartyAssets.length == 0) revert EmptyAssets();
 
     for (uint256 i; i < quip.partyAssets.length; ++i) {
       AssetLib.validateAsset(quip.partyAssets[i]);
-    }
-
-    if (quip.counterparty == address(0)) {
-      revert NoCounterparty();
-    }
-
-    if (quip.counterpartyRecipient == address(0)) {
-      revert NoCounterpartyRecipient();
-    }
-
-    if (quip.counterpartyExpiry == 0) {
-      revert NoCounterpartyExpiry();
-    }
-
-    if (quip.counterpartyAssets.length == 0) {
-      revert NoCounterpartyAssets();
     }
 
     for (uint256 i; i < quip.counterpartyAssets.length; ++i) {

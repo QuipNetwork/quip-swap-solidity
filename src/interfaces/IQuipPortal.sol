@@ -2,35 +2,23 @@
 pragma solidity 0.8.33;
 
 interface IQuipPortal {
-  /// @notice thrown when a digest is empty
-  error DigestEmpty();
+  /// @notice thrown when a lock is empty
+  error EmptyLock();
 
-  /// @notice thrown when the digest of a secret has been used previously
-  error SecretNotFresh();
+  /// @notice thrown when the lock has already been used
+  error LockSpent();
 
-  /// @notice thrown when the party recipient is the zero address
-  error NoPartyRecipient();
+  /// @notice thrown when party or counterparty is the zero address
+  error EmptyParty();
 
-  /// @notice thrown when the party expiry is zero
-  error NoPartyExpiry();
+  /// @notice thrown when party recipient or counterparty recipient is the zero address
+  error EmptyRecipient();
 
-  /// @notice thrown when no party assets are provided
-  error NoPartyAssets();
+  /// @notice thrown when party expiry or counterparty expiry is in the past
+  error InvalidExpiry();
 
-  /// @notice thrown when the party is the zero address
-  error NoParty();
-
-  /// @notice thrown when the counterparty is the zero address
-  error NoCounterparty();
-
-  /// @notice thrown when the counterparty recipient is the zero address
-  error NoCounterpartyRecipient();
-
-  /// @notice thrown when the counterparty expiry is zero
-  error NoCounterpartyExpiry();
-
-  /// @notice thrown when no counterparty assets are provided
-  error NoCounterpartyAssets();
+  /// @notice thrown when party assets or counterparty assets array is empty
+  error EmptyAssets();
 
   /// @notice thrown when msg.value does not match expected native amount
   error IncorrectNativeAmount();
@@ -53,8 +41,8 @@ interface IQuipPortal {
   /// @notice emitted when the creation fee is updated
   event CreationFeeUpdated(uint256 newFee);
 
-  /// @notice returns whether a secret digest has already been used
-  /// @param digest the secret digest to check
-  /// @return isSpent true if the digest has been used
-  function isDigestSpent(bytes32 digest) external view returns (bool isSpent);
+  /// @notice returns whether a lock has already been used
+  /// @param lock the lock to check
+  /// @return isSpent true if the lock has been used
+  function isLockSpent(bytes32 lock) external view returns (bool isSpent);
 }
