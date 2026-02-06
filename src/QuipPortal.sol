@@ -77,25 +77,36 @@ contract QuipPortal is Context, IQuipPortal {
   }
 
   function _validateQuipCreation(QuipTerms calldata quip) internal pure {
-    if (quip.asker == address(0)) {
-      revert NoAsker();
+    if (quip.party == address(0)) {
+      revert NoParty();
     }
 
-    if (quip.askRecipient == address(0)) {
-      revert NoAskRecipient();
+    if (quip.partyRecipient == address(0)) {
+      revert NoPartyRecipient();
     }
 
-    if (quip.askExpiry == 0) {
-      revert NoAskExpiry();
+    if (quip.partyExpiry == 0) {
+      revert NoPartyExpiry();
     }
 
-    if (quip.askOps.length == 0) {
-      revert NoAskOps();
+    if (quip.partyAssets.length == 0) {
+      revert NoPartyAssets();
     }
 
-    if (quip.bidder != address(0) || quip.bidRecipient != address(0) || quip.bidExpiry != 0 || quip.bidOps.length != 0)
-    {
-      revert NonEmptyBidderParams();
+    if (quip.counterparty == address(0)) {
+      revert NoCounterparty();
+    }
+
+    if (quip.counterpartyRecipient == address(0)) {
+      revert NoCounterpartyRecipient();
+    }
+
+    if (quip.counterpartyExpiry == 0) {
+      revert NoCounterpartyExpiry();
+    }
+
+    if (quip.counterpartyAssets.length == 0) {
+      revert NoCounterpartyAssets();
     }
   }
 }

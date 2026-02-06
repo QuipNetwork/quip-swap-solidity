@@ -23,14 +23,14 @@ contract Quip is Context, Initializable, IQuip {
   function _extractTermDigest(QuipTerms calldata _terms) internal pure returns (bytes32 digest) {
     digest = keccak256(
       abi.encode(
-        _terms.asker,
-        _terms.askRecipient,
-        _terms.bidder,
-        _terms.bidRecipient,
-        _terms.askExpiry,
-        _terms.bidExpiry,
-        _terms.askOps,
-        _terms.bidOps
+        _terms.party,
+        _terms.partyRecipient,
+        _terms.counterparty,
+        _terms.counterpartyRecipient,
+        _terms.partyExpiry,
+        _terms.counterpartyExpiry,
+        _terms.partyAssets,
+        _terms.counterpartyAssets
       )
     );
   }

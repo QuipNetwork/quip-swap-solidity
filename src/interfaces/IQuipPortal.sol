@@ -8,20 +8,29 @@ interface IQuipPortal {
   /// @notice thrown when the digest of a secret has been used previously
   error SecretNotFresh();
 
-  /// @notice thrown when the ask recipient is the zero address
-  error NoAskRecipient();
+  /// @notice thrown when the party recipient is the zero address
+  error NoPartyRecipient();
 
-  /// @notice thrown when the ask expiry is zero
-  error NoAskExpiry();
+  /// @notice thrown when the party expiry is zero
+  error NoPartyExpiry();
 
-  /// @notice thrown when no ask ops are provided
-  error NoAskOps();
+  /// @notice thrown when no party assets are provided
+  error NoPartyAssets();
 
-  /// @notice thrown when the asker is the zero address
-  error NoAsker();
+  /// @notice thrown when the party is the zero address
+  error NoParty();
 
-  /// @notice thrown when bidder params are non-empty during creation
-  error NonEmptyBidderParams();
+  /// @notice thrown when the counterparty is the zero address
+  error NoCounterparty();
+
+  /// @notice thrown when the counterparty recipient is the zero address
+  error NoCounterpartyRecipient();
+
+  /// @notice thrown when the counterparty expiry is zero
+  error NoCounterpartyExpiry();
+
+  /// @notice thrown when no counterparty assets are provided
+  error NoCounterpartyAssets();
 
   /// @notice thrown when msg.value does not match the creation fee
   error InvalidFee();
