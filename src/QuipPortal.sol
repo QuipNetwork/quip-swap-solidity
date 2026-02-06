@@ -44,12 +44,12 @@ contract QuipPortal is Context, IQuipPortal {
     _ensureCorrectNative(creationFee + AssetLib.totalNativeAmount(terms.partyAssets));
 
     address quip = _deployQuip(lock);
-    IQuip(quip).initialize(lock, terms);
+    IQuip(quip).initialize(lock, _digestTerms(terms));
 
     accumulatedFees += creationFee;
     AssetLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
-    emit QuipCreated(quip);
+    emit QuipCreated(quip, terms);
   }
 
   /// @notice withdraws accumulated fees to the given receiver
@@ -117,5 +117,23 @@ contract QuipPortal is Context, IQuipPortal {
     if (_msgSender() != admin) {
       revert NotAdmin();
     }
+  }
+
+  /// @notice computes the keccak256 digest of quip terms
+  /// @param _terms the terms to hash
+  /// @return digest the keccak256 hash of the encoded terms
+  function _digestTerms(QuipTerms calldata _terms) internal pure returns (bytes32 digest) {
+    digest = keccak256(
+      abi.encode(
+        _terms.party,
+        _terms.partyRecipient,
+        _terms.counterparty,
+        _terms.counterpartyRecipient,
+        _terms.partyExpiry,
+        _terms.counterpartyExpiry,
+        _terms.partyAssets,
+        _terms.counterpartyAssets
+      )
+    );
   }
 }

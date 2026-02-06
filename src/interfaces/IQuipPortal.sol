@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import { QuipTerms } from "./IQuip.sol";
 interface IQuipPortal {
   /// @notice thrown when a lock is empty
   error EmptyLock();
@@ -33,7 +34,7 @@ interface IQuipPortal {
   error NotAdmin();
 
   /// @notice emitted when a new quip is created
-  event QuipCreated(address indexed quip);
+  event QuipCreated(address indexed quip, QuipTerms terms);
 
   /// @notice emitted when fees are withdrawn
   event FeesWithdrawn(address indexed receiver, uint256 amount);
