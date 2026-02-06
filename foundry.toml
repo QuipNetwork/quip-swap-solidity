@@ -7,6 +7,7 @@ quote_style = 'single'
 number_underscore = 'thousands'
 multiline_func_header = 'params_first_multi'
 sort_imports = true
+ignored_warnings_from = ["dependencies/"]
 
 [profile.default]
 src = "src"
