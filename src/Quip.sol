@@ -8,6 +8,7 @@ import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 
+//TODO: Slashing
 contract Quip is Context, Initializable, IQuip {
   bytes32 public lock;
   bytes32 public termsDigest;
@@ -34,9 +35,19 @@ contract Quip is Context, Initializable, IQuip {
     _verifyKey(key);
     TermsLib.verifyTerms(termsDigest, terms);
     TermsLib.enforceTermFreshness(terms.partyExpiry);
-    TermsLib.fulfillPartyTerms(address(this), terms);
+    TermsLib.executePartyCommitment(address(this), terms.counterpartyRecipient, terms.partyAssets);
 
     emit PartyTermsFulfilled(key, terms.counterpartyRecipient, terms.partyAssets);
+  }
+
+  /// @notice reclaims the party's assets after the terms have expired
+  /// @param terms the terms of the quip agreement
+  function reclaim(QuipTerms calldata terms) external {
+    TermsLib.verifyTerms(termsDigest, terms);
+    TermsLib.enforceTermStaleness(terms.partyExpiry);
+    TermsLib.releasePartyCommitment(address(this), terms.partyRecipient, terms.partyAssets);
+
+    emit PartyUnbound(terms.partyRecipient, terms.partyAssets);
   }
 
   /// @notice reverts if the provided key does not match the lock

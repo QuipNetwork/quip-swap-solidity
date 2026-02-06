@@ -67,6 +67,9 @@ library TermsLib {
   /// @notice thrown when the terms have expired
   error TermsExpired();
 
+  /// @notice thrown when the terms have not yet expired
+  error TermsNotExpired();
+
   /// @notice computes the keccak256 digest of quip terms
   /// @param terms the terms to hash
   /// @return digest the keccak256 hash of the encoded terms
@@ -96,9 +99,18 @@ library TermsLib {
 
   /// @notice transfers party assets from the quip to the counterparty recipient
   /// @param quip the quip contract holding the assets
-  /// @param terms the terms containing the transfer details
-  function fulfillPartyTerms(address quip, QuipTerms calldata terms) internal {
-    transferAssets(terms.partyAssets, quip, terms.counterpartyRecipient);
+  /// @param counterpartyRecipient the address to receive the assets
+  /// @param partyAssets the assets to transfer
+  function executePartyCommitment(address quip, address counterpartyRecipient, Asset[] calldata partyAssets) internal {
+    transferAssets(partyAssets, quip, counterpartyRecipient);
+  }
+
+  /// @notice releases party assets back to the party recipient
+  /// @param quip the quip contract holding the assets
+  /// @param partyRecipient the address to receive the assets
+  /// @param partyAssets the assets to transfer
+  function releasePartyCommitment(address quip, address partyRecipient, Asset[] calldata partyAssets) internal {
+    transferAssets(partyAssets, quip, partyRecipient);
   }
 
   /// @notice validates that an asset's fields are consistent with its type
@@ -178,6 +190,14 @@ library TermsLib {
   function enforceTermFreshness(uint64 expiry) internal view {
     if (block.timestamp >= expiry) {
       revert TermsExpired();
+    }
+  }
+
+  /// @notice reverts if the expiry timestamp has not passed
+  /// @param expiry the expiry timestamp to check
+  function enforceTermStaleness(uint64 expiry) internal view {
+    if (block.timestamp < expiry) {
+      revert TermsNotExpired();
     }
   }
 }
