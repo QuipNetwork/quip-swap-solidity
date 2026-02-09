@@ -26,6 +26,12 @@ interface IQuip {
   /// @notice thrown when caller is not authorized for the operation
   error UnauthorizedCaller();
 
+  /// @notice thrown when bytecode portal doesn't match predetermined portal
+  error PortalMismatch();
+
+  /// @notice thrown when caller is not the portal
+  error CallerNotPortal();
+
   /// @notice emitted when the party commits their assets to a quip
   /// @param termsDigest hash terms of the quip agreement
   event PartyCommitment(bytes32 termsDigest);
@@ -54,9 +60,13 @@ interface IQuip {
   /// @return the version number
   function VERSION() external view returns (uint256);
 
-  /// @notice returns the factory that deployed this quip
-  /// @return the factory address stored as an immutable clone argument
-  function FACTORY() external view returns (address);
+  /// @notice returns the predetermined portal address from deterministic deployment
+  /// @return the portal address
+  function PORTAL_PREDETERMINED() external view returns (address);
+
+  /// @notice returns the portal that deployed this quip from bytecode
+  /// @return the portal address stored as an immutable clone argument
+  function PORTAL_FROM_BYTECODE() external view returns (address);
 
   /// @notice initializes the quip with a lock and coupled terms
   /// @param lock the hash of the secret

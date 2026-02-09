@@ -11,10 +11,12 @@ import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 //TODO:
 // - Slashing
 // - Winternitz security (?)
-// - QuipPortal (onlyPortal) modifier on initializer
 contract Quip is Context, Initializable, IQuip {
   /// @notice the version of this quip implementation
   uint256 public constant VERSION = 1;
+
+  /// @notice address of portal generated from deterministic deployment
+  address public constant PORTAL_PREDETERMINED = address(0);
 
   /// @notice hash of the secret key used to authorize asset claiming
   bytes32 public lock;
@@ -29,9 +31,15 @@ contract Quip is Context, Initializable, IQuip {
   /// forge-lint: disable-next-line
   bool public INIT_UNCOUPLED;
 
+  /// @notice ensures caller is the valid portal
+  modifier onlyPortal() {
+    _onlyPortal();
+    _;
+  }
 
-  /// @notice returns the factory that deployed this quip, stored as an immutable clone argument
-  function FACTORY() public view returns (address) {
+  /// @notice returns the portal that deployed this quip, stored as an immutable clone argument in the bytecode
+  /// forge-lint: disable-next-line
+  function PORTAL_FROM_BYTECODE() public view returns (address) {
     return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (address));
   }
 
@@ -41,7 +49,7 @@ contract Quip is Context, Initializable, IQuip {
   /// @notice initializes the quip with a lock and terms
   /// @param _lock the hash of the secret
   /// @param _termsDigest the hashed terms of the quip agreement
-  function initializeCoupled(bytes32 _lock, bytes32 _termsDigest) external initializer {
+  function initializeCoupled(bytes32 _lock, bytes32 _termsDigest) external onlyPortal initializer {
     lock = _lock;
     termsDigest = _termsDigest;
     //  INIT_UNCOUPLED default initialize to false
@@ -53,7 +61,7 @@ contract Quip is Context, Initializable, IQuip {
   /// @dev No assets are transferred; only stores party terms digest which can be updated once via coupleQuip
   /// @param _lock the hash of the secret key
   /// @param _termsDigest the hash of PartyTerms (not full QuipTerms)
-  function initializeUncoupled(bytes32 _lock, bytes32 _termsDigest) external initializer {
+  function initializeUncoupled(bytes32 _lock, bytes32 _termsDigest) external onlyPortal initializer {
     lock = _lock;
     termsDigest = _termsDigest;
     INIT_UNCOUPLED = true;
@@ -115,5 +123,21 @@ contract Quip is Context, Initializable, IQuip {
     if (EfficientHashLib.hash(key) != lock) {
       revert InvalidKey();
     }
+  }
+
+  /// @notice bundle internals to reduce code size
+  function _onlyPortal() internal view {
+    _enforcePortalMatch();
+    _enforcePortalCaller();
+  }
+
+  /// @notice reverts if bytecode portal doesn't match predetermined portal
+  function _enforcePortalMatch() internal view {
+    if (PORTAL_FROM_BYTECODE() != PORTAL_PREDETERMINED) revert PortalMismatch();
+  }
+
+  /// @notice reverts if caller is not the predetermined portal
+  function _enforcePortalCaller() internal view {
+    if (_msgSender() != PORTAL_PREDETERMINED) revert CallerNotPortal();
   }
 }
