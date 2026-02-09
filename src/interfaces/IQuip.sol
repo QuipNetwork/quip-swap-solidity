@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, QuipTerms} from '../TermsLib.sol';
+import {Asset, PartyTerms, QuipTerms} from '../TermsLib.sol';
 
 /// @notice the status of a quip
 enum Status {
@@ -17,9 +17,27 @@ interface IQuip {
   /// @notice thrown when the provided key does not match the lock
   error InvalidKey();
 
+  /// @notice thrown when an operation is invalid for the current state
+  error InvalidOperation();
+
+  /// @notice thrown when the commitment value is insufficient
+  error InsufficientCommitment();
+
+  /// @notice thrown when caller is not authorized for the operation
+  error UnauthorizedCaller();
+
   /// @notice emitted when the party commits their assets to a quip
   /// @param termsDigest hash terms of the quip agreement
   event PartyCommitment(bytes32 termsDigest);
+
+  /// @notice emitted when a party proposes uncoupled terms
+  /// @param lock the hash of the secret
+  /// @param termsDigest hash of the party terms
+  event PartyProposal(bytes32 indexed lock, bytes32 termsDigest);
+
+  /// @notice emitted when a quip is committed (coupled)
+  /// @param termsDigest hash of the coupled terms
+  event QuipCommitted(bytes32 termsDigest);
 
   /// @notice emitted when the party's terms are fulfilled
   /// @param key secret used to create the lock hash
@@ -36,10 +54,21 @@ interface IQuip {
   /// @return the version number stored as an immutable clone argument
   function version() external view returns (uint256);
 
-  /// @notice initializes the quip with a secret digest and terms
+  /// @notice initializes the quip with a lock and coupled terms
   /// @param lock the hash of the secret
   /// @param termsDigest the hashed terms of the quip agreement
-  function initialize(bytes32 lock, bytes32 termsDigest) external;
+  function initializeCoupled(bytes32 lock, bytes32 termsDigest) external;
+
+  /// @notice initializes the quip with a lock and uncoupled party terms
+  /// @param lock the hash of the secret
+  /// @param termsDigest the hashed party terms
+  function initializeUncoupled(bytes32 lock, bytes32 termsDigest) external;
+
+  /// @notice couples an uncoupled quip with counterparty terms
+  /// @param party the initiating party's terms
+  /// @param counterparty the counterparty's terms
+  /// @param termsDigest the digest to verify against stored terms
+  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty, bytes32 termsDigest) external payable;
 
   /// @notice claims the party's assets by providing the key and terms
   /// @param key the secret that unlocks the quip

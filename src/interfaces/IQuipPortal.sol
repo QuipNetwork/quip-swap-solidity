@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {QuipTerms} from '../TermsLib.sol';
+import {PartyTerms, QuipTerms} from '../TermsLib.sol';
 
 interface IQuipPortal {
+  /// @notice thrown when a required address is the zero address
+  error EmptyAddress();
+
   /// @notice thrown when a lock is empty
   error EmptyLock();
 
@@ -37,6 +40,11 @@ interface IQuipPortal {
   /// @notice emitted when a new quip is created
   event QuipCreated(address indexed quip, QuipTerms terms);
 
+  /// @notice emitted when a quip proposal is created
+  /// @param quip the address of the deployed quip
+  /// @param terms the party terms of the proposal
+  event QuipProposed(address indexed quip, PartyTerms terms);
+
   /// @notice emitted when fees are withdrawn
   event FeesWithdrawn(address indexed receiver, uint256 amount);
 
@@ -47,4 +55,23 @@ interface IQuipPortal {
   /// @param lock the lock to check
   /// @return isSpent true if the lock has been used
   function isLockSpent(bytes32 lock) external view returns (bool isSpent);
+
+  /// @notice creates a new quip with the given lock and terms
+  /// @param lock the hash of the secret used for deterministic deployment
+  /// @param terms the terms of the quip agreement
+  function deployCoupledQuip(bytes32 lock, QuipTerms calldata terms) external payable;
+
+  /// @notice creates a new uncoupled quip proposal with party terms only
+  /// @param lock the hash of the secret used for deterministic deployment
+  /// @param terms the party terms of the quip proposal
+  function deployUncoupledQuip(bytes32 lock, PartyTerms calldata terms) external payable;
+
+  /// @notice withdraws accumulated fees to the given receiver
+  /// @param receiver the address to receive the fees
+  /// @param amount the amount of fees to withdraw
+  function withdrawFees(address receiver, uint256 amount) external;
+
+  /// @notice updates the creation fee
+  /// @param newFee the new creation fee
+  function setCreationFee(uint256 newFee) external;
 }

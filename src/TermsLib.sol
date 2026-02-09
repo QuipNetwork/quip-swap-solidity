@@ -25,6 +25,18 @@ struct Asset {
   uint256 amount;
 }
 
+/// @notice the terms for a single party in a quip proposal
+struct PartyTerms {
+  /// @notice the address of the party
+  address party;
+  /// @notice the address that receives the counterparty's assets
+  address partyRecipient;
+  /// @notice the deadline for the party to commit
+  uint64 partyExpiry;
+  /// @notice the assets offered by the party
+  Asset[] partyAssets;
+}
+
 /// @notice the terms of a quip agreement
 struct QuipTerms {
   /// @notice the address that creates the quip
@@ -70,10 +82,55 @@ library TermsLib {
   /// @notice thrown when the terms have not yet expired
   error TermsNotExpired();
 
-  /// @notice computes the keccak256 digest of quip terms
+  /// @notice computes the keccak256 digest of party terms
+  /// @param terms the party terms to hash
+  /// @return digest the keccak256 hash of the encoded terms
+  function digestPartyTerms(PartyTerms calldata terms) internal pure returns (bytes32 digest) {
+    digest = keccak256(abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets));
+  }
+
+  /// @notice combines two party terms into a full quip terms struct
+  /// @param party the initiating party's terms
+  /// @param counterparty the counterparty's terms
+  /// @return coupled the combined quip terms
+  function coupleTerms(
+    PartyTerms calldata party,
+    PartyTerms calldata counterparty
+  ) internal pure returns (QuipTerms memory coupled) {
+    coupled = QuipTerms({
+      party: party.party,
+      partyRecipient: party.partyRecipient,
+      counterparty: counterparty.party,
+      counterpartyRecipient: counterparty.partyRecipient,
+      partyExpiry: party.partyExpiry,
+      counterpartyExpiry: counterparty.partyExpiry,
+      partyAssets: party.partyAssets,
+      counterpartyAssets: counterparty.partyAssets
+    });
+  }
+
+  /// @notice computes the keccak256 digest of quip terms (calldata)
   /// @param terms the terms to hash
   /// @return digest the keccak256 hash of the encoded terms
   function digestTerms(QuipTerms calldata terms) internal pure returns (bytes32 digest) {
+    digest = keccak256(
+      abi.encode(
+        terms.party,
+        terms.partyRecipient,
+        terms.counterparty,
+        terms.counterpartyRecipient,
+        terms.partyExpiry,
+        terms.counterpartyExpiry,
+        terms.partyAssets,
+        terms.counterpartyAssets
+      )
+    );
+  }
+
+  /// @notice computes the keccak256 digest of quip terms from memory
+  /// @param terms the terms to hash
+  /// @return digest the keccak256 hash of the encoded terms
+  function digestTermsMemory(QuipTerms memory terms) internal pure returns (bytes32 digest) {
     digest = keccak256(
       abi.encode(
         terms.party,
@@ -171,8 +228,22 @@ library TermsLib {
   /// @param from the address to transfer from (ignored for native assets)
   /// @param to the address to transfer to
   function transferAssets(Asset[] memory assets, address from, address to) internal {
-    for (uint256 i; i < assets.length; ++i) {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
       transferAsset(assets[i], from, to);
+    }
+  }
+
+  /// @notice transfers an array of assets excluding native assets
+  /// @param assets the assets to transfer
+  /// @param from the address to transfer from
+  /// @param to the address to transfer to
+  function transferAssetsNoNative(Asset[] memory assets, address from, address to) internal {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
+      if (assets[i].assetType != AssetType.Native) {
+        transferAsset(assets[i], from, to);
+      }
     }
   }
 
@@ -180,7 +251,8 @@ library TermsLib {
   /// @param assets the assets to sum
   /// @return total the total native amount
   function totalNativeAmount(Asset[] memory assets) internal pure returns (uint256 total) {
-    for (uint256 i; i < assets.length; ++i) {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
       if (assets[i].assetType == AssetType.Native) total += assets[i].amount;
     }
   }

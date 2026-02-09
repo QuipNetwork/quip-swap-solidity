@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {QuipTerms, TermsLib} from './TermsLib.sol';
+import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
 import {IQuipPortal} from './interfaces/IQuipPortal.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
@@ -9,13 +9,26 @@ import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 contract QuipPortal is Context, IQuipPortal {
+  /// @notice the factory version
   uint256 public constant VERSION = 1;
+
+  /// @notice maximum fee that can ever be set
   uint256 public immutable MAX_FEE;
+
+  /// @notice current fee charged for quip creation
   uint256 public creationFee;
+
+  /// @notice total fees available for withdrawal
   uint256 public accumulatedFees;
+
+  /// @notice address with admin privileges
   address public admin;
+
+  /// @notice the quip implementation used for cloning
   address immutable QUIP_IMPLEMENTATION;
-  mapping(bytes32 lock => bool ispent) public isLockSpent;
+
+  /// @notice tracks whether a lock hash has been used
+  mapping(bytes32 lock => bool isSpent) public isLockSpent;
 
   modifier onlyAdmin() {
     _onlyAdmin();
@@ -28,6 +41,8 @@ contract QuipPortal is Context, IQuipPortal {
   /// @param maxFee the maximum creation fee that can ever be set
   /// @param _creationFee the initial creation fee
   constructor(address firstAdmin, address quipImpl, uint256 maxFee, uint256 _creationFee) {
+    _enforceNonEmptyAddress(firstAdmin);
+    _enforceNonEmptyAddress(quipImpl);
     if (_creationFee > maxFee) revert FeeExceedsMax();
     QUIP_IMPLEMENTATION = quipImpl;
     MAX_FEE = maxFee;
@@ -35,21 +50,41 @@ contract QuipPortal is Context, IQuipPortal {
     creationFee = _creationFee;
   }
 
+  /// TODO: forward ETH via deterministic deployment
   /// @notice creates a new quip with the given lock and terms
   /// @param lock the hash of the secret used for deterministic deployment
   /// @param terms the terms of the quip agreement
-  function createQuip(bytes32 lock, QuipTerms calldata terms) external payable {
+  function deployCoupledQuip(bytes32 lock, QuipTerms calldata terms) external payable {
     _enforceValidLock(lock);
-    _validateQuipCreation(terms);
+    _validateQuipTerms(terms);
     _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
     address quip = _deployQuip(lock);
-    IQuip(quip).initialize(lock, TermsLib.digestTerms(terms));
+    IQuip(quip).initializeCoupled(lock, TermsLib.digestTerms(terms));
 
     accumulatedFees += creationFee;
+    isLockSpent[lock] = true;
     TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
     emit QuipCreated(quip, terms);
+  }
+
+  /// @notice creates a new uncoupled quip proposal with party terms only
+  /// @param lock the hash of the secret used for deterministic deployment
+  /// @param terms the party terms of the quip proposal
+  function deployUncoupledQuip(bytes32 lock, PartyTerms calldata terms) external payable {
+    _enforceValidLock(lock);
+    _validatePartyTerms(terms);
+    // right now only fee needs to be paid; no forwarding here
+    _ensureCorrectNative(creationFee);
+
+    address quip = _deployQuip(lock);
+    IQuip(quip).initializeUncoupled(lock, TermsLib.digestPartyTerms(terms));
+
+    isLockSpent[lock] = true;
+    accumulatedFees += creationFee;
+
+    emit QuipProposed(quip, terms);
   }
 
   /// @notice withdraws accumulated fees to the given receiver
@@ -78,6 +113,9 @@ contract QuipPortal is Context, IQuipPortal {
   /// @param lock the salt for deterministic deployment
   /// @return quip the address of the deployed quip
   function _deployQuip(bytes32 lock) internal returns (address quip) {
+    // TODO: verify this is actually unique
+    // encoded args are not unique, but are constant across QUIPs so can be written to bytecode
+    // lock uniquifies address
     quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(VERSION), lock);
   }
 
@@ -96,19 +134,27 @@ contract QuipPortal is Context, IQuipPortal {
     if (isLockSpent[lock]) revert LockSpent();
   }
 
+  /// @notice reverts if the address is the zero address
+  /// @param addr the address to validate
+  function _enforceNonEmptyAddress(address addr) internal pure {
+    if (addr == address(0)) revert EmptyAddress();
+  }
+
   /// @notice validates the quip terms provided during creation
   /// @param terms the terms to validate
-  function _validateQuipCreation(QuipTerms calldata terms) internal view {
+  function _validateQuipTerms(QuipTerms calldata terms) internal view {
     if (terms.party == address(0) || terms.counterparty == address(0)) revert EmptyParty();
     if (terms.partyRecipient == address(0) || terms.counterpartyRecipient == address(0)) revert EmptyRecipient();
     if (terms.partyExpiry <= block.timestamp || terms.counterpartyExpiry <= block.timestamp) revert InvalidExpiry();
     if (terms.partyAssets.length == 0 || terms.counterpartyAssets.length == 0) revert EmptyAssets();
 
-    for (uint256 i; i < terms.partyAssets.length; ++i) {
+    uint256 partyAssetsLength = terms.partyAssets.length;
+    for (uint256 i; i < partyAssetsLength; ++i) {
       TermsLib.validateAsset(terms.partyAssets[i]);
     }
 
-    for (uint256 i; i < terms.counterpartyAssets.length; ++i) {
+    uint256 counterpartyAssetsLength = terms.counterpartyAssets.length;
+    for (uint256 i; i < counterpartyAssetsLength; ++i) {
       TermsLib.validateAsset(terms.counterpartyAssets[i]);
     }
   }
@@ -117,6 +163,20 @@ contract QuipPortal is Context, IQuipPortal {
   function _onlyAdmin() internal view {
     if (_msgSender() != admin) {
       revert NotAdmin();
+    }
+  }
+
+  /// @notice validates the party terms provided during uncoupled quip creation
+  /// @param terms the party terms to validate
+  function _validatePartyTerms(PartyTerms calldata terms) internal view {
+    if (terms.party == address(0)) revert EmptyParty();
+    if (terms.partyRecipient == address(0)) revert EmptyRecipient();
+    if (terms.partyExpiry <= block.timestamp) revert InvalidExpiry();
+    if (terms.partyAssets.length == 0) revert EmptyAssets();
+
+    uint256 partyAssetsLength = terms.partyAssets.length;
+    for (uint256 i; i < partyAssetsLength; ++i) {
+      TermsLib.validateAsset(terms.partyAssets[i]);
     }
   }
 }
