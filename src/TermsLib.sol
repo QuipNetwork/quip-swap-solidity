@@ -27,14 +27,14 @@ struct Asset {
 
 /// @notice the terms for a single party in a quip proposal
 struct PartyTerms {
-  /// @notice the address of the party
-  address party;
+  /// @notice the address of the party (signer)
+  address signatory;
   /// @notice the address that receives the counterparty's assets
-  address partyRecipient;
+  address recipient;
   /// @notice the deadline for the party to commit
-  uint64 partyExpiry;
+  uint64 expiry;
   /// @notice the assets offered by the party
-  Asset[] partyAssets;
+  Asset[] assets;
 }
 
 /// @notice the terms of a quip agreement
@@ -86,7 +86,7 @@ library TermsLib {
   /// @param terms the party terms to hash
   /// @return digest the keccak256 hash of the encoded terms
   function digestPartyTerms(PartyTerms calldata terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets));
+    digest = keccak256(abi.encode(terms.signatory, terms.recipient, terms.expiry, terms.assets));
   }
 
   /// @notice combines two party terms into a full quip terms struct
@@ -98,14 +98,14 @@ library TermsLib {
     PartyTerms calldata counterparty
   ) internal pure returns (QuipTerms memory coupled) {
     coupled = QuipTerms({
-      party: party.party,
-      partyRecipient: party.partyRecipient,
-      counterparty: counterparty.party,
-      counterpartyRecipient: counterparty.partyRecipient,
-      partyExpiry: party.partyExpiry,
-      counterpartyExpiry: counterparty.partyExpiry,
-      partyAssets: party.partyAssets,
-      counterpartyAssets: counterparty.partyAssets
+      party: party.signatory,
+      partyRecipient: party.recipient,
+      counterparty: counterparty.signatory,
+      counterpartyRecipient: counterparty.recipient,
+      partyExpiry: party.expiry,
+      counterpartyExpiry: counterparty.expiry,
+      partyAssets: party.assets,
+      counterpartyAssets: counterparty.assets
     });
   }
 

@@ -72,12 +72,12 @@ contract Quip is Context, Initializable, IQuip {
     if (!INIT_UNCOUPLED) revert InvalidOperation();
     // cannot update _termsDigest unless the initial terms that match the digest are used
     if (_termsDigest != TermsLib.digestPartyTerms(party)) revert InvalidOperation();
-    if (_msgSender() != party.party) revert UnauthorizedCaller();
+    if (_msgSender() != party.signatory) revert UnauthorizedCaller();
     QuipTerms memory coupledTerms = TermsLib.coupleTerms(party, counterparty);
-    if (msg.value != TermsLib.totalNativeAmount(party.partyAssets)) revert InsufficientCommitment();
+    if (msg.value != TermsLib.totalNativeAmount(party.assets)) revert InsufficientCommitment();
 
     termsDigest = TermsLib.digestTermsMemory(coupledTerms);
-    TermsLib.transferAssetsNoNative(party.partyAssets, party.party, address(this));
+    TermsLib.transferAssetsNoNative(party.assets, party.signatory, address(this));
 
     emit QuipCommitted(_termsDigest);
   }

@@ -169,14 +169,14 @@ contract QuipPortal is Context, IQuipPortal {
   /// @notice validates the party terms provided during uncoupled quip creation
   /// @param terms the party terms to validate
   function _validatePartyTerms(PartyTerms calldata terms) internal view {
-    if (terms.party == address(0)) revert EmptyParty();
-    if (terms.partyRecipient == address(0)) revert EmptyRecipient();
-    if (terms.partyExpiry <= block.timestamp) revert InvalidExpiry();
-    if (terms.partyAssets.length == 0) revert EmptyAssets();
+    if (terms.signatory == address(0)) revert EmptyParty();
+    if (terms.recipient == address(0)) revert EmptyRecipient();
+    if (terms.expiry <= block.timestamp) revert InvalidExpiry();
+    if (terms.assets.length == 0) revert EmptyAssets();
 
-    uint256 partyAssetsLength = terms.partyAssets.length;
-    for (uint256 i; i < partyAssetsLength; ++i) {
-      TermsLib.validateAsset(terms.partyAssets[i]);
+    uint256 assetsLength = terms.assets.length;
+    for (uint256 i; i < assetsLength; ++i) {
+      TermsLib.validateAsset(terms.assets[i]);
     }
   }
 }
