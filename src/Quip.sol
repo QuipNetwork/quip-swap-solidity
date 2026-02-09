@@ -12,8 +12,10 @@ import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 // - Slashing
 // - Winternitz security (?)
 // - QuipPortal (onlyPortal) modifier on initializer
-// - Pass in `factory` address as constant instead of version, make version a constant in implementation
 contract Quip is Context, Initializable, IQuip {
+  /// @notice the version of this quip implementation
+  uint256 public constant VERSION = 1;
+
   /// @notice hash of the secret key used to authorize asset claiming
   bytes32 public lock;
 
@@ -27,9 +29,10 @@ contract Quip is Context, Initializable, IQuip {
   /// forge-lint: disable-next-line
   bool public INIT_UNCOUPLED;
 
-  /// @notice returns the version of this quip, stored as an immutable clone argument
-  function version() public view returns (uint256) {
-    return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (uint256));
+
+  /// @notice returns the factory that deployed this quip, stored as an immutable clone argument
+  function FACTORY() public view returns (address) {
+    return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (address));
   }
 
   /// TODO:

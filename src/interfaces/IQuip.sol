@@ -50,9 +50,13 @@ interface IQuip {
   /// @param assets the assets that were transferred
   event PartyUnbound(address indexed recipient, Asset[] assets);
 
-  /// @notice returns the version of this quip
-  /// @return the version number stored as an immutable clone argument
-  function version() external view returns (uint256);
+  /// @notice returns the version of this quip implementation
+  /// @return the version number
+  function VERSION() external view returns (uint256);
+
+  /// @notice returns the factory that deployed this quip
+  /// @return the factory address stored as an immutable clone argument
+  function FACTORY() external view returns (address);
 
   /// @notice initializes the quip with a lock and coupled terms
   /// @param lock the hash of the secret

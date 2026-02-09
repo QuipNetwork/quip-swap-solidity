@@ -113,10 +113,8 @@ contract QuipPortal is Context, IQuipPortal {
   /// @param lock the salt for deterministic deployment
   /// @return quip the address of the deployed quip
   function _deployQuip(bytes32 lock) internal returns (address quip) {
-    // TODO: verify this is actually unique
-    // encoded args are not unique, but are constant across QUIPs so can be written to bytecode
-    // lock uniquifies address
-    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(VERSION), lock);
+    // Factory address is encoded in bytecode, lock uniquifies the deployment address
+    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(address(this)), lock);
   }
 
   /// @notice reverts if msg.value does not match the expected amount
