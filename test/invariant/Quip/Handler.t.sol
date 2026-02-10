@@ -79,7 +79,8 @@ contract QuipHandler is Test {
   function _findQuipCreatedAddress(Vm.Log[] memory logs) internal pure returns (address) {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IQuipPortal.QuipCreated.selector) {
-        return address(uint160(uint256(logs[i].topics[1])));
+        // topics[1] = lock (bytes32 indexed), topics[2] = quip (address indexed)
+        return address(uint160(uint256(logs[i].topics[2])));
       }
     }
     revert('QuipCreated event not found');
