@@ -60,10 +60,6 @@ interface IQuip {
   /// @return the version number
   function VERSION() external view returns (uint256);
 
-  /// @notice returns the predetermined portal address from deterministic deployment
-  /// @return the portal address
-  function PORTAL_PREDETERMINED() external view returns (address);
-
   /// @notice returns the portal that deployed this quip from bytecode
   /// @return the portal address stored as an immutable clone argument
   function PORTAL_FROM_BYTECODE() external view returns (address);

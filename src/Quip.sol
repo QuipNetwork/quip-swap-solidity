@@ -15,9 +15,6 @@ contract Quip is Context, Initializable, IQuip {
   /// @notice the version of this quip implementation
   uint256 public constant VERSION = 1;
 
-  /// @notice address of portal generated from deterministic deployment
-  address public constant PORTAL_PREDETERMINED = address(0);
-
   /// @notice hash of the secret key used to authorize asset claiming
   bytes32 public lock;
 
@@ -36,6 +33,9 @@ contract Quip is Context, Initializable, IQuip {
     _onlyPortal();
     _;
   }
+
+  /// @notice allows this contract to receive native currency
+  receive() external payable {}
 
   /// @notice returns the portal that deployed this quip, stored as an immutable clone argument in the bytecode
   /// forge-lint: disable-next-line
@@ -127,17 +127,11 @@ contract Quip is Context, Initializable, IQuip {
 
   /// @notice bundle internals to reduce code size
   function _onlyPortal() internal view {
-    _enforcePortalMatch();
     _enforcePortalCaller();
   }
 
-  /// @notice reverts if bytecode portal doesn't match predetermined portal
-  function _enforcePortalMatch() internal view {
-    if (PORTAL_FROM_BYTECODE() != PORTAL_PREDETERMINED) revert PortalMismatch();
-  }
-
-  /// @notice reverts if caller is not the predetermined portal
+  /// @notice reverts if caller is not the portal that deployed this quip
   function _enforcePortalCaller() internal view {
-    if (_msgSender() != PORTAL_PREDETERMINED) revert CallerNotPortal();
+    if (_msgSender() != PORTAL_FROM_BYTECODE()) revert CallerNotPortal();
   }
 }
