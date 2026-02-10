@@ -54,7 +54,7 @@ contract Quip is Context, Initializable, IQuip {
     termsDigest = _termsDigest;
     //  INIT_UNCOUPLED default initialize to false
 
-    emit PartyCommitment(_termsDigest);
+    emit PartyCommitment(_lock, _termsDigest);
   }
 
   /// @notice initializes the quip in uncoupled mode for proposal-based swaps

@@ -33,8 +33,9 @@ interface IQuip {
   error CallerNotPortal();
 
   /// @notice emitted when the party commits their assets to a quip
+  /// @param lock the hash of the secret
   /// @param termsDigest hash terms of the quip agreement
-  event PartyCommitment(bytes32 termsDigest);
+  event PartyCommitment(bytes32 indexed lock, bytes32 termsDigest);
 
   /// @notice emitted when a party proposes uncoupled terms
   /// @param lock the hash of the secret
