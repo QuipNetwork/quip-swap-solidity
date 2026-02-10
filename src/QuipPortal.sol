@@ -50,7 +50,6 @@ contract QuipPortal is Context, IQuipPortal {
     creationFee = _creationFee;
   }
 
-  /// TODO: forward ETH via deterministic deployment
   /// @notice creates a new quip with the given lock and terms
   /// @param lock the hash of the secret used for deterministic deployment
   /// @param terms the terms of the quip agreement
@@ -66,7 +65,7 @@ contract QuipPortal is Context, IQuipPortal {
     isLockSpent[lock] = true;
     TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
-    emit QuipCreated(quip, terms);
+    emit QuipCreated(lock, quip, terms);
   }
 
   /// @notice creates a new uncoupled quip proposal with party terms only
@@ -84,7 +83,7 @@ contract QuipPortal is Context, IQuipPortal {
     isLockSpent[lock] = true;
     accumulatedFees += creationFee;
 
-    emit QuipProposed(quip, terms);
+    emit QuipProposed(lock, quip, terms);
   }
 
   /// @notice withdraws accumulated fees to the given receiver

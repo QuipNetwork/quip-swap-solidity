@@ -38,12 +38,16 @@ interface IQuipPortal {
   error NotAdmin();
 
   /// @notice emitted when a new quip is created
-  event QuipCreated(address indexed quip, QuipTerms terms);
+  /// @param lock the lock hash used for deployment
+  /// @param quip the address of the deployed quip
+  /// @param terms the terms of the quip agreement
+  event QuipCreated(bytes32 indexed lock, address indexed quip, QuipTerms terms);
 
   /// @notice emitted when a quip proposal is created
+  /// @param lock the lock hash used for deployment
   /// @param quip the address of the deployed quip
   /// @param terms the party terms of the proposal
-  event QuipProposed(address indexed quip, PartyTerms terms);
+  event QuipProposed(bytes32 indexed lock, address indexed quip, PartyTerms terms);
 
   /// @notice emitted when fees are withdrawn
   event FeesWithdrawn(address indexed receiver, uint256 amount);
