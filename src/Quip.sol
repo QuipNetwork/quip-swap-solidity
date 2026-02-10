@@ -4,6 +4,8 @@ pragma solidity 0.8.33;
 import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
+import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
+import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
@@ -11,7 +13,7 @@ import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 //TODO:
 // - Slashing
 // - Winternitz security (?)
-contract Quip is Context, Initializable, IQuip {
+contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receiver {
   /// @notice the version of this quip implementation
   uint256 public constant VERSION = 1;
 
@@ -113,6 +115,30 @@ contract Quip is Context, Initializable, IQuip {
     TermsLib.releasePartyCommitment(address(this), terms.partyRecipient, terms.partyAssets);
 
     emit PartyUnbound(terms.partyRecipient, terms.partyAssets);
+  }
+
+   /// @notice ERC721 receiver callback to accept NFT transfers
+  function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+    return IERC721Receiver.onERC721Received.selector;
+  }
+
+  /// @notice ERC1155 receiver callback to accept single token transfers
+  function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /// @notice ERC1155 receiver callback to accept batch token transfers
+  function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+    external
+    pure
+    returns (bytes4)
+  {
+    return IERC1155Receiver.onERC1155BatchReceived.selector;
+  }
+
+  /// @notice ERC165 interface support
+  function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+    return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
   /// @notice reverts if the provided key does not match the lock
