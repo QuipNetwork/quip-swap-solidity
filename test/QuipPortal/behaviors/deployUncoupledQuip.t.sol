@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: UNLICENSE
+pragma solidity 0.8.33;
+
+import {Vm} from 'forge-std-1.14.0/Vm.sol';
+
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {Asset, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {Quip} from '../../../src/Quip.sol';
+import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {QuipPortalTest} from '../QuipPortal.t.sol';
+
+/// @title QuipPortal deployUncoupledQuip Tests
+/// @dev Tests for QuipPortal.deployUncoupledQuip
+contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
+  using AssetHelper for *;
+  using TermsHelper for *;
+
+  // ============ Success Cases ============
+
+  function test_deployUncoupledQuip_deploysAndInitializesQuip() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.recordLogs();
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    address quipAddr = _findQuipProposedAddress(logs);
+    Quip quip = Quip(payable(quipAddr));
+
+    // Verify lock is spent
+    assertTrue(portal.isLockSpent(defaultLock));
+
+    // Verify quip is initialized correctly
+    assertEq(quip.lock(), defaultLock);
+    assertEq(quip.termsDigest(), _digestPartyTerms(terms));
+    assertTrue(quip.INIT_UNCOUPLED());
+    assertEq(quip.PORTAL_FROM_BYTECODE(), address(portal));
+
+    // Verify no assets transferred (uncoupled quip has no balance)
+    assertEq(quipAddr.balance, 0);
+  }
+
+  function test_deployUncoupledQuip_setsLockAsSpent() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    assertFalse(portal.isLockSpent(defaultLock));
+
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    assertTrue(portal.isLockSpent(defaultLock));
+  }
+
+
+  function test_deployUncoupledQuip_accumulatesFeesAndIncreasesPortalBalance() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+    uint256 feesBefore = portal.accumulatedFees();
+    uint256 portalBalanceBefore = address(portal).balance;
+
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    assertEq(portal.accumulatedFees() - feesBefore, CREATION_FEE);
+    assertEq(address(portal).balance - portalBalanceBefore, CREATION_FEE);
+  }
+
+  function test_deployUncoupledQuip_emitsQuipProposedEvent() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.recordLogs();
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    bool found = false;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IQuipPortal.QuipProposed.selector) {
+        found = true;
+        break;
+      }
+    }
+    assertTrue(found, 'QuipProposed event not found');
+  }
+
+  function test_deployUncoupledQuip_initializesQuipWithCorrectLock() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.recordLogs();
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    address quipAddr = _findQuipProposedAddress(logs);
+    Quip quip = Quip(payable(quipAddr));
+
+    assertEq(quip.lock(), defaultLock);
+  }
+
+  function test_deployUncoupledQuip_initializesQuipWithCorrectTermsDigest() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.recordLogs();
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    address quipAddr = _findQuipProposedAddress(logs);
+    Quip quip = Quip(payable(quipAddr));
+
+    bytes32 expectedDigest = _digestPartyTerms(terms);
+    assertEq(quip.termsDigest(), expectedDigest);
+  }
+  
+  function test_deployUncoupledQuip_setsInitUncoupledTrue() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.recordLogs();
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    address quipAddr = _findQuipProposedAddress(logs);
+    Quip quip = Quip(payable(quipAddr));
+
+    assertTrue(quip.INIT_UNCOUPLED());
+  }
+
+  // ============ Revert Cases ============
+
+  function test_deployUncoupledQuip_revertsWhen_lockIsZero() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.EmptyLock.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(bytes32(0), terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_lockIsSpent() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    // First deployment
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    // Second deployment with same lock should fail
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.LockSpent.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_signatoryIsZero() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+    terms.signatory = address(0);
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.EmptyParty.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_recipientIsZero() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+    terms.recipient = address(0);
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.EmptyRecipient.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_expiryInPast() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+    terms.expiry = _expiredTimestamp();
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.InvalidExpiry.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_assetsEmpty() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+    terms.assets = new Asset[](0);
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.EmptyAssets.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_incorrectNativeAmount() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.IncorrectNativeAmount.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE - 1}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_excessNativeAmount() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    vm.expectRevert(IQuipPortal.IncorrectNativeAmount.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE + 1}(defaultLock, terms);
+  }
+
+  // ============ Fuzz Tests ============
+
+  function testFuzz_deployUncoupledQuip_withVariousLocks(bytes32 lock) public {
+    vm.assume(lock != bytes32(0));
+
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(lock, terms);
+
+    assertTrue(portal.isLockSpent(lock));
+  }
+}
