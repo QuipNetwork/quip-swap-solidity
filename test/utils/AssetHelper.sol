@@ -67,4 +67,22 @@ library AssetHelper {
     assets[1] = b;
     assets[2] = c;
   }
+
+  /// @notice Creates an array with four assets
+  /// @param a First asset
+  /// @param b Second asset
+  /// @param c Third asset
+  /// @param d Fourth asset
+  /// @return assets The four-element array
+  function toArray(Asset memory a, Asset memory b, Asset memory c, Asset memory d)
+    internal
+    pure
+    returns (Asset[] memory assets)
+  {
+    assets = new Asset[](4);
+    assets[0] = a;
+    assets[1] = b;
+    assets[2] = c;
+    assets[3] = d;
+  }
 }
