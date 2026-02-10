@@ -16,11 +16,6 @@ contract QuipHarness is Quip {
     _onlyPortal();
   }
 
-  /// @notice Exposes _enforcePortalCaller
-  function exposed_enforcePortalCaller() external view {
-    _enforcePortalCaller();
-  }
-
   /// @notice Allows direct setting of lock for testing _verifyKey
   function setLock(bytes32 _lock) external {
     lock = _lock;
