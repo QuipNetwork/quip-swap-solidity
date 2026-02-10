@@ -4,7 +4,7 @@ pragma solidity 0.8.33;
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../../src/Quip.sol';
-import {Asset, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {Asset, PartyTerms} from '../../../src/TermsLib.sol';
 import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';

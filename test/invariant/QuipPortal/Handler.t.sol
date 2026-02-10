@@ -3,9 +3,8 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Quip} from '../../../src/Quip.sol';
 import {QuipPortal} from '../../../src/QuipPortal.sol';
-import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {Asset, AssetType, PartyTerms, QuipTerms} from '../../../src/TermsLib.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 
 /// @title QuipPortal Invariant Handler

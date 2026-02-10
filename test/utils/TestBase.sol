@@ -6,7 +6,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../src/Quip.sol';
 import {QuipPortal} from '../../src/QuipPortal.sol';
-import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {Asset, PartyTerms, QuipTerms} from '../../src/TermsLib.sol';
 import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
