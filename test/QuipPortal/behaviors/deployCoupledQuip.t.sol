@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
-import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
@@ -71,7 +71,8 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     partyAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
     partyAssets[1] = Asset({assetType: AssetType.ERC20, target: address(mockERC20), id: 0, amount: 100 ether});
     partyAssets[2] = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: ERC721_TOKEN_ID, amount: 1});
-    partyAssets[3] = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: ERC1155_TOKEN_ID, amount: 50});
+    partyAssets[3] =
+      Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: ERC1155_TOKEN_ID, amount: 50});
 
     QuipTerms memory terms = TermsHelper.makeSimpleQuipTerms(
       ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether)
@@ -260,8 +261,9 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
   function test_deployCoupledQuip_revertsWhen_assetAmountZero() public {
     Asset[] memory partyAssets = _makeNativeAssets(0);
     partyAssets[0].amount = 0;
-    QuipTerms memory terms =
-      TermsHelper.makeSimpleQuipTerms(ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether));
+    QuipTerms memory terms = TermsHelper.makeSimpleQuipTerms(
+      ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether)
+    );
 
     vm.prank(ALICE);
     vm.expectRevert(TermsLib.ZeroAmount.selector);
@@ -274,8 +276,9 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     amount = bound(amount, 1, 10 ether);
 
     Asset[] memory partyAssets = _makeNativeAssets(amount);
-    QuipTerms memory terms =
-      TermsHelper.makeSimpleQuipTerms(ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether));
+    QuipTerms memory terms = TermsHelper.makeSimpleQuipTerms(
+      ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether)
+    );
 
     uint256 nativeRequired = CREATION_FEE + amount;
 

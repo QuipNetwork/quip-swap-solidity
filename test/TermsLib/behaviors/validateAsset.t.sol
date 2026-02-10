@@ -52,7 +52,8 @@ contract TermsLib_validateAsset is TermsLibTest {
   function testFuzz_validateAsset_erc1155WithVariousParams(uint256 tokenId, uint256 amount) public view {
     vm.assume(tokenId > 0);
     vm.assume(amount > 0);
-    Asset memory asset = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: tokenId, amount: amount});
+    Asset memory asset =
+      Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: tokenId, amount: amount});
     harness.exposed_validateAsset(asset);
   }
 

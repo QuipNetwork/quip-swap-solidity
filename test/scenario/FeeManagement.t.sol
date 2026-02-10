@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 import {QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 import {TestBase} from '../utils/TestBase.sol';
 
 /// @title Fee Management Scenario Tests

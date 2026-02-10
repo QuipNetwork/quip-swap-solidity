@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
-import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
+import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
@@ -75,10 +75,7 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
   /// @dev Only callable by the original party; transitions termsDigest from h(PartyTerms) to h(QuipTerms)
   /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms to couple with
-  function coupleQuip(
-    PartyTerms calldata party,
-    PartyTerms calldata counterparty
-  ) external payable {
+  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable {
     // cannot couple unless initialized uncoupled
     if (!INIT_UNCOUPLED) revert InvalidOperation();
     // cannot update termsDigest unless the initial terms that match the digest are used
@@ -117,7 +114,7 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
     emit PartyUnbound(terms.partyRecipient, terms.partyAssets);
   }
 
-   /// @notice ERC721 receiver callback to accept NFT transfers
+  /// @notice ERC721 receiver callback to accept NFT transfers
   function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
     return IERC721Receiver.onERC721Received.selector;
   }
@@ -128,11 +125,13 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
   }
 
   /// @notice ERC1155 receiver callback to accept batch token transfers
-  function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
-    external
-    pure
-    returns (bytes4)
-  {
+  function onERC1155BatchReceived(
+    address,
+    address,
+    uint256[] calldata,
+    uint256[] calldata,
+    bytes calldata
+  ) external pure returns (bytes4) {
     return IERC1155Receiver.onERC1155BatchReceived.selector;
   }
 

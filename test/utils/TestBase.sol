@@ -4,10 +4,10 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
-import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
-import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 import {Quip} from '../../src/Quip.sol';
 import {QuipPortal} from '../../src/QuipPortal.sol';
+import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
@@ -195,7 +195,7 @@ abstract contract TestBase is Test {
       counterpartyAssets: counterparty.assets
     });
   }
-  
+
   /// @notice Finds the quip address from QuipCreated event in logs
   /// @notice Finds the quip address from QuipCreated event in logs
   /// @dev Event signature: QuipCreated(bytes32 indexed lock, address indexed quip, QuipTerms terms)

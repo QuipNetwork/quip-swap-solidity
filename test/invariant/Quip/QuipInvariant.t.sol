@@ -3,8 +3,8 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {QuipHandler} from './Handler.t.sol';
 
 /// @title Quip Invariant Tests

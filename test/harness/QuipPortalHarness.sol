@@ -2,7 +2,7 @@
 pragma solidity 0.8.33;
 
 import {QuipPortal} from '../../src/QuipPortal.sol';
-import {QuipTerms, PartyTerms} from '../../src/TermsLib.sol';
+import {PartyTerms, QuipTerms} from '../../src/TermsLib.sol';
 
 /// @title QuipPortal Harness
 /// @dev Exposes internal functions of QuipPortal for testing

@@ -105,7 +105,12 @@ contract TermsLib_verifyTerms is TermsLibTest {
     vm.assume(amount > 0);
 
     QuipTerms memory terms = TermsHelper.makeSimpleQuipTerms(
-      party, counterparty, partyExpiry, counterpartyExpiry, _makeNativeAsset(amount).toArray(), _makeNativeAsset(amount).toArray()
+      party,
+      counterparty,
+      partyExpiry,
+      counterpartyExpiry,
+      _makeNativeAsset(amount).toArray(),
+      _makeNativeAsset(amount).toArray()
     );
 
     bytes32 digest = harness.exposed_digestTerms(terms);

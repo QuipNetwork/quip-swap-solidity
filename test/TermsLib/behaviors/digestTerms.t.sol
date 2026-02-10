@@ -55,7 +55,9 @@ contract TermsLib_digestTerms is TermsLibTest {
     // Different counterpartyExpiry
     QuipTerms memory termsCounterpartyExpiry = _defaultQuipTerms();
     termsCounterpartyExpiry.counterpartyExpiry = DEFAULT_EXPIRY + 1;
-    assertNotEq(harness.exposed_digestTerms(termsCounterpartyExpiry), baseDigest, 'counterpartyExpiry should affect hash');
+    assertNotEq(
+      harness.exposed_digestTerms(termsCounterpartyExpiry), baseDigest, 'counterpartyExpiry should affect hash'
+    );
 
     // Different partyAssets
     QuipTerms memory termsPartyAssets = _defaultQuipTerms();
@@ -65,7 +67,9 @@ contract TermsLib_digestTerms is TermsLibTest {
     // Different counterpartyAssets
     QuipTerms memory termsCounterpartyAssets = _defaultQuipTerms();
     termsCounterpartyAssets.counterpartyAssets = _makeNativeAsset(2 ether).toArray();
-    assertNotEq(harness.exposed_digestTerms(termsCounterpartyAssets), baseDigest, 'counterpartyAssets should affect hash');
+    assertNotEq(
+      harness.exposed_digestTerms(termsCounterpartyAssets), baseDigest, 'counterpartyAssets should affect hash'
+    );
   }
 
   function test_digestTerms_matchesManualEncoding() public view {

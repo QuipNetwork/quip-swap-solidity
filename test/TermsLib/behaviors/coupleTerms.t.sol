@@ -32,10 +32,16 @@ contract TermsLib_coupleTerms is TermsLibTest {
     // Verify counterparty fields from counterpartyTerms
     assertEq(coupled.counterparty, counterpartyTerms.signatory, 'counterparty should be counterpartyTerms.signatory');
     assertEq(
-      coupled.counterpartyRecipient, counterpartyTerms.recipient, 'counterpartyRecipient should be counterpartyTerms.recipient'
+      coupled.counterpartyRecipient,
+      counterpartyTerms.recipient,
+      'counterpartyRecipient should be counterpartyTerms.recipient'
     );
-    assertEq(coupled.counterpartyExpiry, counterpartyTerms.expiry, 'counterpartyExpiry should be counterpartyTerms.expiry');
-    assertEq(coupled.counterpartyAssets.length, counterpartyTerms.assets.length, 'counterpartyAssets length should match');
+    assertEq(
+      coupled.counterpartyExpiry, counterpartyTerms.expiry, 'counterpartyExpiry should be counterpartyTerms.expiry'
+    );
+    assertEq(
+      coupled.counterpartyAssets.length, counterpartyTerms.assets.length, 'counterpartyAssets length should match'
+    );
     assertEq(
       coupled.counterpartyAssets[0].amount, counterpartyTerms.assets[0].amount, 'counterpartyAssets amount should match'
     );

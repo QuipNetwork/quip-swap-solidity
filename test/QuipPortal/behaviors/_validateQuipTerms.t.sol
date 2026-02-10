@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {Asset, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
@@ -22,7 +22,8 @@ contract QuipPortal__validateQuipTerms is QuipPortalTest {
 
   function test_exposed_validateQuipTerms_succeedsWithMultipleAssets() public view {
     Asset[] memory partyAssets = AssetHelper.toArray(_makeNativeAssets(1 ether)[0], _makeERC20Assets(100 ether)[0]);
-    Asset[] memory counterpartyAssets = AssetHelper.toArray(_makeNativeAssets(2 ether)[0], _makeERC20Assets(50 ether)[0]);
+    Asset[] memory counterpartyAssets =
+      AssetHelper.toArray(_makeNativeAssets(2 ether)[0], _makeERC20Assets(50 ether)[0]);
 
     QuipTerms memory terms = TermsHelper.makeQuipTerms(
       ALICE, ALICE_RECIPIENT, BOB, BOB_RECIPIENT, _defaultExpiry(), _defaultExpiry(), partyAssets, counterpartyAssets
@@ -137,10 +138,10 @@ contract QuipPortal__validateQuipTerms is QuipPortalTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_exposed_validateQuipTerms_succeedsWithVariousExpiries(uint64 partyExpiry, uint64 counterpartyExpiry)
-    public
-    view
-  {
+  function testFuzz_exposed_validateQuipTerms_succeedsWithVariousExpiries(
+    uint64 partyExpiry,
+    uint64 counterpartyExpiry
+  ) public view {
     vm.assume(partyExpiry > block.timestamp);
     vm.assume(counterpartyExpiry > block.timestamp);
 

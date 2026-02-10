@@ -5,9 +5,9 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 
-import {IQuip} from '../../../src/interfaces/IQuip.sol';
-import {Asset, AssetType, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {Asset, AssetType, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';

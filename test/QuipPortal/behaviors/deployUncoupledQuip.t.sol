@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
-import {Asset, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {Asset, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
@@ -52,7 +52,6 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
 
     assertTrue(portal.isLockSpent(defaultLock));
   }
-
 
   function test_deployUncoupledQuip_accumulatesFeesAndIncreasesPortalBalance() public {
     PartyTerms memory terms = _makeDefaultPartyTerms();
@@ -112,7 +111,7 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
     bytes32 expectedDigest = _digestPartyTerms(terms);
     assertEq(quip.termsDigest(), expectedDigest);
   }
-  
+
   function test_deployUncoupledQuip_setsInitUncoupledTrue() public {
     PartyTerms memory terms = _makeDefaultPartyTerms();
 

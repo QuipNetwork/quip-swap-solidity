@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {Asset, PartyTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';

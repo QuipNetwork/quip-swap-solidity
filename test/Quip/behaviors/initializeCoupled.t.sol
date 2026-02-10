@@ -4,9 +4,9 @@ pragma solidity 0.8.33;
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 
-import {IQuip} from '../../../src/interfaces/IQuip.sol';
-import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {QuipTest} from '../Quip.t.sol';
 
 /// @title Quip initializeCoupled Tests

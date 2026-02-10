@@ -4,10 +4,10 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
+import {Quip} from '../../../src/Quip.sol';
+import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
-import {QuipPortal} from '../../../src/QuipPortal.sol';
-import {Quip} from '../../../src/Quip.sol';
 
 /// @title Quip Invariant Handler
 /// @dev Handler contract for Quip invariant testing

@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {QuipPortal} from '../../../src/QuipPortal.sol';
+import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 
 /// @title QuipPortal Invariant Handler
@@ -76,12 +76,8 @@ contract QuipPortalHandler is Test {
     Asset[] memory assets = new Asset[](1);
     assets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
 
-    PartyTerms memory terms = PartyTerms({
-      signatory: actor,
-      recipient: actor,
-      expiry: uint64(block.timestamp + 1 days),
-      assets: assets
-    });
+    PartyTerms memory terms =
+      PartyTerms({signatory: actor, recipient: actor, expiry: uint64(block.timestamp + 1 days), assets: assets});
 
     uint256 creationFee = portal.creationFee();
 

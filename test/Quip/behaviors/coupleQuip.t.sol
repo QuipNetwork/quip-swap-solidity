@@ -3,13 +3,12 @@ pragma solidity 0.8.33;
 
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
-import {IQuip} from '../../../src/interfaces/IQuip.sol';
-import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {Quip} from '../../../src/Quip.sol';
+import {Asset, AssetType, PartyTerms, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
+import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';
-
 
 /// @title Quip coupleQuip Tests
 /// @dev Tests for Quip.coupleQuip
@@ -62,10 +61,12 @@ contract Quip_coupleQuip is QuipTest {
     partyAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
     partyAssets[1] = Asset({assetType: AssetType.ERC20, target: address(mockERC20), id: 0, amount: 100 ether});
     partyAssets[2] = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: ERC721_TOKEN_ID, amount: 1});
-    partyAssets[3] = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: ERC1155_TOKEN_ID, amount: 50});
+    partyAssets[3] =
+      Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: ERC1155_TOKEN_ID, amount: 50});
 
     bytes32 lock = keccak256(abi.encodePacked('all_assets_couple_key'));
-    PartyTerms memory allAssetsPartyTerms = TermsHelper.makePartyTerms(ALICE, ALICE_RECIPIENT, _defaultExpiry(), partyAssets);
+    PartyTerms memory allAssetsPartyTerms =
+      TermsHelper.makePartyTerms(ALICE, ALICE_RECIPIENT, _defaultExpiry(), partyAssets);
 
     vm.prank(ALICE);
     vm.recordLogs();
@@ -134,7 +135,10 @@ contract Quip_coupleQuip is QuipTest {
 
   function test_coupleQuip_revertsWhen_partyTermsMismatch() public {
     PartyTerms memory wrongPartyTerms = TermsHelper.makePartyTerms(
-      ALICE, ALICE_RECIPIENT, _defaultExpiry(), _makeNativeAssets(5 ether) // Different amount than default 1 ether
+      ALICE,
+      ALICE_RECIPIENT,
+      _defaultExpiry(),
+      _makeNativeAssets(5 ether) // Different amount than default 1 ether
     );
     PartyTerms memory counterpartyTerms =
       TermsHelper.makePartyTerms(BOB, BOB_RECIPIENT, _defaultExpiry(), _makeNativeAssets(2 ether));

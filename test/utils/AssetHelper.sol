@@ -74,11 +74,12 @@ library AssetHelper {
   /// @param c Third asset
   /// @param d Fourth asset
   /// @return assets The four-element array
-  function toArray(Asset memory a, Asset memory b, Asset memory c, Asset memory d)
-    internal
-    pure
-    returns (Asset[] memory assets)
-  {
+  function toArray(
+    Asset memory a,
+    Asset memory b,
+    Asset memory c,
+    Asset memory d
+  ) internal pure returns (Asset[] memory assets) {
     assets = new Asset[](4);
     assets[0] = a;
     assets[1] = b;
