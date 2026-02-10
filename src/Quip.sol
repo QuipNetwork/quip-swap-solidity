@@ -45,9 +45,6 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
     return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (address));
   }
 
-  /// TODO:
-  /// - means this address is coupled to _termsDigest
-  /// - means _termDigest = h(`QuipTerm`) (full struct information indicative of intent)
   /// @notice initializes the quip with a lock and terms
   /// @param _lock the hash of the secret
   /// @param _termsDigest the hashed terms of the quip agreement
