@@ -73,16 +73,14 @@ contract Quip is Context, Initializable, IQuip {
   /// @dev Only callable by the original party; transitions termsDigest from h(PartyTerms) to h(QuipTerms)
   /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms to couple with
-  /// @param _termsDigest the stored digest to verify against party terms
   function coupleQuip(
     PartyTerms calldata party,
-    PartyTerms calldata counterparty,
-    bytes32 _termsDigest
+    PartyTerms calldata counterparty
   ) external payable {
     // cannot couple unless initialized uncoupled
     if (!INIT_UNCOUPLED) revert InvalidOperation();
-    // cannot update _termsDigest unless the initial terms that match the digest are used
-    if (_termsDigest != TermsLib.digestPartyTerms(party)) revert InvalidOperation();
+    // cannot update termsDigest unless the initial terms that match the digest are used
+    if (termsDigest != TermsLib.digestPartyTerms(party)) revert InvalidOperation();
     if (_msgSender() != party.signatory) revert UnauthorizedCaller();
     QuipTerms memory coupledTerms = TermsLib.coupleTerms(party, counterparty);
     if (msg.value != TermsLib.totalNativeAmount(party.assets)) revert InsufficientCommitment();
@@ -90,7 +88,7 @@ contract Quip is Context, Initializable, IQuip {
     termsDigest = TermsLib.digestTermsMemory(coupledTerms);
     TermsLib.transferAssetsNoNative(party.assets, party.signatory, address(this));
 
-    emit QuipCommitted(_termsDigest);
+    emit QuipCommitted(termsDigest);
   }
 
   /// @notice claims the party's assets by providing the key and terms
@@ -125,13 +123,8 @@ contract Quip is Context, Initializable, IQuip {
     }
   }
 
-  /// @notice bundle internals to reduce code size
-  function _onlyPortal() internal view {
-    _enforcePortalCaller();
-  }
-
   /// @notice reverts if caller is not the portal that deployed this quip
-  function _enforcePortalCaller() internal view {
+  function _onlyPortal() internal view {
     if (_msgSender() != PORTAL_FROM_BYTECODE()) revert CallerNotPortal();
   }
 }

@@ -76,10 +76,10 @@ interface IQuip {
   function initializeUncoupled(bytes32 lock, bytes32 termsDigest) external;
 
   /// @notice couples an uncoupled quip with counterparty terms
-  /// @param party the initiating party's terms
+  /// @dev Verifies party terms against stored termsDigest, then updates to coupled terms digest
+  /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms
-  /// @param termsDigest the digest to verify against stored terms
-  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty, bytes32 termsDigest) external payable;
+  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable;
 
   /// @notice claims the party's assets by providing the key and terms
   /// @param key the secret that unlocks the quip
