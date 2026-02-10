@@ -28,6 +28,10 @@ abstract contract TestBase is Test {
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
   uint64 public constant DEFAULT_EXPIRY_DELTA = 1 days;
 
+  // Token IDs for testing - ALICE gets ERC721 IDs 1,2,3; BOB gets 4,5,6; CHARLIE gets 7,8,9
+  uint256 public constant ERC721_TOKEN_ID = 1;
+  uint256 public constant ERC1155_TOKEN_ID = 1;
+
   // ============ Actors ============
 
   address public ADMIN = makeAddr('admin');
@@ -193,20 +197,25 @@ abstract contract TestBase is Test {
   }
   
   /// @notice Finds the quip address from QuipCreated event in logs
+  /// @notice Finds the quip address from QuipCreated event in logs
+  /// @dev Event signature: QuipCreated(bytes32 indexed lock, address indexed quip, QuipTerms terms)
   function _findQuipCreatedAddress(Vm.Log[] memory logs) internal pure returns (address) {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IQuipPortal.QuipCreated.selector) {
-        return address(uint160(uint256(logs[i].topics[1])));
+        // topics[1] = lock (indexed), topics[2] = quip address (indexed)
+        return address(uint160(uint256(logs[i].topics[2])));
       }
     }
     revert('QuipCreated event not found');
   }
 
   /// @notice Finds the quip address from QuipProposed event in logs
+  /// @dev Event signature: QuipProposed(bytes32 indexed lock, address indexed quip, PartyTerms terms)
   function _findQuipProposedAddress(Vm.Log[] memory logs) internal pure returns (address) {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IQuipPortal.QuipProposed.selector) {
-        return address(uint160(uint256(logs[i].topics[1])));
+        // topics[1] = lock (indexed), topics[2] = quip address (indexed)
+        return address(uint160(uint256(logs[i].topics[2])));
       }
     }
     revert('QuipProposed event not found');
