@@ -65,6 +65,10 @@ interface IQuip {
   /// @return the portal address stored as an immutable clone argument
   function PORTAL_FROM_BYTECODE() external view returns (address);
 
+  /// @notice returns the lock hash that secures this quip
+  /// @return the keccak256 hash of the secret key
+  function lock() external view returns (bytes32);
+
   /// @notice initializes the quip with a lock and coupled terms
   /// @param lock the hash of the secret
   /// @param termsDigest the hashed terms of the quip agreement

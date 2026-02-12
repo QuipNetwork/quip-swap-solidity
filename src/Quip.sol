@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
+import {IQuipPortal} from './interfaces/IQuipPortal.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
@@ -88,24 +89,34 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
   }
 
   /// @notice claims the party's assets by providing the key and terms
-  /// @dev Permissionless by design - possession of valid key proves authorization
+  /// @dev Permissionless by design - possession of valid key proves authorization.
+  ///      Marks the lock as spent on the portal to prevent further deployments.
   /// @param key the secret that unlocks the quip
   /// @param terms the terms of the quip agreement
   function claim(bytes calldata key, QuipTerms calldata terms) external {
     _verifyKey(key);
     TermsLib.verifyTerms(termsDigest, terms);
     TermsLib.enforceTermFreshness(terms.partyExpiry);
+
+    // Mark lock as spent on portal (idempotent for same-chain swaps)
+    IQuipPortal(PORTAL_FROM_BYTECODE()).spendLock(lock);
+
     TermsLib.executePartyCommitment(address(this), terms.counterpartyRecipient, terms.partyAssets);
 
     emit PartyTermsFulfilled(key, terms.counterpartyRecipient, terms.partyAssets);
   }
 
   /// @notice reclaims the party's assets after the terms have expired
-  /// @dev Permissionless by design - anyone can trigger reclaim after expiry
+  /// @dev Permissionless by design - anyone can trigger reclaim after expiry.
+  ///      Marks the lock as spent on the portal to prevent further deployments.
   /// @param terms the terms of the quip agreement
   function reclaim(QuipTerms calldata terms) external {
     TermsLib.verifyTerms(termsDigest, terms);
     TermsLib.enforceTermStaleness(terms.partyExpiry);
+
+    // Mark lock as spent on portal (idempotent for same-chain swaps)
+    IQuipPortal(PORTAL_FROM_BYTECODE()).spendLock(lock);
+
     TermsLib.releasePartyCommitment(address(this), terms.partyRecipient, terms.partyAssets);
 
     emit PartyUnbound(terms.partyRecipient, terms.partyAssets);
