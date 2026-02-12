@@ -42,7 +42,7 @@ QuipPortal
 │   ├── creationFee
 │   ├── accumulatedFees
 │   ├── admin
-│   └── isLockSpent (mapping)
+│   └── lockState (mapping: bytes32 => LockState)
 │
 ├── Modifier
 │   └── onlyAdmin
@@ -53,12 +53,14 @@ QuipPortal
 ├── Public Functions
 │   ├── deployCoupledQuip(lock, terms)
 │   ├── deployUncoupledQuip(lock, terms)
+│   ├── spendLock(lock)
 │   ├── withdrawFees(receiver, amount)
 │   └── setCreationFee(newFee)
 │
 └── Internal Functions
-    ├── _deployQuip(lock)
+    ├── _deployQuip(lock, deployer)
     ├── _enforceValidLock(lock)
+    ├── _enforceQuipCaller()
     ├── _enforceNonEmptyAddress(addr)
     ├── _ensureCorrectNative(amount)
     ├── _validateQuipTerms(terms)
@@ -233,7 +235,7 @@ QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deploym
 | 0 | creationFee | uint256 |
 | 1 | accumulatedFees | uint256 |
 | 2 | admin | address |
-| 3+ | isLockSpent | mapping(bytes32 => bool) |
+| 3+ | lockState | mapping(bytes32 => LockState) |
 
 *Note: VERSION, MAX_FEE, QUIP_IMPLEMENTATION are immutable (in bytecode)*
 
@@ -384,12 +386,54 @@ RECLAIM:
 | Aspect | Implementation |
 |--------|----------------|
 | Reentrancy | State changes before external calls (CEI pattern) |
-| Lock uniqueness | `isLockSpent` mapping prevents reuse |
+| Lock uniqueness | `lockState` enum (Unused→Free→Spent) prevents replay; allows same-chain swaps |
 | Terms tampering | Terms verified against stored digest |
 | Expiry enforcement | Block timestamp checks for claim/reclaim |
 | Asset validation | Type-specific validation in `validateAsset()` |
 | Permissionless claim | By design - key possession = authorization |
 | Zero-address checks | Constructor and terms validation |
+
+### Portal-Quip Mutual Authentication
+
+The system uses a two-way binding to prevent malicious clone attacks:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      MUTUAL AUTHENTICATION                                  │
+│                                                                             │
+│   ┌─────────────┐                              ┌─────────────┐              │
+│   │  QuipPortal │                              │    Quip     │              │
+│   │             │                              │   (Clone)   │              │
+│   └──────┬──────┘                              └──────┬──────┘              │
+│          │                                            │                     │
+│          │  1. Portal verifies Quip                   │                     │
+│          │     ─────────────────────                  │                     │
+│          │     spendLock() checks:                    │                     │
+│          │     msg.sender.codehash ==                 │                     │
+│          │       QUIP_CODEHASH                 │                     │
+│          │                                            │                     │
+│          │  2. Quip verifies Portal                   │                     │
+│          │     ─────────────────────                  │                     │
+│          │     initializeCoupled/Uncoupled checks:    │                     │
+│          │     msg.sender == PORTAL_FROM_BYTECODE()   │                     │
+│          │                                            │                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters:**
+
+An attacker could deploy a fake clone with matching `codehash` by using the same
+implementation and immutable args. However:
+
+1. **Attacker deploys fake clone** → Clone has matching codehash ✓
+2. **Attacker tries to initialize** → `onlyPortal` checks `msg.sender == PORTAL_FROM_BYTECODE()`
+3. **Attacker is not the portal** → Reverts with `CallerNotPortal`
+4. **Uninitialized clone** → `lock = 0`, `termsDigest = 0`
+5. **Cannot claim/reclaim** → No path to call `spendLock()`
+
+The portal address embedded in the clone's bytecode (via LibClone immutable args)
+ensures only the legitimate portal can initialize quips, while the codehash check
+ensures only legitimate quips can call `spendLock()`.
 
 ---
 
