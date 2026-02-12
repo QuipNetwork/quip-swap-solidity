@@ -65,6 +65,7 @@ contract QuipPortal is Context, IQuipPortal {
     _validateQuipTerms(terms);
     _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
+    _advanceLock(lock);
     address quip = _deployQuip(lock, _msgSender());
     IQuip(quip).initializeCoupled(lock, TermsLib.digestTerms(terms));
 
@@ -85,6 +86,7 @@ contract QuipPortal is Context, IQuipPortal {
     // right now only fee needs to be paid; no forwarding here
     _ensureCorrectNative(creationFee);
 
+    _advanceLock(lock);
     address quip = _deployQuip(lock, _msgSender());
     IQuip(quip).initializeUncoupled(lock, TermsLib.digestPartyTerms(terms));
 
@@ -163,17 +165,19 @@ contract QuipPortal is Context, IQuipPortal {
     }
   }
 
-  /// @notice validates the lock and transitions its state
-  /// @dev State transitions: Unused → Free → Spent
-  ///      Reverts if lock is empty or already Spent
-  /// @param lock the lock to validate and transition
-  function _enforceValidLock(bytes32 lock) internal {
+  /// @notice validates that the lock is non-empty and not already spent
+  /// @dev Reverts if lock is empty or already Spent
+  /// @param lock the lock to validate
+  function _enforceValidLock(bytes32 lock) internal view {
     if (lock == bytes32(0)) revert EmptyLock();
+    if (lockState[lock] == LockState.Spent) revert LockSpent();
+  }
 
+  /// @notice advances the lock state: Unused → Free → Spent
+  /// @dev Must be called after _enforceValidLock
+  /// @param lock the lock to advance
+  function _advanceLock(bytes32 lock) internal {
     LockState currentState = lockState[lock];
-    if (currentState == LockState.Spent) revert LockSpent();
-
-    // Transition: Unused → Free, Free → Spent
     lockState[lock] = currentState == LockState.Unused ? LockState.Free : LockState.Spent;
   }
 
