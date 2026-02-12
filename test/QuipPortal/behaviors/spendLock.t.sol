@@ -7,8 +7,8 @@ import {Quip} from '../../../src/Quip.sol';
 import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
-import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
+import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 
 /// @title Malicious Quip that inherits from Quip but adds a direct spendLock call
 /// @dev Deployed via LibClone to have portal address in correct bytecode position

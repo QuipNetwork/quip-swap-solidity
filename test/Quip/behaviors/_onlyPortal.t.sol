@@ -3,8 +3,8 @@ pragma solidity 0.8.33;
 
 import {Quip} from '../../../src/Quip.sol';
 import {IQuip} from '../../../src/interfaces/IQuip.sol';
-import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 import {QuipTest} from '../Quip.t.sol';
+import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 
 /// @title Malicious Initializer that tries to initialize quips by pretending to be the portal
 /// @dev Deployed via LibClone to have portal address in correct bytecode position (same as Quip)

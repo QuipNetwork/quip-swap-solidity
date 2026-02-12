@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 
+import {ERC1155Mock} from '../test/mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../test/mocks/ERC20Mock.sol';
 import {ERC721Mock} from '../test/mocks/ERC721Mock.sol';
-import {ERC1155Mock} from '../test/mocks/ERC1155Mock.sol';
 
 /// @title Mint Mock Tokens
 /// @notice Mints mock tokens to specified addresses
