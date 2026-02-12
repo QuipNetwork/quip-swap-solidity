@@ -71,7 +71,14 @@ contract Quip_reclaim is QuipTest {
     deployedQuip.reclaim(terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
-    assertEq(logs[0].topics[0], IQuip.PartyUnbound.selector);
+    bool found = false;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IQuip.PartyUnbound.selector) {
+        found = true;
+        break;
+      }
+    }
+    assertTrue(found, 'PartyUnbound event not found');
   }
 
   function test_reclaim_isPermissionless() public {

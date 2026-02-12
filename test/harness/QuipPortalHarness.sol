@@ -15,8 +15,8 @@ contract QuipPortalHarness is QuipPortal {
   ) QuipPortal(firstAdmin, quipImpl, maxFee, _creationFee) {}
 
   /// @notice Exposes _deployQuip
-  function exposed_deployQuip(bytes32 lock) external returns (address) {
-    return _deployQuip(lock);
+  function exposed_deployQuip(bytes32 lock, address deployer) external returns (address) {
+    return _deployQuip(lock, deployer);
   }
 
   /// @notice Exposes _ensureCorrectNative
@@ -27,6 +27,11 @@ contract QuipPortalHarness is QuipPortal {
   /// @notice Exposes _enforceValidLock
   function exposed_enforceValidLock(bytes32 lock) external view {
     _enforceValidLock(lock);
+  }
+
+  /// @notice Exposes _advanceLock
+  function exposed_advanceLock(bytes32 lock) external {
+    _advanceLock(lock);
   }
 
   /// @notice Exposes _enforceNonEmptyAddress

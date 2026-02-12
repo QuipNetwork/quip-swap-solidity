@@ -8,6 +8,7 @@ import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, AssetType, PartyTerms} from '../../../src/TermsLib.sol';
 import {IQuip} from '../../../src/interfaces/IQuip.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';
@@ -126,7 +127,7 @@ contract Quip_initializeUncoupled is QuipTest {
 
   function testFuzz_initializeUncoupled_withVariousLocks(bytes32 lock) public {
     vm.assume(lock != bytes32(0));
-    vm.assume(!portal.isLockSpent(lock));
+    vm.assume(portal.lockState(lock) == LockState.Unused);
 
     PartyTerms memory terms = _makeDefaultPartyTerms();
 

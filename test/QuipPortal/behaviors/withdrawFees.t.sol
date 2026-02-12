@@ -2,7 +2,7 @@
 pragma solidity 0.8.33;
 
 import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
 
 /// @title QuipPortal withdrawFees Tests
@@ -17,7 +17,7 @@ contract QuipPortal_withdrawFees is QuipPortalTest {
   function test_setUp() public view override {
     // Override parent's test_setUp since we modify state in setUp
     assertEq(portal.accumulatedFees(), CREATION_FEE);
-    assertTrue(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
   }
 
   function _accumulateFees() internal {

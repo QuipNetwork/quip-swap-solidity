@@ -7,6 +7,7 @@ import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {Quip} from '../../../src/Quip.sol';
 import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {IQuip} from '../../../src/interfaces/IQuip.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {QuipTest} from '../Quip.t.sol';
 
 /// @title Quip initializeCoupled Tests
@@ -76,7 +77,7 @@ contract Quip_initializeCoupled is QuipTest {
 
   function testFuzz_initializeCoupled_withVariousLocks(bytes32 lock) public {
     vm.assume(lock != bytes32(0));
-    vm.assume(!portal.isLockSpent(lock));
+    vm.assume(portal.lockState(lock) == LockState.Unused);
 
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);

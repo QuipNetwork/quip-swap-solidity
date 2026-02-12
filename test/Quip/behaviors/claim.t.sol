@@ -6,6 +6,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
 import {IQuip} from '../../../src/interfaces/IQuip.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';
@@ -66,7 +67,14 @@ contract Quip_claim is QuipTest {
     deployedQuip.claim(DEFAULT_KEY, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
-    assertEq(logs[0].topics[0], IQuip.PartyTermsFulfilled.selector);
+    bool found = false;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IQuip.PartyTermsFulfilled.selector) {
+        found = true;
+        break;
+      }
+    }
+    assertTrue(found, 'PartyTermsFulfilled event not found');
   }
 
   function test_claim_isPermissionless() public {
@@ -120,7 +128,7 @@ contract Quip_claim is QuipTest {
   function testFuzz_claim_withVariousKeys(bytes memory key) public {
     vm.assume(key.length > 0);
     bytes32 lock = keccak256(key);
-    vm.assume(!portal.isLockSpent(lock));
+    vm.assume(portal.lockState(lock) == LockState.Unused);
 
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);

@@ -5,7 +5,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, PartyTerms} from '../../../src/TermsLib.sol';
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
@@ -29,8 +29,8 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
     address quipAddr = _findQuipProposedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify lock is spent
-    assertTrue(portal.isLockSpent(defaultLock));
+    // Verify lock state transitioned to Free (first deployment)
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
 
     // Verify quip is initialized correctly
     assertEq(quip.lock(), defaultLock);
@@ -42,15 +42,29 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
     assertEq(quipAddr.balance, 0);
   }
 
-  function test_deployUncoupledQuip_setsLockAsSpent() public {
+  function test_deployUncoupledQuip_transitionsLockFromUnusedToFree() public {
     PartyTerms memory terms = _makeDefaultPartyTerms();
 
-    assertFalse(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Unused));
 
     vm.prank(ALICE);
     portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
 
-    assertTrue(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
+  }
+
+  function test_deployUncoupledQuip_transitionsLockFromFreeToSpent_sameChainSwap() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    // Alice deploys first quip (Unused → Free)
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
+
+    // Bob deploys second quip with same lock (Free → Spent) - enables same-chain swaps
+    vm.prank(BOB);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Spent));
   }
 
   function test_deployUncoupledQuip_accumulatesFeesAndIncreasesPortalBalance() public {
@@ -139,13 +153,30 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
   function test_deployUncoupledQuip_revertsWhen_lockIsSpent() public {
     PartyTerms memory terms = _makeDefaultPartyTerms();
 
-    // First deployment
+    // First deployment by Alice (Unused → Free)
     vm.prank(ALICE);
     portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
 
-    // Second deployment with same lock should fail
-    vm.prank(ALICE);
+    // Second deployment by Bob (Free → Spent)
+    vm.prank(BOB);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    // Third deployment by Charlie should fail - lock is fully spent
+    vm.prank(CHARLIE);
     vm.expectRevert(IQuipPortal.LockSpent.selector);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+  }
+
+  function test_deployUncoupledQuip_revertsWhen_sameDeployerUsesLockTwice() public {
+    PartyTerms memory terms = _makeDefaultPartyTerms();
+
+    // First deployment by Alice
+    vm.prank(ALICE);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+
+    // Second deployment by Alice with same lock fails (deterministic address collision)
+    vm.prank(ALICE);
+    vm.expectRevert(); // LibClone.DeploymentFailed or similar
     portal.deployUncoupledQuip{value: CREATION_FEE}(defaultLock, terms);
   }
 
@@ -211,6 +242,6 @@ contract QuipPortal_deployUncoupledQuip is QuipPortalTest {
     vm.prank(ALICE);
     portal.deployUncoupledQuip{value: CREATION_FEE}(lock, terms);
 
-    assertTrue(portal.isLockSpent(lock));
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free));
   }
 }

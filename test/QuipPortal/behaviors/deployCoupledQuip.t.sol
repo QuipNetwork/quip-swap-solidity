@@ -5,7 +5,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
@@ -30,8 +30,8 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify lock is spent
-    assertTrue(portal.isLockSpent(defaultLock));
+    // Verify lock state transitioned to Free (first deployment)
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
 
     // Verify quip is initialized correctly
     assertEq(quip.lock(), defaultLock);
@@ -40,16 +40,31 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     assertEq(quip.PORTAL_FROM_BYTECODE(), address(portal));
   }
 
-  function test_deployCoupledQuip_setsLockAsSpent() public {
+  function test_deployCoupledQuip_transitionsLockFromUnusedToFree() public {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
-    assertFalse(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Unused));
 
     vm.prank(ALICE);
     portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
 
-    assertTrue(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
+  }
+
+  function test_deployCoupledQuip_transitionsLockFromFreeToSpent_sameChainSwap() public {
+    QuipTerms memory terms = _makeDefaultQuipTerms();
+    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+
+    // Alice deploys first quip (Unused → Free)
+    vm.prank(ALICE);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
+
+    // Bob deploys second quip with same lock (Free → Spent) - enables same-chain swaps
+    vm.prank(BOB);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Spent));
   }
 
   function test_deployCoupledQuip_accumulatesFeesAndIncreasesPortalBalance() public {
@@ -159,13 +174,31 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
-    // First deployment
+    // First deployment by Alice (Unused → Free)
     vm.prank(ALICE);
     portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
 
-    // Second deployment with same lock should fail
-    vm.prank(ALICE);
+    // Second deployment by Bob (Free → Spent)
+    vm.prank(BOB);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+
+    // Third deployment by Charlie should fail - lock is fully spent
+    vm.prank(CHARLIE);
     vm.expectRevert(IQuipPortal.LockSpent.selector);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+  }
+
+  function test_deployCoupledQuip_revertsWhen_sameDeployerUsesLockTwice() public {
+    QuipTerms memory terms = _makeDefaultQuipTerms();
+    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+
+    // First deployment by Alice
+    vm.prank(ALICE);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+
+    // Second deployment by Alice with same lock fails (deterministic address collision)
+    vm.prank(ALICE);
+    vm.expectRevert(); // LibClone.DeploymentFailed or similar
     portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
   }
 
@@ -301,6 +334,6 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     vm.prank(ALICE);
     portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
 
-    assertTrue(portal.isLockSpent(lock));
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free));
   }
 }
