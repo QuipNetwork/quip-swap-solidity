@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
 
 /// @title QuipPortal _advanceLock Tests

@@ -5,6 +5,7 @@ import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
 import {IQuipPortal, LockState} from './interfaces/IQuipPortal.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -146,7 +147,7 @@ contract QuipPortal is Context, IQuipPortal {
   /// @param deployer the address deploying the quip
   /// @return quip the address of the deployed quip
   function _deployQuip(bytes32 lock, address deployer) internal returns (address quip) {
-    bytes32 salt = keccak256(abi.encodePacked(lock, deployer));
+    bytes32 salt = EfficientHashLib.hash(lock, bytes32(uint256(uint160(deployer))));
     // Factory address is encoded in bytecode, salt uniquifies the deployment address
     quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(address(this)), salt);
 
