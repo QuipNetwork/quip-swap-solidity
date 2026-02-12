@@ -5,6 +5,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../src/Quip.sol';
 import {Asset, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {LockState} from '../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
@@ -67,12 +68,25 @@ contract ReclaimFlowTest is TestBase {
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), address(quip));
     assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 100);
 
+    // Verify lock state before reclaim
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free), 'Lock should be Free before reclaim');
+
     // Step 2: Time passes, swap is never claimed
     vm.warp(terms.partyExpiry);
 
     // Step 3: Reclaim
     vm.prank(CHARLIE);
     quip.reclaim(terms);
+
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent after reclaim');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(quip.termsDigest(), TermsLib.digestTermsMemory(terms), 'Quip termsDigest unchanged');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
+    assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
+    assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 0, 'Quip ERC1155 should be empty');
 
     // Verify all assets returned to Alice's recipient
     assertEq(ALICE_RECIPIENT.balance - aliceRecipientNativeBefore, 0.5 ether, 'Native reclaim failed');
@@ -122,8 +136,14 @@ contract ReclaimFlowTest is TestBase {
     vm.prank(CHARLIE);
     quip.reclaim(terms);
 
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
+
     // Verify assets returned to party recipient
-    assertEq(address(quip).balance, 0);
     assertEq(ALICE_RECIPIENT.balance - aliceRecipientBefore, 1 ether);
   }
 
@@ -159,6 +179,13 @@ contract ReclaimFlowTest is TestBase {
     // Wait for expiry and reclaim
     vm.warp(terms.partyExpiry);
     quip.reclaim(terms);
+
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
 
     // Verify ERC20 returned
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - aliceRecipientERC20Before, 100 ether);
@@ -197,6 +224,14 @@ contract ReclaimFlowTest is TestBase {
     vm.warp(terms.partyExpiry);
     quip.reclaim(terms);
 
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
+    assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
+
     // Verify all assets returned
     assertEq(ALICE_RECIPIENT.balance - aliceRecipientNativeBefore, 0.5 ether);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - aliceRecipientERC20Before, 50 ether);
@@ -223,6 +258,13 @@ contract ReclaimFlowTest is TestBase {
 
     // Claim before expiry
     quip.claim(key, terms);
+
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent after claim');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
 
     // Verify counterparty got assets
     uint256 expectedAmount = TermsLib.totalNativeAmount(terms.partyAssets);
@@ -254,6 +296,13 @@ contract ReclaimFlowTest is TestBase {
     // Wait for expiry and reclaim
     vm.warp(terms.partyExpiry);
     quip.reclaim(terms);
+
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent after reclaim');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
 
     // Verify party got assets back
     uint256 expectedAmount = TermsLib.totalNativeAmount(terms.partyAssets);

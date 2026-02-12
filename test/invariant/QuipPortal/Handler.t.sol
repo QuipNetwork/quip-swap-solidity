@@ -5,6 +5,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {Asset, AssetType, PartyTerms, QuipTerms} from '../../../src/TermsLib.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 
 /// @title QuipPortal Invariant Handler
@@ -33,7 +34,7 @@ contract QuipPortalHandler is Test {
     bytes32 lock = keccak256(abi.encodePacked(lockSeed, ghost_deploymentsCount));
 
     // Skip if lock already spent
-    if (portal.isLockSpent(lock)) return;
+    if (portal.lockState(lock) != LockState.Unused) return;
 
     nativeAmount = bound(nativeAmount, 1, 10 ether);
 
@@ -70,7 +71,7 @@ contract QuipPortalHandler is Test {
     address actor = actors[actorSeed % actors.length];
     bytes32 lock = keccak256(abi.encodePacked('uncoupled', lockSeed, ghost_deploymentsCount));
 
-    if (portal.isLockSpent(lock)) return;
+    if (portal.lockState(lock) != LockState.Unused) return;
 
     Asset[] memory assets = new Asset[](1);
     assets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});

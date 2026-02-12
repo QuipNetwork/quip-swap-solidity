@@ -7,7 +7,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 import {Quip} from '../../../src/Quip.sol';
 import {QuipPortal} from '../../../src/QuipPortal.sol';
 import {Asset, AssetType, QuipTerms} from '../../../src/TermsLib.sol';
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
 
 /// @title Quip Invariant Handler
 /// @dev Handler contract for Quip invariant testing
@@ -36,7 +36,7 @@ contract QuipHandler is Test {
     bytes memory key = abi.encodePacked('key', seed, deployedQuips.length);
     bytes32 lock = keccak256(key);
 
-    if (portal.isLockSpent(lock)) return;
+    if (portal.lockState(lock) != LockState.Unused) return;
 
     nativeAmount = bound(nativeAmount, 1, 10 ether);
 

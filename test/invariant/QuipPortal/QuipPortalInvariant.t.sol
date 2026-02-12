@@ -5,6 +5,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Quip} from '../../../src/Quip.sol';
 import {QuipPortal} from '../../../src/QuipPortal.sol';
+import {LockState} from '../../../src/interfaces/IQuipPortal.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 import {QuipPortalHandler} from './Handler.t.sol';
 
@@ -58,12 +59,12 @@ contract QuipPortalInvariantTest is Test {
     assertLe(portal.creationFee(), portal.MAX_FEE());
   }
 
-  /// @notice Used locks should be marked as spent
-  function invariant_usedLocksAreSpent() public view {
+  /// @notice Used locks should not be in Unused state (they're either Free or Spent)
+  function invariant_usedLocksNotUnused() public view {
     uint256 usedLocksCount = handler.getUsedLocksCount();
     for (uint256 i = 0; i < usedLocksCount; i++) {
       bytes32 lock = handler.ghost_usedLocks(i);
-      assertTrue(portal.isLockSpent(lock));
+      assertTrue(portal.lockState(lock) != LockState.Unused);
     }
   }
 

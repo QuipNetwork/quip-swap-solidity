@@ -6,6 +6,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 import {Quip} from '../../src/Quip.sol';
 import {Asset, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
 import {IQuip} from '../../src/interfaces/IQuip.sol';
+import {LockState} from '../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
@@ -73,9 +74,22 @@ contract UncoupledSwapFlowTest is TestBase {
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), address(quip));
     assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 100);
 
+    // Verify lock state before claim
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free), 'Lock should be Free before claim');
+
     // Step 3: Claim
     QuipTerms memory coupledTerms = _coupleTerms(partyTerms, counterpartyTerms);
     quip.claim(key, coupledTerms);
+
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent after claim');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(quip.termsDigest(), TermsLib.digestTermsMemory(coupledTerms), 'Quip termsDigest should be coupled');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
+    assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
+    assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 0, 'Quip ERC1155 should be empty');
 
     // Verify all assets transferred to Bob's recipient
     assertEq(BOB_RECIPIENT.balance - bobRecipientNativeBefore, 0.5 ether, 'Native transfer failed');
@@ -130,8 +144,15 @@ contract UncoupledSwapFlowTest is TestBase {
     vm.prank(CHARLIE);
     quip.claim(key, coupledTerms);
 
-    // Verify final state
-    assertEq(address(quip).balance, 0);
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(quip.termsDigest(), TermsLib.digestTermsMemory(coupledTerms), 'Quip termsDigest should be coupled');
+    assertEq(address(quip).balance, 0, 'Quip should be empty');
+
+    // Verify assets transferred
     assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, 1 ether);
   }
 
@@ -169,7 +190,14 @@ contract UncoupledSwapFlowTest is TestBase {
     QuipTerms memory coupledTerms = _coupleTerms(partyTerms, counterpartyTerms);
     quip.claim(key, coupledTerms);
 
-    // Verify
+    // Verify final lock state
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+
+    // Verify final quip state
+    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
+
+    // Verify assets transferred
     assertEq(mockERC20.balanceOf(BOB_RECIPIENT) - bobRecipientERC20Before, 100 ether);
   }
 
@@ -194,8 +222,8 @@ contract UncoupledSwapFlowTest is TestBase {
     assertEq(address(quip).balance, 0);
 
     // Alice can simply not couple - no assets at risk
-    // The lock is spent, so it cannot be reused
-    assertTrue(portal.isLockSpent(lock));
+    // The lock is Free (first deployment), so a counterparty could still deploy
+    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free));
   }
 
   // ============ Coupling Restrictions ============
