@@ -4,16 +4,6 @@ pragma solidity 0.8.33;
 import {Asset, PartyTerms, QuipTerms} from '../TermsLib.sol';
 import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
-/// @notice the status of a quip
-enum Status {
-  Open,
-  Accepted,
-  Committed,
-  Claimed,
-  Reclaimed,
-  Slashed
-}
-
 interface IQuip {
   /// @notice thrown when the provided signature is invalid
   error InvalidSignature();
@@ -26,9 +16,6 @@ interface IQuip {
 
   /// @notice thrown when caller is not authorized for the operation
   error UnauthorizedCaller();
-
-  /// @notice thrown when bytecode portal doesn't match predetermined portal
-  error PortalMismatch();
 
   /// @notice thrown when caller is not the portal
   error CallerNotPortal();

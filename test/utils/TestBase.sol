@@ -150,14 +150,6 @@ abstract contract TestBase is Test {
     return TermsHelper.makePartyTerms(ALICE, ALICE_RECIPIENT, _defaultExpiry(), _makeNativeAssets(1 ether));
   }
 
-  function _computeLock(bytes memory key) internal pure returns (bytes32) {
-    return keccak256(key);
-  }
-
-  function _uniqueLock(uint256 salt) internal pure returns (bytes32) {
-    return keccak256(abi.encodePacked('lock', salt));
-  }
-
   // ============ WOTS+ Helpers ============
 
   /// @dev Generates a WOTS+ key pair from a seed
@@ -197,26 +189,6 @@ abstract contract TestBase is Test {
   /// @dev Computes canonical digest of QuipTerms (memory version)
   function _digestTermsCanonically(QuipTerms memory terms) internal pure returns (bytes32) {
     return TermsLib.digestTermsCanonicallyMemory(terms);
-  }
-
-  // ============ Legacy Helpers (for existing tests) ============
-
-  /// @dev Mirrors TermsLib.digestTerms but accepts memory instead of calldata.
-  ///      TermsLib functions use calldata for gas efficiency in production,
-  ///      but tests work with memory structs built dynamically.
-  function _digestQuipTerms(QuipTerms memory terms) internal pure returns (bytes32) {
-    return keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
-    );
   }
 
   /// @dev Mirrors TermsLib.digestPartyTerms but accepts memory instead of calldata.

@@ -15,11 +15,6 @@ contract QuipPortalHarness is QuipPortal {
     uint256 _creationFee
   ) QuipPortal(firstAdmin, quipImpl, maxFee, _creationFee) {}
 
-  /// @notice Exposes _deployQuip
-  function exposed_deployQuip(bytes32 _pqOwnerHash, address deployer) external returns (address) {
-    return _deployQuip(_pqOwnerHash, deployer);
-  }
-
   /// @notice Exposes _ensureCorrectNative
   function exposed_ensureCorrectNative(uint256 amount) external payable {
     _ensureCorrectNative(amount);
@@ -56,10 +51,5 @@ contract QuipPortalHarness is QuipPortal {
   /// @notice Exposes _onlyAdmin
   function exposed_onlyAdmin() external view {
     _onlyAdmin();
-  }
-
-  /// @notice Exposes _computePqOwnerHash
-  function exposed_computePqOwnerHash(WOTSPlus.WinternitzAddress calldata pqOwner) external pure returns (bytes32) {
-    return _computePqOwnerHash(pqOwner);
   }
 }

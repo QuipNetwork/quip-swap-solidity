@@ -18,16 +18,6 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
     return TermsLib.digestPartyTerms(terms);
   }
 
-  /// @notice Exposes digestTerms
-  function exposed_digestTerms(QuipTerms calldata terms) external pure returns (bytes32) {
-    return TermsLib.digestTerms(terms);
-  }
-
-  /// @notice Exposes digestTermsMemory
-  function exposed_digestTermsMemory(QuipTerms memory terms) external pure returns (bytes32) {
-    return TermsLib.digestTermsMemory(terms);
-  }
-
   /// @notice Exposes digestTermsCanonically
   function exposed_digestTermsCanonically(QuipTerms calldata terms) external pure returns (bytes32) {
     return TermsLib.digestTermsCanonically(terms);

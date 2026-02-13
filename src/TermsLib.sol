@@ -110,42 +110,6 @@ library TermsLib {
     });
   }
 
-  /// @notice computes the keccak256 digest of quip terms (calldata)
-  /// @param terms the terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function digestTerms(QuipTerms calldata terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
-    );
-  }
-
-  /// @notice computes the keccak256 digest of quip terms from memory
-  /// @param terms the terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function digestTermsMemory(QuipTerms memory terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
-    );
-  }
-
   /// @notice computes a canonical digest of quip terms regardless of party/counterparty order
   /// @dev Used for WOTS+ signing - same signature works on both sides of a swap
   /// @param terms the quip terms to hash
