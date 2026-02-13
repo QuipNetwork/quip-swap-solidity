@@ -44,13 +44,13 @@ contract QuipInvariantTest is Test {
 
   // ============ Invariants ============
 
-  /// @notice Lock should be immutable after initialization
-  function invariant_lockImmutableAfterInit() public view {
+  /// @notice PqOwnerHash should be immutable after initialization
+  function invariant_pqOwnerHashImmutableAfterInit() public view {
     uint256 quipCount = handler.getDeployedQuipsCount();
     for (uint256 i = 0; i < quipCount; i++) {
       Quip quip = handler.deployedQuips(i);
-      // Lock should be set (not zero for coupled quips)
-      assertNotEq(quip.lock(), bytes32(0));
+      // PqOwnerHash should be set (not zero for coupled quips)
+      assertNotEq(quip.pqOwnerHash(), bytes32(0));
     }
   }
 

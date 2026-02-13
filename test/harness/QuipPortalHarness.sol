@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {QuipPortal} from '../../src/QuipPortal.sol';
 import {PartyTerms, QuipTerms} from '../../src/TermsLib.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title QuipPortal Harness
 /// @dev Exposes internal functions of QuipPortal for testing
@@ -15,8 +16,8 @@ contract QuipPortalHarness is QuipPortal {
   ) QuipPortal(firstAdmin, quipImpl, maxFee, _creationFee) {}
 
   /// @notice Exposes _deployQuip
-  function exposed_deployQuip(bytes32 lock, address deployer) external returns (address) {
-    return _deployQuip(lock, deployer);
+  function exposed_deployQuip(bytes32 _pqOwnerHash, address deployer) external returns (address) {
+    return _deployQuip(_pqOwnerHash, deployer);
   }
 
   /// @notice Exposes _ensureCorrectNative
@@ -24,14 +25,17 @@ contract QuipPortalHarness is QuipPortal {
     _ensureCorrectNative(amount);
   }
 
-  /// @notice Exposes _enforceValidLock
-  function exposed_enforceValidLock(bytes32 lock) external view {
-    _enforceValidLock(lock);
+  /// @notice Exposes _enforceValidPqOwner
+  function exposed_enforceValidPqOwner(
+    WOTSPlus.WinternitzAddress calldata pqOwner,
+    bytes32 _pqOwnerHash
+  ) external view {
+    _enforceValidPqOwner(pqOwner, _pqOwnerHash);
   }
 
-  /// @notice Exposes _advanceLock
-  function exposed_advanceLock(bytes32 lock) external {
-    _advanceLock(lock);
+  /// @notice Exposes _advancePqOwner
+  function exposed_advancePqOwner(bytes32 _pqOwnerHash) external {
+    _advancePqOwner(_pqOwnerHash);
   }
 
   /// @notice Exposes _enforceNonEmptyAddress
@@ -52,5 +56,10 @@ contract QuipPortalHarness is QuipPortal {
   /// @notice Exposes _onlyAdmin
   function exposed_onlyAdmin() external view {
     _onlyAdmin();
+  }
+
+  /// @notice Exposes _computePqOwnerHash
+  function exposed_computePqOwnerHash(WOTSPlus.WinternitzAddress calldata pqOwner) external pure returns (bytes32) {
+    return _computePqOwnerHash(pqOwner);
   }
 }

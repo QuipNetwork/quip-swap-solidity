@@ -6,8 +6,10 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../src/Quip.sol';
 import {QuipPortal} from '../../src/QuipPortal.sol';
-import {Asset, PartyTerms, QuipTerms} from '../../src/TermsLib.sol';
+import {Asset, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
 import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
@@ -51,8 +53,11 @@ abstract contract TestBase is Test {
 
   // ============ Test State ============
 
-  bytes public constant DEFAULT_KEY = 'secret_key_12345';
-  bytes32 public defaultLock;
+  // WOTS+ key pair for testing
+  bytes32 public constant DEFAULT_PRIVATE_SEED = keccak256('default_private_seed');
+  WOTSPlus.WinternitzAddress public defaultPqOwner;
+  bytes32 public defaultPrivateKey;
+  bytes32 public defaultPqOwnerHash;
 
   // ============ Setup ============
 
@@ -68,8 +73,9 @@ abstract contract TestBase is Test {
     // Deploy QuipPortal
     portal = new QuipPortal(ADMIN, address(quipImpl), MAX_FEE, CREATION_FEE);
 
-    // Compute default lock
-    defaultLock = keccak256(DEFAULT_KEY);
+    // Generate default WOTS+ key pair
+    (defaultPqOwner, defaultPrivateKey) = WOTSPlus.generateKeyPair(DEFAULT_PRIVATE_SEED);
+    defaultPqOwnerHash = _computePqOwnerHash(defaultPqOwner);
 
     // Fund actors
     vm.deal(ALICE, 100 ether);
@@ -152,9 +158,48 @@ abstract contract TestBase is Test {
     return keccak256(abi.encodePacked('lock', salt));
   }
 
-  function _uniqueKey(uint256 salt) internal pure returns (bytes memory) {
-    return abi.encodePacked('key', salt);
+  // ============ WOTS+ Helpers ============
+
+  /// @dev Generates a WOTS+ key pair from a seed
+  function _generateKeyPair(bytes32 seed) internal pure returns (WOTSPlus.WinternitzAddress memory, bytes32) {
+    return WOTSPlus.generateKeyPair(seed);
   }
+
+  /// @dev Generates a unique WOTS+ key pair for testing
+  function _uniqueKeyPair(uint256 salt) internal pure returns (WOTSPlus.WinternitzAddress memory, bytes32) {
+    bytes32 seed = keccak256(abi.encodePacked('pqOwner', salt));
+    return WOTSPlus.generateKeyPair(seed);
+  }
+
+  /// @dev Computes the hash of a WinternitzAddress
+  function _computePqOwnerHash(WOTSPlus.WinternitzAddress memory pqOwner) internal pure returns (bytes32) {
+    return EfficientHashLib.hash(pqOwner.publicSeed, pqOwner.publicKeyHash);
+  }
+
+  /// @dev Signs a message hash with a WOTS+ private key
+  function _signMessage(bytes32 privateKey, bytes32 messageHash) internal pure returns (WOTSPlus.WinternitzElements memory) {
+    WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({messageHash: messageHash});
+    bytes32[67] memory sigArray = WOTSPlus.sign(privateKey, message);
+    WOTSPlus.WinternitzElements memory signature;
+    signature.elements = sigArray;
+    return signature;
+  }
+
+  /// @dev Signs QuipTerms with a WOTS+ private key (using canonical digest)
+  function _signTerms(
+    bytes32 privateKey,
+    QuipTerms memory terms
+  ) internal pure returns (WOTSPlus.WinternitzElements memory) {
+    bytes32 canonicalDigest = _digestTermsCanonically(terms);
+    return _signMessage(privateKey, canonicalDigest);
+  }
+
+  /// @dev Computes canonical digest of QuipTerms (memory version)
+  function _digestTermsCanonically(QuipTerms memory terms) internal pure returns (bytes32) {
+    return TermsLib.digestTermsCanonicallyMemory(terms);
+  }
+
+  // ============ Legacy Helpers (for existing tests) ============
 
   /// @dev Mirrors TermsLib.digestTerms but accepts memory instead of calldata.
   ///      TermsLib functions use calldata for gas efficiency in production,
@@ -197,12 +242,11 @@ abstract contract TestBase is Test {
   }
 
   /// @notice Finds the quip address from QuipCreated event in logs
-  /// @notice Finds the quip address from QuipCreated event in logs
-  /// @dev Event signature: QuipCreated(bytes32 indexed lock, address indexed quip, QuipTerms terms)
+  /// @dev Event signature: QuipCreated(bytes32 indexed pqOwnerHash, address indexed quip, QuipTerms terms)
   function _findQuipCreatedAddress(Vm.Log[] memory logs) internal pure returns (address) {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IQuipPortal.QuipCreated.selector) {
-        // topics[1] = lock (indexed), topics[2] = quip address (indexed)
+        // topics[1] = pqOwnerHash (indexed), topics[2] = quip address (indexed)
         return address(uint160(uint256(logs[i].topics[2])));
       }
     }
@@ -210,11 +254,11 @@ abstract contract TestBase is Test {
   }
 
   /// @notice Finds the quip address from QuipProposed event in logs
-  /// @dev Event signature: QuipProposed(bytes32 indexed lock, address indexed quip, PartyTerms terms)
+  /// @dev Event signature: QuipProposed(bytes32 indexed pqOwnerHash, address indexed quip, PartyTerms terms)
   function _findQuipProposedAddress(Vm.Log[] memory logs) internal pure returns (address) {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IQuipPortal.QuipProposed.selector) {
-        // topics[1] = lock (indexed), topics[2] = quip address (indexed)
+        // topics[1] = pqOwnerHash (indexed), topics[2] = quip address (indexed)
         return address(uint160(uint256(logs[i].topics[2])));
       }
     }

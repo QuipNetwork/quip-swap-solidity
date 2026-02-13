@@ -2,7 +2,7 @@
 pragma solidity 0.8.33;
 
 import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {IQuipPortal, LockState} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, PqOwnerState} from '../../../src/interfaces/IQuipPortal.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
 
 /// @title QuipPortal withdrawFees Tests
@@ -15,9 +15,9 @@ contract QuipPortal_withdrawFees is QuipPortalTest {
   }
 
   function test_setUp() public view override {
-    // Override parent's test_setUp since we modify state in setUp
+    // override parent's test_setUp since we modify state in setUp
     assertEq(portal.accumulatedFees(), CREATION_FEE);
-    assertEq(uint256(portal.lockState(defaultLock)), uint256(LockState.Free));
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Free));
   }
 
   function _accumulateFees() internal {
@@ -25,7 +25,7 @@ contract QuipPortal_withdrawFees is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   // ============ Success Cases ============
