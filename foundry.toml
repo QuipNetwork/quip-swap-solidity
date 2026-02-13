@@ -29,6 +29,7 @@ out = 'out-via-ir'
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://github.com/QuipNetwork/hashsigs-solidity.git", rev = "2cfd044e9bbc626f6746c678b300899bd3bd6b9a" }
 
 [rpc_endpoints]
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
