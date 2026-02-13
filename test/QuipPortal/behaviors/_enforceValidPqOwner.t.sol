@@ -24,7 +24,7 @@ contract QuipPortal__enforceValidPqOwner is QuipPortalTest {
     portalHarness.exposed_enforceValidPqOwner(defaultPqOwner, defaultPqOwnerHash);
   }
 
-  function test_exposed_enforceValidPqOwner_doesNotMutateState() public {
+  function test_exposed_enforceValidPqOwner_doesNotMutateState() public view {
     assertEq(uint256(portalHarness.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Unused));
     portalHarness.exposed_enforceValidPqOwner(defaultPqOwner, defaultPqOwnerHash);
     // state should remain Unused (enforce is view-only)

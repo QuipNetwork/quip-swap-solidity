@@ -40,7 +40,7 @@ contract Quip__verifySignature is QuipTest {
 
   function test_exposed_verifySignature_revertsWhen_signedWithWrongKey() public {
     // generate different key pair
-    (WOTSPlus.WinternitzAddress memory otherPqOwner, bytes32 otherPrivateKey) = _uniqueKeyPair(999);
+    (, bytes32 otherPrivateKey) = _uniqueKeyPair(999);
     // sign with correct digest but wrong key
     WOTSPlus.WinternitzElements memory wrongKeySignature = _signMessage(otherPrivateKey, testTermsDigest);
 
