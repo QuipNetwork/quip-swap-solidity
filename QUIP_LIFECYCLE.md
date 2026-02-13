@@ -1,6 +1,6 @@
 # QUIP Lifecycle
 
-A **QUIP** (Quick Interchange Protocol) is a hashlock-based atomic swap mechanism that enables trustless asset exchanges between two parties across potentially different chains or contexts.
+A **QUIP** (Quick Interchange Protocol) is a WOTS+ signature-based atomic swap mechanism that enables trustless, quantum-resistant asset exchanges between two parties across potentially different chains or contexts.
 
 ## Table of Contents
 
@@ -18,25 +18,41 @@ A **QUIP** (Quick Interchange Protocol) is a hashlock-based atomic swap mechanis
 
 ## Core Concepts
 
-### Lock and Key
+### PQ Owner and Signature
 
-Every QUIP is secured by a **lock** (a hash) and can only be claimed with the corresponding **key** (the preimage).
-
-```
-lock = keccak256(key)
-```
-
-The party who initiates the swap controls the secret key. They reveal it to claim assets on one side, which simultaneously enables the counterparty to claim on the other side.
-
-### Terms Digest
-
-Instead of storing full swap terms on-chain (expensive), QUIPs store only a **terms digest**:
+Every QUIP is secured by a **pqOwner** (a WOTS+ public key) and can only be claimed with a valid **WOTS+ signature**.
 
 ```
-termsDigest = keccak256(abi.encode(QuipTerms))
+pqOwner = WinternitzAddress { publicSeed, publicKeyHash }
+pqOwnerHash = hash(publicSeed, publicKeyHash)
 ```
 
-Full terms are provided at claim/reclaim time and verified against the stored digest.
+The party who initiates the swap controls the private key. They sign the terms to claim assets on one side, which simultaneously reveals a signature that the counterparty can use to claim on the other side (because both QUIPs use the same canonical terms digest).
+
+### WOTS+ (Winternitz One-Time Signature Plus)
+
+WOTS+ provides quantum-resistant signatures using hash chains. Key properties:
+
+| Property | Description |
+|----------|-------------|
+| **Quantum-resistant** | Security based on hash function preimage resistance |
+| **One-time use** | Each key pair should only sign one message |
+| **Deterministic** | Same private key + message = same signature |
+
+### Canonical Terms Digest
+
+Instead of storing full swap terms on-chain (expensive), QUIPs store a **canonical terms digest**:
+
+```
+canonicalDigest = hash(sort(partyDigest, counterpartyDigest))
+```
+
+The canonical digest is computed by:
+1. Hashing each party's terms separately
+2. Sorting the two digests (smaller value first)
+3. Hashing them together
+
+This ensures both parties sign the same message regardless of which side they're on, enabling cross-chain signature reuse.
 
 ### Supported Assets
 
@@ -71,25 +87,25 @@ QUIPs support two initialization modes to accommodate different use cases:
 
      ┌─────────┐   deployCoupledQuip()    ┌─────────────────┐
      │  START  │ ───────────────────────► │    COMMITTED    │
-     └─────────┘    + assets transferred  └─────────────────┘                      
-                                                   │                               
-                              ┌────────────────────┴────────────────────┐          
-                              │                                         │          
-                         claim(key)                                reclaim()       
-                        [before expiry]                          [after expiry]    
-                              │                                         │          
-                              ▼                                         ▼          
-                       ┌─────────────┐                           ┌─────────────┐   
-                       │   CLAIMED   │                           │  RECLAIMED  │   
-                       └─────────────┘                           └─────────────┘   
-                                                                              
+     └─────────┘    + assets transferred  └─────────────────┘
+                                                   │
+                              ┌────────────────────┴────────────────────┐
+                              │                                         │
+                       claim(signature)                            reclaim()
+                        [before expiry]                          [after expiry]
+                              │                                         │
+                              ▼                                         ▼
+                       ┌─────────────┐                           ┌─────────────┐
+                       │   CLAIMED   │                           │  RECLAIMED  │
+                       └─────────────┘                           └─────────────┘
+
 ═══════════════════════════════════════════════════════════════════════════════════════
                                    UNCOUPLED MODES
 ═══════════════════════════════════════════════════════════════════════════════════════
 
      FLOW A - SYMMETRIC: Both parties deploy uncoupled, then couple
      ──────────────────────────────────────────────────────────────
-  
+
      ┌─────────┐  deployUncoupledQuip()  ┌──────────────┐  coupleQuip()  ┌───────────┐
      │  START  │ ──────────────────────► │   PROPOSED   │ ─────────────► │ COMMITTED │
      └─────────┘     (no assets)         └──────────────┘  + assets      └───────────┘
@@ -100,15 +116,15 @@ QUIPs support two initialization modes to accommodate different use cases:
                                           ┌─────────────┐            CLAIMED   RECLAIMED
                                           │  ABANDONED  │
                                           └─────────────┘
-  
+
      FLOW B - ASYMMETRIC: Proposer uncoupled, responder coupled immediately
      ──────────────────────────────────────────────────────────────────────
-  
+
      PROPOSER (Alice):
      ┌─────────┐  deployUncoupledQuip()  ┌──────────────┐  coupleQuip()  ┌───────────┐
      │  START  │ ──────────────────────► │   PROPOSED   │ ─────────────► │ COMMITTED │
      └─────────┘     (no assets)         └──────────────┘  + assets      └───────────┘
-  
+
      RESPONDER (Bob) - sees proposal, deploys coupled immediately:
      ┌─────────┐  deployCoupledQuip()    ┌───────────┐
      │  START  │ ──────────────────────► │ COMMITTED │
@@ -127,17 +143,17 @@ Use coupled mode when both parties and their terms are known at creation time.
 ```
     Party (Alice)                    QuipPortal                      Quip                     Counterparty (Bob)
          │                               │                            │                              │
-         │  1. Generate secret key       │                            │                              │
-         │     lock = hash(key)          │                            │                              │
+         │  1. Generate WOTS+ keypair    │                            │                              │
+         │     (pqOwner, privateKey)     │                            │                              │
          │                               │                            │                              │
          │  2. deployCoupledQuip(        │                            │                              │
-         │       lock, terms)            │                            │                              │
+         │       pqOwner, terms)         │                            │                              │
          │  ────────────────────────────►│                            │                              │
          │     + pay fee                 │  3. Deploy clone           │                              │
          │                               │  ───────────────────────►  │                              │
          │                               │                            │                              │
          │                               │  4. initializeCoupled(     │                              │
-         │                               │       lock, termsDigest)   │                              │
+         │                               │       pqOwner, termsDigest)│                              │
          │                               │  ───────────────────────►  │                              │
          │                               │                            │                              │
          │                               │  5. Transfer assets        │                              │
@@ -150,16 +166,17 @@ Use coupled mode when both parties and their terms are known at creation time.
          │                               │                            │                              │
          │                               │                            │   7. Bob creates mirror      │
          │                               │                            │      QUIP on Chain B with    │
-         │                               │                            │      same lock, his assets   │
+         │                               │                            │      same pqOwner, his assets│
          │                               │                            │  ◄─────────────────────────  │
          │                               │                            │                              │
          │  8. Alice claims Bob's        │                            │                              │
          │     assets on Chain B         │                            │                              │
-         │     revealing the key         │                            │                              │
+         │     by signing with privateKey│                            │                              │
          │                               │                            │                              │
-         │                               │                            │  9. claim(key, terms)        │
+         │                               │                            │  9. claim(signature, terms)  │
          │                               │                            │  ◄─────────────────────────  │
-         │                               │                            │     Bob uses revealed key    │
+         │                               │                            │     Bob uses same signature  │
+         │                               │                            │     (same canonical digest)  │
          │                               │                            │                              │
          │                               │                            │  10. Assets transferred      │
          │                               │                            │      to counterpartyRecipient│
@@ -169,29 +186,30 @@ Use coupled mode when both parties and their terms are known at creation time.
 
 ### Step-by-Step
 
-1. **Alice generates a secret key** and computes `lock = keccak256(key)`
+1. **Alice generates a WOTS+ keypair** using a secure random seed
 
 2. **Alice calls `deployCoupledQuip()`** with:
-   - The `lock`
+   - The `pqOwner` (WOTS+ public key)
    - Full `QuipTerms` specifying both parties, recipients, expiries, and assets
    - Payment: creation fee + native assets (if any)
 
-3. **QuipPortal deploys a minimal clone** using the lock as salt (deterministic address)
+3. **QuipPortal deploys a minimal clone** using the pqOwnerHash as salt (deterministic address)
 
 4. **QuipPortal initializes the Quip** with coupled terms:
-   - Stores `lock`
-   - Stores `termsDigest = hash(QuipTerms)`
-   - Emits `PartyCommitment(termsDigest)`
+   - Stores `pqOwner`
+   - Stores `termsDigest = canonicalHash(QuipTerms)`
+   - Emits `PartyCommitment(pqOwnerHash, termsDigest)`
 
 5. **Assets are transferred** from Alice to the Quip contract
 
 6. **Bob observes the `QuipCreated` event** and verifies the terms match his expectations
 
-7. **Bob creates a mirror QUIP** on Chain B with the same lock but reversed roles
+7. **Bob creates a mirror QUIP** on Chain B with the same pqOwner but reversed roles
 
-8. **Alice claims Bob's assets** on Chain B by revealing the key
+8. **Alice claims Bob's assets** on Chain B by signing the canonical terms digest
 
-9. **Bob uses the revealed key** to call `claim(key, terms)` on Chain A
+9. **Bob uses the same signature** to call `claim(signature, terms)` on Chain A
+   - Works because both QUIPs have the same canonical terms digest
 
 10. **Assets transfer** to `counterpartyRecipient` (Bob's designated receiver)
 
@@ -219,17 +237,17 @@ Both parties deploy uncoupled QUIPs first, then couple them once terms are agree
 ```
     Party (Alice)                    QuipPortal                      Quip                     Counterparty (Bob)
          │                               │                            │                              │
-         │  1. Generate secret key       │                            │                              │
-         │     lock = hash(key)          │                            │                              │
+         │  1. Generate WOTS+ keypair    │                            │                              │
+         │     (pqOwner, privateKey)     │                            │                              │
          │                               │                            │                              │
          │  2. deployUncoupledQuip(      │                            │                              │
-         │       lock, partyTerms)       │                            │                              │
+         │       pqOwner, partyTerms)    │                            │                              │
          │  ────────────────────────────►│                            │                              │
          │     + pay fee only            │  3. Deploy clone           │                              │
          │     (no asset transfer)       │  ───────────────────────►  │                              │
          │                               │                            │                              │
          │                               │  4. initializeUncoupled(   │                              │
-         │                               │       lock, termsDigest)   │                              │
+         │                               │       pqOwner, termsDigest)│                              │
          │                               │  ───────────────────────►  │                              │
          │                               │                            │                              │
          │                               │     Quip is PROPOSED       │                              │
@@ -241,13 +259,12 @@ Both parties deploy uncoupled QUIPs first, then couple them once terms are agree
          │                               │                            │                              │
          │                               │                            │   6. Bob creates his own     │
          │                               │                            │      uncoupled QUIP with     │
-         │                               │                            │      same lock               │
+         │                               │                            │      same pqOwner            │
          │                               │                            │  ◄─────────────────────────  │
          │                               │                            │                              │
          │  7. coupleQuip(               │                            │                              │
          │       aliceTerms,             │                            │                              │
-         │       bobTerms,               │                            │                              │
-         │       termsDigest)            │                            │                              │
+         │       bobTerms)               │                            │                              │
          │  ─────────────────────────────────────────────────────────►│                              │
          │     + send native assets      │                            │                              │
          │     + approve token transfers │                            │                              │
@@ -259,7 +276,7 @@ Both parties deploy uncoupled QUIPs first, then couple them once terms are agree
          │                               │        QuipTerms           │                              │
          │                               │                            │                              │
          │                               │     10. Update termsDigest │                              │
-         │                               │         to full terms hash │                              │
+         │                               │         to canonical hash  │                              │
          │                               │                            │                              │
          │                               │     11. Transfer assets    │                              │
          │                               │         (no native)        │                              │
@@ -275,37 +292,36 @@ Both parties deploy uncoupled QUIPs first, then couple them once terms are agree
 
 ### Step-by-Step
 
-1. **Alice generates a secret key** and computes `lock = keccak256(key)`
+1. **Alice generates a WOTS+ keypair**
 
 2. **Alice calls `deployUncoupledQuip()`** with:
-   - The `lock`
+   - The `pqOwner`
    - Her `PartyTerms` only (not full QuipTerms)
    - Payment: creation fee only (no assets transferred yet)
 
 3. **QuipPortal deploys a minimal clone** (same as coupled)
 
 4. **QuipPortal initializes the Quip** in uncoupled mode:
-   - Stores `lock`
+   - Stores `pqOwner`
    - Stores `termsDigest = hash(PartyTerms)` (partial terms)
    - Sets `INIT_UNCOUPLED = true`
-   - Emits `PartyProposal(lock, termsDigest)`
+   - Emits `PartyProposal(pqOwnerHash, termsDigest)`
 
 5. **Bob discovers the proposal** via events and decides to participate
 
-6. **Bob creates his own uncoupled QUIP** with the same lock on his chain
+6. **Bob creates his own uncoupled QUIP** with the same pqOwner on his chain
 
 7. **Alice calls `coupleQuip()`** with:
    - Her original `PartyTerms`
    - Bob's `PartyTerms`
-   - The original `termsDigest` (for verification)
    - Native assets via `msg.value`
    - Pre-approved token transfers
 
-8. **Contract verifies** that the provided `termsDigest` matches the stored hash
+8. **Contract verifies** that the provided party terms hash matches the stored termsDigest
 
 9. **Contract computes** the full `QuipTerms` by combining both party terms
 
-10. **Contract updates** `termsDigest` to the hash of the full coupled terms
+10. **Contract updates** `termsDigest` to the canonical hash of the full coupled terms
 
 11. **Contract transfers** non-native assets from Alice to itself
 
@@ -320,14 +336,14 @@ Both parties deploy uncoupled QUIPs first, then couple them once terms are agree
 │                                                                                 │
 │   PROPOSED STATE                           COMMITTED STATE                      │
 │                                                                                 │
-│   termsDigest = hash(PartyTerms)    ───►   termsDigest = hash(QuipTerms)        │
+│   termsDigest = hash(PartyTerms)    ───►   termsDigest = canonicalHash(QuipTerms)
 │                                                                                 │
 │   ┌─────────────────────┐                  ┌─────────────────────────────────┐  │
 │   │ PartyTerms          │                  │ QuipTerms                       │  │
-│   │ ├─ party            │                  │ ├─ party                        │  │
-│   │ ├─ partyRecipient   │      combine     │ ├─ partyRecipient               │  │
-│   │ ├─ partyExpiry      │   ──────────►    │ ├─ counterparty                 │  │
-│   │ └─ partyAssets[]    │                  │ ├─ counterpartyRecipient        │  │
+│   │ ├─ signatory        │                  │ ├─ party                        │  │
+│   │ ├─ recipient        │      combine     │ ├─ partyRecipient               │  │
+│   │ ├─ expiry           │   ──────────►    │ ├─ counterparty                 │  │
+│   │ └─ assets[]         │                  │ ├─ counterpartyRecipient        │  │
 │   └─────────────────────┘                  │ ├─ partyExpiry                  │  │
 │              +                             │ ├─ counterpartyExpiry           │  │
 │   ┌─────────────────────┐                  │ ├─ partyAssets[]                │  │
@@ -352,11 +368,11 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
     │                                             │     │                                             │
     │   Alice (Proposer)           Alice's Quip   │     │   Bob's Quip                Bob (Responder) │
     │        │                          │         │     │       │                          │          │
-    │        │  1. Generate key         │         │     │       │                          │          │
-    │        │     lock = hash(key)     │         │     │       │                          │          │
+    │        │  1. Generate keypair     │         │     │       │                          │          │
+    │        │     (pqOwner, privateKey)│         │     │       │                          │          │
     │        │                          │         │     │       │                          │          │
     │        │  2. deployUncoupledQuip( │         │     │       │                          │          │
-    │        │       lock, aliceTerms)  │         │     │       │                          │          │
+    │        │       pqOwner, aliceTerms)         │     │       │                          │          │
     │        │  ───────────────────────►│         │     │       │                          │          │
     │        │                          │         │     │       │                          │          │
     │        │     [PROPOSED]           │         │     │       │  3. Bob sees proposal    │          │
@@ -364,13 +380,13 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
     │        │     hash(aliceTerms)     │         │     │       │     QuipTerms            │          │
     │        │                          │         │     │       │                          │          │
     │        │                          │         │     │       │  4. deployCoupledQuip(   │          │
-    │        │                          │         │     │       │       lock, fullTerms)   │          │
+    │        │                          │         │     │       │       pqOwner, fullTerms)│          │
     │        │                          │         │     │       │  ◄───────────────────────│          │
     │        │                          │         │     │       │     + transfers assets   │          │
     │        │                          │         │     │       │                          │          │
     │        │                          │         │     │       │     [COMMITTED]          │          │
     │        │                          │         │     │       │     termsDigest =        │          │
-    │        │                          │         │     │       │     hash(QuipTerms)      │          │
+    │        │                          │         │     │       │     canonicalHash(terms) │          │
     │        │                          │         │     │       │                          │          │
     │        │  5. Alice sees Bob's     │         │     │       │                          │          │
     │        │     commitment, calls    │         │     │       │                          │          │
@@ -386,10 +402,10 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
     │        │  ══════════════════════════════════════════════════════════════════════════ │          │
     │        │                          │         │     │       │                          │          │
     │        │  6. Alice claims on      │         │     │       │                          │          │
-    │        │     Chain B (reveals key)│         │     │       │                          │          │
+    │        │     Chain B (signs terms)│         │     │       │                          │          │
     │        │  ─────────────────────────────────────────────►  │                          │          │
     │        │                          │         │     │       │                          │          │
-    │        │                          │         │     │       │  7. Bob sees key,        │          │
+    │        │                          │         │     │       │  7. Bob sees signature,  │          │
     │        │                          │         │     │       │     claims on Chain A    │          │
     │        │                          │  ◄────────────────────────────────────────────── │          │
     │        │                          │         │     │       │                          │          │
@@ -400,10 +416,10 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
 
 #### Step-by-Step
 
-1. **Alice generates a secret key** and computes `lock = keccak256(key)`
+1. **Alice generates a WOTS+ keypair**
 
 2. **Alice calls `deployUncoupledQuip()`** on Chain A with:
-   - The `lock`
+   - The `pqOwner`
    - Her `PartyTerms` (what she's offering and expecting)
    - Payment: creation fee only
 
@@ -413,7 +429,7 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
    - Note: From Bob's QUIP perspective, roles are reversed
 
 4. **Bob calls `deployCoupledQuip()`** on Chain B with:
-   - The same `lock` (from Alice's proposal)
+   - The same `pqOwner` (from Alice's proposal)
    - Full `QuipTerms` (with his assets committed immediately)
    - Payment: creation fee + his assets
 
@@ -422,9 +438,9 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
    - Commits her assets
    - Her QUIP transitions from PROPOSED to COMMITTED
 
-6. **Alice claims Bob's assets** on Chain B by revealing the key
+6. **Alice claims Bob's assets** on Chain B by signing the canonical terms digest
 
-7. **Bob uses the revealed key** to claim Alice's assets on Chain A
+7. **Bob uses the same signature** to claim Alice's assets on Chain A
 
 #### Why Use This Flow?
 
@@ -467,13 +483,13 @@ Alice deploys an uncoupled QUIP as a proposal. Bob sees it, constructs full term
 
 ### Claimed
 
-The swap completed successfully. The counterparty revealed the key and received the party's assets.
+The swap completed successfully. The counterparty provided a valid WOTS+ signature and received the party's assets.
 
 ```solidity
-function claim(bytes calldata key, QuipTerms calldata terms) external {
-    _verifyKey(key);                                    // key must hash to lock
-    TermsLib.verifyTerms(termsDigest, terms);          // terms must match digest
-    TermsLib.enforceTermFreshness(terms.partyExpiry);  // must be before expiry
+function claim(WinternitzElements calldata signature, QuipTerms calldata terms) external {
+    _verifySignature(signature);                     // signature must be valid for pqOwner
+    TermsLib.verifyTerms(termsDigest, terms);        // terms must match canonical digest
+    TermsLib.enforceTermFreshness(terms.partyExpiry);// must be before expiry
 
     // Transfer assets to counterparty's recipient
     TermsLib.executePartyCommitment(address(this), terms.counterpartyRecipient, terms.partyAssets);
@@ -486,8 +502,8 @@ The swap expired and the party reclaimed their assets.
 
 ```solidity
 function reclaim(QuipTerms calldata terms) external {
-    TermsLib.verifyTerms(termsDigest, terms);          // terms must match digest
-    TermsLib.enforceTermStaleness(terms.partyExpiry); // must be after expiry
+    TermsLib.verifyTerms(termsDigest, terms);          // terms must match canonical digest
+    TermsLib.enforceTermStaleness(terms.partyExpiry);  // must be after expiry
 
     // Return assets to party's recipient
     TermsLib.releasePartyCommitment(address(this), terms.partyRecipient, terms.partyAssets);
@@ -503,8 +519,8 @@ function reclaim(QuipTerms calldata terms) external {
                   │           │                 │           │
                   │           └─────────────────┘           │
                   │                                         │
-            claim(key)                                 reclaim()
-         [before expiry]                            [after expiry]
+          claim(signature)                             reclaim()
+           [before expiry]                            [after expiry]
                   │                                         │
                   ▼                                         ▼
          ┌─────────────┐                           ┌─────────────┐
@@ -539,10 +555,10 @@ Used in uncoupled mode for single-party proposals:
 
 ```solidity
 struct PartyTerms {
-    address party;           // The party's address
-    address partyRecipient;  // Where to receive counterparty's assets
-    uint64 partyExpiry;      // Deadline for the swap
-    Asset[] partyAssets;     // Assets being offered
+    address signatory;       // The party's address
+    address recipient;       // Where to receive counterparty's assets
+    uint64 expiry;           // Deadline for the swap
+    Asset[] assets;          // Assets being offered
 }
 ```
 
@@ -563,6 +579,19 @@ struct QuipTerms {
 }
 ```
 
+### WOTS+ Types
+
+```solidity
+struct WinternitzAddress {
+    bytes32 publicSeed;      // Public seed for hash chain derivation
+    bytes32 publicKeyHash;   // Hash of all public key segments
+}
+
+struct WinternitzElements {
+    bytes32[67] elements;    // Signature elements (67 chunks)
+}
+```
+
 ---
 
 ## Gas Optimization
@@ -571,7 +600,7 @@ QUIPs use several gas optimization techniques:
 
 1. **Minimal Clones**: Each QUIP is a minimal proxy clone, reducing deployment costs
 2. **Terms Digest**: Only a 32-byte hash is stored on-chain, not full terms
-3. **Deterministic Addresses**: Lock-based salt enables address prediction without deployment
+3. **Deterministic Addresses**: pqOwnerHash-based salt enables address prediction without deployment
 4. **Calldata Terms**: Terms are passed as calldata at claim/reclaim time
 
 ---
@@ -580,8 +609,9 @@ QUIPs use several gas optimization techniques:
 
 | Risk | Mitigation |
 |------|------------|
-| Key exposure | Key holder should claim on destination chain first |
+| Signature reuse | WOTS+ keys are one-time; same signature only valid for same canonical digest |
+| Quantum attacks | WOTS+ provides post-quantum security via hash-based signatures |
 | Front-running | Terms are committed at creation; can't be changed |
 | Expiry manipulation | Block timestamp used; set appropriate margins |
-| Replay attacks | Each lock can only be used once per portal |
+| Replay attacks | Each pqOwner can only be used once per portal (Unused→Free→Spent) |
 | Asset approval | Use exact approval amounts or revoke after swap |
