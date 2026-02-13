@@ -10,21 +10,21 @@ import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 //TODO:
 // - Slashing
-// - Winternitz security (?)
 contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receiver {
   /// @notice the version of this quip implementation
   uint256 public constant VERSION = 1;
 
-  /// @notice hash of the secret key used to authorize asset claiming
-  bytes32 public lock;
+  /// @notice WOTS+ public key that authorizes asset claiming
+  WOTSPlus.WinternitzAddress public pqOwner;
 
-  /// @notice hash of terms connected to this Quip
+  /// @notice canonical hash of terms connected to this Quip
   /// @dev Lifecycle depends on initialization mode:
-  ///      - Uncoupled: starts as h(PartyTerms), updates to h(QuipTerms) after coupling
-  ///      - Coupled: starts as h(QuipTerms)
+  ///      - Uncoupled: starts as h(PartyTerms), updates to canonical(QuipTerms) after coupling
+  ///      - Coupled: starts as canonical(QuipTerms)
   bytes32 public termsDigest;
 
   /// @notice true if initialized in uncoupled mode, allowing one termsDigest update
@@ -46,31 +46,43 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
     return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (address));
   }
 
-  /// @notice initializes the quip with a lock and terms
-  /// @param _lock the hash of the secret
-  /// @param _termsDigest the hashed terms of the quip agreement
-  function initializeCoupled(bytes32 _lock, bytes32 _termsDigest) external onlyPortal initializer {
-    lock = _lock;
+  /// @notice returns the hash of the WOTS+ public key
+  /// @return the EfficientHashLib hash of (publicSeed, publicKeyHash)
+  function pqOwnerHash() public view returns (bytes32) {
+    return EfficientHashLib.hash(pqOwner.publicSeed, pqOwner.publicKeyHash);
+  }
+
+  /// @notice initializes the quip with a WOTS+ public key and terms
+  /// @param _pqOwner the WOTS+ public key
+  /// @param _termsDigest the canonical hashed terms of the quip agreement
+  function initializeCoupled(
+    WOTSPlus.WinternitzAddress calldata _pqOwner,
+    bytes32 _termsDigest
+  ) external onlyPortal initializer {
+    pqOwner = _pqOwner;
     termsDigest = _termsDigest;
     //  INIT_UNCOUPLED default initialize to false
 
-    emit PartyCommitment(_lock, _termsDigest);
+    emit PartyCommitment(EfficientHashLib.hash(_pqOwner.publicSeed, _pqOwner.publicKeyHash), _termsDigest);
   }
 
   /// @notice initializes the quip in uncoupled mode for proposal-based swaps
   /// @dev No assets are transferred; only stores party terms digest which can be updated once via coupleQuip
-  /// @param _lock the hash of the secret key
+  /// @param _pqOwner the WOTS+ public key
   /// @param _termsDigest the hash of PartyTerms (not full QuipTerms)
-  function initializeUncoupled(bytes32 _lock, bytes32 _termsDigest) external onlyPortal initializer {
-    lock = _lock;
+  function initializeUncoupled(
+    WOTSPlus.WinternitzAddress calldata _pqOwner,
+    bytes32 _termsDigest
+  ) external onlyPortal initializer {
+    pqOwner = _pqOwner;
     termsDigest = _termsDigest;
     INIT_UNCOUPLED = true;
 
-    emit PartyProposal(_lock, _termsDigest);
+    emit PartyProposal(EfficientHashLib.hash(_pqOwner.publicSeed, _pqOwner.publicKeyHash), _termsDigest);
   }
 
   /// @notice couples an uncoupled quip by committing assets and updating terms digest
-  /// @dev Only callable by the original party; transitions termsDigest from h(PartyTerms) to h(QuipTerms)
+  /// @dev Only callable by the original party; transitions termsDigest from h(PartyTerms) to canonical(QuipTerms)
   /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms to couple with
   function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable {
@@ -82,40 +94,40 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
     QuipTerms memory coupledTerms = TermsLib.coupleTerms(party, counterparty);
     if (msg.value != TermsLib.totalNativeAmount(party.assets)) revert InsufficientCommitment();
 
-    termsDigest = TermsLib.digestTermsMemory(coupledTerms);
+    termsDigest = TermsLib.digestTermsCanonicallyMemory(coupledTerms);
     TermsLib.transferAssetsNoNative(party.assets, party.signatory, address(this));
 
     emit QuipCommitted(termsDigest);
   }
 
-  /// @notice claims the party's assets by providing the key and terms
-  /// @dev Permissionless by design - possession of valid key proves authorization.
-  ///      Marks the lock as spent on the portal to prevent further deployments.
-  /// @param key the secret that unlocks the quip
+  /// @notice claims the party's assets by providing a WOTS+ signature and terms
+  /// @dev Permissionless by design - possession of valid signature proves authorization.
+  ///      Marks the pqOwner as spent on the portal to prevent further deployments.
+  /// @param signature the WOTS+ signature authorizing the claim
   /// @param terms the terms of the quip agreement
-  function claim(bytes calldata key, QuipTerms calldata terms) external {
-    _verifyKey(key);
+  function claim(WOTSPlus.WinternitzElements calldata signature, QuipTerms calldata terms) external {
     TermsLib.verifyTerms(termsDigest, terms);
+    _verifySignature(signature);
     TermsLib.enforceTermFreshness(terms.partyExpiry);
 
-    // Mark lock as spent on portal (idempotent for same-chain swaps)
-    IQuipPortal(PORTAL_FROM_BYTECODE()).spendLock(lock);
+    // mark pqOwner as spent on portal (idempotent for same-chain swaps)
+    IQuipPortal(PORTAL_FROM_BYTECODE()).spendPqOwner(pqOwnerHash());
 
     TermsLib.executePartyCommitment(address(this), terms.counterpartyRecipient, terms.partyAssets);
 
-    emit PartyTermsFulfilled(key, terms.counterpartyRecipient, terms.partyAssets);
+    emit PartyTermsFulfilled(signature, terms.counterpartyRecipient, terms.partyAssets);
   }
 
   /// @notice reclaims the party's assets after the terms have expired
   /// @dev Permissionless by design - anyone can trigger reclaim after expiry.
-  ///      Marks the lock as spent on the portal to prevent further deployments.
+  ///      Marks the pqOwner as spent on the portal to prevent further deployments.
   /// @param terms the terms of the quip agreement
   function reclaim(QuipTerms calldata terms) external {
     TermsLib.verifyTerms(termsDigest, terms);
     TermsLib.enforceTermStaleness(terms.partyExpiry);
 
-    // Mark lock as spent on portal (idempotent for same-chain swaps)
-    IQuipPortal(PORTAL_FROM_BYTECODE()).spendLock(lock);
+    // mark pqOwner as spent on portal (idempotent for same-chain swaps)
+    IQuipPortal(PORTAL_FROM_BYTECODE()).spendPqOwner(pqOwnerHash());
 
     TermsLib.releasePartyCommitment(address(this), terms.partyRecipient, terms.partyAssets);
 
@@ -148,11 +160,12 @@ contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receive
     return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
-  /// @notice reverts if the provided key does not match the lock
-  /// @param key the key to verify
-  function _verifyKey(bytes calldata key) internal view {
-    if (EfficientHashLib.hash(key) != lock) {
-      revert InvalidKey();
+  /// @notice verifies the WOTS+ signature over the stored terms digest
+  /// @param signature the WOTS+ signature to verify
+  function _verifySignature(WOTSPlus.WinternitzElements calldata signature) internal view {
+    WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({messageHash: termsDigest});
+    if (!WOTSPlus.verify(pqOwner, message, signature)) {
+      revert InvalidSignature();
     }
   }
 
