@@ -78,6 +78,30 @@ contract QuipPortal is Context, IQuipPortal {
     emit QuipCreated(_pqOwnerHash, quip, terms);
   }
 
+  /// @notice creates a new quip and immediately claims it in a single transaction
+  /// @dev Combines deployCoupledQuip and claim into one atomic operation.
+  ///      Useful when the counterparty wants to deploy and claim in one tx.
+  /// @param pqOwner the WOTS+ public key used for deterministic deployment
+  /// @param signature the WOTS+ signature authorizing the claim
+  /// @param terms the terms of the quip agreement
+  function deployAndClaimCoupledQuip(WOTSPlus.WinternitzAddress calldata pqOwner, WOTSPlus.WinternitzElements calldata signature, QuipTerms calldata terms) external payable {
+    bytes32 _pqOwnerHash = _computePqOwnerHash(pqOwner);
+    _enforceValidPqOwner(pqOwner, _pqOwnerHash);
+    _validateQuipTerms(terms);
+    _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
+
+    _advancePqOwner(_pqOwnerHash);
+    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    IQuip(quip).initializeCoupled(pqOwner, TermsLib.digestTermsCanonically(terms));
+
+    accumulatedFees += creationFee;
+    TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
+
+    IQuip(quip).claim(signature, terms);
+
+    emit QuipCreatedAndClaimed(_pqOwnerHash, quip, terms);
+  }
+
   /// @notice creates a new uncoupled quip proposal with party terms only
   /// @dev Salt for deterministic deployment is keccak256(pqOwnerHash, msg.sender) to allow
   ///      same-chain swaps where both parties deploy with the same pqOwner

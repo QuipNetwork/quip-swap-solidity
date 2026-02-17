@@ -61,6 +61,12 @@ interface IQuipPortal {
   /// @param terms the terms of the quip agreement
   event QuipCreated(bytes32 indexed pqOwnerHash, address indexed quip, QuipTerms terms);
 
+  /// @notice emitted when a quip is created and immediately claimed in a single transaction
+  /// @param pqOwnerHash the hash of the WOTS+ public key used for deployment
+  /// @param quip the address of the deployed quip
+  /// @param terms the terms of the quip agreement
+  event QuipCreatedAndClaimed(bytes32 indexed pqOwnerHash, address indexed quip, QuipTerms terms);
+
   /// @notice emitted when a quip proposal is created
   /// @param pqOwnerHash the hash of the WOTS+ public key used for deployment
   /// @param quip the address of the deployed quip
@@ -92,6 +98,17 @@ interface IQuipPortal {
   /// @param pqOwner the WOTS+ public key used for deterministic deployment
   /// @param terms the terms of the quip agreement
   function deployCoupledQuip(WOTSPlus.WinternitzAddress calldata pqOwner, QuipTerms calldata terms) external payable;
+
+  /// @notice creates a new quip and immediately claims it in a single transaction
+  /// @dev Combines deployCoupledQuip and claim into one atomic operation
+  /// @param pqOwner the WOTS+ public key used for deterministic deployment
+  /// @param signature the WOTS+ signature authorizing the claim
+  /// @param terms the terms of the quip agreement
+  function deployAndClaimCoupledQuip(
+    WOTSPlus.WinternitzAddress calldata pqOwner,
+    WOTSPlus.WinternitzElements calldata signature,
+    QuipTerms calldata terms
+  ) external payable;
 
   /// @notice creates a new uncoupled quip proposal with party terms only
   /// @param pqOwner the WOTS+ public key used for deterministic deployment
