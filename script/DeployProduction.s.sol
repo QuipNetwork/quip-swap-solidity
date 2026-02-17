@@ -31,10 +31,12 @@ contract DeployQuipPortal is Script {
   ICreateX public constant CREATEX = ICreateX(0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed);
 
   // ============ Salt Suffixes ============
-  // Using 12-byte suffixes that get combined with deployer address for guarded salts
+  // Using 11-byte suffixes that get combined with deployer address + flag for guarded salts
+  // Salt format: deployer (20 bytes) + flag (1 byte) + suffix (11 bytes)
+  // Flag 0x00 = same address on all chains (no cross-chain redeploy protection)
 
-  bytes12 public constant SALT_SUFFIX_QUIP_IMPL = bytes12(keccak256('quip.network.QuipImpl.v1'));
-  bytes12 public constant SALT_SUFFIX_QUIP_PORTAL = bytes12(keccak256('quip.network.QuipPortal.v1'));
+  bytes11 public constant SALT_SUFFIX_QUIP_IMPL = bytes11(keccak256('quip.network.QuipImpl.v1'));
+  bytes11 public constant SALT_SUFFIX_QUIP_PORTAL = bytes11(keccak256('quip.network.QuipPortal.v1'));
 
   function run() external {
     uint256 deployerPk = vm.envUint('DEPLOYER_PK');
@@ -89,8 +91,9 @@ contract DeployQuipPortal is Script {
   }
 
   /// @notice Computes a guarded salt with deployer address in first 20 bytes
-  /// @dev This prevents frontrunning by ensuring only the deployer can use this salt
-  function _computeGuardedSalt(address deployer, bytes12 suffix) internal pure returns (bytes32) {
-    return bytes32(abi.encodePacked(deployer, suffix));
+  /// @dev Salt format: deployer (20 bytes) + 0x00 (1 byte, no cross-chain protection) + suffix (11 bytes)
+  ///      This prevents frontrunning while ensuring same addresses across all chains
+  function _computeGuardedSalt(address deployer, bytes11 suffix) internal pure returns (bytes32) {
+    return bytes32(abi.encodePacked(deployer, bytes1(0x00), suffix));
   }
 }

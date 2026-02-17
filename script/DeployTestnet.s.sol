@@ -53,22 +53,23 @@ contract DeployHelper is Script {
   uint256 public constant ERC1155_TOKEN_ID_2 = 2;
 
   // ============ Salt Suffixes ============
-  // Using 12-byte suffixes that get combined with deployer address for guarded salts
+  // Using 11-byte suffixes that get combined with deployer address + flag for guarded salts
+  // Salt format: deployer (20 bytes) + flag (1 byte) + suffix (11 bytes)
+  // Flag 0x00 = same address on all chains (no cross-chain redeploy protection)
 
-  bytes12 public constant SALT_SUFFIX_QUIP_IMPL = bytes12(keccak256('quip.network.QuipImpl.v1'));
-  bytes12 public constant SALT_SUFFIX_QUIP_PORTAL = bytes12(keccak256('quip.network.QuipPortal.v1'));
-  bytes12 public constant SALT_SUFFIX_ERC20_MOCK = bytes12(keccak256('quip.network.ERC20Mock.v1'));
-  bytes12 public constant SALT_SUFFIX_ERC721_MOCK = bytes12(keccak256('quip.network.ERC721Mock.v1'));
-  bytes12 public constant SALT_SUFFIX_ERC1155_MOCK = bytes12(keccak256('quip.network.ERC1155Mock.v1'));
+  bytes11 public constant SALT_SUFFIX_QUIP_IMPL = bytes11(keccak256('quip.network.QuipImpl.v1'));
+  bytes11 public constant SALT_SUFFIX_QUIP_PORTAL = bytes11(keccak256('quip.network.QuipPortal.v1'));
+  bytes11 public constant SALT_SUFFIX_ERC20_MOCK = bytes11(keccak256('quip.network.ERC20Mock.v1'));
+  bytes11 public constant SALT_SUFFIX_ERC721_MOCK = bytes11(keccak256('quip.network.ERC721Mock.v1'));
+  bytes11 public constant SALT_SUFFIX_ERC1155_MOCK = bytes11(keccak256('quip.network.ERC1155Mock.v1'));
 
   // ============ Test Addresses ============
   // Add addresses here to receive minted tokens
 
   function _getTestAddresses() internal pure returns (address[] memory) {
-    address[] memory addresses = new address[](2);
+    address[] memory addresses = new address[](1);
     // TODO: Replace with actual test addresses
-    addresses[0] = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266; // Anvil default account 0
-    addresses[1] = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8; // Anvil default account 1
+    addresses[0] = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26; // Anvil default account 0
     return addresses;
   }
 
@@ -111,9 +112,10 @@ contract DeployHelper is Script {
   // ============ Salt Computation ============
 
   /// @notice Computes a guarded salt with deployer address in first 20 bytes
-  /// @dev This prevents frontrunning by ensuring only the deployer can use this salt
-  function _computeGuardedSalt(address deployer, bytes12 suffix) internal pure returns (bytes32) {
-    return bytes32(abi.encodePacked(deployer, suffix));
+  /// @dev Salt format: deployer (20 bytes) + 0x00 (1 byte, no cross-chain protection) + suffix (11 bytes)
+  ///      This prevents frontrunning while ensuring same addresses across all chains
+  function _computeGuardedSalt(address deployer, bytes11 suffix) internal pure returns (bytes32) {
+    return bytes32(abi.encodePacked(deployer, bytes1(0x00), suffix));
   }
 
   // ============ Address Computation ============
