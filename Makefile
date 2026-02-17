@@ -5,6 +5,16 @@
 -include .env
 
 # ==============================================================================
+# RPC URL Indirection
+# ==============================================================================
+# Use indirection: RPC=BASE_SEPOLIA_RPC_URL will use the value of $(BASE_SEPOLIA_RPC_URL)
+# This allows referencing any RPC URL defined in .env by name
+RPC_URL = $($(RPC))
+
+# Local Anvil URL (hardcoded)
+ANVIL_RPC_URL := http://127.0.0.1:8545
+
+# ==============================================================================
 # Development
 # ==============================================================================
 
@@ -41,68 +51,55 @@ clean: ## Clean build artifacts
 	forge clean
 
 # ==============================================================================
-# Deployment - Local (Anvil)
+# Deployment - Local (Anvil with fork)
 # ==============================================================================
 
-ANVIL_RPC_URL := http://127.0.0.1:8545
+.PHONY: anvil-fork
+anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=BASE_SEPOLIA_RPC_URL
+	anvil --fork-url $(RPC_URL)
 
 .PHONY: deploy-local
-deploy-local: ## Deploy QuipPortal to local Anvil
-	forge script script/DeployQuipPortal.s.sol \
+deploy-local: ## Deploy to local Anvil (requires DEPLOYER_PK, PORTAL_ADMIN, SENDER)
+	forge script script/DeployTestnet.s.sol \
 		--rpc-url $(ANVIL_RPC_URL) \
+		--sender $(SENDER) \
 		--broadcast
 
-.PHONY: deploy-mocks-local
-deploy-mocks-local: ## Deploy mock tokens to local Anvil
-	forge script script/DeployMocks.s.sol \
-		--rpc-url $(ANVIL_RPC_URL) \
-		--broadcast
-
-.PHONY: mint-erc20-local
-mint-erc20-local: ## Mint ERC20 locally. Usage: make mint-erc20-local TOKEN=0x... TO=0x... AMOUNT=1000000000000000000000
-	forge script script/MintMocks.s.sol -s "mintERC20(address,address,uint256)" $(TOKEN) $(TO) $(AMOUNT) --rpc-url $(ANVIL_RPC_URL) --broadcast
-
-.PHONY: mint-erc721-local
-mint-erc721-local: ## Mint ERC721 locally. Usage: make mint-erc721-local TOKEN=0x... TO=0x... ID=1
-	forge script script/MintMocks.s.sol -s "mintERC721(address,address,uint256)" $(TOKEN) $(TO) $(ID) --rpc-url $(ANVIL_RPC_URL) --broadcast
-
-.PHONY: mint-erc1155-local
-mint-erc1155-local: ## Mint ERC1155 locally. Usage: make mint-erc1155-local TOKEN=0x... TO=0x... ID=1 AMOUNT=100
-	forge script script/MintMocks.s.sol -s "mintERC1155(address,address,uint256,uint256)" $(TOKEN) $(TO) $(ID) $(AMOUNT) --rpc-url $(ANVIL_RPC_URL) --broadcast
-
 # ==============================================================================
-# Deployment - Base Sepolia
+# Deployment - Testnet
 # ==============================================================================
 
-.PHONY: deploy-base-sepolia
-deploy-base-sepolia: ## Deploy QuipPortal to Base Sepolia
-	forge script script/DeployQuipPortal.s.sol \
-		--rpc-url $(BASE_SEPOLIA_RPC_URL) \
+.PHONY: deploy-testnet
+deploy-testnet: ## Deploy to testnet. Usage: make deploy-testnet RPC=BASE_SEPOLIA_RPC_URL
+	forge script script/DeployTestnet.s.sol \
+		--rpc-url $(RPC_URL) \
+		--sender $(SENDER) \
 		--broadcast \
 		--verify
 
-.PHONY: deploy-base-sepolia-dry
-deploy-base-sepolia-dry: ## Dry run deployment to Base Sepolia
-	forge script script/DeployQuipPortal.s.sol \
-		--rpc-url $(BASE_SEPOLIA_RPC_URL)
+.PHONY: deploy-testnet-dry
+deploy-testnet-dry: ## Dry run testnet deployment. Usage: make deploy-testnet-dry RPC=BASE_SEPOLIA_RPC_URL
+	forge script script/DeployTestnet.s.sol \
+		--rpc-url $(RPC_URL) \
+		--sender $(SENDER)
 
-.PHONY: deploy-mocks-base-sepolia
-deploy-mocks-base-sepolia: ## Deploy mock tokens to Base Sepolia
-	forge script script/DeployMocks.s.sol \
-		--rpc-url $(BASE_SEPOLIA_RPC_URL) \
-		--broadcast
+# ==============================================================================
+# Deployment - Production
+# ==============================================================================
 
-.PHONY: mint-erc20-base-sepolia
-mint-erc20-base-sepolia: ## Mint ERC20 on Base Sepolia. Usage: make mint-erc20-base-sepolia TOKEN=0x... TO=0x... AMOUNT=1000000000000000000000
-	forge script script/MintMocks.s.sol -s "mintERC20(address,address,uint256)" $(TOKEN) $(TO) $(AMOUNT) --rpc-url $(BASE_SEPOLIA_RPC_URL) --broadcast
+.PHONY: deploy-production
+deploy-production: ## Deploy to production. Usage: make deploy-production RPC=BASE_RPC_URL
+	forge script script/DeployProduction.s.sol \
+		--rpc-url $(RPC_URL) \
+		--sender $(SENDER) \
+		--broadcast \
+		--verify
 
-.PHONY: mint-erc721-base-sepolia
-mint-erc721-base-sepolia: ## Mint ERC721 on Base Sepolia. Usage: make mint-erc721-base-sepolia TOKEN=0x... TO=0x... ID=1
-	forge script script/MintMocks.s.sol -s "mintERC721(address,address,uint256)" $(TOKEN) $(TO) $(ID) --rpc-url $(BASE_SEPOLIA_RPC_URL) --broadcast
-
-.PHONY: mint-erc1155-base-sepolia
-mint-erc1155-base-sepolia: ## Mint ERC1155 on Base Sepolia. Usage: make mint-erc1155-base-sepolia TOKEN=0x... TO=0x... ID=1 AMOUNT=100
-	forge script script/MintMocks.s.sol -s "mintERC1155(address,address,uint256,uint256)" $(TOKEN) $(TO) $(ID) $(AMOUNT) --rpc-url $(BASE_SEPOLIA_RPC_URL) --broadcast
+.PHONY: deploy-production-dry
+deploy-production-dry: ## Dry run production deployment. Usage: make deploy-production-dry RPC=BASE_RPC_URL
+	forge script script/DeployProduction.s.sol \
+		--rpc-url $(RPC_URL) \
+		--sender $(SENDER)
 
 # ==============================================================================
 # Utilities
@@ -111,10 +108,6 @@ mint-erc1155-base-sepolia: ## Mint ERC1155 on Base Sepolia. Usage: make mint-erc
 .PHONY: snapshot
 snapshot: ## Generate gas snapshot
 	forge snapshot
-
-.PHONY: anvil
-anvil: ## Start local Anvil node
-	anvil
 
 .PHONY: help
 help: ## Show this help
