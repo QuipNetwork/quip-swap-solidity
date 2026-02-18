@@ -221,6 +221,17 @@ contract QuipPortal is Context, IQuipPortal {
     return EfficientHashLib.hash(pqOwner.publicSeed, pqOwner.publicKeyHash);
   }
 
+  /// @notice predicts the address of a quip that would be deployed with the given parameters
+  /// @dev Uses the same salt derivation as _deployQuip for deterministic address prediction
+  /// @param pqOwner the WOTS+ public key
+  /// @param deployer the address that will deploy the quip
+  /// @return predicted the predicted address of the quip
+  function predictQuipAddress(WOTSPlus.WinternitzAddress calldata pqOwner, address deployer) external view returns (address predicted) {
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
+    bytes32 salt = EfficientHashLib.hash(pqOwnerHash, bytes32(uint256(uint160(deployer))));
+    predicted = LibClone.predictDeterministicAddress(QUIP_IMPLEMENTATION, abi.encode(address(this)), salt, address(this));
+  }
+
   /// @notice reverts if the address is the zero address
   /// @param addr the address to validate
   function _enforceNonEmptyAddress(address addr) internal pure {

@@ -130,4 +130,11 @@ interface IQuipPortal {
   ///      - If Spent → no-op (idempotent for same-chain swaps where both quips may call)
   /// @param pqOwnerHash the pqOwnerHash to mark as spent
   function spendPqOwner(bytes32 pqOwnerHash) external;
+
+  /// @notice predicts the address of a quip that would be deployed with the given parameters
+  /// @dev Uses the same salt derivation as internal _deployQuip for deterministic address prediction
+  /// @param pqOwner the WOTS+ public key
+  /// @param deployer the address that will deploy the quip
+  /// @return predicted the predicted address of the quip
+  function predictQuipAddress(WOTSPlus.WinternitzAddress calldata pqOwner, address deployer) external view returns (address predicted);
 }
