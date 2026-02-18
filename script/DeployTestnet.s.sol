@@ -47,6 +47,7 @@ contract DeployHelper is Script {
   uint256 public constant ERC721_MINT_COUNT = 3; // 3 NFTs per address
   uint256 public constant ERC1155_MINT_AMOUNT = 1_000; // 1000 units per token ID
   uint256 public constant NATIVE_FUND_AMOUNT = 100 ether; // 100 ETH per address
+  uint256 public constant PUBLIC_TESTNET_NATIVE_FUND_AMOUNT = 0.000000001 ether; 
 
   // ERC1155 token IDs to mint
   uint256 public constant ERC1155_TOKEN_ID_1 = 1;
@@ -216,9 +217,9 @@ contract DeployHelper is Script {
         console.log('  Funded (vm.deal):', NATIVE_FUND_AMOUNT);
       } else {
         // On testnets, transfer from deployer
-        (bool success,) = recipient.call{value: NATIVE_FUND_AMOUNT}('');
+        (bool success,) = recipient.call{value: PUBLIC_TESTNET_NATIVE_FUND_AMOUNT}('');
         require(success, 'ETH transfer failed');
-        console.log('  Funded (transfer):', NATIVE_FUND_AMOUNT);
+        console.log('  Funded (transfer):', PUBLIC_TESTNET_NATIVE_FUND_AMOUNT);
       }
 
       // Mint ERC20
