@@ -95,8 +95,9 @@ contract QuipPortal is Context, IQuipPortal {
     IQuip(quip).initializeCoupled(pqOwner, TermsLib.digestTermsCanonically(terms));
 
     accumulatedFees += creationFee;
-    TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
+    // NOTE: it is assumed that the QUIP holds the funds already, prior to deployment
+    // achieved by predeterministic deployment
     IQuip(quip).claim(signature, terms);
 
     emit QuipCreatedAndClaimed(_pqOwnerHash, quip, terms);
