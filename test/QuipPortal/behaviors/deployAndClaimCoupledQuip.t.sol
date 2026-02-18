@@ -18,6 +18,35 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
   using AssetHelper for *;
   using TermsHelper for *;
 
+  // ============ Internal Helpers ============
+
+  /// @notice Pre-funds the predicted quip address with party assets
+  /// @dev Required because deployAndClaimCoupledQuip expects quip to be pre-funded
+  function _prefundQuip(
+    WOTSPlus.WinternitzAddress memory pqOwner,
+    address deployer,
+    Asset[] memory partyAssets,
+    address assetOwner
+  ) internal returns (address predicted) {
+    predicted = portal.predictQuipAddress(pqOwner, deployer);
+
+    for (uint256 i = 0; i < partyAssets.length; i++) {
+      Asset memory asset = partyAssets[i];
+      if (asset.assetType == AssetType.Native) {
+        vm.deal(predicted, predicted.balance + asset.amount);
+      } else if (asset.assetType == AssetType.ERC20) {
+        vm.prank(assetOwner);
+        mockERC20.transfer(predicted, asset.amount);
+      } else if (asset.assetType == AssetType.ERC721) {
+        vm.prank(assetOwner);
+        mockERC721.transferFrom(assetOwner, predicted, asset.id);
+      } else if (asset.assetType == AssetType.ERC1155) {
+        vm.prank(assetOwner);
+        mockERC1155.safeTransferFrom(assetOwner, predicted, asset.id, asset.amount, '');
+      }
+    }
+  }
+
   // ============ Success Cases ============
 
   function test_deployAndClaimCoupledQuip_deploysAndClaimsInSingleTx() public {
@@ -26,6 +55,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
 
     // Sign the terms with the default private key
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     // Record counterpartyRecipient balance before
     uint256 recipientBalanceBefore = terms.counterpartyRecipient.balance;
@@ -53,6 +85,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, partyAssets, ALICE);
+
     // Record balances before
     uint256 bobNativeBefore = BOB.balance;
     uint256 bobERC20Before = mockERC20.balanceOf(BOB);
@@ -72,6 +107,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     vm.prank(ALICE);
     vm.recordLogs();
@@ -101,6 +139,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
+
     // pqOwner starts as Unused
     assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Unused));
 
@@ -114,8 +155,12 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
 
   function test_deployAndClaimCoupledQuip_accumulatesFeesCorrectly() public {
     QuipTerms memory terms = _makeDefaultQuipTerms();
-    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+    uint256 partyNativeAmount = TermsLib.totalNativeAmount(terms.partyAssets);
+    uint256 nativeRequired = CREATION_FEE + partyNativeAmount;
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     uint256 feesBefore = portal.accumulatedFees();
     uint256 portalBalanceBefore = address(portal).balance;
@@ -123,8 +168,11 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     vm.prank(ALICE);
     portal.deployAndClaimCoupledQuip{value: nativeRequired}(defaultPqOwner, signature, terms);
 
+    // accumulatedFees only increases by CREATION_FEE
     assertEq(portal.accumulatedFees() - feesBefore, CREATION_FEE);
-    assertEq(address(portal).balance - portalBalanceBefore, CREATION_FEE);
+    // Portal balance increases by full msg.value (fee + partyNative)
+    // Note: The partyNative portion stays in portal since quip is pre-funded
+    assertEq(address(portal).balance - portalBalanceBefore, nativeRequired);
   }
 
   function test_deployAndClaimCoupledQuip_worksWithMinimalAssets() public {
@@ -139,6 +187,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + 0.1 ether;
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, partyAssets, ALICE);
+
     uint256 bobBalanceBefore = BOB.balance;
 
     vm.prank(ALICE);
@@ -152,10 +203,12 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
+    // Pre-fund the predicted quip address (CHARLIE will deploy)
+    _prefundQuip(defaultPqOwner, CHARLIE, terms.partyAssets, ALICE);
+
     uint256 bobBalanceBefore = BOB.balance;
 
     // CHARLIE (not party or counterparty) can call the function
-    // Note: CHARLIE needs to have the partyAssets (native) to send
     vm.prank(CHARLIE);
     portal.deployAndClaimCoupledQuip{value: nativeRequired}(defaultPqOwner, signature, terms);
 
@@ -167,6 +220,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     vm.prank(ALICE);
     vm.recordLogs();
@@ -222,6 +278,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address for the first call
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     // First call deploys and claims (transitions Unused -> Free -> Spent)
     vm.prank(ALICE);
@@ -352,6 +411,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     // Corrupt the first element
     signature.elements[0] = bytes32(uint256(signature.elements[0]) ^ 1);
 
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
+
     vm.prank(ALICE);
     vm.expectRevert(IQuip.InvalidSignature.selector);
     portal.deployAndClaimCoupledQuip{value: nativeRequired}(defaultPqOwner, signature, terms);
@@ -366,6 +428,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
 
     // Sign with the different private key
     WOTSPlus.WinternitzElements memory signature = _signTerms(differentPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     // But deploy with the default pqOwner - signature won't match
     vm.prank(ALICE);
@@ -382,6 +447,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
 
     // Sign the original terms
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, terms.partyAssets, ALICE);
 
     // Modify the terms after signing
     terms.counterpartyRecipient = CHARLIE;
@@ -405,6 +473,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + amount;
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
+    // Pre-fund the predicted quip address
+    _prefundQuip(defaultPqOwner, ALICE, partyAssets, ALICE);
+
     uint256 bobBalanceBefore = BOB.balance;
 
     vm.prank(ALICE);
@@ -422,6 +493,9 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
     WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
+
+    // Pre-fund the predicted quip address
+    _prefundQuip(pqOwner, ALICE, terms.partyAssets, ALICE);
 
     uint256 bobBalanceBefore = BOB.balance;
 
