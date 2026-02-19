@@ -40,7 +40,7 @@ contract DeployHelper is Script {
   // ============ Configuration ============
 
   uint256 public constant MAX_FEE = 1 ether;
-  uint256 public constant CREATION_FEE = 0.01 ether;
+  uint256 public constant CREATION_FEE = 1 wei;
 
   // Default mint amounts
   uint256 public constant ERC20_MINT_AMOUNT = 1_000_000 ether; // 1M tokens with 18 decimals
