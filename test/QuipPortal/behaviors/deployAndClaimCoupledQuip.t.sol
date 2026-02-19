@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
+import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
@@ -28,7 +29,7 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
     Asset[] memory partyAssets,
     address assetOwner
   ) internal returns (address predicted) {
-    predicted = portal.predictQuipAddress(pqOwner, deployer);
+    predicted = portal.predictQuipAddress(pqOwner.publicSeed, deployer);
 
     for (uint256 i = 0; i < partyAssets.length; i++) {
       Asset memory asset = partyAssets[i];
@@ -36,7 +37,7 @@ contract QuipPortal_deployAndClaimCoupledQuip is QuipPortalTest {
         vm.deal(predicted, predicted.balance + asset.amount);
       } else if (asset.assetType == AssetType.ERC20) {
         vm.prank(assetOwner);
-        mockERC20.transfer(predicted, asset.amount);
+        SafeTransferLib.safeTransfer(address(mockERC20), predicted, asset.amount);
       } else if (asset.assetType == AssetType.ERC721) {
         vm.prank(assetOwner);
         mockERC721.transferFrom(assetOwner, predicted, asset.id);

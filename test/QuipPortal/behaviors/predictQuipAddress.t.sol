@@ -3,9 +3,8 @@ pragma solidity 0.8.33;
 
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
-import {Quip} from '../../../src/Quip.sol';
 import {QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {IQuipPortal, PqOwnerState} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
 import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
@@ -19,7 +18,7 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     // Predict address before deployment
-    address predicted = portal.predictQuipAddress(defaultPqOwner, ALICE);
+    address predicted = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
 
     // Deploy the quip
     vm.prank(ALICE);
@@ -35,8 +34,8 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
   }
 
   function test_predictQuipAddress_differentDeployersGetDifferentAddresses() public {
-    address predictedAlice = portal.predictQuipAddress(defaultPqOwner, ALICE);
-    address predictedBob = portal.predictQuipAddress(defaultPqOwner, BOB);
+    address predictedAlice = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
+    address predictedBob = portal.predictQuipAddress(defaultPqOwner.publicSeed, BOB);
 
     assertNotEq(predictedAlice, predictedBob);
   }
@@ -44,22 +43,22 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
   function test_predictQuipAddress_differentPqOwnersGetDifferentAddresses() public {
     (WOTSPlus.WinternitzAddress memory pqOwner2,) = _uniqueKeyPair(2);
 
-    address predicted1 = portal.predictQuipAddress(defaultPqOwner, ALICE);
-    address predicted2 = portal.predictQuipAddress(pqOwner2, ALICE);
+    address predicted1 = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
+    address predicted2 = portal.predictQuipAddress(pqOwner2.publicSeed, ALICE);
 
     assertNotEq(predicted1, predicted2);
   }
 
   function test_predictQuipAddress_consistentAcrossMultipleCalls() public {
-    address predicted1 = portal.predictQuipAddress(defaultPqOwner, ALICE);
-    address predicted2 = portal.predictQuipAddress(defaultPqOwner, ALICE);
+    address predicted1 = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
+    address predicted2 = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
 
     assertEq(predicted1, predicted2);
   }
 
   function test_predictQuipAddress_worksBeforeAnyDeployment() public {
     // No deployments yet, but prediction should still work
-    address predicted = portal.predictQuipAddress(defaultPqOwner, ALICE);
+    address predicted = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
 
     // Should be a valid non-zero address
     assertNotEq(predicted, address(0));
@@ -72,7 +71,7 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
     WOTSPlus.WinternitzElements memory signature = _signTerms(defaultPrivateKey, terms);
 
     // Predict address before deployment
-    address predicted = portal.predictQuipAddress(defaultPqOwner, ALICE);
+    address predicted = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
 
     // Pre-fund the predicted quip address with party assets
     vm.deal(predicted, partyNativeAmount);
@@ -93,7 +92,7 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
 
   function test_predictQuipAddress_matchesDeployUncoupledQuip() public {
     // Predict address before deployment
-    address predicted = portal.predictQuipAddress(defaultPqOwner, ALICE);
+    address predicted = portal.predictQuipAddress(defaultPqOwner.publicSeed, ALICE);
 
     // Deploy uncoupled quip
     vm.prank(ALICE);
@@ -117,7 +116,7 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     // Predict address
-    address predicted = portal.predictQuipAddress(pqOwner, ALICE);
+    address predicted = portal.predictQuipAddress(pqOwner.publicSeed, ALICE);
 
     // Deploy
     vm.prank(ALICE);
@@ -136,8 +135,8 @@ contract QuipPortal_predictQuipAddress is QuipPortalTest {
     vm.assume(deployer1 != address(0));
     vm.assume(deployer2 != address(0));
 
-    address predicted1 = portal.predictQuipAddress(defaultPqOwner, deployer1);
-    address predicted2 = portal.predictQuipAddress(defaultPqOwner, deployer2);
+    address predicted1 = portal.predictQuipAddress(defaultPqOwner.publicSeed, deployer1);
+    address predicted2 = portal.predictQuipAddress(defaultPqOwner.publicSeed, deployer2);
 
     assertNotEq(predicted1, predicted2);
   }
