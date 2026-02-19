@@ -69,7 +69,7 @@ contract QuipPortal is Context, IQuipPortal {
     _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
     _advancePqOwner(_pqOwnerHash);
-    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    address quip = _deployQuip(pqOwner.publicSeed, _msgSender());
     IQuip(quip).initializeCoupled(pqOwner, TermsLib.digestTermsCanonically(terms));
 
     accumulatedFees += creationFee;
@@ -91,7 +91,7 @@ contract QuipPortal is Context, IQuipPortal {
     _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
     _advancePqOwner(_pqOwnerHash);
-    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    address quip = _deployQuip(pqOwner.publicSeed, _msgSender());
     IQuip(quip).initializeCoupled(pqOwner, TermsLib.digestTermsCanonically(terms));
 
     accumulatedFees += creationFee;
@@ -116,7 +116,7 @@ contract QuipPortal is Context, IQuipPortal {
     _ensureCorrectNative(creationFee);
 
     _advancePqOwner(_pqOwnerHash);
-    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    address quip = _deployQuip(pqOwner.publicSeed, _msgSender());
     IQuip(quip).initializeUncoupled(pqOwner, TermsLib.digestPartyTerms(terms));
 
     accumulatedFees += creationFee;
@@ -167,15 +167,15 @@ contract QuipPortal is Context, IQuipPortal {
     // if Unused, this shouldn't happen (quip shouldn't exist), but we don't revert
   }
 
-  /// @notice deploys a new quip clone using keccak256(pqOwnerHash, deployer) as the salt
-  /// @dev Using (pqOwnerHash, deployer) as salt enables same-chain swaps where both parties
+  /// @notice deploys a new quip clone using keccak256(publicSeed, deployer) as the salt
+  /// @dev Using (publicSeed, deployer) as salt enables same-chain swaps where both parties
   ///      deploy with the same pqOwner but get unique quip addresses.
   ///      On first deployment, captures the clone's codehash for future verification.
-  /// @param _pqOwnerHash the pqOwnerHash
+  /// @param publicSeed the publicSeed from the pqOwner
   /// @param deployer the address deploying the quip
   /// @return quip the address of the deployed quip
-  function _deployQuip(bytes32 _pqOwnerHash, address deployer) internal returns (address quip) {
-    bytes32 salt = EfficientHashLib.hash(_pqOwnerHash, bytes32(uint256(uint160(deployer))));
+  function _deployQuip(bytes32 publicSeed, address deployer) internal returns (address quip) {
+    bytes32 salt = EfficientHashLib.hash(publicSeed, bytes32(uint256(uint160(deployer))));
     // factory address is encoded in bytecode, salt uniquifies the deployment address
     quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(address(this)), salt);
 
@@ -223,12 +223,11 @@ contract QuipPortal is Context, IQuipPortal {
 
   /// @notice predicts the address of a quip that would be deployed with the given parameters
   /// @dev Uses the same salt derivation as _deployQuip for deterministic address prediction
-  /// @param pqOwner the WOTS+ public key
+  /// @param publicSeed the publicSeed from the pqOwner
   /// @param deployer the address that will deploy the quip
   /// @return predicted the predicted address of the quip
-  function predictQuipAddress(WOTSPlus.WinternitzAddress calldata pqOwner, address deployer) external view returns (address predicted) {
-    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
-    bytes32 salt = EfficientHashLib.hash(pqOwnerHash, bytes32(uint256(uint160(deployer))));
+  function predictQuipAddress(bytes32 publicSeed, address deployer) external view returns (address predicted) {
+    bytes32 salt = EfficientHashLib.hash(publicSeed, bytes32(uint256(uint160(deployer))));
     predicted = LibClone.predictDeterministicAddress(QUIP_IMPLEMENTATION, abi.encode(address(this)), salt, address(this));
   }
 

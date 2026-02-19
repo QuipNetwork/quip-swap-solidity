@@ -133,8 +133,8 @@ interface IQuipPortal {
 
   /// @notice predicts the address of a quip that would be deployed with the given parameters
   /// @dev Uses the same salt derivation as internal _deployQuip for deterministic address prediction
-  /// @param pqOwner the WOTS+ public key
+  /// @param publicSeed the publicSeed from the pqOwner
   /// @param deployer the address that will deploy the quip
   /// @return predicted the predicted address of the quip
-  function predictQuipAddress(WOTSPlus.WinternitzAddress calldata pqOwner, address deployer) external view returns (address predicted);
+  function predictQuipAddress(bytes32 publicSeed, address deployer) external view returns (address predicted);
 }
