@@ -75,7 +75,6 @@ deploy-testnet: ## Deploy to testnet. Usage: make deploy-testnet RPC=BASE_SEPOLI
 		--rpc-url $(RPC_URL) \
 		--sender $(SENDER) \
 		--broadcast \
-		--verify
 
 .PHONY: deploy-testnet-dry
 deploy-testnet-dry: ## Dry run testnet deployment. Usage: make deploy-testnet-dry RPC=BASE_SEPOLIA_RPC_URL
@@ -93,7 +92,6 @@ deploy-production: ## Deploy to production. Usage: make deploy-production RPC=BA
 		--rpc-url $(RPC_URL) \
 		--sender $(SENDER) \
 		--broadcast \
-		--verify
 
 .PHONY: deploy-production-dry
 deploy-production-dry: ## Dry run production deployment. Usage: make deploy-production-dry RPC=BASE_RPC_URL
