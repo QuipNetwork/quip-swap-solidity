@@ -5,10 +5,11 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../../src/Quip.sol';
 import {Asset, AssetType, QuipTerms, TermsLib} from '../../../src/TermsLib.sol';
-import {IQuipPortal} from '../../../src/interfaces/IQuipPortal.sol';
+import {IQuipPortal, PqOwnerState} from '../../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipPortalTest} from '../QuipPortal.t.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title QuipPortal deployCoupledQuip Tests
 /// @dev Tests for QuipPortal.deployCoupledQuip
@@ -24,32 +25,49 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify lock is spent
-    assertTrue(portal.isLockSpent(defaultLock));
+    // verify pqOwner state transitioned to Free (first deployment)
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Free));
 
-    // Verify quip is initialized correctly
-    assertEq(quip.lock(), defaultLock);
-    assertEq(quip.termsDigest(), _digestQuipTerms(terms));
+    // verify quip is initialized correctly
+    (bytes32 publicSeed, bytes32 publicKeyHash) = quip.pqOwner();
+    assertEq(publicSeed, defaultPqOwner.publicSeed);
+    assertEq(publicKeyHash, defaultPqOwner.publicKeyHash);
+    assertEq(quip.termsDigest(), _digestTermsCanonically(terms));
     assertFalse(quip.INIT_UNCOUPLED());
     assertEq(quip.PORTAL_FROM_BYTECODE(), address(portal));
   }
 
-  function test_deployCoupledQuip_setsLockAsSpent() public {
+  function test_deployCoupledQuip_transitionsPqOwnerFromUnusedToFree() public {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
-    assertFalse(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Unused));
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
-    assertTrue(portal.isLockSpent(defaultLock));
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Free));
+  }
+
+  function test_deployCoupledQuip_transitionsPqOwnerFromFreeToSpent_sameChainSwap() public {
+    QuipTerms memory terms = _makeDefaultQuipTerms();
+    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+
+    // Alice deploys first quip (Unused → Free)
+    vm.prank(ALICE);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Free));
+
+    // Bob deploys second quip with same pqOwner (Free → Spent) - enables same-chain swaps
+    vm.prank(BOB);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+    assertEq(uint256(portal.pqOwnerState(defaultPqOwnerHash)), uint256(PqOwnerState.Spent));
   }
 
   function test_deployCoupledQuip_accumulatesFeesAndIncreasesPortalBalance() public {
@@ -59,14 +77,14 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     uint256 portalBalanceBefore = address(portal).balance;
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     assertEq(portal.accumulatedFees() - feesBefore, CREATION_FEE);
     assertEq(address(portal).balance - portalBalanceBefore, CREATION_FEE);
   }
 
   function test_deployCoupledQuip_transfersAllAssetTypes() public {
-    // Build party assets with all 4 asset types
+    // build party assets with all 4 asset types
     Asset[] memory partyAssets = new Asset[](4);
     partyAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
     partyAssets[1] = Asset({assetType: AssetType.ERC20, target: address(mockERC20), id: 0, amount: 100 ether});
@@ -82,12 +100,12 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quip = _findQuipCreatedAddress(logs);
 
-    // Verify all assets transferred to quip
+    // verify all assets transferred to quip
     assertEq(quip.balance, 1 ether);
     assertEq(mockERC20.balanceOf(quip), 100 ether);
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), quip);
@@ -100,7 +118,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     bool found = false;
@@ -113,19 +131,21 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     assertTrue(found, 'QuipCreated event not found');
   }
 
-  function test_deployCoupledQuip_initializesQuipWithCorrectLock() public {
+  function test_deployCoupledQuip_initializesQuipWithCorrectPqOwner() public {
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    assertEq(quip.lock(), defaultLock);
+    (bytes32 publicSeed, bytes32 publicKeyHash) = quip.pqOwner();
+    assertEq(publicSeed, defaultPqOwner.publicSeed);
+    assertEq(publicKeyHash, defaultPqOwner.publicKeyHash);
   }
 
   function test_deployCoupledQuip_initializesQuipWithCorrectTermsDigest() public {
@@ -134,39 +154,74 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    bytes32 expectedDigest = _digestQuipTerms(terms);
+    bytes32 expectedDigest = _digestTermsCanonically(terms);
     assertEq(quip.termsDigest(), expectedDigest);
   }
 
   // ============ Revert Cases ============
 
-  function test_deployCoupledQuip_revertsWhen_lockIsZero() public {
+  function test_deployCoupledQuip_revertsWhen_pqOwnerPublicSeedIsZero() public {
+    WOTSPlus.WinternitzAddress memory badPqOwner = WOTSPlus.WinternitzAddress({
+      publicSeed: bytes32(0),
+      publicKeyHash: bytes32(uint256(1))
+    });
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    vm.expectRevert(IQuipPortal.EmptyLock.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(bytes32(0), terms);
+    vm.expectRevert(IQuipPortal.EmptyPqOwner.selector);
+    portal.deployCoupledQuip{value: nativeRequired}(badPqOwner, terms);
   }
 
-  function test_deployCoupledQuip_revertsWhen_lockIsSpent() public {
+  function test_deployCoupledQuip_revertsWhen_pqOwnerPublicKeyHashIsZero() public {
+    WOTSPlus.WinternitzAddress memory badPqOwner = WOTSPlus.WinternitzAddress({
+      publicSeed: bytes32(uint256(1)),
+      publicKeyHash: bytes32(0)
+    });
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
-    // First deployment
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    vm.expectRevert(IQuipPortal.EmptyPqOwner.selector);
+    portal.deployCoupledQuip{value: nativeRequired}(badPqOwner, terms);
+  }
 
-    // Second deployment with same lock should fail
+  function test_deployCoupledQuip_revertsWhen_pqOwnerIsSpent() public {
+    QuipTerms memory terms = _makeDefaultQuipTerms();
+    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+
+    // first deployment by Alice (Unused → Free)
     vm.prank(ALICE);
-    vm.expectRevert(IQuipPortal.LockSpent.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+
+    // second deployment by Bob (Free → Spent)
+    vm.prank(BOB);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+
+    // third deployment by Charlie should fail - pqOwner is fully spent
+    vm.prank(CHARLIE);
+    vm.expectRevert(IQuipPortal.PqOwnerSpent.selector);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+  }
+
+  function test_deployCoupledQuip_revertsWhen_sameDeployerUsesPqOwnerTwice() public {
+    QuipTerms memory terms = _makeDefaultQuipTerms();
+    uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
+
+    // first deployment by Alice
+    vm.prank(ALICE);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
+
+    // second deployment by Alice with same pqOwner fails (deterministic address collision)
+    vm.prank(ALICE);
+    vm.expectRevert(); // LibClone.DeploymentFailed or similar
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_partyIsZero() public {
@@ -176,7 +231,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyParty.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_counterpartyIsZero() public {
@@ -186,7 +241,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyParty.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_partyRecipientIsZero() public {
@@ -196,7 +251,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyRecipient.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_counterpartyRecipientIsZero() public {
@@ -206,7 +261,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyRecipient.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_partyExpiryInPast() public {
@@ -216,7 +271,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.InvalidExpiry.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_counterpartyExpiryInPast() public {
@@ -226,7 +281,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.InvalidExpiry.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_partyAssetsEmpty() public {
@@ -236,7 +291,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyAssets.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_counterpartyAssetsEmpty() public {
@@ -246,7 +301,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.EmptyAssets.selector);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_incorrectNativeAmount() public {
@@ -255,7 +310,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(IQuipPortal.IncorrectNativeAmount.selector);
-    portal.deployCoupledQuip{value: nativeRequired - 1}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired - 1}(defaultPqOwner, terms);
   }
 
   function test_deployCoupledQuip_revertsWhen_assetAmountZero() public {
@@ -267,7 +322,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.expectRevert(TermsLib.ZeroAmount.selector);
-    portal.deployCoupledQuip{value: CREATION_FEE}(defaultLock, terms);
+    portal.deployCoupledQuip{value: CREATION_FEE}(defaultPqOwner, terms);
   }
 
   // ============ Fuzz Tests ============
@@ -284,7 +339,7 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quip = _findQuipCreatedAddress(logs);
@@ -292,15 +347,17 @@ contract QuipPortal_deployCoupledQuip is QuipPortalTest {
     assertEq(quip.balance, amount);
   }
 
-  function testFuzz_deployCoupledQuip_withVariousLocks(bytes32 lock) public {
-    vm.assume(lock != bytes32(0));
+  function testFuzz_deployCoupledQuip_withVariousPqOwners(bytes32 seed) public {
+    (WOTSPlus.WinternitzAddress memory pqOwner,) = _generateKeyPair(seed);
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
+    vm.assume(portal.pqOwnerState(pqOwnerHash) == PqOwnerState.Unused);
 
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
-    assertTrue(portal.isLockSpent(lock));
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Free));
   }
 }

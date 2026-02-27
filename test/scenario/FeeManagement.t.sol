@@ -2,8 +2,8 @@
 pragma solidity 0.8.33;
 
 import {QuipTerms, TermsLib} from '../../src/TermsLib.sol';
-import {IQuipPortal} from '../../src/interfaces/IQuipPortal.sol';
 import {TestBase} from '../utils/TestBase.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Fee Management Scenario Tests
 /// @dev Tests for fee collection and withdrawal workflows
@@ -22,7 +22,7 @@ contract FeeManagementTest is TestBase {
     uint256 feesBefore = portal.accumulatedFees();
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     assertEq(portal.accumulatedFees() - feesBefore, CREATION_FEE);
   }
@@ -32,12 +32,12 @@ contract FeeManagementTest is TestBase {
     uint256 feesBefore = portal.accumulatedFees();
 
     for (uint256 i = 0; i < deployCount; i++) {
-      bytes32 lock = _uniqueLock(i);
+      (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(i);
       QuipTerms memory terms = _makeDefaultQuipTerms();
       uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
       vm.prank(ALICE);
-      portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+      portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
     }
 
     assertEq(portal.accumulatedFees() - feesBefore, CREATION_FEE * deployCount);
@@ -54,7 +54,7 @@ contract FeeManagementTest is TestBase {
     uint256 feesBefore = portal.accumulatedFees();
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     assertEq(portal.accumulatedFees(), feesBefore); // No change
   }
@@ -64,12 +64,12 @@ contract FeeManagementTest is TestBase {
   function test_simulation_feeWithdrawal_fullWithdrawal() public {
     // Accumulate fees
     for (uint256 i = 0; i < 3; i++) {
-      bytes32 lock = _uniqueLock(i);
+      (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(i);
       QuipTerms memory terms = _makeDefaultQuipTerms();
       uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
       vm.prank(ALICE);
-      portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+      portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
     }
 
     uint256 totalFees = portal.accumulatedFees();
@@ -85,12 +85,12 @@ contract FeeManagementTest is TestBase {
   function test_simulation_feeWithdrawal_partialWithdrawals() public {
     // Accumulate fees
     for (uint256 i = 0; i < 5; i++) {
-      bytes32 lock = _uniqueLock(i);
+      (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(i);
       QuipTerms memory terms = _makeDefaultQuipTerms();
       uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
       vm.prank(ALICE);
-      portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+      portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
     }
 
     uint256 totalFees = portal.accumulatedFees();
@@ -111,7 +111,7 @@ contract FeeManagementTest is TestBase {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     uint256 fees = portal.accumulatedFees();
     uint256 charlieBefore = CHARLIE.balance;
@@ -129,11 +129,11 @@ contract FeeManagementTest is TestBase {
     uint256 newFee = 0.05 ether;
 
     // Deploy with original fee
-    bytes32 lock1 = _uniqueLock(1);
+    (WOTSPlus.WinternitzAddress memory pqOwner1,) = _uniqueKeyPair(1);
     QuipTerms memory terms = _makeDefaultQuipTerms();
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: CREATION_FEE + 1 ether}(lock1, terms);
+    portal.deployCoupledQuip{value: CREATION_FEE + 1 ether}(pqOwner1, terms);
 
     uint256 feesAfterFirst = portal.accumulatedFees();
     assertEq(feesAfterFirst, CREATION_FEE);
@@ -143,11 +143,11 @@ contract FeeManagementTest is TestBase {
     portal.setCreationFee(newFee);
 
     // Deploy with new fee
-    bytes32 lock2 = _uniqueLock(2);
+    (WOTSPlus.WinternitzAddress memory pqOwner2,) = _uniqueKeyPair(2);
     terms = _makeDefaultQuipTerms();
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: newFee + 1 ether}(lock2, terms);
+    portal.deployCoupledQuip{value: newFee + 1 ether}(pqOwner2, terms);
 
     assertEq(portal.accumulatedFees() - feesAfterFirst, newFee);
   }
@@ -159,22 +159,24 @@ contract FeeManagementTest is TestBase {
     vm.prank(ADMIN);
     portal.setCreationFee(MAX_FEE);
 
+    (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(100);
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = MAX_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     assertEq(portal.accumulatedFees(), MAX_FEE);
   }
 
   function test_simulation_feeManagement_withdrawZero() public {
     // Accumulate some fees
+    (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(101);
     QuipTerms memory terms = _makeDefaultQuipTerms();
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     uint256 feesBefore = portal.accumulatedFees();
 

@@ -86,7 +86,7 @@ contract TermsLib_enforceTermStaleness is TermsLibTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_enforceTermStaleness_succeedsWhenStale(uint64 expiry) public {
+  function testFuzz_enforceTermStaleness_succeedsWhenStale(uint64 expiry) public view {
     vm.assume(expiry <= block.timestamp);
     harness.exposed_enforceTermStaleness(expiry);
   }

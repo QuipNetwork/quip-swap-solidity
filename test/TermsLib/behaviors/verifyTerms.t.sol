@@ -16,7 +16,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
 
   function test_verifyTerms_succeedsWithMatchingDigest() public view {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
     harness.exposed_verifyTerms(digest, terms);
   }
 
@@ -32,7 +32,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
       AssetHelper.toArray(_makeERC721Asset(1), _makeERC1155Asset(1, 50))
     );
 
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
     harness.exposed_verifyTerms(digest, terms);
   }
 
@@ -48,7 +48,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
 
   function test_verifyTerms_revertsWhen_partyChanged() public {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
 
     terms.party = makeAddr('differentParty');
 
@@ -58,7 +58,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
 
   function test_verifyTerms_revertsWhen_counterpartyChanged() public {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
 
     terms.counterparty = makeAddr('differentCounterparty');
 
@@ -68,7 +68,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
 
   function test_verifyTerms_revertsWhen_partyExpiryChanged() public {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
 
     terms.partyExpiry = DEFAULT_EXPIRY + 1;
 
@@ -78,7 +78,7 @@ contract TermsLib_verifyTerms is TermsLibTest {
 
   function test_verifyTerms_revertsWhen_assetsChanged() public {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
 
     terms.partyAssets = _makeNativeAsset(2 ether).toArray();
 
@@ -113,13 +113,13 @@ contract TermsLib_verifyTerms is TermsLibTest {
       _makeNativeAsset(amount).toArray()
     );
 
-    bytes32 digest = harness.exposed_digestTerms(terms);
+    bytes32 digest = harness.exposed_digestTermsCanonically(terms);
     harness.exposed_verifyTerms(digest, terms);
   }
 
   function testFuzz_verifyTerms_revertsWhen_wrongDigest(bytes32 wrongDigest) public {
     QuipTerms memory terms = _defaultQuipTerms();
-    bytes32 correctDigest = harness.exposed_digestTerms(terms);
+    bytes32 correctDigest = harness.exposed_digestTermsCanonically(terms);
 
     vm.assume(wrongDigest != correctDigest);
 
