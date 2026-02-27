@@ -17,6 +17,10 @@ solc_version = '0.8.33'
 evm_version = 'prague'
 optimizer_runs = 10_000
 
+[lint]
+# Disable naming convention warnings (test functions use snake_case, constants use SCREAMING_SNAKE_CASE)
+exclude_lints = ["mixed-case-function", "mixed-case-variable"]
+
 [profile.optimized]
 via_ir = true
 out = 'out-via-ir'
@@ -25,5 +29,13 @@ out = 'out-via-ir'
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
+pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
+
+[rpc_endpoints]
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

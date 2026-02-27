@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 /// @notice the type of asset
@@ -23,6 +24,18 @@ struct Asset {
   uint256 id;
   /// @notice the amount, only used for native, erc20, and erc1155
   uint256 amount;
+}
+
+/// @notice the terms for a single party in a quip proposal
+struct PartyTerms {
+  /// @notice the address of the party (signer)
+  address signatory;
+  /// @notice the address that receives the counterparty's assets
+  address recipient;
+  /// @notice the deadline for the party to commit
+  uint64 expiry;
+  /// @notice the assets offered by the party
+  Asset[] assets;
 }
 
 /// @notice the terms of a quip agreement
@@ -70,29 +83,76 @@ library TermsLib {
   /// @notice thrown when the terms have not yet expired
   error TermsNotExpired();
 
-  /// @notice computes the keccak256 digest of quip terms
-  /// @param terms the terms to hash
+  /// @notice computes the keccak256 digest of party terms
+  /// @param terms the party terms to hash
   /// @return digest the keccak256 hash of the encoded terms
-  function digestTerms(QuipTerms calldata terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
-    );
+  function digestPartyTerms(PartyTerms calldata terms) internal pure returns (bytes32 digest) {
+    digest = keccak256(abi.encode(terms.signatory, terms.recipient, terms.expiry, terms.assets));
   }
 
-  /// @notice reverts if the provided terms do not match the stored digest
-  /// @param termsDigest the stored digest to verify against
+  /// @notice combines two party terms into a full quip terms struct
+  /// @param party the initiating party's terms
+  /// @param counterparty the counterparty's terms
+  /// @return coupled the combined quip terms
+  function coupleTerms(
+    PartyTerms calldata party,
+    PartyTerms calldata counterparty
+  ) internal pure returns (QuipTerms memory coupled) {
+    coupled = QuipTerms({
+      party: party.signatory,
+      partyRecipient: party.recipient,
+      counterparty: counterparty.signatory,
+      counterpartyRecipient: counterparty.recipient,
+      partyExpiry: party.expiry,
+      counterpartyExpiry: counterparty.expiry,
+      partyAssets: party.assets,
+      counterpartyAssets: counterparty.assets
+    });
+  }
+
+  /// @notice computes a canonical digest of quip terms regardless of party/counterparty order
+  /// @dev Used for WOTS+ signing - same signature works on both sides of a swap
+  /// @param terms the quip terms to hash
+  /// @return canonicalDigest the canonical hash (smaller digest first)
+  function digestTermsCanonically(QuipTerms calldata terms) internal pure returns (bytes32 canonicalDigest) {
+    bytes32 partyDigest = EfficientHashLib.hash(
+      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
+    );
+    bytes32 counterpartyDigest = EfficientHashLib.hash(
+      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
+    );
+    // canonical ordering: smaller digest first
+    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
+      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
+    } else {
+      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
+    }
+  }
+
+  /// @notice computes a canonical digest of quip terms from memory
+  /// @dev Memory variant for use after coupling terms
+  /// @param terms the quip terms to hash
+  /// @return canonicalDigest the canonical hash (smaller digest first)
+  function digestTermsCanonicallyMemory(QuipTerms memory terms) internal pure returns (bytes32 canonicalDigest) {
+    bytes32 partyDigest = EfficientHashLib.hash(
+      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
+    );
+    bytes32 counterpartyDigest = EfficientHashLib.hash(
+      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
+    );
+    // canonical ordering: smaller digest first
+    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
+      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
+    } else {
+      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
+    }
+  }
+
+  /// @notice reverts if the provided terms do not match the stored canonical digest
+  /// @param termsDigest the stored canonical digest to verify against
   /// @param terms the terms to verify
   function verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) internal pure {
-    if (termsDigest != digestTerms(terms)) {
+    if (digestTermsCanonically(terms) != termsDigest) {
       revert InvalidTerms();
     }
   }
@@ -171,8 +231,22 @@ library TermsLib {
   /// @param from the address to transfer from (ignored for native assets)
   /// @param to the address to transfer to
   function transferAssets(Asset[] memory assets, address from, address to) internal {
-    for (uint256 i; i < assets.length; ++i) {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
       transferAsset(assets[i], from, to);
+    }
+  }
+
+  /// @notice transfers an array of assets excluding native assets
+  /// @param assets the assets to transfer
+  /// @param from the address to transfer from
+  /// @param to the address to transfer to
+  function transferAssetsNoNative(Asset[] memory assets, address from, address to) internal {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
+      if (assets[i].assetType != AssetType.Native) {
+        transferAsset(assets[i], from, to);
+      }
     }
   }
 
@@ -180,7 +254,8 @@ library TermsLib {
   /// @param assets the assets to sum
   /// @return total the total native amount
   function totalNativeAmount(Asset[] memory assets) internal pure returns (uint256 total) {
-    for (uint256 i; i < assets.length; ++i) {
+    uint256 length = assets.length;
+    for (uint256 i; i < length; ++i) {
       if (assets[i].assetType == AssetType.Native) total += assets[i].amount;
     }
   }
