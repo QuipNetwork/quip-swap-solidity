@@ -2,7 +2,7 @@
 
 ## Overview
 
-QUIP (Quick Interchange Protocol) is a trustless atomic swap system using hashlock contracts. It enables secure asset exchanges between two parties, potentially across different chains.
+QUIP (Quick Interchange Protocol) is a trustless atomic swap system using WOTS+ (Winternitz One-Time Signature Plus) for quantum-resistant authorization. It enables secure asset exchanges between two parties, potentially across different chains.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ QuipPortal
 │   ├── creationFee
 │   ├── accumulatedFees
 │   ├── admin
-│   └── isLockSpent (mapping)
+│   └── pqOwnerState (mapping: bytes32 => PqOwnerState)
 │
 ├── Modifier
 │   └── onlyAdmin
@@ -51,14 +51,18 @@ QuipPortal
 │   └── constructor(firstAdmin, quipImpl, maxFee, creationFee)
 │
 ├── Public Functions
-│   ├── deployCoupledQuip(lock, terms)
-│   ├── deployUncoupledQuip(lock, terms)
+│   ├── deployCoupledQuip(pqOwner, terms)
+│   ├── deployUncoupledQuip(pqOwner, terms)
+│   ├── spendPqOwner(pqOwnerHash)
 │   ├── withdrawFees(receiver, amount)
 │   └── setCreationFee(newFee)
 │
 └── Internal Functions
-    ├── _deployQuip(lock)
-    ├── _enforceValidLock(lock)
+    ├── _deployQuip(pqOwnerHash, deployer)
+    ├── _enforceValidPqOwner(pqOwner, pqOwnerHash)
+    ├── _advancePqOwner(pqOwnerHash)
+    ├── _computePqOwnerHash(pqOwner)
+    ├── _enforceQuipCaller()
     ├── _enforceNonEmptyAddress(addr)
     ├── _ensureCorrectNative(amount)
     ├── _validateQuipTerms(terms)
@@ -73,11 +77,10 @@ Individual swap contracts deployed as minimal clones.
 ```
 Quip
 ├── Constants
-│   ├── VERSION
-│   └── PORTAL_PREDETERMINED
+│   └── VERSION
 │
 ├── State
-│   ├── lock (bytes32)
+│   ├── pqOwner (WinternitzAddress)
 │   ├── termsDigest (bytes32)
 │   └── INIT_UNCOUPLED (bool)
 │
@@ -86,17 +89,17 @@ Quip
 │
 ├── Public Functions
 │   ├── PORTAL_FROM_BYTECODE()
-│   ├── initializeCoupled(lock, termsDigest)
-│   ├── initializeUncoupled(lock, termsDigest)
-│   ├── coupleQuip(party, counterparty, termsDigest)
-│   ├── claim(key, terms)
+│   ├── pqOwner()
+│   ├── pqOwnerHash()
+│   ├── initializeCoupled(pqOwner, termsDigest)
+│   ├── initializeUncoupled(pqOwner, termsDigest)
+│   ├── coupleQuip(party, counterparty)
+│   ├── claim(signature, terms)
 │   └── reclaim(terms)
 │
 └── Internal Functions
-    ├── _verifyKey(key)
-    ├── _onlyPortal()
-    ├── _enforcePortalMatch()
-    └── _enforcePortalCaller()
+    ├── _verifySignature(signature)
+    └── _onlyPortal()
 ```
 
 ### TermsLib (Library)
@@ -118,8 +121,8 @@ TermsLib
 └── Functions
     ├── digestPartyTerms(terms)
     ├── coupleTerms(party, counterparty)
-    ├── digestTerms(terms) [calldata]
-    ├── digestTermsMemory(terms) [memory]
+    ├── digestTermsCanonically(terms) [calldata]
+    ├── digestTermsCanonicallyMemory(terms) [memory]
     ├── verifyTerms(digest, terms)
     ├── executePartyCommitment(quip, recipient, assets)
     ├── releasePartyCommitment(quip, recipient, assets)
@@ -182,6 +185,19 @@ struct Asset {
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### WOTS+ Types
+
+```solidity
+struct WinternitzAddress {
+    bytes32 publicSeed;      // Public seed for hash chain derivation
+    bytes32 publicKeyHash;   // Hash of all public key segments
+}
+
+struct WinternitzElements {
+    bytes32[67] elements;    // Signature elements (67 hash chain endpoints)
+}
+```
+
 ---
 
 ## Deployment Pattern
@@ -196,8 +212,8 @@ QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deploym
 │       │                                                                     │
 │       │ LibClone.cloneDeterministic(                                        │
 │       │     implementation = QUIP_IMPLEMENTATION,                           │
-│       │     data = abi.encode(VERSION),                                     │
-│       │     salt = lock                                                     │
+│       │     data = abi.encode(address(this)),                               │
+│       │     salt = pqOwnerHash                                              │
 │       │ )                                                                   │
 │       │                                                                     │
 │       ▼                                                                     │
@@ -207,19 +223,19 @@ QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deploym
 │   │  │ 45 bytes proxy bytecode → delegates to QUIP_IMPLEMENTATION  │    │   │
 │   │  └─────────────────────────────────────────────────────────────┘    │   │
 │   │  ┌─────────────────────────────────────────────────────────────┐    │   │
-│   │  │ Immutable args: VERSION (encoded in bytecode)               │    │   │
+│   │  │ Immutable args: portal address (encoded in bytecode)        │    │   │
 │   │  └─────────────────────────────────────────────────────────────┘    │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│   Address = CREATE2(sender, salt=lock, bytecode)                            │
-│   → Deterministic address from lock                                         │
+│   Address = CREATE2(sender, salt=pqOwnerHash, bytecode)                     │
+│   → Deterministic address from pqOwnerHash                                  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Benefits:**
 - ~10x cheaper deployment vs full contract
-- Deterministic addresses from lock
+- Deterministic addresses from pqOwnerHash
 - Upgradeable via new implementation + new portal
 
 ---
@@ -233,7 +249,7 @@ QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deploym
 | 0 | creationFee | uint256 |
 | 1 | accumulatedFees | uint256 |
 | 2 | admin | address |
-| 3+ | isLockSpent | mapping(bytes32 => bool) |
+| 3+ | pqOwnerState | mapping(bytes32 => PqOwnerState) |
 
 *Note: VERSION, MAX_FEE, QUIP_IMPLEMENTATION are immutable (in bytecode)*
 
@@ -242,60 +258,80 @@ QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deploym
 | Slot | Variable | Type |
 |------|----------|------|
 | 0 | _initialized (from Initializable) | uint64 |
-| 1 | lock | bytes32 |
-| 2 | termsDigest | bytes32 |
-| 3 | INIT_UNCOUPLED | bool |
+| 1 | pqOwner.publicSeed | bytes32 |
+| 2 | pqOwner.publicKeyHash | bytes32 |
+| 3 | termsDigest | bytes32 |
+| 4 | INIT_UNCOUPLED | bool |
 
 ---
 
-## Hashlock Security Model
+## WOTS+ Security Model
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         HASHLOCK MECHANISM                                  │
+│                         WOTS+ SIGNATURE MECHANISM                           │
 │                                                                             │
 │   1. Key Generation (off-chain)                                             │
-│      key = random_bytes()                                                   │
-│      lock = keccak256(key)                                                  │
+│      privateKey = random_bytes32()                                          │
+│      pqOwner = WOTSPlus.generateKeyPair(privateKey)                         │
+│      pqOwnerHash = hash(pqOwner.publicSeed, pqOwner.publicKeyHash)          │
 │                                                                             │
-│   2. Lock Published                                                         │
-│      Quip stores: lock (public)                                             │
-│      Key holder: keeps key secret                                           │
+│   2. Public Key Published                                                   │
+│      Quip stores: pqOwner (public)                                          │
+│      Key holder: keeps privateKey secret                                    │
 │                                                                             │
-│   3. Claim with Key                                                         │
-│      if keccak256(provided_key) == stored_lock:                             │
+│   3. Claim with Signature                                                   │
+│      message = canonicalTermsDigest                                         │
+│      signature = WOTSPlus.sign(privateKey, message)                         │
+│      if WOTSPlus.verify(pqOwner, message, signature):                       │
 │          transfer assets                                                    │
-│          emit event with key (now public)                                   │
+│          emit event with signature (now public)                             │
 │                                                                             │
-│   4. Key Revelation                                                         │
-│      Once key is used on Chain A, it's visible to all                       │
-│      Counterparty can use same key on Chain B                               │
+│   4. Signature Reuse (Cross-Chain)                                          │
+│      Both QUIPs use same canonical terms digest                             │
+│      Same signature valid on both chains                                    │
+│      Counterparty can use revealed signature on other chain                 │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Why WOTS+ Instead of Hashlock?
+
+| Aspect | Hashlock | WOTS+ |
+|--------|----------|-------|
+| **Quantum Security** | Vulnerable to Grover's algorithm | Quantum-resistant (hash-based) |
+| **Key Reuse** | Same key = same hash | One-time signature (by design) |
+| **Signature Size** | 32 bytes (preimage) | ~2KB (67 × 32 bytes) |
+| **Verification Cost** | ~3k gas | ~100-150k gas |
+| **Cross-Chain** | Same preimage reveals key | Same signature, same canonical digest |
+
 ---
 
-## Terms Digest Pattern
+## Canonical Terms Digest Pattern
 
-Only the hash of terms is stored on-chain to save gas:
+The canonical digest ensures both parties can use the same signature:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        TERMS DIGEST PATTERN                                 │
+│                     CANONICAL TERMS DIGEST PATTERN                          │
 │                                                                             │
-│   ON-CHAIN                           OFF-CHAIN                              │
-│   ────────                           ─────────                              │
-│   termsDigest = 0xabc123...          QuipTerms {                            │
-│   (32 bytes)                           party: 0x...,                        │
-│                                        partyRecipient: 0x...,               │
-│                                        counterparty: 0x...,                 │
-│                                        ...                                  │
-│                                      }                                      │
+│   1. Compute party digests separately                                       │
+│      partyDigest = hash(party, partyRecipient, partyExpiry, partyAssets)    │
+│      counterpartyDigest = hash(counterparty, counterpartyRecipient, ...)    │
 │                                                                             │
-│   VERIFICATION (at claim/reclaim):                                          │
-│   ────────────────────────────────                                          │
-│   require(keccak256(abi.encode(terms)) == termsDigest)                      │
+│   2. Sort and combine (smaller value first)                                 │
+│      if partyDigest < counterpartyDigest:                                   │
+│          canonicalDigest = hash(partyDigest, counterpartyDigest)            │
+│      else:                                                                  │
+│          canonicalDigest = hash(counterpartyDigest, partyDigest)            │
+│                                                                             │
+│   WHY THIS MATTERS:                                                         │
+│   ─────────────────                                                         │
+│   Chain A (Alice's QUIP):  party=Alice, counterparty=Bob                    │
+│   Chain B (Bob's QUIP):    party=Bob,   counterparty=Alice                  │
+│                                                                             │
+│   Both compute the SAME canonical digest!                                   │
+│   → Alice signs once, signature works on both chains                        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -306,7 +342,7 @@ PROPOSED:   termsDigest = hash(PartyTerms)
      │
      │ coupleQuip()
      ▼
-COMMITTED:  termsDigest = hash(QuipTerms)
+COMMITTED:  termsDigest = canonicalHash(QuipTerms)
 ```
 
 ---
@@ -334,9 +370,9 @@ COMMITTED:  termsDigest = hash(QuipTerms)
 │                                                                             │
 │   CLAIM                                                                     │
 │   ─────                                                                     │
-│   Claimer ──[claim(key, terms)]──► Quip                                     │
-│                                      │                                      │
-│                                      └──► transferAssets(quip → recipient)  │
+│   Claimer ──[claim(signature, terms)]──► Quip                               │
+│                                            │                                │
+│                                            └──► transferAssets(quip → recipient)
 │                                                                             │
 │   RECLAIM                                                                   │
 │   ───────                                                                   │
@@ -355,14 +391,14 @@ COMMITTED:  termsDigest = hash(QuipTerms)
 COUPLED CREATION:
   QuipPortal.deployCoupledQuip()
     └── Quip.initializeCoupled()
-          └── emit PartyCommitment(termsDigest)
-    └── emit QuipCreated(quip, terms)
+          └── emit PartyCommitment(pqOwnerHash, termsDigest)
+    └── emit QuipCreated(pqOwnerHash, quip, terms)
 
 UNCOUPLED CREATION:
   QuipPortal.deployUncoupledQuip()
     └── Quip.initializeUncoupled()
-          └── emit PartyProposal(lock, termsDigest)
-    └── emit QuipProposed(quip, terms)
+          └── emit PartyProposal(pqOwnerHash, termsDigest)
+    └── emit QuipProposed(pqOwnerHash, quip, terms)
 
 COUPLING:
   Quip.coupleQuip()
@@ -370,10 +406,12 @@ COUPLING:
 
 CLAIM:
   Quip.claim()
-    └── emit PartyTermsFulfilled(key, recipient, assets)
+    └── QuipPortal.spendPqOwner(pqOwnerHash)
+    └── emit PartyTermsFulfilled(signature, recipient, assets)
 
 RECLAIM:
   Quip.reclaim()
+    └── QuipPortal.spendPqOwner(pqOwnerHash)
     └── emit PartyUnbound(recipient, assets)
 ```
 
@@ -384,12 +422,55 @@ RECLAIM:
 | Aspect | Implementation |
 |--------|----------------|
 | Reentrancy | State changes before external calls (CEI pattern) |
-| Lock uniqueness | `isLockSpent` mapping prevents reuse |
-| Terms tampering | Terms verified against stored digest |
+| PqOwner uniqueness | `pqOwnerState` enum (Unused→Free→Spent) prevents replay; allows same-chain swaps |
+| Terms tampering | Terms verified against stored canonical digest |
 | Expiry enforcement | Block timestamp checks for claim/reclaim |
 | Asset validation | Type-specific validation in `validateAsset()` |
-| Permissionless claim | By design - key possession = authorization |
+| Permissionless claim | By design - valid signature = authorization |
 | Zero-address checks | Constructor and terms validation |
+| Quantum resistance | WOTS+ signatures based on hash function security |
+
+### Portal-Quip Mutual Authentication
+
+The system uses a two-way binding to prevent malicious clone attacks:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      MUTUAL AUTHENTICATION                                  │
+│                                                                             │
+│   ┌─────────────┐                              ┌─────────────┐              │
+│   │  QuipPortal │                              │    Quip     │              │
+│   │             │                              │   (Clone)   │              │
+│   └──────┬──────┘                              └──────┬──────┘              │
+│          │                                            │                     │
+│          │  1. Portal verifies Quip                   │                     │
+│          │     ─────────────────────                  │                     │
+│          │     spendPqOwner() checks:                 │                     │
+│          │     msg.sender.codehash ==                 │                     │
+│          │       QUIP_CODEHASH                        │                     │
+│          │                                            │                     │
+│          │  2. Quip verifies Portal                   │                     │
+│          │     ─────────────────────                  │                     │
+│          │     initializeCoupled/Uncoupled checks:    │                     │
+│          │     msg.sender == PORTAL_FROM_BYTECODE()   │                     │
+│          │                                            │                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters:**
+
+An attacker could deploy a fake clone with matching `codehash` by using the same
+implementation and immutable args. However:
+
+1. **Attacker deploys fake clone** → Clone has matching codehash ✓
+2. **Attacker tries to initialize** → `onlyPortal` checks `msg.sender == PORTAL_FROM_BYTECODE()`
+3. **Attacker is not the portal** → Reverts with `CallerNotPortal`
+4. **Uninitialized clone** → `pqOwner = 0`, `termsDigest = 0`
+5. **Cannot claim/reclaim** → No path to call `spendPqOwner()`
+
+The portal address embedded in the clone's bytecode (via LibClone immutable args)
+ensures only the legitimate portal can initialize quips, while the codehash check
+ensures only legitimate quips can call `spendPqOwner()`.
 
 ---
 
@@ -399,3 +480,4 @@ RECLAIM:
 |---------|---------|-------|
 | OpenZeppelin Contracts | 5.6.0-rc.1 | IERC721, IERC1155, Context |
 | Solady | 0.1.26 | SafeTransferLib, LibClone, EfficientHashLib, Initializable |
+| hashsigs-solidity | 0.1.0 | WOTSPlus library for quantum-resistant signatures |

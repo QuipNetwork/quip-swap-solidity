@@ -3,10 +3,12 @@ pragma solidity 0.8.33;
 
 import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
-import {IQuipPortal} from './interfaces/IQuipPortal.sol';
+import {IQuipPortal, PqOwnerState} from './interfaces/IQuipPortal.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 contract QuipPortal is Context, IQuipPortal {
   /// @notice the factory version
@@ -27,8 +29,13 @@ contract QuipPortal is Context, IQuipPortal {
   /// @notice the quip implementation used for cloning
   address immutable QUIP_IMPLEMENTATION;
 
-  /// @notice tracks whether a lock hash has been used
-  mapping(bytes32 lock => bool isSpent) public isLockSpent;
+  /// @notice tracks the lifecycle state of each pqOwner (WOTS+ public key)
+  /// @dev See PqOwnerState enum for state transitions
+  mapping(bytes32 pqOwnerHash => PqOwnerState state) public pqOwnerState;
+
+  /// @notice the expected codehash of valid quip clones deployed by this portal
+  /// @dev Set on first deployment; all clones share the same runtime bytecode
+  bytes32 public QUIP_CODEHASH;
 
   modifier onlyAdmin() {
     _onlyAdmin();
@@ -50,40 +57,46 @@ contract QuipPortal is Context, IQuipPortal {
     creationFee = _creationFee;
   }
 
-  /// @notice creates a new quip with the given lock and terms
-  /// @param lock the hash of the secret used for deterministic deployment
+  /// @notice creates a new quip with the given WOTS+ public key and terms
+  /// @dev Salt for deterministic deployment is keccak256(pqOwnerHash, msg.sender) to allow
+  ///      same-chain swaps where both parties deploy with the same pqOwner
+  /// @param pqOwner the WOTS+ public key used for deterministic deployment
   /// @param terms the terms of the quip agreement
-  function deployCoupledQuip(bytes32 lock, QuipTerms calldata terms) external payable {
-    _enforceValidLock(lock);
+  function deployCoupledQuip(WOTSPlus.WinternitzAddress calldata pqOwner, QuipTerms calldata terms) external payable {
+    bytes32 _pqOwnerHash = _computePqOwnerHash(pqOwner);
+    _enforceValidPqOwner(pqOwner, _pqOwnerHash);
     _validateQuipTerms(terms);
     _ensureCorrectNative(creationFee + TermsLib.totalNativeAmount(terms.partyAssets));
 
-    address quip = _deployQuip(lock);
-    IQuip(quip).initializeCoupled(lock, TermsLib.digestTerms(terms));
+    _advancePqOwner(_pqOwnerHash);
+    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    IQuip(quip).initializeCoupled(pqOwner, TermsLib.digestTermsCanonically(terms));
 
     accumulatedFees += creationFee;
-    isLockSpent[lock] = true;
     TermsLib.transferAssets(terms.partyAssets, _msgSender(), quip);
 
-    emit QuipCreated(lock, quip, terms);
+    emit QuipCreated(_pqOwnerHash, quip, terms);
   }
 
   /// @notice creates a new uncoupled quip proposal with party terms only
-  /// @param lock the hash of the secret used for deterministic deployment
+  /// @dev Salt for deterministic deployment is keccak256(pqOwnerHash, msg.sender) to allow
+  ///      same-chain swaps where both parties deploy with the same pqOwner
+  /// @param pqOwner the WOTS+ public key used for deterministic deployment
   /// @param terms the party terms of the quip proposal
-  function deployUncoupledQuip(bytes32 lock, PartyTerms calldata terms) external payable {
-    _enforceValidLock(lock);
+  function deployUncoupledQuip(WOTSPlus.WinternitzAddress calldata pqOwner, PartyTerms calldata terms) external payable {
+    bytes32 _pqOwnerHash = _computePqOwnerHash(pqOwner);
+    _enforceValidPqOwner(pqOwner, _pqOwnerHash);
     _validatePartyTerms(terms);
     // right now only fee needs to be paid; no forwarding here
     _ensureCorrectNative(creationFee);
 
-    address quip = _deployQuip(lock);
-    IQuip(quip).initializeUncoupled(lock, TermsLib.digestPartyTerms(terms));
+    _advancePqOwner(_pqOwnerHash);
+    address quip = _deployQuip(_pqOwnerHash, _msgSender());
+    IQuip(quip).initializeUncoupled(pqOwner, TermsLib.digestPartyTerms(terms));
 
-    isLockSpent[lock] = true;
     accumulatedFees += creationFee;
 
-    emit QuipProposed(lock, quip, terms);
+    emit QuipProposed(_pqOwnerHash, quip, terms);
   }
 
   /// @notice withdraws accumulated fees to the given receiver
@@ -108,12 +121,44 @@ contract QuipPortal is Context, IQuipPortal {
     emit CreationFeeUpdated(newFee);
   }
 
-  /// @notice deploys a new quip clone using the lock as the salt
-  /// @param lock the salt for deterministic deployment
+  /// @notice marks a pqOwner as spent, callable only by quip contracts deployed by this portal
+  /// @dev Called by Quip.claim() and Quip.reclaim() to transition pqOwner state.
+  ///      Idempotent: if already Spent, this is a no-op (supports same-chain swaps
+  ///      where both quips may claim/reclaim).
+  /// @param _pqOwnerHash the pqOwnerHash to mark as spent
+  function spendPqOwner(bytes32 _pqOwnerHash) external {
+    // verify caller is a quip clone deployed by this portal
+    // the clone stores this portal's address as immutable args in bytecode
+    _enforceQuipCaller();
+
+    PqOwnerState currentState = pqOwnerState[_pqOwnerHash];
+
+    // only transition if Free; Spent is terminal and idempotent
+    if (currentState == PqOwnerState.Free) {
+      pqOwnerState[_pqOwnerHash] = PqOwnerState.Spent;
+      emit SpentPqOwner(_pqOwnerHash, _msgSender());
+    }
+    // if already Spent, no-op (idempotent for same-chain swaps)
+    // if Unused, this shouldn't happen (quip shouldn't exist), but we don't revert
+  }
+
+  /// @notice deploys a new quip clone using keccak256(pqOwnerHash, deployer) as the salt
+  /// @dev Using (pqOwnerHash, deployer) as salt enables same-chain swaps where both parties
+  ///      deploy with the same pqOwner but get unique quip addresses.
+  ///      On first deployment, captures the clone's codehash for future verification.
+  /// @param _pqOwnerHash the pqOwnerHash
+  /// @param deployer the address deploying the quip
   /// @return quip the address of the deployed quip
-  function _deployQuip(bytes32 lock) internal returns (address quip) {
-    // Factory address is encoded in bytecode, lock uniquifies the deployment address
-    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(address(this)), lock);
+  function _deployQuip(bytes32 _pqOwnerHash, address deployer) internal returns (address quip) {
+    bytes32 salt = EfficientHashLib.hash(_pqOwnerHash, bytes32(uint256(uint160(deployer))));
+    // factory address is encoded in bytecode, salt uniquifies the deployment address
+    quip = LibClone.cloneDeterministic(QUIP_IMPLEMENTATION, abi.encode(address(this)), salt);
+
+    // capture codehash on first deployment for future caller verification
+    // all clones have identical runtime bytecode, so one codehash validates all
+    if (QUIP_CODEHASH == bytes32(0)) {
+      QUIP_CODEHASH = quip.codehash;
+    }
   }
 
   /// @notice reverts if msg.value does not match the expected amount
@@ -124,11 +169,31 @@ contract QuipPortal is Context, IQuipPortal {
     }
   }
 
-  /// @notice reverts if the lock is empty or has already been used
-  /// @param lock the lock to validate
-  function _enforceValidLock(bytes32 lock) internal view {
-    if (lock == bytes32(0)) revert EmptyLock();
-    if (isLockSpent[lock]) revert LockSpent();
+  /// @notice validates that the pqOwner is non-empty and not already spent
+  /// @dev Reverts if pqOwner has empty fields or already Spent
+  /// @param pqOwner the WinternitzAddress to validate
+  /// @param _pqOwnerHash the precomputed hash of the pqOwner
+  function _enforceValidPqOwner(
+    WOTSPlus.WinternitzAddress calldata pqOwner,
+    bytes32 _pqOwnerHash
+  ) internal view {
+    if (pqOwner.publicSeed == bytes32(0) || pqOwner.publicKeyHash == bytes32(0)) revert EmptyPqOwner();
+    if (pqOwnerState[_pqOwnerHash] == PqOwnerState.Spent) revert PqOwnerSpent();
+  }
+
+  /// @notice advances the pqOwner state: Unused → Free → Spent
+  /// @dev Must be called after _enforceValidPqOwner
+  /// @param _pqOwnerHash the pqOwnerHash to advance
+  function _advancePqOwner(bytes32 _pqOwnerHash) internal {
+    PqOwnerState currentState = pqOwnerState[_pqOwnerHash];
+    pqOwnerState[_pqOwnerHash] = currentState == PqOwnerState.Unused ? PqOwnerState.Free : PqOwnerState.Spent;
+  }
+
+  /// @notice computes the hash of a WinternitzAddress
+  /// @param pqOwner the WOTS+ public key
+  /// @return the hash of the public key
+  function _computePqOwnerHash(WOTSPlus.WinternitzAddress calldata pqOwner) internal pure returns (bytes32) {
+    return EfficientHashLib.hash(pqOwner.publicSeed, pqOwner.publicKeyHash);
   }
 
   /// @notice reverts if the address is the zero address
@@ -161,6 +226,14 @@ contract QuipPortal is Context, IQuipPortal {
     if (_msgSender() != admin) {
       revert NotAdmin();
     }
+  }
+
+  /// @notice reverts if the caller is not a quip clone deployed by this portal
+  /// @dev Verifies caller's codehash matches the expected codehash of valid quip clones.
+  ///      All clones from this portal have identical runtime bytecode (same implementation
+  ///      + same immutable args), so they share the same codehash.
+  function _enforceQuipCaller() internal view {
+    if (_msgSender().codehash != QUIP_CODEHASH) revert CallerNotQuip();
   }
 
   /// @notice validates the party terms provided during uncoupled quip creation
