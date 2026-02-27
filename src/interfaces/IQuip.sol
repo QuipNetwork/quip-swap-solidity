@@ -33,8 +33,9 @@ interface IQuip {
   error CallerNotPortal();
 
   /// @notice emitted when the party commits their assets to a quip
+  /// @param lock the hash of the secret
   /// @param termsDigest hash terms of the quip agreement
-  event PartyCommitment(bytes32 termsDigest);
+  event PartyCommitment(bytes32 indexed lock, bytes32 termsDigest);
 
   /// @notice emitted when a party proposes uncoupled terms
   /// @param lock the hash of the secret
@@ -60,10 +61,6 @@ interface IQuip {
   /// @return the version number
   function VERSION() external view returns (uint256);
 
-  /// @notice returns the predetermined portal address from deterministic deployment
-  /// @return the portal address
-  function PORTAL_PREDETERMINED() external view returns (address);
-
   /// @notice returns the portal that deployed this quip from bytecode
   /// @return the portal address stored as an immutable clone argument
   function PORTAL_FROM_BYTECODE() external view returns (address);
@@ -79,10 +76,10 @@ interface IQuip {
   function initializeUncoupled(bytes32 lock, bytes32 termsDigest) external;
 
   /// @notice couples an uncoupled quip with counterparty terms
-  /// @param party the initiating party's terms
+  /// @dev Verifies party terms against stored termsDigest, then updates to coupled terms digest
+  /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms
-  /// @param termsDigest the digest to verify against stored terms
-  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty, bytes32 termsDigest) external payable;
+  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable;
 
   /// @notice claims the party's assets by providing the key and terms
   /// @param key the secret that unlocks the quip

@@ -3,6 +3,8 @@ pragma solidity 0.8.33;
 
 import {PartyTerms, QuipTerms, TermsLib} from './TermsLib.sol';
 import {IQuip} from './interfaces/IQuip.sol';
+import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
+import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 import {Context} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Context.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {Initializable} from 'solady-0.1.26/utils/Initializable.sol';
@@ -11,12 +13,9 @@ import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
 //TODO:
 // - Slashing
 // - Winternitz security (?)
-contract Quip is Context, Initializable, IQuip {
+contract Quip is Context, Initializable, IQuip, IERC721Receiver, IERC1155Receiver {
   /// @notice the version of this quip implementation
   uint256 public constant VERSION = 1;
-
-  /// @notice address of portal generated from deterministic deployment
-  address public constant PORTAL_PREDETERMINED = address(0);
 
   /// @notice hash of the secret key used to authorize asset claiming
   bytes32 public lock;
@@ -37,15 +36,15 @@ contract Quip is Context, Initializable, IQuip {
     _;
   }
 
+  /// @notice allows this contract to receive native currency
+  receive() external payable {}
+
   /// @notice returns the portal that deployed this quip, stored as an immutable clone argument in the bytecode
   /// forge-lint: disable-next-line
   function PORTAL_FROM_BYTECODE() public view returns (address) {
     return abi.decode(LibClone.argsOnClone(address(this), 0, 32), (address));
   }
 
-  /// TODO:
-  /// - means this address is coupled to _termsDigest
-  /// - means _termDigest = h(`QuipTerm`) (full struct information indicative of intent)
   /// @notice initializes the quip with a lock and terms
   /// @param _lock the hash of the secret
   /// @param _termsDigest the hashed terms of the quip agreement
@@ -54,7 +53,7 @@ contract Quip is Context, Initializable, IQuip {
     termsDigest = _termsDigest;
     //  INIT_UNCOUPLED default initialize to false
 
-    emit PartyCommitment(_termsDigest);
+    emit PartyCommitment(_lock, _termsDigest);
   }
 
   /// @notice initializes the quip in uncoupled mode for proposal-based swaps
@@ -73,16 +72,11 @@ contract Quip is Context, Initializable, IQuip {
   /// @dev Only callable by the original party; transitions termsDigest from h(PartyTerms) to h(QuipTerms)
   /// @param party the initiating party's terms (must match stored digest)
   /// @param counterparty the counterparty's terms to couple with
-  /// @param _termsDigest the stored digest to verify against party terms
-  function coupleQuip(
-    PartyTerms calldata party,
-    PartyTerms calldata counterparty,
-    bytes32 _termsDigest
-  ) external payable {
+  function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable {
     // cannot couple unless initialized uncoupled
     if (!INIT_UNCOUPLED) revert InvalidOperation();
-    // cannot update _termsDigest unless the initial terms that match the digest are used
-    if (_termsDigest != TermsLib.digestPartyTerms(party)) revert InvalidOperation();
+    // cannot update termsDigest unless the initial terms that match the digest are used
+    if (termsDigest != TermsLib.digestPartyTerms(party)) revert InvalidOperation();
     if (_msgSender() != party.signatory) revert UnauthorizedCaller();
     QuipTerms memory coupledTerms = TermsLib.coupleTerms(party, counterparty);
     if (msg.value != TermsLib.totalNativeAmount(party.assets)) revert InsufficientCommitment();
@@ -90,7 +84,7 @@ contract Quip is Context, Initializable, IQuip {
     termsDigest = TermsLib.digestTermsMemory(coupledTerms);
     TermsLib.transferAssetsNoNative(party.assets, party.signatory, address(this));
 
-    emit QuipCommitted(_termsDigest);
+    emit QuipCommitted(termsDigest);
   }
 
   /// @notice claims the party's assets by providing the key and terms
@@ -117,6 +111,32 @@ contract Quip is Context, Initializable, IQuip {
     emit PartyUnbound(terms.partyRecipient, terms.partyAssets);
   }
 
+  /// @notice ERC721 receiver callback to accept NFT transfers
+  function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+    return IERC721Receiver.onERC721Received.selector;
+  }
+
+  /// @notice ERC1155 receiver callback to accept single token transfers
+  function onERC1155Received(address, address, uint256, uint256, bytes calldata) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155Received.selector;
+  }
+
+  /// @notice ERC1155 receiver callback to accept batch token transfers
+  function onERC1155BatchReceived(
+    address,
+    address,
+    uint256[] calldata,
+    uint256[] calldata,
+    bytes calldata
+  ) external pure returns (bytes4) {
+    return IERC1155Receiver.onERC1155BatchReceived.selector;
+  }
+
+  /// @notice ERC165 interface support
+  function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+    return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
+  }
+
   /// @notice reverts if the provided key does not match the lock
   /// @param key the key to verify
   function _verifyKey(bytes calldata key) internal view {
@@ -125,19 +145,8 @@ contract Quip is Context, Initializable, IQuip {
     }
   }
 
-  /// @notice bundle internals to reduce code size
+  /// @notice reverts if caller is not the portal that deployed this quip
   function _onlyPortal() internal view {
-    _enforcePortalMatch();
-    _enforcePortalCaller();
-  }
-
-  /// @notice reverts if bytecode portal doesn't match predetermined portal
-  function _enforcePortalMatch() internal view {
-    if (PORTAL_FROM_BYTECODE() != PORTAL_PREDETERMINED) revert PortalMismatch();
-  }
-
-  /// @notice reverts if caller is not the predetermined portal
-  function _enforcePortalCaller() internal view {
-    if (_msgSender() != PORTAL_PREDETERMINED) revert CallerNotPortal();
+    if (_msgSender() != PORTAL_FROM_BYTECODE()) revert CallerNotPortal();
   }
 }
