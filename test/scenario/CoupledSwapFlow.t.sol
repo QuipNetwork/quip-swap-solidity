@@ -5,10 +5,11 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Quip} from '../../src/Quip.sol';
 import {Asset, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
-import {LockState} from '../../src/interfaces/IQuipPortal.sol';
+import {PqOwnerState} from '../../src/interfaces/IQuipPortal.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Coupled Swap Flow Scenario Tests
 /// @dev End-to-end tests for the coupled swap flow: deploy -> claim
@@ -25,8 +26,8 @@ contract CoupledSwapFlowTest is TestBase {
   // ============ Full Flow Tests ============
 
   function test_simulation_coupledSwapFullFlow_allAssetTypes() public {
-    bytes memory key = abi.encodePacked('all_assets_key');
-    bytes32 lock = keccak256(key);
+    (WOTSPlus.WinternitzAddress memory pqOwner, bytes32 privateKey) = _uniqueKeyPair(1);
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
 
     Asset[] memory partyAssets = AssetHelper.toArray(
       _makeNativeAssets(0.5 ether)[0],
@@ -51,40 +52,41 @@ contract CoupledSwapFlowTest is TestBase {
     uint256 bobRecipientERC20Before = mockERC20.balanceOf(BOB_RECIPIENT);
     uint256 bobRecipientERC1155Before = mockERC1155.balanceOf(BOB_RECIPIENT, ERC1155_TOKEN_ID);
 
-    // Verify initial ownership
+    // verify initial ownership
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), ALICE);
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify all assets transferred to quip
+    // verify all assets transferred to quip
     assertEq(address(quip).balance, 0.5 ether);
     assertEq(mockERC20.balanceOf(address(quip)), 50 ether);
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), address(quip));
     assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 100);
 
-    // Verify lock state before claim
-    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Free), 'Lock should be Free before claim');
+    // verify pqOwner state before claim
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Free), 'PqOwner should be Free before claim');
 
-    // Claim
-    quip.claim(key, terms);
+    // claim
+    WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
+    quip.claim(signature, terms);
 
-    // Verify final lock state
-    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent after claim');
+    // verify final pqOwner state
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Spent), 'PqOwner should be Spent after claim');
 
-    // Verify final quip state
-    assertEq(quip.lock(), lock, 'Quip lock unchanged');
-    assertEq(quip.termsDigest(), TermsLib.digestTermsMemory(terms), 'Quip termsDigest unchanged');
+    // verify final quip state
+    assertEq(quip.pqOwnerHash(), pqOwnerHash, 'Quip pqOwnerHash unchanged');
+    assertEq(quip.termsDigest(), _digestTermsCanonically(terms), 'Quip termsDigest unchanged');
     assertEq(address(quip).balance, 0, 'Quip should be empty');
     assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
     assertEq(mockERC1155.balanceOf(address(quip), ERC1155_TOKEN_ID), 0, 'Quip ERC1155 should be empty');
 
-    // Verify all assets transferred to Bob's recipient
+    // verify all assets transferred to Bob's recipient
     assertEq(BOB_RECIPIENT.balance - bobRecipientNativeBefore, 0.5 ether, 'Native transfer failed');
     assertEq(mockERC20.balanceOf(BOB_RECIPIENT) - bobRecipientERC20Before, 50 ether, 'ERC20 transfer failed');
     assertEq(mockERC721.ownerOf(ERC721_TOKEN_ID), BOB_RECIPIENT, 'ERC721 transfer failed');
@@ -94,9 +96,9 @@ contract CoupledSwapFlowTest is TestBase {
   }
 
   function test_simulation_coupledSwapFullFlow_nativeForNative() public {
-    // Setup: Alice offers 1 ETH, Bob should receive it
-    bytes memory key = abi.encodePacked('native_swap_key');
-    bytes32 lock = keccak256(key);
+    // setup: Alice offers 1 ETH, Bob should receive it
+    (WOTSPlus.WinternitzAddress memory pqOwner, bytes32 privateKey) = _uniqueKeyPair(2);
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
 
     QuipTerms memory terms = TermsHelper.makeQuipTerms(
       ALICE,
@@ -112,38 +114,40 @@ contract CoupledSwapFlowTest is TestBase {
     uint256 nativeRequired = CREATION_FEE + 1 ether;
     uint256 bobRecipientBefore = BOB_RECIPIENT.balance;
 
-    // Step 1: Alice deploys coupled quip
+    // step 1: Alice deploys coupled quip
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify quip state
-    assertEq(quip.lock(), lock);
+    // verify quip state
+    (bytes32 publicSeed, bytes32 publicKeyHash) = quip.pqOwner();
+    assertEq(publicSeed, pqOwner.publicSeed);
+    assertEq(publicKeyHash, pqOwner.publicKeyHash);
     assertEq(address(quip).balance, 1 ether);
 
-    // Step 2: Anyone claims with the key (permissionless)
+    // step 2: Anyone claims with the signature (permissionless)
+    WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
     vm.prank(CHARLIE);
-    quip.claim(key, terms);
+    quip.claim(signature, terms);
 
-    // Verify final lock state
-    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+    // verify final pqOwner state
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Spent), 'PqOwner should be Spent');
 
-    // Verify final quip state
-    assertEq(quip.lock(), lock, 'Quip lock unchanged');
-    assertEq(quip.termsDigest(), TermsLib.digestTermsMemory(terms), 'Quip termsDigest unchanged');
+    // verify final quip state
+    assertEq(quip.termsDigest(), _digestTermsCanonically(terms), 'Quip termsDigest unchanged');
     assertEq(address(quip).balance, 0, 'Quip should be empty');
 
-    // Verify assets transferred
+    // verify assets transferred
     assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, 1 ether);
   }
 
   function test_simulation_coupledSwapFullFlow_erc20ForNative() public {
-    bytes memory key = abi.encodePacked('erc20_native_key');
-    bytes32 lock = keccak256(key);
+    (WOTSPlus.WinternitzAddress memory pqOwner, bytes32 privateKey) = _uniqueKeyPair(3);
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
 
     QuipTerms memory terms = TermsHelper.makeQuipTerms(
       ALICE,
@@ -161,33 +165,33 @@ contract CoupledSwapFlowTest is TestBase {
     // Alice deploys coupled quip (only creation fee needed)
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: CREATION_FEE}(lock, terms);
+    portal.deployCoupledQuip{value: CREATION_FEE}(pqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Verify ERC20 transferred to quip
+    // verify ERC20 transferred to quip
     assertEq(mockERC20.balanceOf(address(quip)), 100 ether);
 
-    // Claim
-    quip.claim(key, terms);
+    // claim
+    WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
+    quip.claim(signature, terms);
 
-    // Verify final lock state
-    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+    // verify final pqOwner state
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Spent), 'PqOwner should be Spent');
 
-    // Verify final quip state
-    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    // verify final quip state
     assertEq(address(quip).balance, 0, 'Quip should be empty');
     assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
 
-    // Verify ERC20 transferred to Bob's recipient
+    // verify ERC20 transferred to Bob's recipient
     assertEq(mockERC20.balanceOf(BOB_RECIPIENT) - bobRecipientERC20Before, 100 ether);
   }
 
   function test_simulation_coupledSwapFullFlow_mixedAssets() public {
-    bytes memory key = abi.encodePacked('mixed_assets_key');
-    bytes32 lock = keccak256(key);
+    (WOTSPlus.WinternitzAddress memory pqOwner, bytes32 privateKey) = _uniqueKeyPair(4);
+    bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
 
     Asset[] memory partyAssets = AssetHelper.toArray(_makeNativeAssets(0.5 ether)[0], _makeERC20Assets(50 ether)[0]);
 
@@ -208,33 +212,33 @@ contract CoupledSwapFlowTest is TestBase {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
     Quip quip = Quip(payable(quipAddr));
 
-    // Claim
-    quip.claim(key, terms);
+    // claim
+    WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
+    quip.claim(signature, terms);
 
-    // Verify final lock state
-    assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
+    // verify final pqOwner state
+    assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Spent), 'PqOwner should be Spent');
 
-    // Verify final quip state
-    assertEq(quip.lock(), lock, 'Quip lock unchanged');
+    // verify final quip state
     assertEq(address(quip).balance, 0, 'Quip should be empty');
     assertEq(mockERC20.balanceOf(address(quip)), 0, 'Quip ERC20 should be empty');
 
-    // Verify both assets transferred
+    // verify both assets transferred
     assertEq(BOB_RECIPIENT.balance - bobRecipientNativeBefore, 0.5 ether);
     assertEq(mockERC20.balanceOf(BOB_RECIPIENT) - bobRecipientERC20Before, 50 ether);
   }
 
   function test_simulation_coupledSwapFullFlow_multipleSwaps() public {
-    // Simulate multiple independent swaps
+    // simulate multiple independent swaps
     for (uint256 i = 0; i < 3; i++) {
-      bytes memory key = abi.encodePacked('multi_swap_', i);
-      bytes32 lock = keccak256(key);
+      (WOTSPlus.WinternitzAddress memory pqOwner, bytes32 privateKey) = _uniqueKeyPair(100 + i);
+      bytes32 pqOwnerHash = _computePqOwnerHash(pqOwner);
 
       QuipTerms memory terms = TermsHelper.makeQuipTerms(
         ALICE,
@@ -249,17 +253,17 @@ contract CoupledSwapFlowTest is TestBase {
 
       vm.prank(ALICE);
       vm.recordLogs();
-      portal.deployCoupledQuip{value: CREATION_FEE + 1 ether}(lock, terms);
+      portal.deployCoupledQuip{value: CREATION_FEE + 1 ether}(pqOwner, terms);
 
       Vm.Log[] memory logs = vm.getRecordedLogs();
       address quipAddr = _findQuipCreatedAddress(logs);
       Quip quip = Quip(payable(quipAddr));
 
-      quip.claim(key, terms);
+      WOTSPlus.WinternitzElements memory signature = _signTerms(privateKey, terms);
+      quip.claim(signature, terms);
 
-      // Verify final state for each swap
-      assertEq(uint256(portal.lockState(lock)), uint256(LockState.Spent), 'Lock should be Spent');
-      assertEq(quip.lock(), lock, 'Quip lock unchanged');
+      // verify final state for each swap
+      assertEq(uint256(portal.pqOwnerState(pqOwnerHash)), uint256(PqOwnerState.Spent), 'PqOwner should be Spent');
       assertEq(address(quip).balance, 0, 'Quip should be empty');
     }
   }
@@ -271,14 +275,13 @@ contract CoupledSwapFlowTest is TestBase {
     uint256 initialFees = portal.accumulatedFees();
 
     for (uint256 i = 0; i < swapCount; i++) {
-      bytes memory key = abi.encodePacked('fee_test_', i);
-      bytes32 lock = keccak256(key);
+      (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(200 + i);
 
       QuipTerms memory terms = _makeDefaultQuipTerms();
       uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
       vm.prank(ALICE);
-      portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+      portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
     }
 
     assertEq(portal.accumulatedFees() - initialFees, CREATION_FEE * swapCount);

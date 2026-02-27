@@ -9,6 +9,7 @@ import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Quip reclaim Tests
 /// @dev Tests for Quip.reclaim
@@ -19,9 +20,10 @@ contract Quip_reclaim is QuipTest {
   // ============ Success Cases ============
 
   function test_reclaim_transfersAllAssetTypes() public {
-    bytes memory key = abi.encodePacked('all_assets_reclaim_key');
+    // generate unique key pair for this test
+    (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(1);
 
-    // Build party assets with all 4 asset types
+    // build party assets with all 4 asset types
     Asset[] memory partyAssets = new Asset[](4);
     partyAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
     partyAssets[1] = Asset({assetType: AssetType.ERC20, target: address(mockERC20), id: 0, amount: 100 ether});
@@ -33,7 +35,7 @@ contract Quip_reclaim is QuipTest {
       ALICE, BOB, _defaultExpiry(), _defaultExpiry(), partyAssets, _makeNativeAssets(1 ether)
     );
 
-    Quip quip = _deployQuipWithTerms(_computeLock(key), terms);
+    Quip quip = _deployQuipWithTerms(pqOwner, terms);
 
     // Record balances before reclaim
     uint256 recipientNativeBefore = terms.partyRecipient.balance;

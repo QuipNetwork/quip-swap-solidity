@@ -19,7 +19,7 @@ contract TermsLib_enforceTermFreshness is TermsLibTest {
     harness.exposed_enforceTermFreshness(farFutureExpiry);
   }
 
-  function test_enforceTermFreshness_succeedsOneSecondBeforeExpiry() public {
+  function test_enforceTermFreshness_succeedsOneSecondBeforeExpiry() public view {
     uint64 expiry = uint64(block.timestamp + 1);
     harness.exposed_enforceTermFreshness(expiry);
   }
@@ -83,7 +83,7 @@ contract TermsLib_enforceTermFreshness is TermsLibTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_enforceTermFreshness_succeedsWhenFresh(uint64 delta) public {
+  function testFuzz_enforceTermFreshness_succeedsWhenFresh(uint64 delta) public view {
     delta = uint64(bound(delta, 1, type(uint64).max - block.timestamp));
     uint64 expiry = uint64(block.timestamp) + delta;
 

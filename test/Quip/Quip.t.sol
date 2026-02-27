@@ -7,6 +7,7 @@ import {Quip} from '../../src/Quip.sol';
 import {QuipTerms, TermsLib} from '../../src/TermsLib.sol';
 import {QuipHarness} from '../harness/QuipHarness.sol';
 import {TestBase} from '../utils/TestBase.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Quip Base Test
 /// @dev Base contract for testing Quip
@@ -32,7 +33,7 @@ contract QuipTest is TestBase {
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(defaultLock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(defaultPqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);
@@ -40,13 +41,15 @@ contract QuipTest is TestBase {
   }
 
   function test_setUp() public view {
-    // Check harness deployment
+    // check harness deployment
     assertNotEq(address(quipHarness), address(0));
 
-    // Check deployed quip
+    // check deployed quip
     assertNotEq(address(deployedQuip), address(0));
     assertEq(deployedQuip.VERSION(), 1);
-    assertEq(deployedQuip.lock(), defaultLock);
+    (bytes32 publicSeed, bytes32 publicKeyHash) = deployedQuip.pqOwner();
+    assertEq(publicSeed, defaultPqOwner.publicSeed);
+    assertEq(publicKeyHash, defaultPqOwner.publicKeyHash);
     assertFalse(deployedQuip.INIT_UNCOUPLED());
   }
 
@@ -56,7 +59,7 @@ contract QuipTest is TestBase {
 
   function test_setUp_deployedQuipHasCorrectTermsDigest() public view {
     QuipTerms memory terms = _makeDefaultQuipTerms();
-    bytes32 expectedDigest = _digestQuipTerms(terms);
+    bytes32 expectedDigest = _digestTermsCanonically(terms);
     assertEq(deployedQuip.termsDigest(), expectedDigest);
   }
 
@@ -68,12 +71,15 @@ contract QuipTest is TestBase {
 
   // ============ Helper Functions ============
 
-  function _deployQuipWithTerms(bytes32 lock, QuipTerms memory terms) internal returns (Quip) {
+  function _deployQuipWithTerms(
+    WOTSPlus.WinternitzAddress memory pqOwner,
+    QuipTerms memory terms
+  ) internal returns (Quip) {
     uint256 nativeRequired = CREATION_FEE + TermsLib.totalNativeAmount(terms.partyAssets);
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployCoupledQuip{value: nativeRequired}(lock, terms);
+    portal.deployCoupledQuip{value: nativeRequired}(pqOwner, terms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipCreatedAddress(logs);

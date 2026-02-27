@@ -9,6 +9,7 @@ import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {QuipTest} from '../Quip.t.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Quip coupleQuip Tests
 /// @dev Tests for Quip.coupleQuip
@@ -17,24 +18,24 @@ contract Quip_coupleQuip is QuipTest {
   using TermsHelper for *;
 
   Quip public uncoupledQuip;
-  bytes32 public uncoupledLock;
+  WOTSPlus.WinternitzAddress public uncoupledPqOwner;
 
   function setUp() public override {
     super.setUp();
 
-    // Deploy an uncoupled quip for testing
-    uncoupledLock = keccak256(abi.encodePacked('uncoupled_couple_key'));
+    // deploy an uncoupled quip for testing
+    (uncoupledPqOwner,) = _uniqueKeyPair(100);
     PartyTerms memory partyTerms = _makeDefaultPartyTerms();
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployUncoupledQuip{value: CREATION_FEE}(uncoupledLock, partyTerms);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(uncoupledPqOwner, partyTerms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipProposedAddress(logs);
     uncoupledQuip = Quip(payable(quipAddr));
 
-    // Approve quip for asset transfers
+    // approve quip for asset transfers
     _approveAllForQuip(ALICE, address(uncoupledQuip));
   }
 
@@ -51,12 +52,12 @@ contract Quip_coupleQuip is QuipTest {
     uncoupledQuip.coupleQuip{value: nativeRequired}(partyTerms, counterpartyTerms);
 
     QuipTerms memory coupledTerms = _coupleTerms(partyTerms, counterpartyTerms);
-    bytes32 expectedDigest = _digestQuipTerms(coupledTerms);
+    bytes32 expectedDigest = _digestTermsCanonically(coupledTerms);
     assertEq(uncoupledQuip.termsDigest(), expectedDigest);
   }
 
   function test_coupleQuip_transfersAllAssetTypes() public {
-    // Build party assets with all 4 asset types
+    // build party assets with all 4 asset types
     Asset[] memory partyAssets = new Asset[](4);
     partyAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1 ether});
     partyAssets[1] = Asset({assetType: AssetType.ERC20, target: address(mockERC20), id: 0, amount: 100 ether});
@@ -64,13 +65,13 @@ contract Quip_coupleQuip is QuipTest {
     partyAssets[3] =
       Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: ERC1155_TOKEN_ID, amount: 50});
 
-    bytes32 lock = keccak256(abi.encodePacked('all_assets_couple_key'));
+    (WOTSPlus.WinternitzAddress memory pqOwner,) = _uniqueKeyPair(101);
     PartyTerms memory allAssetsPartyTerms =
       TermsHelper.makePartyTerms(ALICE, ALICE_RECIPIENT, _defaultExpiry(), partyAssets);
 
     vm.prank(ALICE);
     vm.recordLogs();
-    portal.deployUncoupledQuip{value: CREATION_FEE}(lock, allAssetsPartyTerms);
+    portal.deployUncoupledQuip{value: CREATION_FEE}(pqOwner, allAssetsPartyTerms);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     address quipAddr = _findQuipProposedAddress(logs);

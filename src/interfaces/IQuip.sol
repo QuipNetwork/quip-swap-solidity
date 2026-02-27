@@ -2,20 +2,11 @@
 pragma solidity 0.8.33;
 
 import {Asset, PartyTerms, QuipTerms} from '../TermsLib.sol';
-
-/// @notice the status of a quip
-enum Status {
-  Open,
-  Accepted,
-  Committed,
-  Claimed,
-  Reclaimed,
-  Slashed
-}
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 interface IQuip {
-  /// @notice thrown when the provided key does not match the lock
-  error InvalidKey();
+  /// @notice thrown when the provided signature is invalid
+  error InvalidSignature();
 
   /// @notice thrown when an operation is invalid for the current state
   error InvalidOperation();
@@ -26,31 +17,28 @@ interface IQuip {
   /// @notice thrown when caller is not authorized for the operation
   error UnauthorizedCaller();
 
-  /// @notice thrown when bytecode portal doesn't match predetermined portal
-  error PortalMismatch();
-
   /// @notice thrown when caller is not the portal
   error CallerNotPortal();
 
   /// @notice emitted when the party commits their assets to a quip
-  /// @param lock the hash of the secret
+  /// @param pqOwnerHash the hash of the WOTS+ public key
   /// @param termsDigest hash terms of the quip agreement
-  event PartyCommitment(bytes32 indexed lock, bytes32 termsDigest);
+  event PartyCommitment(bytes32 indexed pqOwnerHash, bytes32 termsDigest);
 
   /// @notice emitted when a party proposes uncoupled terms
-  /// @param lock the hash of the secret
+  /// @param pqOwnerHash the hash of the WOTS+ public key
   /// @param termsDigest hash of the party terms
-  event PartyProposal(bytes32 indexed lock, bytes32 termsDigest);
+  event PartyProposal(bytes32 indexed pqOwnerHash, bytes32 termsDigest);
 
   /// @notice emitted when a quip is committed (coupled)
   /// @param termsDigest hash of the coupled terms
   event QuipCommitted(bytes32 termsDigest);
 
   /// @notice emitted when the party's terms are fulfilled
-  /// @param key secret used to create the lock hash
+  /// @param signature WOTS+ signature that authorized the claim
   /// @param recipient the address that received the assets
   /// @param assets the assets that were transferred
-  event PartyTermsFulfilled(bytes key, address indexed recipient, Asset[] assets);
+  event PartyTermsFulfilled(WOTSPlus.WinternitzElements signature, address indexed recipient, Asset[] assets);
 
   /// @notice emitted when the party reclaims their assets after expiry
   /// @param recipient the address that received the assets
@@ -65,19 +53,24 @@ interface IQuip {
   /// @return the portal address stored as an immutable clone argument
   function PORTAL_FROM_BYTECODE() external view returns (address);
 
-  /// @notice returns the lock hash that secures this quip
-  /// @return the keccak256 hash of the secret key
-  function lock() external view returns (bytes32);
+  /// @notice returns the WOTS+ public key that secures this quip
+  /// @return publicSeed the public seed of the WOTS+ key
+  /// @return publicKeyHash the hash of the public key segments
+  function pqOwner() external view returns (bytes32 publicSeed, bytes32 publicKeyHash);
 
-  /// @notice initializes the quip with a lock and coupled terms
-  /// @param lock the hash of the secret
-  /// @param termsDigest the hashed terms of the quip agreement
-  function initializeCoupled(bytes32 lock, bytes32 termsDigest) external;
+  /// @notice returns the hash of the WOTS+ public key
+  /// @return the EfficientHashLib hash of (publicSeed, publicKeyHash)
+  function pqOwnerHash() external view returns (bytes32);
 
-  /// @notice initializes the quip with a lock and uncoupled party terms
-  /// @param lock the hash of the secret
-  /// @param termsDigest the hashed party terms
-  function initializeUncoupled(bytes32 lock, bytes32 termsDigest) external;
+  /// @notice initializes the quip with a WOTS+ public key and coupled terms
+  /// @param _pqOwner the WOTS+ public key
+  /// @param _termsDigest the canonical hashed terms of the quip agreement
+  function initializeCoupled(WOTSPlus.WinternitzAddress calldata _pqOwner, bytes32 _termsDigest) external;
+
+  /// @notice initializes the quip with a WOTS+ public key and uncoupled party terms
+  /// @param _pqOwner the WOTS+ public key
+  /// @param _termsDigest the hashed party terms
+  function initializeUncoupled(WOTSPlus.WinternitzAddress calldata _pqOwner, bytes32 _termsDigest) external;
 
   /// @notice couples an uncoupled quip with counterparty terms
   /// @dev Verifies party terms against stored termsDigest, then updates to coupled terms digest
@@ -85,10 +78,10 @@ interface IQuip {
   /// @param counterparty the counterparty's terms
   function coupleQuip(PartyTerms calldata party, PartyTerms calldata counterparty) external payable;
 
-  /// @notice claims the party's assets by providing the key and terms
-  /// @param key the secret that unlocks the quip
+  /// @notice claims the party's assets by providing a WOTS+ signature and terms
+  /// @param signature the WOTS+ signature authorizing the claim
   /// @param terms the terms of the quip agreement
-  function claim(bytes calldata key, QuipTerms calldata terms) external;
+  function claim(WOTSPlus.WinternitzElements calldata signature, QuipTerms calldata terms) external;
 
   /// @notice reclaims the party's assets after the terms have expired
   /// @param terms the terms of the quip agreement

@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 /// @notice the type of asset
@@ -109,47 +110,49 @@ library TermsLib {
     });
   }
 
-  /// @notice computes the keccak256 digest of quip terms (calldata)
-  /// @param terms the terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function digestTerms(QuipTerms calldata terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
+  /// @notice computes a canonical digest of quip terms regardless of party/counterparty order
+  /// @dev Used for WOTS+ signing - same signature works on both sides of a swap
+  /// @param terms the quip terms to hash
+  /// @return canonicalDigest the canonical hash (smaller digest first)
+  function digestTermsCanonically(QuipTerms calldata terms) internal pure returns (bytes32 canonicalDigest) {
+    bytes32 partyDigest = EfficientHashLib.hash(
+      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
     );
+    bytes32 counterpartyDigest = EfficientHashLib.hash(
+      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
+    );
+    // canonical ordering: smaller digest first
+    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
+      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
+    } else {
+      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
+    }
   }
 
-  /// @notice computes the keccak256 digest of quip terms from memory
-  /// @param terms the terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function digestTermsMemory(QuipTerms memory terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(
-      abi.encode(
-        terms.party,
-        terms.partyRecipient,
-        terms.counterparty,
-        terms.counterpartyRecipient,
-        terms.partyExpiry,
-        terms.counterpartyExpiry,
-        terms.partyAssets,
-        terms.counterpartyAssets
-      )
+  /// @notice computes a canonical digest of quip terms from memory
+  /// @dev Memory variant for use after coupling terms
+  /// @param terms the quip terms to hash
+  /// @return canonicalDigest the canonical hash (smaller digest first)
+  function digestTermsCanonicallyMemory(QuipTerms memory terms) internal pure returns (bytes32 canonicalDigest) {
+    bytes32 partyDigest = EfficientHashLib.hash(
+      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
     );
+    bytes32 counterpartyDigest = EfficientHashLib.hash(
+      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
+    );
+    // canonical ordering: smaller digest first
+    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
+      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
+    } else {
+      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
+    }
   }
 
-  /// @notice reverts if the provided terms do not match the stored digest
-  /// @param termsDigest the stored digest to verify against
+  /// @notice reverts if the provided terms do not match the stored canonical digest
+  /// @param termsDigest the stored canonical digest to verify against
   /// @param terms the terms to verify
   function verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) internal pure {
-    if (termsDigest != digestTerms(terms)) {
+    if (digestTermsCanonically(terms) != termsDigest) {
       revert InvalidTerms();
     }
   }

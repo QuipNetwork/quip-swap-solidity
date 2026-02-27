@@ -5,6 +5,7 @@ import {Quip} from '../../../src/Quip.sol';
 import {IQuip} from '../../../src/interfaces/IQuip.sol';
 import {QuipTest} from '../Quip.t.sol';
 import {LibClone} from 'solady-0.1.26/utils/LibClone.sol';
+import {WOTSPlus} from '@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol';
 
 /// @title Malicious Initializer that tries to initialize quips by pretending to be the portal
 /// @dev Deployed via LibClone to have portal address in correct bytecode position (same as Quip)
@@ -16,13 +17,21 @@ contract MaliciousInitializer {
   }
 
   /// @notice Attempts to call initializeCoupled on a quip
-  function attackInitializeCoupled(address quip, bytes32 lock, bytes32 termsDigest) external {
-    Quip(payable(quip)).initializeCoupled(lock, termsDigest);
+  function attackInitializeCoupled(
+    address quip,
+    WOTSPlus.WinternitzAddress calldata pqOwner,
+    bytes32 termsDigest
+  ) external {
+    Quip(payable(quip)).initializeCoupled(pqOwner, termsDigest);
   }
 
   /// @notice Attempts to call initializeUncoupled on a quip
-  function attackInitializeUncoupled(address quip, bytes32 lock, bytes32 termsDigest) external {
-    Quip(payable(quip)).initializeUncoupled(lock, termsDigest);
+  function attackInitializeUncoupled(
+    address quip,
+    WOTSPlus.WinternitzAddress calldata pqOwner,
+    bytes32 termsDigest
+  ) external {
+    Quip(payable(quip)).initializeUncoupled(pqOwner, termsDigest);
   }
 }
 
@@ -39,24 +48,30 @@ contract Quip__onlyPortal is QuipTest {
     // This is implicitly tested by deployedQuip being successfully initialized
     // We can verify by checking the quip is properly set up
     assertEq(deployedQuip.PORTAL_FROM_BYTECODE(), address(portal));
-    assertEq(deployedQuip.lock(), defaultLock);
+    assertEq(deployedQuip.pqOwnerHash(), defaultPqOwnerHash);
   }
 
   // ============ Reversions ============
 
   function test_exposed_onlyPortal_revertsWhen_calledByNonPortal() public {
     // Calling a function protected by onlyPortal from a non-portal address reverts
+    WOTSPlus.WinternitzAddress memory fakePqOwner =
+      WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+
     vm.expectRevert(IQuip.CallerNotPortal.selector);
-    deployedQuip.initializeCoupled(bytes32(uint256(1)), bytes32(uint256(2)));
+    deployedQuip.initializeCoupled(fakePqOwner, bytes32(uint256(3)));
   }
 
   function testFuzz_exposed_onlyPortal_revertsWhen_calledByRandomAddress(address caller) public {
     vm.assume(caller != address(portal));
     vm.assume(caller != address(0));
 
+    WOTSPlus.WinternitzAddress memory fakePqOwner =
+      WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+
     vm.prank(caller);
     vm.expectRevert(IQuip.CallerNotPortal.selector);
-    deployedQuip.initializeCoupled(bytes32(uint256(1)), bytes32(uint256(2)));
+    deployedQuip.initializeCoupled(fakePqOwner, bytes32(uint256(3)));
   }
 
   // ============ Attacks ============
@@ -76,20 +91,21 @@ contract Quip__onlyPortal is QuipTest {
     assertEq(maliciousInitializer.PORTAL_FROM_BYTECODE(), address(portal));
     // This proves the attacker has the portal address in the correct bytecode position
 
-    // Verify quip is uninitialized
-    assertEq(Quip(payable(uninitializedQuip)).lock(), bytes32(0));
+    // Verify quip is uninitialized (termsDigest is zero)
+    assertEq(Quip(payable(uninitializedQuip)).termsDigest(), bytes32(0));
 
     // Malicious initializer tries to initialize the quip
-    bytes32 fakeLock = keccak256('fake_lock');
+    WOTSPlus.WinternitzAddress memory fakePqOwner =
+      WOTSPlus.WinternitzAddress({publicSeed: keccak256('fake_seed'), publicKeyHash: keccak256('fake_pubkey')});
     bytes32 fakeTermsDigest = keccak256('fake_terms');
 
     // Attack fails because quip checks msg.sender == PORTAL_FROM_BYTECODE()
     // The malicious initializer is NOT the portal, even though it knows the portal address
     vm.expectRevert(IQuip.CallerNotPortal.selector);
-    maliciousInitializer.attackInitializeCoupled(uninitializedQuip, fakeLock, fakeTermsDigest);
+    maliciousInitializer.attackInitializeCoupled(uninitializedQuip, fakePqOwner, fakeTermsDigest);
 
-    // Verify quip was NOT initialized (lock should still be zero)
-    assertEq(Quip(payable(uninitializedQuip)).lock(), bytes32(0));
+    // Verify quip was NOT initialized (termsDigest should still be zero)
+    assertEq(Quip(payable(uninitializedQuip)).termsDigest(), bytes32(0));
   }
 
   function test_onlyPortal_initializeUncoupled_revertsWhen_calledByMaliciousInitializer() public {
@@ -107,19 +123,20 @@ contract Quip__onlyPortal is QuipTest {
     assertEq(maliciousInitializer.PORTAL_FROM_BYTECODE(), address(portal));
     // This proves the attacker has the portal address in the correct bytecode position
 
-    // Verify quip is uninitialized
-    assertEq(Quip(payable(uninitializedQuip)).lock(), bytes32(0));
+    // Verify quip is uninitialized (termsDigest is zero)
+    assertEq(Quip(payable(uninitializedQuip)).termsDigest(), bytes32(0));
 
     // Malicious initializer tries to initialize the quip
-    bytes32 fakeLock = keccak256('fake_lock');
+    WOTSPlus.WinternitzAddress memory fakePqOwner =
+      WOTSPlus.WinternitzAddress({publicSeed: keccak256('fake_seed'), publicKeyHash: keccak256('fake_pubkey')});
     bytes32 fakeTermsDigest = keccak256('fake_terms');
 
     // Attack fails because quip checks msg.sender == PORTAL_FROM_BYTECODE()
     // The malicious initializer is NOT the portal, even though it knows the portal address
     vm.expectRevert(IQuip.CallerNotPortal.selector);
-    maliciousInitializer.attackInitializeUncoupled(uninitializedQuip, fakeLock, fakeTermsDigest);
+    maliciousInitializer.attackInitializeUncoupled(uninitializedQuip, fakePqOwner, fakeTermsDigest);
 
-    // Verify quip was NOT initialized (lock should still be zero)
-    assertEq(Quip(payable(uninitializedQuip)).lock(), bytes32(0));
+    // Verify quip was NOT initialized (termsDigest should still be zero)
+    assertEq(Quip(payable(uninitializedQuip)).termsDigest(), bytes32(0));
   }
 }
