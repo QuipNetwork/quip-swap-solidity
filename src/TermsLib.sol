@@ -58,6 +58,30 @@ struct QuipTerms {
   Asset[] counterpartyAssets;
 }
 
+/// @notice the lock state for Omnibus swaps
+enum LockState {
+  /// @notice default - lock has never been used
+  Unused,
+  /// @notice one party has committed
+  Free,
+  /// @notice both parties have committed (terminal)
+  Spent
+}
+
+/// @notice the terms for a single party in an Omnibus swap
+struct TermsV0 {
+  /// @notice the address of the party (commits assets)
+  address signatory;
+  /// @notice the address that receives the counterparty's assets
+  address recipient;
+  /// @notice the deadline: before can reclaim, after can be slashed
+  uint64 deadline;
+  /// @notice the collateral levied on slash
+  Asset collateral;
+  /// @notice the assets offered by the party
+  Asset[] assets;
+}
+
 library TermsLib {
   /// @notice thrown when an asset has zero amount
   error ZeroAmount();
@@ -154,6 +178,29 @@ library TermsLib {
   function verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) internal pure {
     if (digestTermsCanonically(terms) != termsDigest) {
       revert InvalidTerms();
+    }
+  }
+
+  /// @notice computes a canonical digest of TermsV0 regardless of party/counterparty order
+  /// @dev Used for Omnibus hashlock swaps - same hash regardless of which party is passed first
+  /// @param party the first party's terms
+  /// @param counterparty the second party's terms
+  /// @return canonicalDigest the canonical hash (smaller digest first)
+  function digestTermsV0Canonically(
+    TermsV0 calldata party,
+    TermsV0 calldata counterparty
+  ) internal pure returns (bytes32 canonicalDigest) {
+    bytes32 partyDigest = EfficientHashLib.hash(
+      abi.encode(party.signatory, party.recipient, party.deadline, party.collateral, party.assets)
+    );
+    bytes32 counterpartyDigest = EfficientHashLib.hash(
+      abi.encode(counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.collateral, counterparty.assets)
+    );
+    // canonical ordering: smaller digest first
+    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
+      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
+    } else {
+      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
     }
   }
 
