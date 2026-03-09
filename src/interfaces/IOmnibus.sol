@@ -22,6 +22,9 @@ interface IOmnibus {
   /// @notice thrown when no party is eligible for reclaim
   error InvalidReclaim();
 
+  /// @notice thrown when lock state transition is not allowed
+  error InvalidLockAdvancement();
+
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party

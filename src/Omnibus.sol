@@ -29,17 +29,29 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     // generate canonical hash
     bytes32 hash = TermsLib.digestTermsV0Canonically(party, counterparty);
 
+    // read current state
+    LockState current = lockState[lock];
+
     // branch on lock state
-    if (lockState[lock] == LockState.Unused) {
+    if (current == LockState.Unused) {
       termsHash[lock] = hash;
-    } else if (lockState[lock] == LockState.Free) {
+    } else if (current == LockState.Free) {
       if (termsHash[lock] != hash) revert InvalidTerms();
     } else {
       revert LockAlreadySpent();
     }
 
-    // advance lock state based on same-chain vs cross-chain
-    _advanceLock(lock, party.chainId == counterparty.chainId);
+    // determine target state based on same-chain vs cross-chain
+    bool sameChain = party.chainId == counterparty.chainId;
+    LockState target;
+    if (sameChain) {
+      // same-chain: unused -> free -> committed
+      target = current == LockState.Unused ? LockState.Free : LockState.Committed;
+    } else {
+      // cross-chain: unused -> committed directly
+      target = LockState.Committed;
+    }
+    _advanceLockTo(lock, current, target);
 
     // verify native amount
     if (msg.value != TermsLib.totalNativeAmountV0(party)) revert InsufficientCommitment();
@@ -56,7 +68,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
     // verify terms and state
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
-    if (lockState[lock] != LockState.Committed) revert InvalidLockState();
+    LockState current = lockState[lock];
+    if (current != LockState.Committed) revert InvalidLockState();
 
     // both deadlines must not have passed
     TermsLib.enforceTermFreshness(party.deadline);
@@ -83,7 +96,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     }
 
     // mark as spent
-    _advanceLock(lock, LockState.Spent);
+    _advanceLockTo(lock, current, LockState.Spent);
     emit Claim(lock, secret);
   }
 
@@ -91,7 +104,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
     // verify terms and state
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
-    if (lockState[lock] != LockState.Committed) revert InvalidLockState();
+    LockState current = lockState[lock];
+    if (current != LockState.Committed) revert InvalidLockState();
 
     bool slashedAny = false;
 
@@ -118,7 +132,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     if (!slashedAny) revert InvalidSlash();
 
     // mark as spent
-    _advanceLock(lock, LockState.Spent);
+    _advanceLockTo(lock, current, LockState.Spent);
   }
 
   /// @inheritdoc IOmnibus
@@ -127,7 +141,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
 
     // reclaim allowed on free or committed
-    if (lockState[lock] != LockState.Free && lockState[lock] != LockState.Committed) {
+    LockState current = lockState[lock];
+    if (current != LockState.Free && current != LockState.Committed) {
       revert InvalidLockState();
     }
 
@@ -154,7 +169,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     if (!reclaimedAny) revert InvalidReclaim();
 
     // mark as spent
-    _advanceLock(lock, LockState.Spent);
+    _advanceLockTo(lock, current, LockState.Spent);
   }
 
   /// @notice ERC721 receiver callback to accept NFT transfers
@@ -183,26 +198,18 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
-  /// @notice advances lock state to target and clears terms hash
+  /// @notice advances lock state to target with transition validation
+  /// @dev valid transitions: unused->free, unused->committed, free->committed, free->spent, committed->spent
   /// @param lock the hashlock identifier
-  /// @param target the target lock state
-  function _advanceLock(bytes32 lock, LockState target) internal {
-    lockState[lock] = target;
-    if (target == LockState.Spent) {
-      delete termsHash[lock];
-    }
-  }
+  /// @param current the current lock state (passed to avoid storage read)
+  /// @param to the target lock state
+  function _advanceLockTo(bytes32 lock, LockState current, LockState to) internal {
+    bool advanceUnused = current == LockState.Unused && (to == LockState.Free || to == LockState.Committed);
+    bool advanceFree = current == LockState.Free && (to == LockState.Committed || to == LockState.Spent);
+    bool advanceCommitted = current == LockState.Committed && to == LockState.Spent;
 
-  /// @notice advances lock state for commit based on same-chain vs cross-chain
-  /// @param lock the hashlock identifier
-  /// @param sameChain whether party and counterparty are on the same chain
-  function _advanceLock(bytes32 lock, bool sameChain) internal {
-    if (sameChain) {
-      // same-chain: unused -> free -> committed
-      lockState[lock] = lockState[lock] == LockState.Unused ? LockState.Free : LockState.Committed;
-    } else {
-      // cross-chain: unused -> committed directly
-      lockState[lock] = LockState.Committed;
-    }
+    if (!advanceUnused && !advanceFree && !advanceCommitted) revert InvalidLockAdvancement();
+
+    lockState[lock] = to;
   }
 }
