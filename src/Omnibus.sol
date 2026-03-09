@@ -57,18 +57,25 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     bytes32 lock = TermsLib.generateLock(secret);
 
     // verify terms and state
-    if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
-    LockState current = lockState[lock];
-    if (current != LockState.Committed) revert InvalidLockState();
+    _enforceMatchingTerms(
+      termsHash[lock], 
+      TermsLib.digestTermsV0Canonically(party, counterparty)
+    );
 
     // both deadlines must not have passed
     TermsLib.enforceTermFreshness(party.deadline);
     TermsLib.enforceTermFreshness(counterparty.deadline);
 
-    // at least one party must match this chain
+    LockState current = lockState[lock];
+    _enforceCommittedLock(current);
+
+    // mark as spent
+    _advanceLockTo(lock, current, LockState.Spent);
+
+    // party terms _MUST_ be on same chainId
+    // counterparty terms _MAY_ be on same chainId
     bool partyOnChain = party.chainId == block.chainid;
-    bool counterpartyOnChain = counterparty.chainId == block.chainid;
-    if (!partyOnChain && !counterpartyOnChain) revert TermsLib.InvalidChainId();
+    if (!partyOnChain) revert TermsLib.InvalidChainId();
 
     // transfer assets for parties on this chain
     if (partyOnChain) {
@@ -78,24 +85,23 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
       TermsLib.transferAsset(party.collateral, address(this), party.signatory);
     }
 
-    if (counterpartyOnChain) {
+    // if counterparty is on chainId, prevent double-spend by executing on counterparty
+    // terms
+    if (counterparty.chainId == block.chainid) {
       // counterparty's assets to party's recipient
       TermsLib.transferAssets(counterparty.assets, address(this), party.recipient);
       // return counterparty's collateral
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
     }
 
-    // mark as spent
-    _advanceLockTo(lock, current, LockState.Spent);
     emit Claim(lock, secret);
   }
 
   /// @inheritdoc IOmnibus
   function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // verify terms and state
-    if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
+    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
     LockState current = lockState[lock];
-    if (current != LockState.Committed) revert InvalidLockState();
+    _enforceCommittedLock(current);
 
     bool slashedAny = false;
 
@@ -127,8 +133,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // verify terms
-    if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
+    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
 
     // reclaim allowed on free or committed
     LockState current = lockState[lock];
@@ -214,5 +219,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @param expected the expected native amount
   function _enforceCorrectNative(uint256 expected) internal view {
     if (msg.value != expected) revert IncorrectNativeAmountReceived();
+  }
+
+  /// @notice reverts if lock state is not committed
+  /// @param current the current lock state
+  function _enforceCommittedLock(LockState current) internal pure {
+    if (current != LockState.Committed) revert InvalidLockState();
   }
 }
