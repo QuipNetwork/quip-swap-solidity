@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, AssetType, LockState, Terms, TermsLib} from './TermsLib.sol';
-import {IOmnibus} from './interfaces/IOmnibus.sol';
+import {Asset, AssetType, Terms, TermsLib} from './TermsLib.sol';
+import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 
@@ -63,8 +63,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     );
 
     // both deadlines must not have passed
-    TermsLib.enforceTermFreshness(party.deadline);
-    TermsLib.enforceTermFreshness(counterparty.deadline);
+    TermsLib.enforceTermFreshness(party);
+    TermsLib.enforceTermFreshness(counterparty);
 
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
@@ -114,7 +114,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     // NB: deadlines should be set in such a way so that the original proposer deadline is at least a block less
     // than accepting party's deadline because otherwise it is possible that accepting party may be slashed
     if (counterparty.chainId == block.chainid) {
-      TermsLib.enforceTermFreshness(counterparty.deadline);
+      TermsLib.enforceTermFreshness(counterparty);
       TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
@@ -131,7 +131,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
     // relcaim is assumed to be called for party
-    TermsLib.enforceTermFreshness(party.deadline);
+    TermsLib.enforceTermFreshness(party);
     _enforceCurrentChain(party);
     _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
@@ -143,7 +143,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     // reclaim counterparty if on this chain
     if (counterparty.chainId == block.chainid) {
       // return everything to counterparty's signatory
-      TermsLib.enforceTermFreshness(counterparty.deadline);
+      TermsLib.enforceTermFreshness(counterparty);
       TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);

@@ -26,18 +26,6 @@ struct Asset {
   uint256 amount;
 }
 
-/// @notice the lock state for Omnibus swaps
-enum LockState {
-  /// @notice default - lock has never been used
-  Unused,
-  /// @notice same-chain only: one party has committed, waiting for counterparty
-  Free,
-  /// @notice ready for execute (same-chain: both committed; cross-chain: single commit)
-  Committed,
-  /// @notice terminal (executed, slashed, or reclaimed)
-  Spent
-}
-
 /// @notice the terms for a single party in an Omnibus swap
 struct Terms {
   /// @notice the chain where these terms are valid
@@ -189,10 +177,10 @@ library TermsLib {
     }
   }
 
-  /// @notice reverts if the expiry timestamp has passed
-  /// @param expiry the expiry timestamp to check
-  function enforceTermFreshness(uint64 expiry) internal view {
-    if (block.timestamp >= expiry) {
+  /// @notice reverts if the terms deadline has passed
+  /// @param terms the terms to check
+  function enforceTermFreshness(Terms calldata terms) internal view {
+    if (block.timestamp >= terms.deadline) {
       revert TermsExpired();
     }
   }
@@ -214,11 +202,11 @@ library TermsLib {
     if (party.chainId != block.chainid) revert InvalidChainId();
 
     // validate party terms
-    enforceTermFreshness(party.deadline);
+    enforceTermFreshness(party);
     _validateTermsAssets(party);
 
     // validate counterparty terms (but not chainId)
-    enforceTermFreshness(counterparty.deadline);
+    enforceTermFreshness(counterparty);
     _validateTermsAssets(counterparty);
   }
 

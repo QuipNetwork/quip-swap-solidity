@@ -57,8 +57,8 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes enforceTermFreshness
-  function exposed_enforceTermFreshness(uint64 expiry) external view {
-    TermsLib.enforceTermFreshness(expiry);
+  function exposed_enforceTermFreshness(Terms calldata terms) external view {
+    TermsLib.enforceTermFreshness(terms);
   }
 
   /// @notice exposes enforceTermStaleness

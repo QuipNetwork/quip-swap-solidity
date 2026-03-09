@@ -1,7 +1,19 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {LockState, Terms} from '../TermsLib.sol';
+import {Terms} from '../TermsLib.sol';
+
+/// @notice the lock state for Omnibus swaps
+enum LockState {
+  /// @notice default - lock has never been used
+  Unused,
+  /// @notice same-chain only: one party has committed, waiting for counterparty
+  Free,
+  /// @notice ready for execute (same-chain: both committed; cross-chain: single commit)
+  Committed,
+  /// @notice terminal (executed, slashed, or reclaimed)
+  Spent
+}
 
 interface IOmnibus {
   /// @notice thrown when the lock has already been spent
