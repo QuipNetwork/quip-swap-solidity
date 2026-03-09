@@ -2,10 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
-import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 import {Omnibus} from '../../src/Omnibus.sol';
-import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
+import {Asset} from '../../src/TermsLib.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
