@@ -123,28 +123,28 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // Verify terms
+    // verify terms
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
 
-    // Reclaim allowed on FREE or COMMITTED
+    // reclaim allowed on free or committed
     if (lockState[lock] != LockState.Free && lockState[lock] != LockState.Committed) {
       revert InvalidLockState();
     }
 
     bool reclaimedAny = false;
 
-    // Reclaim party if on this chain AND deadline NOT passed
+    // reclaim party if on this chain and deadline not passed
     if (party.chainId == block.chainid && block.timestamp < party.deadline) {
-      // Return everything to party's signatory
+      // return everything to party's signatory
       TermsLib.transferAssets(party.assets, address(this), party.signatory);
       TermsLib.transferAsset(party.collateral, address(this), party.signatory);
       emit Reclaimed(lock, party.signatory);
       reclaimedAny = true;
     }
 
-    // Reclaim counterparty if on this chain AND deadline NOT passed
+    // reclaim counterparty if on this chain and deadline not passed
     if (counterparty.chainId == block.chainid && block.timestamp < counterparty.deadline) {
-      // Return everything to counterparty's signatory
+      // return everything to counterparty's signatory
       TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
@@ -153,9 +153,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
     if (!reclaimedAny) revert InvalidReclaim();
 
-    // Mark as spent
-    lockState[lock] = LockState.Spent;
-    delete termsHash[lock];
+    // mark as spent
+    _advanceLock(lock, LockState.Spent);
   }
 
   /// @notice ERC721 receiver callback to accept NFT transfers
@@ -184,15 +183,25 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
-  /// @notice advances lock state based on same-chain vs cross-chain
+  /// @notice advances lock state to target and clears terms hash
+  /// @param lock the hashlock identifier
+  /// @param target the target lock state
+  function _advanceLock(bytes32 lock, LockState target) internal {
+    lockState[lock] = target;
+    if (target == LockState.Spent) {
+      delete termsHash[lock];
+    }
+  }
+
+  /// @notice advances lock state for commit based on same-chain vs cross-chain
   /// @param lock the hashlock identifier
   /// @param sameChain whether party and counterparty are on the same chain
   function _advanceLock(bytes32 lock, bool sameChain) internal {
     if (sameChain) {
-      // Same-chain: UNUSED → FREE → COMMITTED
+      // same-chain: unused -> free -> committed
       lockState[lock] = lockState[lock] == LockState.Unused ? LockState.Free : LockState.Committed;
     } else {
-      // Cross-chain: UNUSED → COMMITTED directly
+      // cross-chain: unused -> committed directly
       lockState[lock] = LockState.Committed;
     }
   }
