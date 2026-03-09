@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, AssetType, LockState, TermsV0, TermsLib} from './TermsLib.sol';
+import {Asset, AssetType, LockState, Terms, TermsLib} from './TermsLib.sol';
 import {IOmnibus} from './interfaces/IOmnibus.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
@@ -22,12 +22,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   receive() external payable {}
 
   /// @inheritdoc IOmnibus
-  function commit(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external payable {
+  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable {
     // validate both terms (only party.chainId must match current chain)
-    TermsLib.validateTermsV0(party, counterparty);
-    _enforceCorrectNative(TermsLib.totalNativeAmountV0(party));
+    TermsLib.validateTerms(party, counterparty);
+    _enforceCorrectNative(TermsLib.totalNativeAmountFromTerms(party));
 
-    bytes32 hash = TermsLib.digestTermsV0Canonically(party, counterparty);
+    bytes32 hash = TermsLib.digestTermsCanonically(party, counterparty);
     LockState current = lockState[lock];
     LockState target;
 
@@ -53,13 +53,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   }
 
   /// @inheritdoc IOmnibus
-  function execute(bytes32 secret, TermsV0 calldata party, TermsV0 calldata counterparty) external {
+  function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external {
     bytes32 lock = TermsLib.generateLock(secret);
 
     // verify terms and state
     _enforceMatchingTerms(
       termsHash[lock], 
-      TermsLib.digestTermsV0Canonically(party, counterparty)
+      TermsLib.digestTermsCanonically(party, counterparty)
     );
 
     // both deadlines must not have passed
@@ -98,11 +98,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   }
 
   /// @inheritdoc IOmnibus
-  function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
+  function slash(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
     // slashing always happens on party
     TermsLib.enforceTermStaleness(party.deadline);
     _enforceCurrentChain(party);
-    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
+    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
@@ -129,11 +129,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   }
 
   /// @inheritdoc IOmnibus
-  function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
+  function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
     // relcaim is assumed to be called for party
     TermsLib.enforceTermFreshness(party.deadline);
     _enforceCurrentChain(party);
-    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
+    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
     // reclaim allowed on free or committed only
     // marking as spent enforces only free or committed as previous state 
@@ -219,7 +219,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @notice reverts if party chainId does not match current chain
   /// @param terms the terms to check
-  function _enforceCurrentChain(TermsV0 calldata terms) internal view {
+  function _enforceCurrentChain(Terms calldata terms) internal view {
     if (terms.chainId != block.chainid) revert ChainMismatch();
   }
 }

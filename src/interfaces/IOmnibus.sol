@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {LockState, TermsV0} from '../TermsLib.sol';
+import {LockState, Terms} from '../TermsLib.sol';
 
 interface IOmnibus {
   /// @notice thrown when the lock has already been spent
@@ -35,7 +35,7 @@ interface IOmnibus {
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party
   /// @param committer the address that committed
-  event Commitment(bytes32 indexed lock, TermsV0 party, address indexed committer);
+  event Commitment(bytes32 indexed lock, Terms party, address indexed committer);
 
   /// @notice emitted when a swap is executed
   /// @param lock the hashlock identifier
@@ -67,23 +67,23 @@ interface IOmnibus {
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function commit(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external payable;
+  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable;
 
   /// @notice executes the swap by revealing the secret
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function execute(bytes32 secret, TermsV0 calldata party, TermsV0 calldata counterparty) external;
+  function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
 
   /// @notice slashes a party after their deadline expires
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external;
+  function slash(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
 
   /// @notice reclaims assets when only one party has committed
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external;
+  function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
 }

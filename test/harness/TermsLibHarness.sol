@@ -1,91 +1,77 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 
 /// @title TermsLib Harness
 /// @dev Wrapper contract to expose TermsLib library functions for testing
 contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
-  /// @notice Exposes validateAsset
+  /// @notice exposes validateAsset
   function exposed_validateAsset(Asset memory asset) external pure {
     TermsLib.validateAsset(asset);
   }
 
-  /// @notice Exposes digestPartyTerms
-  function exposed_digestPartyTerms(PartyTerms calldata terms) external pure returns (bytes32) {
-    return TermsLib.digestPartyTerms(terms);
+  /// @notice exposes digestTermsCanonically
+  function exposed_digestTermsCanonically(
+    Terms calldata party,
+    Terms calldata counterparty
+  ) external pure returns (bytes32) {
+    return TermsLib.digestTermsCanonically(party, counterparty);
   }
 
-  /// @notice Exposes digestTermsCanonically
-  function exposed_digestTermsCanonically(QuipTerms calldata terms) external pure returns (bytes32) {
-    return TermsLib.digestTermsCanonically(terms);
+  /// @notice exposes validateTerms
+  function exposed_validateTerms(Terms calldata party, Terms calldata counterparty) external view {
+    TermsLib.validateTerms(party, counterparty);
   }
 
-  /// @notice Exposes digestTermsCanonicallyMemory
-  function exposed_digestTermsCanonicallyMemory(QuipTerms memory terms) external pure returns (bytes32) {
-    return TermsLib.digestTermsCanonicallyMemory(terms);
-  }
-
-  /// @notice Exposes coupleTerms
-  function exposed_coupleTerms(
-    PartyTerms calldata party,
-    PartyTerms calldata counterparty
-  ) external pure returns (QuipTerms memory) {
-    return TermsLib.coupleTerms(party, counterparty);
-  }
-
-  /// @notice Exposes verifyTerms
-  function exposed_verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) external pure {
-    TermsLib.verifyTerms(termsDigest, terms);
-  }
-
-  /// @notice Exposes transferAsset
+  /// @notice exposes transferAsset
   function exposed_transferAsset(Asset memory asset, address from, address to) external {
     TermsLib.transferAsset(asset, from, to);
   }
 
-  /// @notice Exposes transferAssets
+  /// @notice exposes transferAssets
   function exposed_transferAssets(Asset[] memory assets, address from, address to) external {
     TermsLib.transferAssets(assets, from, to);
   }
 
-  /// @notice Exposes transferAssetsNoNative
+  /// @notice exposes transferAssetsNoNative
   function exposed_transferAssetsNoNative(Asset[] memory assets, address from, address to) external {
     TermsLib.transferAssetsNoNative(assets, from, to);
   }
 
-  /// @notice Exposes executePartyCommitment
-  function exposed_executePartyCommitment(
-    address quip,
-    address counterpartyRecipient,
-    Asset[] calldata partyAssets
-  ) external {
-    TermsLib.executePartyCommitment(quip, counterpartyRecipient, partyAssets);
+  /// @notice exposes transferNonNativeAssetsIn
+  function exposed_transferNonNativeAssetsIn(Terms calldata terms, address from, address to) external {
+    TermsLib.transferNonNativeAssetsIn(terms, from, to);
   }
 
-  /// @notice Exposes releasePartyCommitment
-  function exposed_releasePartyCommitment(address quip, address partyRecipient, Asset[] calldata partyAssets) external {
-    TermsLib.releasePartyCommitment(quip, partyRecipient, partyAssets);
-  }
-
-  /// @notice Exposes totalNativeAmount
+  /// @notice exposes totalNativeAmount
   function exposed_totalNativeAmount(Asset[] memory assets) external pure returns (uint256) {
     return TermsLib.totalNativeAmount(assets);
   }
 
-  /// @notice Exposes enforceTermFreshness
+  /// @notice exposes totalNativeAmountFromTerms
+  function exposed_totalNativeAmountFromTerms(Terms calldata terms) external pure returns (uint256) {
+    return TermsLib.totalNativeAmountFromTerms(terms);
+  }
+
+  /// @notice exposes enforceTermFreshness
   function exposed_enforceTermFreshness(uint64 expiry) external view {
     TermsLib.enforceTermFreshness(expiry);
   }
 
-  /// @notice Exposes enforceTermStaleness
+  /// @notice exposes enforceTermStaleness
   function exposed_enforceTermStaleness(uint64 expiry) external view {
     TermsLib.enforceTermStaleness(expiry);
   }
 
-  /// @notice Allows receiving native currency for transfer tests
+  /// @notice exposes generateLock
+  function exposed_generateLock(bytes32 secret) external pure returns (bytes32) {
+    return TermsLib.generateLock(secret);
+  }
+
+  /// @notice allows receiving native currency for transfer tests
   receive() external payable {}
 
   /// @notice ERC721 receiver hook

@@ -14,7 +14,7 @@ enum AssetType {
   ERC1155
 }
 
-/// @notice an asset to be transferred as part of a quip
+/// @notice an asset to be transferred as part of a swap
 struct Asset {
   /// @notice the type of asset
   AssetType assetType;
@@ -24,38 +24,6 @@ struct Asset {
   uint256 id;
   /// @notice the amount, only used for native, erc20, and erc1155
   uint256 amount;
-}
-
-/// @notice the terms for a single party in a quip proposal
-struct PartyTerms {
-  /// @notice the address of the party (signer)
-  address signatory;
-  /// @notice the address that receives the counterparty's assets
-  address recipient;
-  /// @notice the deadline for the party to commit
-  uint64 expiry;
-  /// @notice the assets offered by the party
-  Asset[] assets;
-}
-
-/// @notice the terms of a quip agreement
-struct QuipTerms {
-  /// @notice the address that creates the quip
-  address party;
-  /// @notice the address that receives the counterparty's assets
-  address partyRecipient;
-  /// @notice the address that accepts the quip
-  address counterparty;
-  /// @notice the address that receives the party's assets
-  address counterpartyRecipient;
-  /// @notice the deadline for the party to commit
-  uint64 partyExpiry;
-  /// @notice the deadline for the counterparty to accept
-  uint64 counterpartyExpiry;
-  /// @notice the assets offered by the party
-  Asset[] partyAssets;
-  /// @notice the assets offered by the counterparty
-  Asset[] counterpartyAssets;
 }
 
 /// @notice the lock state for Omnibus swaps
@@ -71,7 +39,7 @@ enum LockState {
 }
 
 /// @notice the terms for a single party in an Omnibus swap
-struct TermsV0 {
+struct Terms {
   /// @notice the chain where these terms are valid
   uint256 chainId;
   /// @notice the address of the party (commits assets)
@@ -105,97 +73,20 @@ library TermsLib {
   /// @notice thrown when an erc1155 asset has invalid fields
   error InvalidERC1155Asset();
 
-  /// @notice thrown when provided terms do not match the stored digest
-  error InvalidTerms();
-
   /// @notice thrown when the terms have expired
   error TermsExpired();
 
   /// @notice thrown when the terms have not yet expired
   error TermsNotExpired();
 
-  /// @notice computes the keccak256 digest of party terms
-  /// @param terms the party terms to hash
-  /// @return digest the keccak256 hash of the encoded terms
-  function digestPartyTerms(PartyTerms calldata terms) internal pure returns (bytes32 digest) {
-    digest = keccak256(abi.encode(terms.signatory, terms.recipient, terms.expiry, terms.assets));
-  }
-
-  /// @notice combines two party terms into a full quip terms struct
-  /// @param party the initiating party's terms
-  /// @param counterparty the counterparty's terms
-  /// @return coupled the combined quip terms
-  function coupleTerms(
-    PartyTerms calldata party,
-    PartyTerms calldata counterparty
-  ) internal pure returns (QuipTerms memory coupled) {
-    coupled = QuipTerms({
-      party: party.signatory,
-      partyRecipient: party.recipient,
-      counterparty: counterparty.signatory,
-      counterpartyRecipient: counterparty.recipient,
-      partyExpiry: party.expiry,
-      counterpartyExpiry: counterparty.expiry,
-      partyAssets: party.assets,
-      counterpartyAssets: counterparty.assets
-    });
-  }
-
-  /// @notice computes a canonical digest of quip terms regardless of party/counterparty order
-  /// @dev Used for WOTS+ signing - same signature works on both sides of a swap
-  /// @param terms the quip terms to hash
-  /// @return canonicalDigest the canonical hash (smaller digest first)
-  function digestTermsCanonically(QuipTerms calldata terms) internal pure returns (bytes32 canonicalDigest) {
-    bytes32 partyDigest = EfficientHashLib.hash(
-      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
-    );
-    bytes32 counterpartyDigest = EfficientHashLib.hash(
-      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
-    );
-    // canonical ordering: smaller digest first
-    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
-      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
-    } else {
-      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
-    }
-  }
-
-  /// @notice computes a canonical digest of quip terms from memory
-  /// @dev Memory variant for use after coupling terms
-  /// @param terms the quip terms to hash
-  /// @return canonicalDigest the canonical hash (smaller digest first)
-  function digestTermsCanonicallyMemory(QuipTerms memory terms) internal pure returns (bytes32 canonicalDigest) {
-    bytes32 partyDigest = EfficientHashLib.hash(
-      abi.encode(terms.party, terms.partyRecipient, terms.partyExpiry, terms.partyAssets)
-    );
-    bytes32 counterpartyDigest = EfficientHashLib.hash(
-      abi.encode(terms.counterparty, terms.counterpartyRecipient, terms.counterpartyExpiry, terms.counterpartyAssets)
-    );
-    // canonical ordering: smaller digest first
-    if (uint256(partyDigest) < uint256(counterpartyDigest)) {
-      canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
-    } else {
-      canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
-    }
-  }
-
-  /// @notice reverts if the provided terms do not match the stored canonical digest
-  /// @param termsDigest the stored canonical digest to verify against
-  /// @param terms the terms to verify
-  function verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) internal pure {
-    if (digestTermsCanonically(terms) != termsDigest) {
-      revert InvalidTerms();
-    }
-  }
-
-  /// @notice computes a canonical digest of TermsV0 regardless of party/counterparty order
-  /// @dev Used for Omnibus hashlock swaps - same hash regardless of which party is passed first
+  /// @notice computes a canonical digest of terms regardless of party/counterparty order
+  /// @dev same hash regardless of which party is passed first
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   /// @return canonicalDigest the canonical hash (smaller digest first)
-  function digestTermsV0Canonically(
-    TermsV0 calldata party,
-    TermsV0 calldata counterparty
+  function digestTermsCanonically(
+    Terms calldata party,
+    Terms calldata counterparty
   ) internal pure returns (bytes32 canonicalDigest) {
     bytes32 partyDigest = EfficientHashLib.hash(
       abi.encode(party.chainId, party.signatory, party.recipient, party.deadline, party.collateral, party.assets)
@@ -209,22 +100,6 @@ library TermsLib {
     } else {
       canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
     }
-  }
-
-  /// @notice transfers party assets from the quip to the counterparty recipient
-  /// @param quip the quip contract holding the assets
-  /// @param counterpartyRecipient the address to receive the assets
-  /// @param partyAssets the assets to transfer
-  function executePartyCommitment(address quip, address counterpartyRecipient, Asset[] calldata partyAssets) internal {
-    transferAssets(partyAssets, quip, counterpartyRecipient);
-  }
-
-  /// @notice releases party assets back to the party recipient
-  /// @param quip the quip contract holding the assets
-  /// @param partyRecipient the address to receive the assets
-  /// @param partyAssets the assets to transfer
-  function releasePartyCommitment(address quip, address partyRecipient, Asset[] calldata partyAssets) internal {
-    transferAssets(partyAssets, quip, partyRecipient);
   }
 
   /// @notice validates that an asset's fields are consistent with its type
@@ -334,7 +209,7 @@ library TermsLib {
   /// @dev only party.chainId must match current chain; counterparty.chainId may differ for cross-chain
   /// @param party the committing party's terms (must be on current chain)
   /// @param counterparty the counterparty's terms (validated but chainId not enforced)
-  function validateTermsV0(TermsV0 calldata party, TermsV0 calldata counterparty) internal view {
+  function validateTerms(Terms calldata party, Terms calldata counterparty) internal view {
     // party.chainId must match current chain
     if (party.chainId != block.chainid) revert InvalidChainId();
 
@@ -349,7 +224,7 @@ library TermsLib {
 
   /// @notice validates collateral and assets in terms
   /// @param terms the terms to validate
-  function _validateTermsAssets(TermsV0 calldata terms) private pure {
+  function _validateTermsAssets(Terms calldata terms) private pure {
     validateAsset(terms.collateral);
     uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
@@ -361,7 +236,7 @@ library TermsLib {
   /// @param terms the party's terms containing assets to transfer
   /// @param from the address to transfer from
   /// @param to the address to transfer to
-  function transferNonNativeAssetsIn(TermsV0 calldata terms, address from, address to) internal {
+  function transferNonNativeAssetsIn(Terms calldata terms, address from, address to) internal {
     // transfer collateral if non-native
     if (terms.collateral.assetType != AssetType.Native) {
       transferAsset(terms.collateral, from, to);
@@ -371,10 +246,10 @@ library TermsLib {
     transferAssetsNoNative(terms.assets, from, to);
   }
 
-  /// @notice calculates total native amount from TermsV0 (collateral + assets)
+  /// @notice calculates total native amount from terms (collateral + assets)
   /// @param terms the party's terms
   /// @return total the total native amount required
-  function totalNativeAmountV0(TermsV0 calldata terms) internal pure returns (uint256 total) {
+  function totalNativeAmountFromTerms(Terms calldata terms) internal pure returns (uint256 total) {
     // add collateral if native
     if (terms.collateral.assetType == AssetType.Native) {
       total = terms.collateral.amount;
