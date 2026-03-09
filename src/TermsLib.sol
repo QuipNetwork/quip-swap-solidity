@@ -193,6 +193,12 @@ library TermsLib {
     }
   }
 
+  /// @notice reverts if the terms chainId is zero
+  /// @param terms the terms to check
+  function enforceNonZeroChainId(Terms calldata terms) internal pure {
+    if (terms.chainId == 0) revert InvalidChainId();
+  }
+
   /// @notice validates both party and counterparty terms for commit
   /// @dev only party.chainId must match current chain; counterparty.chainId may differ for cross-chain
   /// @param party the committing party's terms (must be on current chain)
@@ -200,6 +206,8 @@ library TermsLib {
   function validateTerms(Terms calldata party, Terms calldata counterparty) internal view {
     // party.chainId must match current chain
     if (party.chainId != block.chainid) revert InvalidChainId();
+    enforceNonZeroChainId(party);
+    enforceNonZeroChainId(counterparty);
 
     // validate party terms
     enforceTermFreshness(party);
