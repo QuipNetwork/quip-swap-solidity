@@ -28,6 +28,9 @@ interface IOmnibus {
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
 
+  /// @notice thrown when party chainId does not match current chain
+  error ChainMismatch();
+
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party

@@ -99,36 +99,32 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @inheritdoc IOmnibus
   function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
+    // slashing always happens on party
+    TermsLib.enforceTermStaleness(party.deadline);
+    _enforceCurrentChain(party);
     _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
+
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
-
-    bool slashedAny = false;
-
-    // slash party if on this chain and deadline passed
-    if (party.chainId == block.chainid && block.timestamp >= party.deadline) {
-      // collateral to counterparty's recipient (punishment)
-      TermsLib.transferAsset(party.collateral, address(this), counterparty.recipient);
-      // assets to party's signatory (return to self)
-      TermsLib.transferAssets(party.assets, address(this), party.signatory);
-      emit Slashed(lock, party.signatory, counterparty.recipient);
-      slashedAny = true;
-    }
-
-    // slash counterparty if on this chain and deadline passed
-    if (counterparty.chainId == block.chainid && block.timestamp >= counterparty.deadline) {
-      // collateral to party's recipient (punishment)
-      TermsLib.transferAsset(counterparty.collateral, address(this), party.recipient);
-      // assets to counterparty's signatory (return to self)
-      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
-      emit Slashed(lock, counterparty.signatory, party.recipient);
-      slashedAny = true;
-    }
-
-    if (!slashedAny) revert InvalidSlash();
-
-    // mark as spent
+    
+      // mark as spent
     _advanceLockTo(lock, current, LockState.Spent);
+
+    // if counterparty is also on the current chain, reclaim on their behalf since execution is no longer possible
+    // NB: deadlines should be set in such a way so that the original proposer deadline is at least a block less
+    // than accepting party's deadline because otherwise it is possible that accepting party may be slashed
+    if (counterparty.chainId == block.chainid) {
+      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
+      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
+      emit Reclaimed(lock, counterparty.signatory);
+    }
+    
+    // collateral to counterparty's recipient (punishment)
+    TermsLib.transferAsset(party.collateral, address(this), counterparty.recipient);
+    // assets to party's signatory (return to self)
+    TermsLib.transferAssets(party.assets, address(this), party.signatory);
+    
+    emit Slashed(lock, party.signatory, counterparty.recipient);
   }
 
   /// @inheritdoc IOmnibus
@@ -225,5 +221,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @param current the current lock state
   function _enforceCommittedLock(LockState current) internal pure {
     if (current != LockState.Committed) revert InvalidLockState();
+  }
+
+  /// @notice reverts if party chainId does not match current chain
+  /// @param terms the terms to check
+  function _enforceCurrentChain(TermsV0 calldata terms) internal view {
+    if (terms.chainId != block.chainid) revert ChainMismatch();
   }
 }
