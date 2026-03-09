@@ -7,43 +7,37 @@ interface IOmnibus {
   /// @notice thrown when the lock has already been spent
   error LockAlreadySpent();
 
-  /// @notice thrown when the caller is not a valid signatory for the terms
-  error InvalidSignatory();
-
   /// @notice thrown when the provided terms do not match the stored hash
   error InvalidTerms();
-
-  /// @notice thrown when the terms deadline has passed
-  error DeadlineExpired();
-
-  /// @notice thrown when the terms deadline has not yet passed
-  error DeadlineNotExpired();
 
   /// @notice thrown when the lock state is not as expected
   error InvalidLockState();
 
-  /// @notice thrown when the caller is not authorized to slash
-  error UnauthorizedSlasher();
-
   /// @notice thrown when the commitment value is insufficient
   error InsufficientCommitment();
 
+  /// @notice thrown when no party is eligible for slash
+  error InvalidSlash();
+
+  /// @notice thrown when no party is eligible for reclaim
+  error InvalidReclaim();
+
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
-  /// @param signatory the address that committed
-  event Commitment(bytes32 indexed lock, address indexed signatory);
+  /// @param party the terms of the committing party
+  /// @param committer the address that committed
+  event Commitment(bytes32 indexed lock, TermsV0 party, address indexed committer);
 
-  /// @notice emitted when a party claims their counterparty's assets
+  /// @notice emitted when a swap is executed
   /// @param lock the hashlock identifier
-  /// @param signatory the address that claimed
   /// @param secret the preimage that unlocked the swap
-  event Claim(bytes32 indexed lock, address indexed signatory, bytes32 secret);
+  event Claim(bytes32 indexed lock, bytes32 secret);
 
   /// @notice emitted when a party is slashed for not executing
   /// @param lock the hashlock identifier
-  /// @param target the address that was slashed
-  /// @param slasher the address that received the collateral
-  event Slashed(bytes32 indexed lock, address indexed target, address indexed slasher);
+  /// @param target the signatory that was slashed
+  /// @param collateralRecipient the address that received the collateral
+  event Slashed(bytes32 indexed lock, address indexed target, address indexed collateralRecipient);
 
   /// @notice emitted when a party reclaims their assets
   /// @param lock the hashlock identifier

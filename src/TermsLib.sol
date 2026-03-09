@@ -62,14 +62,18 @@ struct QuipTerms {
 enum LockState {
   /// @notice default - lock has never been used
   Unused,
-  /// @notice one party has committed
+  /// @notice same-chain only: one party has committed, waiting for counterparty
   Free,
-  /// @notice both parties have committed (terminal)
+  /// @notice ready for execute (same-chain: both committed; cross-chain: single commit)
+  Committed,
+  /// @notice terminal (executed, slashed, or reclaimed)
   Spent
 }
 
 /// @notice the terms for a single party in an Omnibus swap
 struct TermsV0 {
+  /// @notice the chain where these terms are valid
+  uint256 chainId;
   /// @notice the address of the party (commits assets)
   address signatory;
   /// @notice the address that receives the counterparty's assets
@@ -85,6 +89,9 @@ struct TermsV0 {
 library TermsLib {
   /// @notice thrown when an asset has zero amount
   error ZeroAmount();
+
+  /// @notice thrown when chainId does not match current chain
+  error InvalidChainId();
 
   /// @notice thrown when a native asset has invalid fields
   error InvalidNativeAsset();
@@ -191,10 +198,10 @@ library TermsLib {
     TermsV0 calldata counterparty
   ) internal pure returns (bytes32 canonicalDigest) {
     bytes32 partyDigest = EfficientHashLib.hash(
-      abi.encode(party.signatory, party.recipient, party.deadline, party.collateral, party.assets)
+      abi.encode(party.chainId, party.signatory, party.recipient, party.deadline, party.collateral, party.assets)
     );
     bytes32 counterpartyDigest = EfficientHashLib.hash(
-      abi.encode(counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.collateral, counterparty.assets)
+      abi.encode(counterparty.chainId, counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.collateral, counterparty.assets)
     );
     // canonical ordering: smaller digest first
     if (uint256(partyDigest) < uint256(counterpartyDigest)) {
@@ -321,5 +328,66 @@ library TermsLib {
     if (block.timestamp < expiry) {
       revert TermsNotExpired();
     }
+  }
+
+  /// @notice validates both party and counterparty terms for commit
+  /// @dev only party.chainId must match current chain; counterparty.chainId may differ for cross-chain
+  /// @param party the committing party's terms (must be on current chain)
+  /// @param counterparty the counterparty's terms (validated but chainId not enforced)
+  function validateTermsV0(TermsV0 calldata party, TermsV0 calldata counterparty) internal view {
+    // party.chainId must match current chain
+    if (party.chainId != block.chainid) revert InvalidChainId();
+
+    // validate party terms
+    enforceTermFreshness(party.deadline);
+    _validateTermsAssets(party);
+
+    // validate counterparty terms (but not chainId)
+    enforceTermFreshness(counterparty.deadline);
+    _validateTermsAssets(counterparty);
+  }
+
+  /// @notice validates collateral and assets in terms
+  /// @param terms the terms to validate
+  function _validateTermsAssets(TermsV0 calldata terms) private pure {
+    validateAsset(terms.collateral);
+    uint256 length = terms.assets.length;
+    for (uint256 i; i < length; ++i) {
+      validateAsset(terms.assets[i]);
+    }
+  }
+
+  /// @notice transfers non-native assets (collateral + assets) into the contract
+  /// @param terms the party's terms containing assets to transfer
+  /// @param from the address to transfer from
+  /// @param to the address to transfer to
+  function transferNonNativeAssetsIn(TermsV0 calldata terms, address from, address to) internal {
+    // transfer collateral if non-native
+    if (terms.collateral.assetType != AssetType.Native) {
+      transferAsset(terms.collateral, from, to);
+    }
+
+    // transfer all non-native assets
+    transferAssetsNoNative(terms.assets, from, to);
+  }
+
+  /// @notice calculates total native amount from TermsV0 (collateral + assets)
+  /// @param terms the party's terms
+  /// @return total the total native amount required
+  function totalNativeAmountV0(TermsV0 calldata terms) internal pure returns (uint256 total) {
+    // add collateral if native
+    if (terms.collateral.assetType == AssetType.Native) {
+      total = terms.collateral.amount;
+    }
+
+    // add native assets
+    total += totalNativeAmount(terms.assets);
+  }
+
+  /// @notice generates a lock from a secret
+  /// @param secret the preimage
+  /// @return lock the hash of the secret
+  function generateLock(bytes32 secret) internal pure returns (bytes32 lock) {
+    lock = EfficientHashLib.hash(secret);
   }
 }

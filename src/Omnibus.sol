@@ -23,132 +23,139 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @inheritdoc IOmnibus
   function commit(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external payable {
-    // cannot commit to a spent lock
-    if (lockState[lock] == LockState.Spent) revert LockAlreadySpent();
+    // validate both terms (only party.chainId must match current chain)
+    TermsLib.validateTermsV0(party, counterparty);
 
-    // determine caller's terms
-    bool isParty = msg.sender == party.signatory;
-    bool isCounterparty = msg.sender == counterparty.signatory;
-    if (!isParty && !isCounterparty) revert InvalidSignatory();
-
-    TermsV0 calldata callerTerms = isParty ? party : counterparty;
-
-    // compute canonical hash
+    // generate canonical hash
     bytes32 hash = TermsLib.digestTermsV0Canonically(party, counterparty);
 
-    // store or verify terms hash
+    // branch on lock state
     if (lockState[lock] == LockState.Unused) {
       termsHash[lock] = hash;
-    } else {
-      // lockState is Free - verify terms match
+    } else if (lockState[lock] == LockState.Free) {
       if (termsHash[lock] != hash) revert InvalidTerms();
+    } else {
+      revert LockAlreadySpent();
     }
 
-    // verify deadline not passed
-    TermsLib.enforceTermFreshness(callerTerms.deadline);
+    // advance lock state based on same-chain vs cross-chain
+    _advanceLock(lock, party.chainId == counterparty.chainId);
 
-    // calculate expected native amount (collateral + assets)
-    uint256 expectedNative = _nativeAmount(callerTerms.collateral) + TermsLib.totalNativeAmount(callerTerms.assets);
-    if (msg.value != expectedNative) revert InsufficientCommitment();
+    // verify native amount
+    if (msg.value != TermsLib.totalNativeAmountV0(party)) revert InsufficientCommitment();
 
-    // transfer collateral (non-native)
-    if (callerTerms.collateral.assetType != AssetType.Native) {
-      TermsLib.transferAsset(callerTerms.collateral, msg.sender, address(this));
-    }
+    // transfer non-native assets + collateral
+    TermsLib.transferNonNativeAssetsIn(party, msg.sender, address(this));
 
-    // transfer assets (non-native)
-    TermsLib.transferAssetsNoNative(callerTerms.assets, msg.sender, address(this));
-
-    // advance lock state: Unused → Free, Free → Spent
-    lockState[lock] = lockState[lock] == LockState.Unused ? LockState.Free : LockState.Spent;
-
-    emit Commitment(lock, msg.sender);
+    emit Commitment(lock, party, msg.sender);
   }
 
   /// @inheritdoc IOmnibus
   function execute(bytes32 secret, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // compute lock from secret
-    bytes32 lock = keccak256(abi.encodePacked(secret));
+    bytes32 lock = TermsLib.generateLock(secret);
 
-    // verify terms
+    // verify terms and state
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
+    if (lockState[lock] != LockState.Committed) revert InvalidLockState();
 
-    // determine caller's terms and counterparty's recipient
-    bool isParty = msg.sender == party.signatory;
-    bool isCounterparty = msg.sender == counterparty.signatory;
-    if (!isParty && !isCounterparty) revert InvalidSignatory();
+    // both deadlines must not have passed
+    TermsLib.enforceTermFreshness(party.deadline);
+    TermsLib.enforceTermFreshness(counterparty.deadline);
 
-    TermsV0 calldata callerTerms = isParty ? party : counterparty;
-    address counterpartyRecipient = isParty ? counterparty.recipient : party.recipient;
+    // at least one party must match this chain
+    bool partyOnChain = party.chainId == block.chainid;
+    bool counterpartyOnChain = counterparty.chainId == block.chainid;
+    if (!partyOnChain && !counterpartyOnChain) revert TermsLib.InvalidChainId();
 
-    // verify caller's deadline not expired
-    TermsLib.enforceTermFreshness(callerTerms.deadline);
+    // transfer assets for parties on this chain
+    if (partyOnChain) {
+      // party's assets to counterparty's recipient
+      TermsLib.transferAssets(party.assets, address(this), counterparty.recipient);
+      // return party's collateral
+      TermsLib.transferAsset(party.collateral, address(this), party.signatory);
+    }
 
-    // delete terms hash to prevent replay
-    delete termsHash[lock];
+    if (counterpartyOnChain) {
+      // counterparty's assets to party's recipient
+      TermsLib.transferAssets(counterparty.assets, address(this), party.recipient);
+      // return counterparty's collateral
+      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
+    }
 
-    // transfer caller's assets to counterparty's recipient
-    TermsLib.transferAssets(callerTerms.assets, address(this), counterpartyRecipient);
-
-    // return caller's collateral to caller's signatory
-    TermsLib.transferAsset(callerTerms.collateral, address(this), callerTerms.signatory);
-
-    emit Claim(lock, msg.sender, secret);
+    // mark as spent
+    _advanceLock(lock, LockState.Spent);
+    emit Claim(lock, secret);
   }
 
   /// @inheritdoc IOmnibus
   function slash(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // verify terms
+    // verify terms and state
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
+    if (lockState[lock] != LockState.Committed) revert InvalidLockState();
 
-    // determine target: caller must be counterparty's recipient to slash party
-    bool slashingParty = msg.sender == counterparty.recipient;
-    bool slashingCounterparty = msg.sender == party.recipient;
-    if (!slashingParty && !slashingCounterparty) revert UnauthorizedSlasher();
+    bool slashedAny = false;
 
-    TermsV0 calldata target = slashingParty ? party : counterparty;
+    // slash party if on this chain and deadline passed
+    if (party.chainId == block.chainid && block.timestamp >= party.deadline) {
+      // collateral to counterparty's recipient (punishment)
+      TermsLib.transferAsset(party.collateral, address(this), counterparty.recipient);
+      // assets to party's signatory (return to self)
+      TermsLib.transferAssets(party.assets, address(this), party.signatory);
+      emit Slashed(lock, party.signatory, counterparty.recipient);
+      slashedAny = true;
+    }
 
-    // verify target's deadline has passed
-    TermsLib.enforceTermStaleness(target.deadline);
+    // slash counterparty if on this chain and deadline passed
+    if (counterparty.chainId == block.chainid && block.timestamp >= counterparty.deadline) {
+      // collateral to party's recipient (punishment)
+      TermsLib.transferAsset(counterparty.collateral, address(this), party.recipient);
+      // assets to counterparty's signatory (return to self)
+      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
+      emit Slashed(lock, counterparty.signatory, party.recipient);
+      slashedAny = true;
+    }
 
-    // delete terms hash
-    delete termsHash[lock];
+    if (!slashedAny) revert InvalidSlash();
 
-    // transfer target's collateral to slasher
-    TermsLib.transferAsset(target.collateral, address(this), msg.sender);
-
-    // return target's assets to target's recipient (graceful return)
-    TermsLib.transferAssets(target.assets, address(this), target.recipient);
-
-    emit Slashed(lock, target.signatory, msg.sender);
+    // mark as spent
+    _advanceLock(lock, LockState.Spent);
   }
 
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
-    // verify terms
+    // Verify terms
     if (termsHash[lock] != TermsLib.digestTermsV0Canonically(party, counterparty)) revert InvalidTerms();
 
-    // can only reclaim when one party has committed
-    if (lockState[lock] != LockState.Free) revert InvalidLockState();
+    // Reclaim allowed on FREE or COMMITTED
+    if (lockState[lock] != LockState.Free && lockState[lock] != LockState.Committed) {
+      revert InvalidLockState();
+    }
 
-    // determine caller's terms
-    bool isParty = msg.sender == party.signatory;
-    bool isCounterparty = msg.sender == counterparty.signatory;
-    if (!isParty && !isCounterparty) revert InvalidSignatory();
+    bool reclaimedAny = false;
 
-    TermsV0 calldata callerTerms = isParty ? party : counterparty;
+    // Reclaim party if on this chain AND deadline NOT passed
+    if (party.chainId == block.chainid && block.timestamp < party.deadline) {
+      // Return everything to party's signatory
+      TermsLib.transferAssets(party.assets, address(this), party.signatory);
+      TermsLib.transferAsset(party.collateral, address(this), party.signatory);
+      emit Reclaimed(lock, party.signatory);
+      reclaimedAny = true;
+    }
 
-    // verify caller's deadline not expired (can only reclaim before deadline)
-    TermsLib.enforceTermFreshness(callerTerms.deadline);
+    // Reclaim counterparty if on this chain AND deadline NOT passed
+    if (counterparty.chainId == block.chainid && block.timestamp < counterparty.deadline) {
+      // Return everything to counterparty's signatory
+      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
+      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
+      emit Reclaimed(lock, counterparty.signatory);
+      reclaimedAny = true;
+    }
 
-    // delete terms hash
+    if (!reclaimedAny) revert InvalidReclaim();
+
+    // Mark as spent
+    lockState[lock] = LockState.Spent;
     delete termsHash[lock];
-
-    // return caller's assets + collateral to caller's signatory
-    TermsLib.transferAssets(callerTerms.assets, address(this), callerTerms.signatory);
-    TermsLib.transferAsset(callerTerms.collateral, address(this), callerTerms.signatory);
-
-    emit Reclaimed(lock, msg.sender);
   }
 
   /// @notice ERC721 receiver callback to accept NFT transfers
@@ -177,8 +184,16 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
-  /// @notice returns native amount from an asset (0 if not native)
-  function _nativeAmount(Asset calldata asset) internal pure returns (uint256) {
-    return asset.assetType == AssetType.Native ? asset.amount : 0;
+  /// @notice advances lock state based on same-chain vs cross-chain
+  /// @param lock the hashlock identifier
+  /// @param sameChain whether party and counterparty are on the same chain
+  function _advanceLock(bytes32 lock, bool sameChain) internal {
+    if (sameChain) {
+      // Same-chain: UNUSED → FREE → COMMITTED
+      lockState[lock] = lockState[lock] == LockState.Unused ? LockState.Free : LockState.Committed;
+    } else {
+      // Cross-chain: UNUSED → COMMITTED directly
+      lockState[lock] = LockState.Committed;
+    }
   }
 }
