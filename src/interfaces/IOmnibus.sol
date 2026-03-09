@@ -10,11 +10,14 @@ interface IOmnibus {
   /// @notice thrown when the provided terms do not match the stored hash
   error InvalidTerms();
 
+  /// @notice thrown when expected and actual terms hashes do not match
+  error TermsMismatch();
+
   /// @notice thrown when the lock state is not as expected
   error InvalidLockState();
 
-  /// @notice thrown when the commitment value is insufficient
-  error InsufficientCommitment();
+  /// @notice thrown when native amount received does not match expected
+  error IncorrectNativeAmountReceived();
 
   /// @notice thrown when no party is eligible for slash
   error InvalidSlash();

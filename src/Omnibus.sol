@@ -25,39 +25,29 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   function commit(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external payable {
     // validate both terms (only party.chainId must match current chain)
     TermsLib.validateTermsV0(party, counterparty);
+    _enforceCorrectNative(TermsLib.totalNativeAmountV0(party));
 
-    // generate canonical hash
     bytes32 hash = TermsLib.digestTermsV0Canonically(party, counterparty);
-
-    // read current state
     LockState current = lockState[lock];
+    LockState target;
 
-    // branch on lock state
+    // invalid states (committed, spent) will revert at _advanceLockTo since is either `Free` or `Committed`
+    // and no valid advancement from committed => free.committed or spent => free/committed
     if (current == LockState.Unused) {
       termsHash[lock] = hash;
-    } else if (current == LockState.Free) {
-      if (termsHash[lock] != hash) revert InvalidTerms();
-    } else {
-      revert LockAlreadySpent();
+      target = party.chainId == counterparty.chainId ? LockState.Free : LockState.Committed;
     }
-
-    // determine target state based on same-chain vs cross-chain
-    bool sameChain = party.chainId == counterparty.chainId;
-    LockState target;
-    if (sameChain) {
-      // same-chain: unused -> free -> committed
-      target = current == LockState.Unused ? LockState.Free : LockState.Committed;
-    } else {
-      // cross-chain: unused -> committed directly
+    // no need to check sameness of chain; only way that current == LockState.Free
+    // is if the terms had same chain in the previous `commit` call
+    if (current == LockState.Free) {
+      _enforceMatchingTerms(termsHash[lock], hash);
       target = LockState.Committed;
     }
+
     _advanceLockTo(lock, current, target);
 
-    // verify native amount
-    if (msg.value != TermsLib.totalNativeAmountV0(party)) revert InsufficientCommitment();
-
     // transfer non-native assets + collateral
-    TermsLib.transferNonNativeAssetsIn(party, msg.sender, address(this));
+    TermsLib.transferNonNativeAssetsIn(party, party.signatory, address(this));
 
     emit Commitment(lock, party, msg.sender);
   }
@@ -211,5 +201,18 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     if (!advanceUnused && !advanceFree && !advanceCommitted) revert InvalidLockAdvancement();
 
     lockState[lock] = to;
+  }
+
+  /// @notice reverts if expected and actual terms hashes do not match
+  /// @param expected the expected terms hash
+  /// @param actual the actual terms hash
+  function _enforceMatchingTerms(bytes32 expected, bytes32 actual) internal pure {
+    if (expected != actual) revert TermsMismatch();
+  }
+
+  /// @notice reverts if native amount received does not match expected
+  /// @param expected the expected native amount
+  function _enforceCorrectNative(uint256 expected) internal view {
+    if (msg.value != expected) revert IncorrectNativeAmountReceived();
   }
 }
