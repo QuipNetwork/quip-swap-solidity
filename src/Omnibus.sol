@@ -107,13 +107,14 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
     
-      // mark as spent
+    // mark as spent
     _advanceLockTo(lock, current, LockState.Spent);
 
     // if counterparty is also on the current chain, reclaim on their behalf since execution is no longer possible
     // NB: deadlines should be set in such a way so that the original proposer deadline is at least a block less
     // than accepting party's deadline because otherwise it is possible that accepting party may be slashed
     if (counterparty.chainId == block.chainid) {
+      TermsLib.enforceTermFreshness(counterparty.deadline);
       TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
@@ -129,38 +130,31 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
 
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, TermsV0 calldata party, TermsV0 calldata counterparty) external {
+    // relcaim is assumed to be called for party
+    TermsLib.enforceTermFreshness(party.deadline);
+    _enforceCurrentChain(party);
     _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsV0Canonically(party, counterparty));
 
-    // reclaim allowed on free or committed
-    LockState current = lockState[lock];
-    if (current != LockState.Free && current != LockState.Committed) {
-      revert InvalidLockState();
-    }
+    // reclaim allowed on free or committed only
+    // marking as spent enforces only free or committed as previous state 
+    // will revert if lock state is unused or spent
+    _advanceLockTo(lock, lockState[lock], LockState.Spent);
 
-    bool reclaimedAny = false;
-
-    // reclaim party if on this chain and deadline not passed
-    if (party.chainId == block.chainid && block.timestamp < party.deadline) {
-      // return everything to party's signatory
-      TermsLib.transferAssets(party.assets, address(this), party.signatory);
-      TermsLib.transferAsset(party.collateral, address(this), party.signatory);
-      emit Reclaimed(lock, party.signatory);
-      reclaimedAny = true;
-    }
-
-    // reclaim counterparty if on this chain and deadline not passed
-    if (counterparty.chainId == block.chainid && block.timestamp < counterparty.deadline) {
+    // reclaim counterparty if on this chain
+    if (counterparty.chainId == block.chainid) {
       // return everything to counterparty's signatory
+      TermsLib.enforceTermFreshness(counterparty.deadline);
       TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
       TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
-      reclaimedAny = true;
     }
 
-    if (!reclaimedAny) revert InvalidReclaim();
-
-    // mark as spent
-    _advanceLockTo(lock, current, LockState.Spent);
+    // reclaim party if on this chain and deadline not passed
+    // return everything to party's signatory
+    TermsLib.transferAssets(party.assets, address(this), party.signatory);
+    TermsLib.transferAsset(party.collateral, address(this), party.signatory);
+      
+    emit Reclaimed(lock, party.signatory);
   }
 
   /// @notice ERC721 receiver callback to accept NFT transfers
