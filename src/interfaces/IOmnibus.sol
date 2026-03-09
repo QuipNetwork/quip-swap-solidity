@@ -16,12 +16,6 @@ enum LockState {
 }
 
 interface IOmnibus {
-  /// @notice thrown when the lock has already been spent
-  error LockAlreadySpent();
-
-  /// @notice thrown when the provided terms do not match the stored hash
-  error InvalidTerms();
-
   /// @notice thrown when expected and actual terms hashes do not match
   error TermsMismatch();
 
@@ -30,12 +24,6 @@ interface IOmnibus {
 
   /// @notice thrown when native amount received does not match expected
   error IncorrectNativeAmountReceived();
-
-  /// @notice thrown when no party is eligible for slash
-  error InvalidSlash();
-
-  /// @notice thrown when no party is eligible for reclaim
-  error InvalidReclaim();
 
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
