@@ -77,13 +77,10 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     bool partyOnChain = party.chainId == block.chainid;
     if (!partyOnChain) revert TermsLib.InvalidChainId();
 
-    // transfer assets for parties on this chain
-    if (partyOnChain) {
-      // party's assets to counterparty's recipient
-      TermsLib.transferAssets(party.assets, address(this), counterparty.recipient);
-      // return party's collateral
-      TermsLib.transferAsset(party.collateral, address(this), party.signatory);
-    }
+    // party's assets to counterparty's recipient
+    TermsLib.transferAssets(party.assets, address(this), counterparty.recipient);
+    // return party's collateral
+    TermsLib.transferAsset(party.collateral, address(this), party.signatory);
 
     // if counterparty is on chainId, prevent double-spend by executing on counterparty
     // terms
