@@ -71,6 +71,11 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
     return TermsLib.generateLock(secret);
   }
 
+  /// @notice exposes enforceNonZeroChainId
+  function exposed_enforceNonZeroChainId(Terms calldata terms) external pure {
+    TermsLib.enforceNonZeroChainId(terms);
+  }
+
   /// @notice allows receiving native currency for transfer tests
   receive() external payable {}
 

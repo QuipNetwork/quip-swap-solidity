@@ -1,0 +1,302 @@
+// SPDX-License-Identifier: UNLICENSE
+pragma solidity 0.8.33;
+
+import {Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
+import {OmnibusTest} from '../Omnibus.t.sol';
+import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {Vm} from 'forge-std-1.14.0/Vm.sol';
+
+/// @title Omnibus reclaim Tests
+/// @dev Tests for Omnibus.reclaim
+contract Omnibus_reclaim is OmnibusTest {
+  using AssetHelper for *;
+
+  // ============ Success Cases ============
+
+  function test_reclaim_returnsAssetsToSignatory() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    uint256 aliceBefore = ALICE.balance;
+
+    omnibus.reclaim(lock, alice, bob);
+
+    // Alice gets her assets + collateral back
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT + COLLATERAL_AMOUNT);
+  }
+
+  function test_reclaim_returnsCollateralToSignatory() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    uint256 aliceBefore = ALICE.balance;
+
+    omnibus.reclaim(lock, alice, bob);
+
+    // Alice gets her collateral back (along with assets)
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT + COLLATERAL_AMOUNT);
+  }
+
+  function test_reclaim_fromFreeState() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    // Only alice commits (Free state)
+    _commitFor(ALICE, lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+
+    uint256 aliceBefore = ALICE.balance;
+
+    omnibus.reclaim(lock, alice, bob);
+
+    // Alice gets everything back
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT + COLLATERAL_AMOUNT);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+
+  function test_reclaim_fromCommittedState() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+
+    omnibus.reclaim(lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+
+  function test_reclaim_sameChainBothPartiesReclaim() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    uint256 aliceBefore = ALICE.balance;
+    uint256 bobBefore = BOB.balance;
+    uint256 bobERC20Before = mockERC20.balanceOf(BOB);
+
+    omnibus.reclaim(lock, alice, bob);
+
+    // Alice gets her native assets + collateral back
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT + COLLATERAL_AMOUNT);
+    // Bob gets his ERC20 assets + native collateral back
+    assertEq(BOB.balance - bobBefore, COLLATERAL_AMOUNT);
+    assertEq(mockERC20.balanceOf(BOB) - bobERC20Before, DEFAULT_AMOUNT);
+  }
+
+  function test_reclaim_emitsReclaimedEvent() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.recordLogs();
+    omnibus.reclaim(lock, alice, bob);
+
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    uint256 reclaimedCount = 0;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IOmnibus.Reclaimed.selector) {
+        assertEq(logs[i].topics[1], lock);
+        reclaimedCount++;
+      }
+    }
+    // Should emit Reclaimed for both parties (same chain)
+    assertEq(reclaimedCount, 2);
+  }
+
+  function test_reclaim_anyoneCanReclaim() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // Charlie reclaims on behalf of parties
+    vm.prank(CHARLIE);
+    omnibus.reclaim(lock, alice, bob);
+
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+
+  function test_reclaim_setsLockStateToSpent() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+
+    omnibus.reclaim(lock, alice, bob);
+
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+
+  // ============ Revert Cases ============
+
+  function test_reclaim_revertsWhen_termsMismatch() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // Modify terms
+    Terms memory aliceModified = _makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      _defaultDeadline(),
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeNativeAssets(DEFAULT_AMOUNT + 1)
+    );
+
+    vm.expectRevert(IOmnibus.TermsMismatch.selector);
+    omnibus.reclaim(lock, aliceModified, bob);
+  }
+
+  function test_reclaim_revertsWhen_lockUnused() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Unused));
+
+    // Terms hash is 0 for unused lock, so it won't match
+    vm.expectRevert(IOmnibus.TermsMismatch.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  function test_reclaim_revertsWhen_lockSpent() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    omnibus.execute(SECRET, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+
+    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  function test_reclaim_revertsWhen_partyNotOnChain() public {
+    Terms memory alice = _makeTerms(
+      OTHER_CHAIN_ID, // Alice on other chain
+      ALICE,
+      ALICE_RECIPIENT,
+      _defaultDeadline(),
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
+    Terms memory bob = _bobTerms();
+
+    bytes32 hash = omnibus.computeTermsHash(alice, bob);
+    omnibus.setLockState(lock, LockState.Committed);
+    omnibus.setTermsHash(lock, hash);
+
+    vm.expectRevert(IOmnibus.ChainMismatch.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  function test_reclaim_revertsWhen_deadlineExpired() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // Warp past deadline
+    vm.warp(alice.deadline);
+
+    vm.expectRevert(TermsLib.TermsExpired.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  function test_reclaim_revertsWhen_sameChainCounterpartyExpired() public {
+    // Create terms where counterparty expires before party
+    Terms memory alice = _makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      uint64(block.timestamp + 2 days), // Later deadline
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      BOB,
+      BOB_RECIPIENT,
+      uint64(block.timestamp + 1 days), // Earlier deadline
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeERC20Assets(DEFAULT_AMOUNT)
+    );
+
+    _commitBothParties(lock, alice, bob);
+
+    // Warp past bob's deadline but before alice's
+    vm.warp(bob.deadline);
+
+    // This should revert because counterparty's reclaim fails (deadline expired)
+    vm.expectRevert(TermsLib.TermsExpired.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  // ============ Edge Cases ============
+
+  function test_reclaim_oneSecondBeforeDeadline() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // Warp to one second before deadline
+    vm.warp(alice.deadline - 1);
+
+    omnibus.reclaim(lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+
+  function test_reclaim_exactDeadlineTimestamp() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // Warp to exactly deadline - should revert (stale)
+    vm.warp(alice.deadline);
+
+    vm.expectRevert(TermsLib.TermsExpired.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  // ============ Fuzz Tests ============
+
+  function testFuzz_reclaim_beforeDeadline(uint64 deadline) public {
+    deadline = uint64(bound(deadline, block.timestamp + 2, type(uint64).max));
+
+    Terms memory alice = _makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      deadline,
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      BOB,
+      BOB_RECIPIENT,
+      deadline,
+      _makeNativeAsset(COLLATERAL_AMOUNT),
+      _makeERC20Assets(DEFAULT_AMOUNT)
+    );
+
+    _commitBothParties(lock, alice, bob);
+
+    // Warp to before deadline
+    vm.warp(deadline - 1);
+
+    omnibus.reclaim(lock, alice, bob);
+    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+  }
+}
