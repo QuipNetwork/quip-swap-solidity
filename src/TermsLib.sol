@@ -129,13 +129,8 @@ library TermsLib {
   }
 
   /// @notice validates terms for commit
-  /// @dev if isParty is true, chainId must match current chain
   /// @param terms the terms to validate
-  /// @param isParty whether these are the committing party's terms (enforces current chain)
-  function validateTerms(Terms calldata terms, bool isParty) internal view {
-    if (isParty) {
-      enforceChainId(terms, block.chainid);
-    }
+  function validateTerms(Terms calldata terms) internal view {
     enforceNonZeroChainId(terms);
     enforceTermFreshness(terms);
     validateAssets(terms);
