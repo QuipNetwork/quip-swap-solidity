@@ -34,20 +34,23 @@ struct Terms {
   address signatory;
   /// @notice the address that receives the counterparty's assets
   address recipient;
-  /// @notice the deadline: before can reclaim, after can be slashed
+  /// @notice the deadline timestamp
   uint64 deadline;
-  /// @notice the collateral levied on slash
-  Asset collateral;
   /// @notice the assets offered by the party
   Asset[] assets;
 }
 
 library TermsLib {
+  // ============ Errors ============
+
   /// @notice thrown when an asset has zero amount
   error ZeroAmount();
 
-  /// @notice thrown when chainId does not match current chain
-  error InvalidChainId();
+  /// @notice thrown when chainId is zero
+  error ZeroChainId();
+
+  /// @notice thrown when chainId does not match expected chain
+  error ChainIdMismatch();
 
   /// @notice thrown when a native asset has invalid fields
   error InvalidNativeAsset();
@@ -67,6 +70,8 @@ library TermsLib {
   /// @notice thrown when the terms have not yet expired
   error TermsNotExpired();
 
+  // ============ Hashing ============
+
   /// @notice computes a canonical digest of terms regardless of party/counterparty order
   /// @dev same hash regardless of which party is passed first
   /// @param party the first party's terms
@@ -77,10 +82,10 @@ library TermsLib {
     Terms calldata counterparty
   ) internal pure returns (bytes32 canonicalDigest) {
     bytes32 partyDigest = EfficientHashLib.hash(
-      abi.encode(party.chainId, party.signatory, party.recipient, party.deadline, party.collateral, party.assets)
+      abi.encode(party.chainId, party.signatory, party.recipient, party.deadline, party.assets)
     );
     bytes32 counterpartyDigest = EfficientHashLib.hash(
-      abi.encode(counterparty.chainId, counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.collateral, counterparty.assets)
+      abi.encode(counterparty.chainId, counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.assets)
     );
     // canonical ordering: smaller digest first
     if (uint256(partyDigest) < uint256(counterpartyDigest)) {
@@ -89,6 +94,8 @@ library TermsLib {
       canonicalDigest = EfficientHashLib.hash(counterpartyDigest, partyDigest);
     }
   }
+
+  // ============ Validation / Enforcement ============
 
   /// @notice validates that an asset's fields are consistent with its type
   /// @param asset the asset to validate
@@ -121,6 +128,50 @@ library TermsLib {
     }
   }
 
+  /// @notice validates terms for commit
+  /// @dev if isParty is true, chainId must match current chain
+  /// @param terms the terms to validate
+  /// @param isParty whether these are the committing party's terms (enforces current chain)
+  function validateTerms(Terms calldata terms, bool isParty) internal view {
+    if (isParty) {
+      enforceChainId(terms, block.chainid);
+    }
+    enforceNonZeroChainId(terms);
+    enforceTermFreshness(terms);
+    validateAssets(terms);
+  }
+
+  /// @notice reverts if the terms chainId is zero
+  /// @param terms the terms to check
+  function enforceNonZeroChainId(Terms calldata terms) internal pure {
+    if (terms.chainId == 0) revert ZeroChainId();
+  }
+
+  /// @notice reverts if the terms chainId does not match the expected chainId
+  /// @param terms the terms to check
+  /// @param chainId the expected chainId
+  function enforceChainId(Terms calldata terms, uint256 chainId) internal pure {
+    if (terms.chainId != chainId) revert ChainIdMismatch();
+  }
+
+  /// @notice reverts if the terms deadline has passed
+  /// @param terms the terms to check
+  function enforceTermFreshness(Terms calldata terms) internal view {
+    if (block.timestamp >= terms.deadline) {
+      revert TermsExpired();
+    }
+  }
+
+  /// @notice reverts if the terms deadline has not passed
+  /// @param terms the terms to check
+  function enforceTermStaleness(Terms calldata terms) internal view {
+    if (block.timestamp < terms.deadline) {
+      revert TermsNotExpired();
+    }
+  }
+
+  // ============ Transfer ============
+
   /// @notice transfers a single asset from one address to another
   /// @param asset the asset to transfer
   /// @param from the address to transfer from (ignored for native)
@@ -143,122 +194,48 @@ library TermsLib {
     IERC1155(asset.target).safeTransferFrom(from, to, asset.id, asset.amount, '');
   }
 
-  /// @notice transfers an array of assets from one address to another
-  /// @param assets the assets to transfer
+  /// @notice transfers all assets from terms
+  /// @param terms the terms containing assets to transfer
   /// @param from the address to transfer from (ignored for native assets)
   /// @param to the address to transfer to
-  function transferAssets(Asset[] memory assets, address from, address to) internal {
-    uint256 length = assets.length;
+  function transferAssets(Terms calldata terms, address from, address to) internal {
+    uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
-      transferAsset(assets[i], from, to);
+      transferAsset(terms.assets[i], from, to);
     }
   }
 
-  /// @notice transfers an array of assets excluding native assets
-  /// @param assets the assets to transfer
+  /// @notice transfers assets from terms excluding native assets
+  /// @param terms the terms containing assets to transfer
   /// @param from the address to transfer from
   /// @param to the address to transfer to
-  function transferAssetsNoNative(Asset[] memory assets, address from, address to) internal {
-    uint256 length = assets.length;
+  function transferAssetsNoNative(Terms calldata terms, address from, address to) internal {
+    uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
-      if (assets[i].assetType != AssetType.Native) {
-        transferAsset(assets[i], from, to);
+      if (terms.assets[i].assetType != AssetType.Native) {
+        transferAsset(terms.assets[i], from, to);
       }
     }
   }
 
-  /// @notice calculates the total native amount in an array of assets
-  /// @param assets the assets to sum
-  /// @return total the total native amount
-  function totalNativeAmount(Asset[] memory assets) internal pure returns (uint256 total) {
-    uint256 length = assets.length;
+  /// @notice calculates total native amount from terms
+  /// @param terms the party's terms
+  /// @return total the total native amount required
+  function totalNative(Terms calldata terms) internal pure returns (uint256 total) {
+    uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
-      if (assets[i].assetType == AssetType.Native) total += assets[i].amount;
+      if (terms.assets[i].assetType == AssetType.Native) total += terms.assets[i].amount;
     }
   }
 
-  /// @notice reverts if the terms deadline has passed
-  /// @param terms the terms to check
-  function enforceTermFreshness(Terms calldata terms) internal view {
-    if (block.timestamp >= terms.deadline) {
-      revert TermsExpired();
-    }
-  }
+  // ============ Private ============
 
-  /// @notice reverts if the expiry timestamp has not passed
-  /// @param expiry the expiry timestamp to check
-  function enforceTermStaleness(uint64 expiry) internal view {
-    if (block.timestamp < expiry) {
-      revert TermsNotExpired();
-    }
-  }
-
-  /// @notice reverts if the terms chainId is zero
-  /// @param terms the terms to check
-  function enforceNonZeroChainId(Terms calldata terms) internal pure {
-    if (terms.chainId == 0) revert InvalidChainId();
-  }
-
-  /// @notice validates both party and counterparty terms for commit
-  /// @dev only party.chainId must match current chain; counterparty.chainId may differ for cross-chain
-  /// @param party the committing party's terms (must be on current chain)
-  /// @param counterparty the counterparty's terms (validated but chainId not enforced)
-  function validateTerms(Terms calldata party, Terms calldata counterparty) internal view {
-    // party.chainId must match current chain
-    if (party.chainId != block.chainid) revert InvalidChainId();
-    enforceNonZeroChainId(party);
-    enforceNonZeroChainId(counterparty);
-
-    // validate party terms
-    enforceTermFreshness(party);
-    _validateTermsAssets(party);
-
-    // validate counterparty terms (but not chainId)
-    enforceTermFreshness(counterparty);
-    _validateTermsAssets(counterparty);
-  }
-
-  /// @notice validates collateral and assets in terms
+  /// @notice validates assets in terms
   /// @param terms the terms to validate
-  function _validateTermsAssets(Terms calldata terms) private pure {
-    validateAsset(terms.collateral);
+  function validateAssets(Terms calldata terms) internal pure {
     uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
       validateAsset(terms.assets[i]);
     }
-  }
-
-  /// @notice transfers non-native assets (collateral + assets) into the contract
-  /// @param terms the party's terms containing assets to transfer
-  /// @param from the address to transfer from
-  /// @param to the address to transfer to
-  function transferNonNativeAssetsIn(Terms calldata terms, address from, address to) internal {
-    // transfer collateral if non-native
-    if (terms.collateral.assetType != AssetType.Native) {
-      transferAsset(terms.collateral, from, to);
-    }
-
-    // transfer all non-native assets
-    transferAssetsNoNative(terms.assets, from, to);
-  }
-
-  /// @notice calculates total native amount from terms (collateral + assets)
-  /// @param terms the party's terms
-  /// @return total the total native amount required
-  function totalNativeAmountFromTerms(Terms calldata terms) internal pure returns (uint256 total) {
-    // add collateral if native
-    if (terms.collateral.assetType == AssetType.Native) {
-      total = terms.collateral.amount;
-    }
-
-    // add native assets
-    total += totalNativeAmount(terms.assets);
-  }
-
-  /// @notice generates a lock from a secret
-  /// @param secret the preimage
-  /// @return lock the hash of the secret
-  function generateLock(bytes32 secret) internal pure returns (bytes32 lock) {
-    lock = EfficientHashLib.hash(secret);
   }
 }
