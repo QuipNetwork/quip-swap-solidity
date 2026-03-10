@@ -8,6 +8,10 @@ import {LockState} from '../../src/interfaces/IOmnibus.sol';
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
 contract OmnibusHarness is Omnibus {
+  /// @notice initializes the harness with an owner
+  /// @param initialOwner the address that will own the contract
+  constructor(address initialOwner) Omnibus(initialOwner) {}
+
   /// @notice exposes _advanceLockTo
   function exposed_advanceLockTo(bytes32 lock, LockState current, LockState to) external {
     _advanceLockTo(lock, current, to);

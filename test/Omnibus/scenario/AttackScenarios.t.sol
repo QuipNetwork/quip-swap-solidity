@@ -48,9 +48,9 @@ contract Omnibus_AttackScenarios is Test {
 
   function setUp() public virtual {
     mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
-    omnibus = new OmnibusHarness();
-    omnibusA = new OmnibusHarness();
-    omnibusB = new OmnibusHarness();
+    omnibus = new OmnibusHarness(address(this));
+    omnibusA = new OmnibusHarness(address(this));
+    omnibusB = new OmnibusHarness(address(this));
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
 

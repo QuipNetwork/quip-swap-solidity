@@ -37,7 +37,7 @@ contract OmnibusTest is TestBase {
     super.setUp();
 
     // Deploy Omnibus harness (shadows TestBase.omnibus)
-    omnibus = new OmnibusHarness();
+    omnibus = new OmnibusHarness(address(this));
 
     // Generate lock from secret
     lock = omnibus.exposed_generateLock(SECRET);

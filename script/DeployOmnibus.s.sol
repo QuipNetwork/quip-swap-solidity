@@ -14,6 +14,9 @@ contract DeployOmnibus is Script {
     /// @notice Salt suffix for Omnibus deployment
     bytes11 public constant SALT_SUFFIX_OMNIBUS = bytes11(keccak256('quip.network.Omnibus.v1'));
 
+    /// @notice Owner address for the Omnibus contract
+    address public constant OMNIBUS_OWNER = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
+
     /// @notice Computes a guarded salt for CreateX deployment
     /// @dev Guarded salt format: deployer (20 bytes) + 0x00 (1 byte) + suffix (11 bytes)
     /// @param deployer The deployer address that will be guarded
@@ -45,7 +48,10 @@ contract DeployOmnibus is Script {
         vm.startBroadcast(deployerPk);
 
         // Deploy Omnibus via CreateX CREATE3
-        bytes memory omnibusInitCode = type(Omnibus).creationCode;
+        bytes memory omnibusInitCode = abi.encodePacked(
+            type(Omnibus).creationCode,
+            abi.encode(OMNIBUS_OWNER)
+        );
         address omnibus = CREATEX.deployCreate3(salt, omnibusInitCode);
 
         vm.stopBroadcast();

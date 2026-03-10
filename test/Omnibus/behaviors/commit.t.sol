@@ -428,6 +428,108 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: 0}(lock, alice, bob);
   }
 
+  // ============ Fee Tests ============
+
+  function test_commit_requiresFeeOnTopOfNative() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 nativeAmount = _totalNativeForCommit(alice);
+    uint256 omnibusBalanceBefore = address(omnibus).balance;
+
+    vm.prank(ALICE);
+    omnibus.commit{value: nativeAmount + fee}(lock, alice, bob);
+
+    // Both native assets and fee should be received
+    assertEq(address(omnibus).balance - omnibusBalanceBefore, nativeAmount + fee);
+    _assertLockState(lock, LockState.Free);
+  }
+
+  function test_commit_revertsWhen_feeNotIncluded() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 nativeAmount = _totalNativeForCommit(alice);
+
+    // Send only the native amount without fee
+    vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+  }
+
+  function test_commit_revertsWhen_partialFeeIncluded() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 nativeAmount = _totalNativeForCommit(alice);
+
+    // Send native amount plus partial fee
+    vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: nativeAmount + fee - 1}(lock, alice, bob);
+  }
+
+  function test_commit_worksWithZeroFee() public {
+    // Fee defaults to 0, should work as before
+    assertEq(omnibus.commitmentFee(), 0);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 nativeAmount = _totalNativeForCommit(alice);
+
+    vm.prank(ALICE);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+
+    _assertLockState(lock, LockState.Free);
+  }
+
+  function test_commit_withMaxFee() public {
+    uint256 maxFee = omnibus.MAX_FEE();
+    omnibus.setCommitmentFee(maxFee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 nativeAmount = _totalNativeForCommit(alice);
+
+    vm.prank(ALICE);
+    omnibus.commit{value: nativeAmount + maxFee}(lock, alice, bob);
+
+    _assertLockState(lock, LockState.Free);
+  }
+
+  function test_commit_feeAccumulatesAcrossCommits() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    uint256 omnibusBalanceBefore = address(omnibus).balance;
+    uint256 aliceNative = _totalNativeForCommit(alice);
+    uint256 bobNative = _totalNativeForCommit(bob);
+
+    // Both parties commit
+    vm.prank(ALICE);
+    omnibus.commit{value: aliceNative + fee}(lock, alice, bob);
+
+    vm.prank(BOB);
+    omnibus.commit{value: bobNative + fee}(lock, bob, alice);
+
+    // Two fees should be accumulated
+    assertEq(address(omnibus).balance - omnibusBalanceBefore, aliceNative + bobNative + (2 * fee));
+  }
+
   // ============ Fuzz Tests ============
 
   function testFuzz_commit_acceptsValidNativeAmount(uint256 amount) public {

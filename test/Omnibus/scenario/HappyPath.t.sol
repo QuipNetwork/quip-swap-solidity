@@ -56,9 +56,9 @@ contract Omnibus_HappyPath is Test {
     mockERC1155 = new ERC1155Mock('https://example.com/token/{id}.json');
 
     // Deploy Omnibus instances
-    omnibus = new OmnibusHarness();
-    omnibusA = new OmnibusHarness();
-    omnibusB = new OmnibusHarness();
+    omnibus = new OmnibusHarness(address(this));
+    omnibusA = new OmnibusHarness(address(this));
+    omnibusB = new OmnibusHarness(address(this));
 
     // Deploy chain-specific tokens
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);

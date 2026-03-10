@@ -38,7 +38,7 @@ contract Omnibus_UnhappyPath is Test {
 
   function setUp() public virtual {
     mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
-    omnibus = new OmnibusHarness();
+    omnibus = new OmnibusHarness(address(this));
     lock = omnibus.exposed_generateLock(SECRET);
 
     vm.deal(ALICE, 100 ether);

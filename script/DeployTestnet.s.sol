@@ -20,6 +20,9 @@ contract DeployTestnet is Script {
     bytes11 public constant SALT_SUFFIX_ERC721_MOCK = bytes11(keccak256('quip.network.ERC721Mock.v1'));
     bytes11 public constant SALT_SUFFIX_ERC1155_MOCK = bytes11(keccak256('quip.network.ERC1155Mock.v1'));
 
+    /// @notice Owner address for the Omnibus contract
+    address public constant OMNIBUS_OWNER = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
+
     /// @notice Minting amounts
     uint256 public constant ERC20_MINT_AMOUNT = 1_000_000 ether;
     uint256 public constant ERC721_MINT_COUNT = 3;
@@ -70,7 +73,10 @@ contract DeployTestnet is Script {
         // Deploy Omnibus
         address omnibus;
         if (expectedOmnibus.code.length == 0) {
-            bytes memory omnibusInitCode = type(Omnibus).creationCode;
+            bytes memory omnibusInitCode = abi.encodePacked(
+                type(Omnibus).creationCode,
+                abi.encode(OMNIBUS_OWNER)
+            );
             omnibus = CREATEX.deployCreate3(saltOmnibus, omnibusInitCode);
             console.log('Omnibus deployed at:', omnibus);
         } else {
