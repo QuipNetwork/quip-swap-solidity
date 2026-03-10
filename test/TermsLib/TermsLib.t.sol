@@ -97,7 +97,6 @@ contract TermsLibTest is Test {
       ALICE,
       ALICE_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
   }
