@@ -28,6 +28,19 @@ interface IOmnibus {
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
 
+  /// @notice thrown when fee exceeds MAX_FEE
+  error FeeExceedsMax();
+
+  /// @notice emitted when commitment fee is updated
+  /// @param oldFee the previous fee
+  /// @param newFee the new fee
+  event FeeUpdated(uint256 oldFee, uint256 newFee);
+
+  /// @notice emitted when accumulated fees are withdrawn
+  /// @param to the recipient address
+  /// @param amount the amount withdrawn
+  event FeesWithdrawn(address indexed to, uint256 amount);
+
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party
@@ -71,4 +84,20 @@ interface IOmnibus {
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
+
+  /// @notice the maximum allowed commitment fee
+  /// @return the max fee in wei
+  function MAX_FEE() external view returns (uint256);
+
+  /// @notice the current commitment fee
+  /// @return the fee in wei
+  function commitmentFee() external view returns (uint256);
+
+  /// @notice sets the commitment fee (owner only)
+  /// @param newFee the new fee (must be <= MAX_FEE)
+  function setCommitmentFee(uint256 newFee) external;
+
+  /// @notice withdraws accumulated fees to recipient (owner only)
+  /// @param to the recipient address
+  function withdrawFees(address to) external;
 }

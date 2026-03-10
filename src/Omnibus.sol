@@ -4,22 +4,34 @@ pragma solidity 0.8.33;
 import {Terms, TermsLib} from './TermsLib.sol';
 import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
+import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
+import {Ownable2Step, Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 
 /// @title Omnibus
 /// @notice Singleton contract for cross-chain swaps using hashlock
-contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
+contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   using TermsLib for Terms;
 
   /// @notice the version of this omnibus implementation
   uint256 public constant VERSION = 0;
 
   /// @inheritdoc IOmnibus
+  uint256 public constant MAX_FEE = 0.01 ether;
+
+  /// @inheritdoc IOmnibus
+  uint256 public commitmentFee;
+
+  /// @inheritdoc IOmnibus
   mapping(bytes32 lock => LockState) public lockState;
 
   /// @inheritdoc IOmnibus
   mapping(bytes32 lock => bytes32) public termsHash;
+
+  /// @notice initializes the contract with an owner
+  /// @param initialOwner the address that will own the contract
+  constructor(address initialOwner) Ownable(initialOwner) {}
 
   /// @notice allows this contract to receive native currency
   receive() external payable {}
@@ -30,7 +42,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     party.enforceChainId(block.chainid);
     party.validateTerms();
     counterparty.validateTerms();
-    _enforceCorrectNative(party.totalNative());
+    _enforceCorrectNative(party.totalNative() + commitmentFee);
 
     bytes32 termsDigest = TermsLib.digestTermsCanonically(party, counterparty);
     LockState current = lockState[lock];
@@ -146,6 +158,21 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @notice ERC165 interface support
   function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
     return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
+  }
+
+  /// @inheritdoc IOmnibus
+  function setCommitmentFee(uint256 newFee) external onlyOwner {
+    if (newFee > MAX_FEE) revert FeeExceedsMax();
+    uint256 oldFee = commitmentFee;
+    commitmentFee = newFee;
+    emit FeeUpdated(oldFee, newFee);
+  }
+
+  /// @inheritdoc IOmnibus
+  function withdrawFees(address to) external onlyOwner {
+    uint256 amount = address(this).balance;
+    SafeTransferLib.safeTransferETH(to, amount);
+    emit FeesWithdrawn(to, amount);
   }
 
   /// @notice advances lock state to target with transition validation
