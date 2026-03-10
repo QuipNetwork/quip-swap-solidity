@@ -89,7 +89,7 @@ deploy-testnet-dry: ## Dry run testnet deployment. Usage: make deploy-testnet-dr
 
 .PHONY: deploy-production
 deploy-production: ## Deploy to production. Usage: make deploy-production RPC=BASE_RPC_URL
-	forge script script/DeployProduction.s.sol \
+	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--sender $(SENDER) \
 		--broadcast \
@@ -97,7 +97,7 @@ deploy-production: ## Deploy to production. Usage: make deploy-production RPC=BA
 
 .PHONY: deploy-production-dry
 deploy-production-dry: ## Dry run production deployment. Usage: make deploy-production-dry RPC=BASE_RPC_URL
-	forge script script/DeployProduction.s.sol \
+	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--sender $(SENDER)
 
