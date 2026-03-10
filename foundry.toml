@@ -7,7 +7,6 @@ quote_style = 'single'
 number_underscore = 'thousands'
 multiline_func_header = 'params_first_multi'
 sort_imports = true
-ignored_warnings_from = ["dependencies/"]
 
 [profile.default]
 src = "src"
@@ -16,6 +15,7 @@ libs = ["lib", "dependencies"]
 solc_version = '0.8.33'
 evm_version = 'prague'
 optimizer_runs = 10_000
+ignored_warnings_from = ["dependencies/"]
 
 [lint]
 # Disable naming convention warnings (test functions use snake_case, constants use SCREAMING_SNAKE_CASE)

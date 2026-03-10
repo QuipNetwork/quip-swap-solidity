@@ -4,7 +4,6 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Asset} from '../../src/TermsLib.sol';
-import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
@@ -23,12 +22,8 @@ abstract contract TestBase is Test {
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
   uint64 public constant DEFAULT_DEADLINE_DELTA = 1 days;
 
-  // Token IDs for testing
-  uint256 public constant ERC721_TOKEN_ID = 1;
-
   // ============ Actors ============
 
-  address public ADMIN = makeAddr('admin');
   address public ALICE = makeAddr('alice');
   address public BOB = makeAddr('bob');
   address public CHARLIE = makeAddr('charlie');
@@ -53,7 +48,6 @@ abstract contract TestBase is Test {
     vm.deal(ALICE, 100 ether);
     vm.deal(BOB, 100 ether);
     vm.deal(CHARLIE, 100 ether);
-    vm.deal(ADMIN, 100 ether);
 
     // mint tokens to actors
     _mintTokensTo(ALICE);
@@ -106,9 +100,5 @@ abstract contract TestBase is Test {
 
   function _makeERC1155Assets(uint256 tokenId, uint256 amount) internal view returns (Asset[] memory) {
     return AssetHelper.makeERC1155(address(mockERC1155), tokenId, amount).toArray();
-  }
-
-  function _generateLock(bytes32 secret) internal pure returns (bytes32) {
-    return EfficientHashLib.hash(secret);
   }
 }

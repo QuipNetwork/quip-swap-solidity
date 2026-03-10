@@ -102,7 +102,7 @@ contract TermsLib_enforceTermStaleness is TermsLibTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_enforceTermStaleness_succeedsWhenStale(uint64 deadline) public {
+  function testFuzz_enforceTermStaleness_succeedsWhenStale(uint64 deadline) public view {
     vm.assume(deadline <= block.timestamp);
     Terms memory terms = _makeTermsWithDeadline(deadline);
     harness.exposed_enforceTermStaleness(terms);

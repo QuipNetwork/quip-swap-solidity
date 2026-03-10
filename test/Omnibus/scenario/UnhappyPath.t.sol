@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Asset, Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
