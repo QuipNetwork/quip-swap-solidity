@@ -11,7 +11,7 @@ enum LockState {
   Free,
   /// @notice ready for execute (same-chain: both committed; cross-chain: single commit)
   Committed,
-  /// @notice terminal (executed, slashed, or reclaimed)
+  /// @notice terminal (executed or reclaimed)
   Spent
 }
 
@@ -28,9 +28,6 @@ interface IOmnibus {
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
 
-  /// @notice thrown when party chainId does not match current chain
-  error ChainMismatch();
-
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party
@@ -41,12 +38,6 @@ interface IOmnibus {
   /// @param lock the hashlock identifier
   /// @param secret the preimage that unlocked the swap
   event Claim(bytes32 indexed lock, bytes32 secret);
-
-  /// @notice emitted when a party is slashed for not executing
-  /// @param lock the hashlock identifier
-  /// @param target the signatory that was slashed
-  /// @param collateralRecipient the address that received the collateral
-  event Slashed(bytes32 indexed lock, address indexed target, address indexed collateralRecipient);
 
   /// @notice emitted when a party reclaims their assets
   /// @param lock the hashlock identifier
@@ -75,13 +66,7 @@ interface IOmnibus {
   /// @param counterparty the second party's terms
   function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
 
-  /// @notice slashes a party after their deadline expires
-  /// @param lock the hashlock identifier
-  /// @param party the first party's terms
-  /// @param counterparty the second party's terms
-  function slash(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
-
-  /// @notice reclaims assets when only one party has committed
+  /// @notice reclaims assets after deadline expires
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

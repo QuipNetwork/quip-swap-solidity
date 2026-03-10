@@ -3,12 +3,15 @@ pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
 import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 
 /// @title Omnibus
-/// @notice Singleton contract for cross-chain swaps using hashlock and collateral
+/// @notice Singleton contract for cross-chain swaps using hashlock
 contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
+  using TermsLib for Terms;
+
   /// @notice the version of this omnibus implementation
   uint256 public constant VERSION = 0;
 
@@ -24,47 +27,53 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @inheritdoc IOmnibus
   function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable {
     // validate both terms (only party.chainId must match current chain)
-    TermsLib.validateTerms(party, counterparty);
-    _enforceCorrectNative(TermsLib.totalNativeAmountFromTerms(party));
+    party.enforceChainId(block.chainid);
+    party.validateTerms();
+    counterparty.validateTerms();
+    _enforceCorrectNative(party.totalNative());
 
-    bytes32 hash = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 termsDigest = TermsLib.digestTermsCanonically(party, counterparty);
     LockState current = lockState[lock];
     LockState target;
 
     // invalid states (committed, spent) will revert at _advanceLockTo since is either `Free` or `Committed`
     // and no valid advancement from committed => free.committed or spent => free/committed
     if (current == LockState.Unused) {
-      termsHash[lock] = hash;
+      termsHash[lock] = termsDigest;
       target = party.chainId == counterparty.chainId ? LockState.Free : LockState.Committed;
     }
     // no need to check sameness of chain; only way that current == LockState.Free
     // is if the terms had same chain in the previous `commit` call
     if (current == LockState.Free) {
-      _enforceMatchingTerms(termsHash[lock], hash);
+      _enforceSameTerms(termsHash[lock], termsDigest);
       target = LockState.Committed;
     }
 
     _advanceLockTo(lock, current, target);
 
-    // transfer non-native assets + collateral
-    TermsLib.transferNonNativeAssetsIn(party, party.signatory, address(this));
+    // transfer non-native assets
+    party.transferAssetsNoNative(party.signatory, address(this));
 
     emit Commitment(lock, party, msg.sender);
   }
 
   /// @inheritdoc IOmnibus
   function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external {
-    bytes32 lock = TermsLib.generateLock(secret);
+    bytes32 lock = _generateLock(secret);
 
     // verify terms and state
-    _enforceMatchingTerms(
-      termsHash[lock], 
+    _enforceSameTerms(
+      termsHash[lock],
       TermsLib.digestTermsCanonically(party, counterparty)
     );
 
+    // party terms _MUST_ be on same chainId
+    // counterparty terms _MAY_ be on same chainId
+    party.enforceChainId(block.chainid);
+
     // both deadlines must not have passed
-    TermsLib.enforceTermFreshness(party);
-    TermsLib.enforceTermFreshness(counterparty);
+    party.enforceTermFreshness();
+    counterparty.enforceTermFreshness();
 
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
@@ -72,84 +81,43 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     // mark as spent
     _advanceLockTo(lock, current, LockState.Spent);
 
-    // party terms _MUST_ be on same chainId
-    // counterparty terms _MAY_ be on same chainId
-    bool partyOnChain = party.chainId == block.chainid;
-    if (!partyOnChain) revert TermsLib.InvalidChainId();
-
     // party's assets to counterparty's recipient
-    TermsLib.transferAssets(party.assets, address(this), counterparty.recipient);
-    // return party's collateral
-    TermsLib.transferAsset(party.collateral, address(this), party.signatory);
+    party.transferAssets(address(this), counterparty.recipient);
 
     // if counterparty is on chainId, prevent double-spend by executing on counterparty
     // terms
     if (counterparty.chainId == block.chainid) {
       // counterparty's assets to party's recipient
-      TermsLib.transferAssets(counterparty.assets, address(this), party.recipient);
-      // return counterparty's collateral
-      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
+      counterparty.transferAssets(address(this), party.recipient);
     }
 
     emit Claim(lock, secret);
   }
 
   /// @inheritdoc IOmnibus
-  function slash(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
-    // slashing always happens on party
-    TermsLib.enforceTermStaleness(party.deadline);
-    _enforceCurrentChain(party);
-    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
+  function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
+    // reclaim is assumed to be called for party
+    party.enforceTermStaleness();
+    party.enforceChainId(block.chainid);
+    _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
     LockState current = lockState[lock];
-    _enforceCommittedLock(current);
-    
-    // mark as spent
-    _advanceLockTo(lock, current, LockState.Spent);
-
-    // if counterparty is also on the current chain, reclaim on their behalf since execution is no longer possible
-    // NB: deadlines should be set in such a way so that the original proposer deadline is at least a block less
-    // than accepting party's deadline because otherwise it is possible that accepting party may be slashed
-    if (counterparty.chainId == block.chainid) {
-      TermsLib.enforceTermFreshness(counterparty);
-      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
-      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
-      emit Reclaimed(lock, counterparty.signatory);
-    }
-    
-    // collateral to counterparty's recipient (punishment)
-    TermsLib.transferAsset(party.collateral, address(this), counterparty.recipient);
-    // assets to party's signatory (return to self)
-    TermsLib.transferAssets(party.assets, address(this), party.signatory);
-    
-    emit Slashed(lock, party.signatory, counterparty.recipient);
-  }
-
-  /// @inheritdoc IOmnibus
-  function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
-    // relcaim is assumed to be called for party
-    TermsLib.enforceTermFreshness(party);
-    _enforceCurrentChain(party);
-    _enforceMatchingTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
-
     // reclaim allowed on free or committed only
     // marking as spent enforces only free or committed as previous state 
     // will revert if lock state is unused or spent
-    _advanceLockTo(lock, lockState[lock], LockState.Spent);
+    _advanceLockTo(lock, current, LockState.Spent);
 
-    // reclaim counterparty if on this chain
-    if (counterparty.chainId == block.chainid) {
+    // reclaim counterparty if on this chain and the current state is committed
+    // meaning counterparty has committed their assets
+    if (counterparty.chainId == block.chainid && current == LockState.Committed) {
       // return everything to counterparty's signatory
-      TermsLib.enforceTermFreshness(counterparty);
-      TermsLib.transferAssets(counterparty.assets, address(this), counterparty.signatory);
-      TermsLib.transferAsset(counterparty.collateral, address(this), counterparty.signatory);
+      counterparty.enforceTermStaleness();
+      counterparty.transferAssets(address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
     }
 
-    // reclaim party if on this chain and deadline not passed
     // return everything to party's signatory
-    TermsLib.transferAssets(party.assets, address(this), party.signatory);
-    TermsLib.transferAsset(party.collateral, address(this), party.signatory);
+    party.transferAssets(address(this), party.signatory);
       
     emit Reclaimed(lock, party.signatory);
   }
@@ -198,7 +166,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
   /// @notice reverts if expected and actual terms hashes do not match
   /// @param expected the expected terms hash
   /// @param actual the actual terms hash
-  function _enforceMatchingTerms(bytes32 expected, bytes32 actual) internal pure {
+  function _enforceSameTerms(bytes32 expected, bytes32 actual) internal pure {
     if (expected != actual) revert TermsMismatch();
   }
 
@@ -214,9 +182,10 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver {
     if (current != LockState.Committed) revert InvalidLockState();
   }
 
-  /// @notice reverts if party chainId does not match current chain
-  /// @param terms the terms to check
-  function _enforceCurrentChain(Terms calldata terms) internal view {
-    if (terms.chainId != block.chainid) revert ChainMismatch();
+  /// @notice generates a lock from a secret
+  /// @param secret the preimage
+  /// @return lock the hash of the secret
+  function _generateLock(bytes32 secret) internal pure returns (bytes32 lock) {
+    lock = EfficientHashLib.hash(secret);
   }
 }
