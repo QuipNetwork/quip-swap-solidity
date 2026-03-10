@@ -64,14 +64,12 @@ contract Omnibus_commit is OmnibusTest {
     assertEq(address(omnibus).balance - omnibusBalanceBefore, nativeAmount);
   }
 
-  function test_commit_withERC20Collateral() public {
-    Asset memory erc20Collateral = _makeERC20Asset(COLLATERAL_AMOUNT);
+  function test_commit_withERC20Assets() public {
     Terms memory alice = _makeTerms(
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      erc20Collateral,
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms();
@@ -82,21 +80,19 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit(lock, alice, bob);
 
-    assertEq(aliceBalanceBefore - mockERC20.balanceOf(ALICE), COLLATERAL_AMOUNT + DEFAULT_AMOUNT);
-    assertEq(mockERC20.balanceOf(address(omnibus)) - omnibusBalanceBefore, COLLATERAL_AMOUNT + DEFAULT_AMOUNT);
+    assertEq(aliceBalanceBefore - mockERC20.balanceOf(ALICE), DEFAULT_AMOUNT);
+    assertEq(mockERC20.balanceOf(address(omnibus)) - omnibusBalanceBefore, DEFAULT_AMOUNT);
   }
 
-  function test_commit_withERC721Collateral() public {
+  function test_commit_withERC721Assets() public {
     // ALICE owns tokens 1, 2, 3 from setUp minting
     uint256 tokenId = 1;
-    Asset memory erc721Collateral = _makeERC721Asset(tokenId);
     Terms memory alice = _makeTerms(
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      erc721Collateral,
-      _makeERC20Assets(DEFAULT_AMOUNT)
+      _makeERC721Assets(tokenId)
     );
     Terms memory bob = _bobTerms();
 
@@ -108,15 +104,13 @@ contract Omnibus_commit is OmnibusTest {
     assertEq(mockERC721.ownerOf(tokenId), address(omnibus));
   }
 
-  function test_commit_withERC1155Collateral() public {
-    Asset memory erc1155Collateral = _makeERC1155Asset(ERC1155_TOKEN_ID, 100);
+  function test_commit_withERC1155Assets() public {
     Terms memory alice = _makeTerms(
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      erc1155Collateral,
-      _makeERC20Assets(DEFAULT_AMOUNT)
+      _makeERC1155Assets(ERC1155_TOKEN_ID, 100)
     );
     Terms memory bob = _bobTerms();
 
@@ -141,12 +135,11 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       mixedAssets
     );
     Terms memory bob = _bobTerms();
 
-    uint256 nativeAmount = COLLATERAL_AMOUNT + 1 ether;
+    uint256 nativeAmount = 1 ether;
     uint256 omnibusNativeBefore = address(omnibus).balance;
     uint256 omnibusERC20Before = mockERC20.balanceOf(address(omnibus));
     uint256 omnibusERC1155Before = mockERC1155.balanceOf(address(omnibus), ERC1155_TOKEN_ID);
@@ -244,14 +237,13 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms();
 
-    vm.expectRevert(TermsLib.InvalidChainId.selector);
+    vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: COLLATERAL_AMOUNT + DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_partyDeadlineExpired() public {
@@ -260,14 +252,13 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _expiredDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.TermsExpired.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: COLLATERAL_AMOUNT + DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_counterpartyDeadlineExpired() public {
@@ -277,13 +268,13 @@ contract Omnibus_commit is OmnibusTest {
       BOB,
       BOB_RECIPIENT,
       _expiredDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
 
+    uint256 nativeAmount = _totalNativeForCommit(alice);
     vm.expectRevert(TermsLib.TermsExpired.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: COLLATERAL_AMOUNT + DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_incorrectNativeAmount() public {
@@ -359,7 +350,6 @@ contract Omnibus_commit is OmnibusTest {
       BOB,
       BOB_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT + 1 ether) // Different amount
     );
 
@@ -373,70 +363,69 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(0), // Zero collateral amount
-      _makeNativeAssets(DEFAULT_AMOUNT)
+      _makeNativeAssets(0) // Zero amount
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.ZeroAmount.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_invalidNativeAsset() public {
-    Asset memory invalidNative =
-      Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: COLLATERAL_AMOUNT});
+    Asset[] memory assets = new Asset[](1);
+    assets[0] = Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: DEFAULT_AMOUNT});
 
     Terms memory alice = _makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), invalidNative, _makeNativeAssets(DEFAULT_AMOUNT)
+      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), assets
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.InvalidNativeAsset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: COLLATERAL_AMOUNT + DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_invalidERC20Asset() public {
-    Asset memory invalidERC20 =
-      Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: COLLATERAL_AMOUNT}); // Zero target
+    Asset[] memory assets = new Asset[](1);
+    assets[0] = Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: DEFAULT_AMOUNT}); // Zero target
 
     Terms memory alice = _makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), invalidERC20, _makeNativeAssets(DEFAULT_AMOUNT)
+      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), assets
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.InvalidERC20Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_invalidERC721Asset() public {
-    Asset memory invalidERC721 =
-      Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: 0, amount: 1}); // Zero id
+    Asset[] memory assets = new Asset[](1);
+    assets[0] = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: 0, amount: 1}); // Zero id
 
     Terms memory alice = _makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), invalidERC721, _makeNativeAssets(DEFAULT_AMOUNT)
+      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), assets
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.InvalidERC721Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob);
   }
 
   function test_commit_revertsWhen_invalidERC1155Asset() public {
-    Asset memory invalidERC1155 =
-      Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: 0, amount: 100}); // Zero id
+    Asset[] memory assets = new Asset[](1);
+    assets[0] = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: 0, amount: 100}); // Zero id
 
     Terms memory alice = _makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), invalidERC1155, _makeNativeAssets(DEFAULT_AMOUNT)
+      block.chainid, ALICE, ALICE_RECIPIENT, _defaultDeadline(), assets
     );
     Terms memory bob = _bobTerms();
 
     vm.expectRevert(TermsLib.InvalidERC1155Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob);
   }
 
   // ============ Fuzz Tests ============
@@ -449,8 +438,7 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(amount),
-      _makeERC20Assets(DEFAULT_AMOUNT)
+      _makeNativeAssets(amount)
     );
     Terms memory bob = _bobTerms();
 
@@ -468,7 +456,6 @@ contract Omnibus_commit is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       deadline,
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _makeTerms(
@@ -476,12 +463,11 @@ contract Omnibus_commit is OmnibusTest {
       BOB,
       BOB_RECIPIENT,
       deadline,
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
 
     vm.prank(ALICE);
-    omnibus.commit{value: COLLATERAL_AMOUNT + DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
 
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
   }

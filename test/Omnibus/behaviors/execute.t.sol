@@ -78,22 +78,6 @@ contract Omnibus_execute is OmnibusTest {
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), aliceRecipientERC20Before);
   }
 
-  function test_execute_returnsCollateralToSignatories() public {
-    Terms memory alice = _aliceTerms();
-    Terms memory bob = _bobTerms();
-
-    _commitBothParties(lock, alice, bob);
-
-    uint256 aliceBefore = ALICE.balance;
-    uint256 bobBefore = BOB.balance;
-
-    omnibus.execute(SECRET, alice, bob);
-
-    // Both get their collateral back
-    assertEq(ALICE.balance - aliceBefore, COLLATERAL_AMOUNT);
-    assertEq(BOB.balance - bobBefore, COLLATERAL_AMOUNT);
-  }
-
   function test_execute_emitsClaimEvent() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
@@ -150,7 +134,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms();
@@ -172,7 +155,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC721Assets(tokenId)
     );
     Terms memory bob = _bobTerms();
@@ -192,7 +174,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC1155Assets(ERC1155_TOKEN_ID, 100)
     );
     Terms memory bob = _bobTerms();
@@ -242,7 +223,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT + 1) // Different amount
     );
 
@@ -315,7 +295,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 2 days),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _makeTerms(
@@ -323,7 +302,6 @@ contract Omnibus_execute is OmnibusTest {
       BOB,
       BOB_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
 
@@ -356,7 +334,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms();
@@ -366,7 +343,7 @@ contract Omnibus_execute is OmnibusTest {
     omnibus.setLockState(lock, LockState.Committed);
     omnibus.setTermsHash(lock, hash);
 
-    vm.expectRevert(TermsLib.InvalidChainId.selector);
+    vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     omnibus.execute(SECRET, alice, bob);
   }
 
@@ -377,7 +354,6 @@ contract Omnibus_execute is OmnibusTest {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
     Terms memory bob = _bobTerms(); // Bob on this chain
@@ -386,7 +362,7 @@ contract Omnibus_execute is OmnibusTest {
     omnibus.setLockState(lock, LockState.Committed);
     omnibus.setTermsHash(lock, hash);
 
-    vm.expectRevert(TermsLib.InvalidChainId.selector);
+    vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     omnibus.execute(SECRET, alice, bob);
   }
 
@@ -423,7 +399,7 @@ contract Omnibus_execute is OmnibusTest {
   function testFuzz_execute_withValidSecret(bytes32 secret) public {
     vm.assume(secret != bytes32(0));
 
-    bytes32 _lock = TermsLib.generateLock(secret);
+    bytes32 _lock = omnibus.exposed_generateLock(secret);
 
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
