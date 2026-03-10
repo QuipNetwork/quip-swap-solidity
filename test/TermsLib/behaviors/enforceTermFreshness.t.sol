@@ -17,7 +17,6 @@ contract TermsLib_enforceTermFreshness is TermsLibTest {
       signatory: ALICE,
       recipient: ALICE_RECIPIENT,
       deadline: deadline,
-      collateral: _makeNativeAsset(0.1 ether),
       assets: _makeNativeAsset(1 ether).toArray()
     });
   }

@@ -20,7 +20,6 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
   }
@@ -31,7 +30,6 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       BOB,
       BOB_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeERC20Asset(1 ether).toArray()
     );
   }
@@ -69,8 +67,7 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       BOB,
       BOB_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.2 ether), // Different collateral
-      _makeERC20Asset(1 ether).toArray()
+      _makeERC20Asset(2 ether).toArray() // Different assets
     );
 
     bytes32 hash1 = harness.exposed_digestTermsCanonically(alice, bob);
@@ -87,7 +84,7 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
 
     // Change chainId
     Terms memory aliceChainId = TermsHelper.makeTerms(
-      999, ALICE, ALICE_RECIPIENT, DEFAULT_DEADLINE, _makeNativeAsset(0.1 ether), _makeNativeAsset(1 ether).toArray()
+      999, ALICE, ALICE_RECIPIENT, DEFAULT_DEADLINE, _makeNativeAsset(1 ether).toArray()
     );
     assertNotEq(harness.exposed_digestTermsCanonically(aliceChainId, bob), originalHash);
 
@@ -97,7 +94,6 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       BOB, // Different signatory
       ALICE_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
     assertNotEq(harness.exposed_digestTermsCanonically(aliceSignatory, bob), originalHash);
@@ -108,7 +104,6 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       ALICE,
       BOB_RECIPIENT, // Different recipient
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
     assertNotEq(harness.exposed_digestTermsCanonically(aliceRecipient, bob), originalHash);
@@ -119,21 +114,9 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       DEFAULT_DEADLINE + 1, // Different deadline
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
     assertNotEq(harness.exposed_digestTermsCanonically(aliceDeadline, bob), originalHash);
-
-    // Change collateral
-    Terms memory aliceCollateral = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
-      _makeNativeAsset(0.2 ether), // Different collateral
-      _makeNativeAsset(1 ether).toArray()
-    );
-    assertNotEq(harness.exposed_digestTermsCanonically(aliceCollateral, bob), originalHash);
 
     // Change assets
     Terms memory aliceAssets = TermsHelper.makeTerms(
@@ -141,7 +124,6 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       DEFAULT_DEADLINE,
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(2 ether).toArray() // Different assets
     );
     assertNotEq(harness.exposed_digestTermsCanonically(aliceAssets, bob), originalHash);
@@ -165,11 +147,11 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
     amount2 = bound(amount2, 1, type(uint128).max);
 
     Terms memory terms1 = TermsHelper.makeTerms(
-      chainId1, ALICE, ALICE_RECIPIENT, deadline1, _makeNativeAsset(amount1), _makeNativeAsset(amount1).toArray()
+      chainId1, ALICE, ALICE_RECIPIENT, deadline1, _makeNativeAsset(amount1).toArray()
     );
 
     Terms memory terms2 = TermsHelper.makeTerms(
-      chainId2, BOB, BOB_RECIPIENT, deadline2, _makeNativeAsset(amount2), _makeNativeAsset(amount2).toArray()
+      chainId2, BOB, BOB_RECIPIENT, deadline2, _makeNativeAsset(amount2).toArray()
     );
 
     bytes32 hash1 = harness.exposed_digestTermsCanonically(terms1, terms2);

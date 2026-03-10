@@ -20,7 +20,6 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -34,7 +33,6 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -48,7 +46,6 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -64,11 +61,10 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
 
-    vm.expectRevert(TermsLib.InvalidChainId.selector);
+    vm.expectRevert(TermsLib.ZeroChainId.selector);
     harness.exposed_enforceNonZeroChainId(terms);
   }
 
@@ -82,7 +78,6 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       ALICE,
       ALICE_RECIPIENT,
       uint64(block.timestamp + 1 days),
-      _makeNativeAsset(0.1 ether),
       _makeNativeAsset(1 ether).toArray()
     );
 
