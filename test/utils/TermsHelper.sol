@@ -11,7 +11,6 @@ library TermsHelper {
   /// @param signatory the party's address
   /// @param recipient the recipient's address
   /// @param deadline the deadline timestamp
-  /// @param collateral the collateral asset
   /// @param assets the assets array
   /// @return terms the constructed Terms struct
   function makeTerms(
@@ -19,7 +18,6 @@ library TermsHelper {
     address signatory,
     address recipient,
     uint64 deadline,
-    Asset memory collateral,
     Asset[] memory assets
   ) internal pure returns (Terms memory terms) {
     terms = Terms({
@@ -27,7 +25,6 @@ library TermsHelper {
       signatory: signatory,
       recipient: recipient,
       deadline: deadline,
-      collateral: collateral,
       assets: assets
     });
   }
@@ -36,16 +33,14 @@ library TermsHelper {
   /// @param chainId the chain where these terms are valid
   /// @param signatory the party's address (also used as recipient)
   /// @param deadline the deadline timestamp
-  /// @param collateral the collateral asset
   /// @param assets the assets array
   /// @return terms the constructed Terms struct
   function makeSimpleTerms(
     uint256 chainId,
     address signatory,
     uint64 deadline,
-    Asset memory collateral,
     Asset[] memory assets
   ) internal pure returns (Terms memory terms) {
-    terms = makeTerms(chainId, signatory, signatory, deadline, collateral, assets);
+    terms = makeTerms(chainId, signatory, signatory, deadline, assets);
   }
 }

@@ -13,9 +13,9 @@ contract OmnibusHarness is Omnibus {
     _advanceLockTo(lock, current, to);
   }
 
-  /// @notice exposes _enforceMatchingTerms
-  function exposed_enforceMatchingTerms(bytes32 expected, bytes32 actual) external pure {
-    _enforceMatchingTerms(expected, actual);
+  /// @notice exposes _enforceSameTerms
+  function exposed_enforceSameTerms(bytes32 expected, bytes32 actual) external pure {
+    _enforceSameTerms(expected, actual);
   }
 
   /// @notice exposes _enforceCorrectNative
@@ -26,11 +26,6 @@ contract OmnibusHarness is Omnibus {
   /// @notice exposes _enforceCommittedLock
   function exposed_enforceCommittedLock(LockState current) external pure {
     _enforceCommittedLock(current);
-  }
-
-  /// @notice exposes _enforceCurrentChain
-  function exposed_enforceCurrentChain(Terms calldata terms) external view {
-    _enforceCurrentChain(terms);
   }
 
   /// @notice helper to set lock state directly for testing
@@ -46,5 +41,10 @@ contract OmnibusHarness is Omnibus {
   /// @notice helper to compute terms hash (exposed for testing)
   function computeTermsHash(Terms calldata party, Terms calldata counterparty) external pure returns (bytes32) {
     return TermsLib.digestTermsCanonically(party, counterparty);
+  }
+
+  /// @notice exposes _generateLock
+  function exposed_generateLock(bytes32 secret) external pure returns (bytes32) {
+    return _generateLock(secret);
   }
 }

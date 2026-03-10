@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
+import {Asset, AssetType, Terms, TermsLib} from '../../src/TermsLib.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
@@ -20,7 +20,6 @@ contract OmnibusTest is Test {
   // ============ Constants ============
 
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
-  uint256 public constant COLLATERAL_AMOUNT = 1 ether;
   uint64 public constant DEFAULT_DEADLINE_DELTA = 1 days;
 
   // Cross-chain simulation
@@ -63,7 +62,7 @@ contract OmnibusTest is Test {
     omnibus = new OmnibusHarness();
 
     // Generate lock from secret
-    lock = TermsLib.generateLock(SECRET);
+    lock = omnibus.exposed_generateLock(SECRET);
 
     // Fund actors
     vm.deal(ALICE, 100 ether);
@@ -162,7 +161,6 @@ contract OmnibusTest is Test {
       ALICE,
       ALICE_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeNativeAssets(DEFAULT_AMOUNT)
     );
   }
@@ -174,7 +172,6 @@ contract OmnibusTest is Test {
       BOB,
       BOB_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
   }
@@ -186,7 +183,6 @@ contract OmnibusTest is Test {
       BOB,
       BOB_RECIPIENT,
       _defaultDeadline(),
-      _makeNativeAsset(COLLATERAL_AMOUNT),
       _makeERC20Assets(DEFAULT_AMOUNT)
     );
   }
@@ -197,19 +193,15 @@ contract OmnibusTest is Test {
     address signatory,
     address recipient,
     uint64 deadline,
-    Asset memory collateral,
     Asset[] memory assets
   ) internal pure returns (Terms memory) {
-    return TermsHelper.makeTerms(chainId, signatory, recipient, deadline, collateral, assets);
+    return TermsHelper.makeTerms(chainId, signatory, recipient, deadline, assets);
   }
 
   /// @notice Calculate native amount required for commit
   function _totalNativeForCommit(Terms memory terms) internal pure returns (uint256 total) {
-    if (terms.collateral.assetType == AssetHelper.makeNative(0).assetType) {
-      total = terms.collateral.amount;
-    }
     for (uint256 i = 0; i < terms.assets.length; i++) {
-      if (terms.assets[i].assetType == AssetHelper.makeNative(0).assetType) {
+      if (terms.assets[i].assetType == AssetType.Native) {
         total += terms.assets[i].amount;
       }
     }

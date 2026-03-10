@@ -22,8 +22,13 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes validateTerms
-  function exposed_validateTerms(Terms calldata party, Terms calldata counterparty) external view {
-    TermsLib.validateTerms(party, counterparty);
+  function exposed_validateTerms(Terms calldata terms) external view {
+    TermsLib.validateTerms(terms);
+  }
+
+  /// @notice exposes validateAssets
+  function exposed_validateAssets(Terms calldata terms) external pure {
+    TermsLib.validateAssets(terms);
   }
 
   /// @notice exposes transferAsset
@@ -32,28 +37,18 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes transferAssets
-  function exposed_transferAssets(Asset[] memory assets, address from, address to) external {
-    TermsLib.transferAssets(assets, from, to);
+  function exposed_transferAssets(Terms calldata terms, address from, address to) external {
+    TermsLib.transferAssets(terms, from, to);
   }
 
   /// @notice exposes transferAssetsNoNative
-  function exposed_transferAssetsNoNative(Asset[] memory assets, address from, address to) external {
-    TermsLib.transferAssetsNoNative(assets, from, to);
+  function exposed_transferAssetsNoNative(Terms calldata terms, address from, address to) external {
+    TermsLib.transferAssetsNoNative(terms, from, to);
   }
 
-  /// @notice exposes transferNonNativeAssetsIn
-  function exposed_transferNonNativeAssetsIn(Terms calldata terms, address from, address to) external {
-    TermsLib.transferNonNativeAssetsIn(terms, from, to);
-  }
-
-  /// @notice exposes totalNativeAmount
-  function exposed_totalNativeAmount(Asset[] memory assets) external pure returns (uint256) {
-    return TermsLib.totalNativeAmount(assets);
-  }
-
-  /// @notice exposes totalNativeAmountFromTerms
-  function exposed_totalNativeAmountFromTerms(Terms calldata terms) external pure returns (uint256) {
-    return TermsLib.totalNativeAmountFromTerms(terms);
+  /// @notice exposes totalNative
+  function exposed_totalNative(Terms calldata terms) external pure returns (uint256) {
+    return TermsLib.totalNative(terms);
   }
 
   /// @notice exposes enforceTermFreshness
@@ -62,18 +57,18 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes enforceTermStaleness
-  function exposed_enforceTermStaleness(uint64 expiry) external view {
-    TermsLib.enforceTermStaleness(expiry);
-  }
-
-  /// @notice exposes generateLock
-  function exposed_generateLock(bytes32 secret) external pure returns (bytes32) {
-    return TermsLib.generateLock(secret);
+  function exposed_enforceTermStaleness(Terms calldata terms) external view {
+    TermsLib.enforceTermStaleness(terms);
   }
 
   /// @notice exposes enforceNonZeroChainId
   function exposed_enforceNonZeroChainId(Terms calldata terms) external pure {
     TermsLib.enforceNonZeroChainId(terms);
+  }
+
+  /// @notice exposes enforceChainId
+  function exposed_enforceChainId(Terms calldata terms, uint256 chainId) external pure {
+    TermsLib.enforceChainId(terms, chainId);
   }
 
   /// @notice allows receiving native currency for transfer tests
