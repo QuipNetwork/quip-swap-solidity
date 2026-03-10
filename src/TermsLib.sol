@@ -64,6 +64,9 @@ library TermsLib {
   /// @notice thrown when an erc1155 asset has invalid fields
   error InvalidERC1155Asset();
 
+  /// @notice thrown when terms have no assets
+  error EmptyAssets();
+
   /// @notice thrown when the terms have expired
   error TermsExpired();
 
@@ -131,6 +134,7 @@ library TermsLib {
   /// @notice validates terms for commit
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal view {
+    if (terms.assets.length == 0) revert EmptyAssets();
     enforceNonZeroChainId(terms);
     enforceTermFreshness(terms);
     validateAssets(terms);
