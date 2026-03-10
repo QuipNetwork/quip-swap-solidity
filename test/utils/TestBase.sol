@@ -3,7 +3,6 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Omnibus} from '../../src/Omnibus.sol';
 import {Asset} from '../../src/TermsLib.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 
@@ -26,7 +25,6 @@ abstract contract TestBase is Test {
 
   // Token IDs for testing
   uint256 public constant ERC721_TOKEN_ID = 1;
-  uint256 public constant ERC1155_TOKEN_ID = 1;
 
   // ============ Actors ============
 
@@ -39,7 +37,6 @@ abstract contract TestBase is Test {
 
   // ============ Contracts ============
 
-  Omnibus public omnibus;
   ERC20Mock public mockERC20;
   ERC721Mock public mockERC721;
   ERC1155Mock public mockERC1155;
@@ -51,9 +48,6 @@ abstract contract TestBase is Test {
     mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
     mockERC721 = new ERC721Mock('MockNFT', 'MNFT');
     mockERC1155 = new ERC1155Mock('https://example.com/token/{id}.json');
-
-    // deploy Omnibus
-    omnibus = new Omnibus();
 
     // fund actors
     vm.deal(ALICE, 100 ether);
@@ -86,11 +80,11 @@ abstract contract TestBase is Test {
     return uint64(block.timestamp - 1);
   }
 
-  function _approveAllForOmnibus(address owner) internal {
+  function _approveAllFor(address owner, address spender) internal {
     vm.startPrank(owner);
-    mockERC20.approve(address(omnibus), type(uint256).max);
-    mockERC721.setApprovalForAll(address(omnibus), true);
-    mockERC1155.setApprovalForAll(address(omnibus), true);
+    mockERC20.approve(spender, type(uint256).max);
+    mockERC721.setApprovalForAll(spender, true);
+    mockERC1155.setApprovalForAll(spender, true);
     vm.stopPrank();
   }
 

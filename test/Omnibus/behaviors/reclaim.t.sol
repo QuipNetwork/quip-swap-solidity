@@ -37,7 +37,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     // Only alice commits (Free state)
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
     // Warp to deadline (staleness check)
     vm.warp(alice.deadline);
@@ -48,7 +48,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     // Alice gets everything back
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   function test_reclaim_fromCommittedState() public {
@@ -56,13 +56,13 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
     // Warp to deadline (staleness check)
     vm.warp(alice.deadline);
 
     omnibus.reclaim(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   function test_reclaim_sameChainBothPartiesReclaim() public {
@@ -122,7 +122,7 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.reclaim(lock, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   function test_reclaim_setsLockStateToSpent() public {
@@ -130,14 +130,14 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
     // Warp to deadline (staleness check)
     vm.warp(alice.deadline);
 
     omnibus.reclaim(lock, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   // ============ Revert Cases ============
@@ -168,7 +168,7 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Unused));
+    _assertLockState(lock, LockState.Unused);
 
     // Warp to deadline (staleness check)
     vm.warp(alice.deadline);
@@ -184,7 +184,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     _commitBothParties(lock, alice, bob);
     omnibus.execute(SECRET, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
 
     // Warp to deadline (staleness check)
     vm.warp(alice.deadline);
@@ -264,7 +264,7 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.warp(alice.deadline + 1);
 
     omnibus.reclaim(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   function test_reclaim_exactDeadlineTimestamp() public {
@@ -277,7 +277,7 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.warp(alice.deadline);
 
     omnibus.reclaim(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   // ============ Fuzz Tests ============
@@ -307,6 +307,6 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.warp(deadline + delay);
 
     omnibus.reclaim(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 }

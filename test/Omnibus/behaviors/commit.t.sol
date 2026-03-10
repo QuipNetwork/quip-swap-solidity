@@ -23,7 +23,7 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: nativeAmount}(lock, alice, bob);
 
     // First commit on same-chain transitions to Free
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 
   function test_commit_sameChainSecondCommit() public {
@@ -32,11 +32,11 @@ contract Omnibus_commit is OmnibusTest {
 
     // First commit
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
     // Second commit transitions to Committed
     _commitFor(BOB, lock, bob, alice);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
   }
 
   function test_commit_crossChainCommit() public {
@@ -48,7 +48,7 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: nativeAmount}(lock, alice, bob);
 
     // Cross-chain commit transitions directly to Committed
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
   }
 
   function test_commit_withNativeCollateral() public {
@@ -195,7 +195,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.commit{value: nativeAmount}(lock, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 
   // ============ State Transition Tests ============
@@ -204,9 +204,9 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Unused));
+    _assertLockState(lock, LockState.Unused);
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 
   function test_commit_lockStateFreeToCommitted() public {
@@ -214,19 +214,19 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
     _commitFor(BOB, lock, bob, alice);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
   }
 
   function test_commit_lockStateUnusedToCommitted() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobCrossChainTerms();
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Unused));
+    _assertLockState(lock, LockState.Unused);
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
   }
 
   // ============ Revert Cases ============
@@ -316,7 +316,7 @@ contract Omnibus_commit is OmnibusTest {
 
     // Both parties commit
     _commitBothParties(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
     // Try to commit again
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
@@ -330,7 +330,7 @@ contract Omnibus_commit is OmnibusTest {
     // Commit both and execute
     _commitBothParties(lock, alice, bob);
     omnibus.execute(SECRET, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
 
     // Try to commit again
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
@@ -445,7 +445,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: amount}(lock, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 
   function testFuzz_commit_acceptsValidDeadline(uint64 deadline) public {
@@ -469,6 +469,6 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 }

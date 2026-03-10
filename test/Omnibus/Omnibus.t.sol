@@ -1,49 +1,30 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Test} from 'forge-std-1.14.0/Test.sol';
-
 import {Asset, AssetType, Terms, TermsLib} from '../../src/TermsLib.sol';
+import {LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
-import {ERC20Mock} from '../mocks/ERC20Mock.sol';
-import {ERC721Mock} from '../mocks/ERC721Mock.sol';
+import {TestBase} from '../utils/TestBase.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
+import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus Base Test
 /// @dev Base contract for testing Omnibus
-contract OmnibusTest is Test {
+contract OmnibusTest is TestBase {
   using AssetHelper for *;
   using TermsHelper for *;
 
-  // ============ Constants ============
+  // ============ Constants (Omnibus-specific) ============
 
-  uint256 public constant DEFAULT_AMOUNT = 10 ether;
-  uint64 public constant DEFAULT_DEADLINE_DELTA = 1 days;
-
-  // Cross-chain simulation
   uint256 public constant OTHER_CHAIN_ID = 999;
-
-  // Token IDs for testing
   uint256 public constant ERC721_ALICE_TOKEN = 1;
   uint256 public constant ERC721_BOB_TOKEN = 2;
   uint256 public constant ERC1155_TOKEN_ID = 1;
 
-  // ============ Actors ============
-
-  address public ALICE = makeAddr('alice');
-  address public BOB = makeAddr('bob');
-  address public CHARLIE = makeAddr('charlie');
-  address public ALICE_RECIPIENT = makeAddr('aliceRecipient');
-  address public BOB_RECIPIENT = makeAddr('bobRecipient');
-
   // ============ Contracts ============
 
-  OmnibusHarness public omnibus;
-  ERC20Mock public mockERC20;
-  ERC721Mock public mockERC721;
-  ERC1155Mock public mockERC1155;
+  OmnibusHarness public omnibus; // Shadows TestBase.omnibus
 
   // ============ Test Data ============
 
@@ -52,30 +33,22 @@ contract OmnibusTest is Test {
 
   // ============ Setup ============
 
-  function setUp() public virtual {
-    // Deploy mock tokens
-    mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
-    mockERC721 = new ERC721Mock('MockNFT', 'MNFT');
-    mockERC1155 = new ERC1155Mock('https://example.com/token/{id}.json');
+  function setUp() public virtual override {
+    super.setUp();
 
-    // Deploy Omnibus harness
+    // Deploy Omnibus harness (shadows TestBase.omnibus)
     omnibus = new OmnibusHarness();
 
     // Generate lock from secret
     lock = omnibus.exposed_generateLock(SECRET);
 
-    // Fund actors
-    vm.deal(ALICE, 100 ether);
-    vm.deal(BOB, 100 ether);
-    vm.deal(CHARLIE, 100 ether);
+    // Fund omnibus
     vm.deal(address(omnibus), 100 ether);
 
-    // Mint tokens to actors
-    _mintTokensTo(ALICE);
-    _mintTokensTo(BOB);
+    // Mint tokens to omnibus
     _mintTokensTo(address(omnibus));
 
-    // Approve omnibus for all actors
+    // Approve omnibus for actors
     _approveAllForOmnibus(ALICE);
     _approveAllForOmnibus(BOB);
   }
@@ -90,66 +63,27 @@ contract OmnibusTest is Test {
 
   // ============ Internal Helpers ============
 
-  function _mintTokensTo(address account) internal {
-    mockERC20.mint(account, 1_000_000 ether);
-
-    // Mint specific ERC721 tokens
-    mockERC721.mint(account);
-    mockERC721.mint(account);
-    mockERC721.mint(account);
-
-    mockERC1155.mint(account, ERC1155_TOKEN_ID, 10000, '');
-    mockERC1155.mint(account, 2, 10000, '');
-  }
-
+  /// @notice Approve omnibus harness to spend owner's tokens
   function _approveAllForOmnibus(address owner) internal {
-    vm.startPrank(owner);
-    mockERC20.approve(address(omnibus), type(uint256).max);
-    mockERC721.setApprovalForAll(address(omnibus), true);
-    mockERC1155.setApprovalForAll(address(omnibus), true);
-    vm.stopPrank();
-  }
-
-  function _defaultDeadline() internal view returns (uint64) {
-    return uint64(block.timestamp + DEFAULT_DEADLINE_DELTA);
+    _approveAllFor(owner, address(omnibus));
   }
 
   function _expiredDeadline() internal view returns (uint64) {
-    return uint64(block.timestamp - 1);
+    return _expiredTimestamp();
   }
 
-  // ============ Asset Helpers ============
-
-  function _makeNativeAsset(uint256 amount) internal pure returns (Asset memory) {
-    return AssetHelper.makeNative(amount);
-  }
-
-  function _makeNativeAssets(uint256 amount) internal pure returns (Asset[] memory) {
-    return AssetHelper.makeNative(amount).toArray();
-  }
+  // ============ Asset Helpers (single asset variants) ============
 
   function _makeERC20Asset(uint256 amount) internal view returns (Asset memory) {
     return AssetHelper.makeERC20(address(mockERC20), amount);
-  }
-
-  function _makeERC20Assets(uint256 amount) internal view returns (Asset[] memory) {
-    return AssetHelper.makeERC20(address(mockERC20), amount).toArray();
   }
 
   function _makeERC721Asset(uint256 tokenId) internal view returns (Asset memory) {
     return AssetHelper.makeERC721(address(mockERC721), tokenId);
   }
 
-  function _makeERC721Assets(uint256 tokenId) internal view returns (Asset[] memory) {
-    return AssetHelper.makeERC721(address(mockERC721), tokenId).toArray();
-  }
-
   function _makeERC1155Asset(uint256 tokenId, uint256 amount) internal view returns (Asset memory) {
     return AssetHelper.makeERC1155(address(mockERC1155), tokenId, amount);
-  }
-
-  function _makeERC1155Assets(uint256 tokenId, uint256 amount) internal view returns (Asset[] memory) {
-    return AssetHelper.makeERC1155(address(mockERC1155), tokenId, amount).toArray();
   }
 
   // ============ Terms Helpers ============
@@ -229,5 +163,27 @@ contract OmnibusTest is Test {
   ) internal {
     _commitFor(ALICE, _lock, alice, bob);
     _commitFor(BOB, _lock, bob, alice);
+  }
+
+  // ============ Assertion Helpers ============
+
+  /// @notice Assert lock state
+  function _assertLockState(bytes32 _lock, LockState expected) internal view {
+    assertEq(uint8(omnibus.lockState(_lock)), uint8(expected));
+  }
+
+  /// @notice Assert event was emitted with specific topic
+  function _assertEventEmitted(
+    Vm.Log[] memory logs,
+    bytes32 eventSelector,
+    bytes32 expectedTopic1
+  ) internal pure {
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == eventSelector) {
+        assertEq(logs[i].topics[1], expectedTopic1);
+        return;
+      }
+    }
+    revert("Event not found");
   }
 }

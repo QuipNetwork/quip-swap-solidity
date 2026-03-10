@@ -112,7 +112,7 @@ contract Omnibus_execute is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.execute(SECRET, alice, bob);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   function test_execute_withNativeAssets() public {
@@ -192,10 +192,10 @@ contract Omnibus_execute is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
     omnibus.execute(SECRET, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   // ============ Revert Cases ============
@@ -236,7 +236,7 @@ contract Omnibus_execute is OmnibusTest {
 
     // Only first commit (Free state)
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
     omnibus.execute(SECRET, alice, bob);
@@ -246,7 +246,7 @@ contract Omnibus_execute is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Unused));
+    _assertLockState(lock, LockState.Unused);
 
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     omnibus.execute(SECRET, alice, bob);
@@ -257,7 +257,7 @@ contract Omnibus_execute is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitFor(ALICE, lock, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
     omnibus.execute(SECRET, alice, bob);
@@ -269,7 +269,7 @@ contract Omnibus_execute is OmnibusTest {
 
     _commitBothParties(lock, alice, bob);
     omnibus.execute(SECRET, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
 
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
     omnibus.execute(SECRET, alice, bob);
@@ -391,7 +391,7 @@ contract Omnibus_execute is OmnibusTest {
     vm.warp(alice.deadline - 1);
 
     omnibus.execute(SECRET, alice, bob);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    _assertLockState(lock, LockState.Spent);
   }
 
   // ============ Fuzz Tests ============
@@ -408,6 +408,6 @@ contract Omnibus_execute is OmnibusTest {
     _commitFor(BOB, _lock, bob, alice);
 
     omnibus.execute(secret, alice, bob);
-    assertEq(uint8(omnibus.lockState(_lock)), uint8(LockState.Spent));
+    _assertLockState(_lock, LockState.Spent);
   }
 }
