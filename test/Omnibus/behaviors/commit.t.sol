@@ -185,15 +185,20 @@ contract Omnibus_commit is OmnibusTest {
     assertNotEq(omnibus.termsHash(lock), bytes32(0));
   }
 
-  function test_commit_anyoneCanCommit() public {
-    Terms memory alice = _aliceTerms();
+  function test_commit_anyoneCanCommitOwnSide() public {
+    // any address can commit, as long as it is the signatory of the side it posts
+    Terms memory charlie = _makeTerms(
+      block.chainid,
+      CHARLIE,
+      CHARLIE,
+      _defaultDeadline(),
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
     Terms memory bob = _bobTerms();
 
-    // Charlie commits on behalf of Alice (must send native)
-    uint256 nativeAmount = _totalNativeForCommit(alice);
-    vm.deal(CHARLIE, nativeAmount);
+    uint256 nativeAmount = _totalNativeForCommit(charlie);
     vm.prank(CHARLIE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(lock, charlie, bob);
 
     _assertLockState(lock, LockState.Free);
   }
@@ -230,6 +235,35 @@ contract Omnibus_commit is OmnibusTest {
   }
 
   // ============ Revert Cases ============
+
+  function test_commit_revertsWhen_callerNotSignatory() public {
+    // attacker (Charlie) names a victim (Alice) as the signatory of an ERC20 side to
+    // spend Alice's standing approval, with a cross-chain counterparty so nothing is
+    // owed in return; the caller must be the signatory of the side it posts
+    Terms memory victim = _makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      _defaultDeadline(),
+      _makeERC20Assets(DEFAULT_AMOUNT)
+    );
+    Terms memory attacker = _makeTerms(
+      OTHER_CHAIN_ID,
+      CHARLIE,
+      CHARLIE,
+      _defaultDeadline(),
+      _makeERC20Assets(DEFAULT_AMOUNT)
+    );
+
+    uint256 aliceBefore = mockERC20.balanceOf(ALICE);
+
+    vm.expectRevert(IOmnibus.CallerNotSignatory.selector);
+    vm.prank(CHARLIE);
+    omnibus.commit(lock, victim, attacker);
+
+    // Alice's standing approval was not touched
+    assertEq(mockERC20.balanceOf(ALICE), aliceBefore);
+  }
 
   function test_commit_revertsWhen_partyChainIdMismatch() public {
     Terms memory alice = _makeTerms(

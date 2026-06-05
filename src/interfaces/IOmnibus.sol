@@ -25,6 +25,9 @@ interface IOmnibus {
   /// @notice thrown when native amount received does not match expected
   error IncorrectNativeAmountReceived();
 
+  /// @notice thrown when the caller is not the signatory of the committed side
+  error CallerNotSignatory();
+
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
 

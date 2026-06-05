@@ -32,6 +32,16 @@ contract OmnibusHarness is Omnibus {
     _enforceCommittedLock(current);
   }
 
+  /// @notice exposes _enforcePosted
+  function exposed_enforcePosted(bytes32 lock, bytes32 termsDigest) external view {
+    _enforcePosted(lock, termsDigest);
+  }
+
+  /// @notice exposes _enforceSignatoryCaller
+  function exposed_enforceSignatoryCaller(Terms calldata terms) external view {
+    _enforceSignatoryCaller(terms);
+  }
+
   /// @notice helper to set lock state directly for testing
   function setLockState(bytes32 lock, LockState state) external {
     lockState[lock] = state;
@@ -40,6 +50,11 @@ contract OmnibusHarness is Omnibus {
   /// @notice helper to set terms hash directly for testing
   function setTermsHash(bytes32 lock, bytes32 hash) external {
     termsHash[lock] = hash;
+  }
+
+  /// @notice helper to set a posted bit directly for testing
+  function setPosted(bytes32 lock, bytes32 termsDigest, bool value) external {
+    posted[lock][termsDigest] = value;
   }
 
   /// @notice helper to compute terms hash (exposed for testing)

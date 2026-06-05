@@ -46,6 +46,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable {
     // validate both terms (only party.chainId must match current chain)
     party.enforceChainId(block.chainid);
+    // assets are pulled from party.signatory, so only the signatory may commit its side
+    _enforceSignatoryCaller(party);
     party.validateTerms();
     counterparty.validateTerms();
     _enforceCorrectNative(party.totalNative() + commitmentFee);
@@ -241,6 +243,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @param termsDigest the side's terms digest
   function _enforcePosted(bytes32 lock, bytes32 termsDigest) internal view {
     if (!posted[lock][termsDigest]) revert TermsNotPosted();
+  }
+
+  /// @notice reverts if the caller is not the signatory of the side
+  /// @param terms the side's terms whose assets would be pulled
+  function _enforceSignatoryCaller(Terms calldata terms) internal view {
+    if (msg.sender != terms.signatory) revert CallerNotSignatory();
   }
 
   /// @notice generates a lock from a secret
