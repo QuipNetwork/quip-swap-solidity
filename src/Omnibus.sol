@@ -100,9 +100,15 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // counterparty terms _MAY_ be on same chainId
     party.enforceChainId(block.chainid);
 
-    // both deadlines must not have passed
+    // the local (party) leg must be fresh: this gates execute vs reclaim on this chain
     party.enforceTermFreshness();
-    counterparty.enforceTermFreshness();
+    // only enforce the counterparty leg when it settles here too (same-chain, atomic).
+    // for a cross-chain swap the counterparty leg lives on another deployment, so tying
+    // this claim to its deadline would collapse both legs to min(deadline) and remove the
+    // post-reveal safety buffer; each chain must gate on its own leg only
+    if (counterparty.chainId == block.chainid) {
+      counterparty.enforceTermFreshness();
+    }
 
     LockState current = lockState[lock];
     _enforceCommittedLock(current);

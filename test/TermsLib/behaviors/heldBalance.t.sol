@@ -41,7 +41,7 @@ contract TermsLib_heldBalance is TermsLibTest {
     uint256 before = harness.exposed_heldBalance(asset, ALICE);
 
     vm.prank(ALICE);
-    mockERC20.transfer(BOB, 100 ether);
+    assertTrue(mockERC20.transfer(BOB, 100 ether));
 
     uint256 afterBal = harness.exposed_heldBalance(asset, ALICE);
     assertEq(before - afterBal, 100 ether);

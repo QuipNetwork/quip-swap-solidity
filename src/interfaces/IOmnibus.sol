@@ -89,6 +89,14 @@ interface IOmnibus {
   function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable;
 
   /// @notice executes the swap by revealing the secret
+  /// @dev a cross-chain claim is gated only on the local (party) leg's deadline; the
+  /// counterparty leg's deadline is enforced only when it settles on this chain too.
+  /// for a cross-chain swap the secret holder claims the counterparty's leg first, so
+  /// the leg the secret holder claims must expire BEFORE the other leg: set the secret
+  /// holder's own deposit with the later deadline and the counterparty's deposit (the
+  /// one the secret holder takes) with the earlier deadline. the gap between the two is
+  /// the buffer the second claimant has after the secret is revealed; mis-ordering it
+  /// lets the secret holder take both legs
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
