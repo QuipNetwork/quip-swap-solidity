@@ -73,6 +73,9 @@ library TermsLib {
   /// @notice thrown when the terms have not yet expired
   error TermsNotExpired();
 
+  /// @notice thrown when a pulled fungible asset delivers less than its declared amount
+  error UnexpectedAmountReceived();
+
   // ============ Hashing ============
 
   /// @notice computes the digest of a single side's terms
@@ -209,16 +212,30 @@ library TermsLib {
     }
   }
 
-  /// @notice transfers assets from terms excluding native assets
+  /// @notice transfers assets from terms excluding native assets, reverting if a
+  /// fungible asset delivers less than its declared amount
+  /// @dev reconciles the recipient balance for ERC20/ERC1155 so fee-on-transfer or
+  /// deflationary tokens cannot under-fund the escrow; the declared amount is part of
+  /// the cross-chain terms digest, so anything other than exact receipt must revert
   /// @param terms the terms containing assets to transfer
   /// @param from the address to transfer from
   /// @param to the address to transfer to
   function transferAssetsNoNative(Terms calldata terms, address from, address to) internal {
     uint256 length = terms.assets.length;
     for (uint256 i; i < length; ++i) {
-      if (terms.assets[i].assetType != AssetType.Native) {
-        transferAsset(terms.assets[i], from, to);
+      Asset memory asset = terms.assets[i];
+      if (asset.assetType == AssetType.Native) {
+        continue;
       }
+      if (asset.assetType == AssetType.ERC721) {
+        // a single specific token; no fungible amount to reconcile
+        transferAsset(asset, from, to);
+        continue;
+      }
+      // ERC20 / ERC1155: require exactly `amount` to be received
+      uint256 balanceBefore = heldBalance(asset, to);
+      transferAsset(asset, from, to);
+      if (heldBalance(asset, to) - balanceBefore != asset.amount) revert UnexpectedAmountReceived();
     }
   }
 
@@ -233,6 +250,16 @@ library TermsLib {
   }
 
   // ============ Private ============
+
+  /// @notice reads the held balance of a fungible asset for an account
+  /// @param asset the asset (ERC20 or ERC1155)
+  /// @param account the account whose balance to read
+  /// @return balance the account's balance of the asset
+  function heldBalance(Asset memory asset, address account) internal view returns (uint256 balance) {
+    balance = asset.assetType == AssetType.ERC1155
+      ? IERC1155(asset.target).balanceOf(account, asset.id)
+      : SafeTransferLib.balanceOf(asset.target, account);
+  }
 
   /// @notice validates assets in terms
   /// @param terms the terms to validate

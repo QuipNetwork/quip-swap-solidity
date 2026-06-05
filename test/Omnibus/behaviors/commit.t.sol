@@ -5,6 +5,7 @@ import {Asset, AssetType, Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus commit Tests
@@ -389,6 +390,33 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     _commitFor(BOB, lock, bobModified, alice);
+  }
+
+  function test_commit_revertsWhen_feeOnTransferToken() public {
+    // a fee-on-transfer token delivers less than the declared amount; commit must
+    // reject it rather than record more than the escrow received
+    FeeOnTransferERC20Mock feeToken = new FeeOnTransferERC20Mock('Fee', 'FEE', 100); // 1% fee
+    feeToken.mint(ALICE, 1_000 ether);
+    vm.prank(ALICE);
+    feeToken.approve(address(omnibus), type(uint256).max);
+
+    Terms memory alice = _makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      _defaultDeadline(),
+      AssetHelper.makeERC20(address(feeToken), 100 ether).toArray()
+    );
+    Terms memory bob = _bobTerms();
+
+    uint256 aliceBefore = feeToken.balanceOf(ALICE);
+
+    vm.expectRevert(TermsLib.UnexpectedAmountReceived.selector);
+    vm.prank(ALICE);
+    omnibus.commit(lock, alice, bob);
+
+    // the revert rolled back the pull; Alice keeps her tokens
+    assertEq(feeToken.balanceOf(ALICE), aliceBefore);
   }
 
   function test_commit_revertsWhen_zeroAmountAsset() public {

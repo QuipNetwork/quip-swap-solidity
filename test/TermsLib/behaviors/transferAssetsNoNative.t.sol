@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, Terms} from '../../../src/TermsLib.sol';
+import {Asset, Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib transferAssetsNoNative Tests
@@ -95,7 +96,32 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
     assertEq(BOB.balance, bobBefore);
   }
 
+  // ============ Revert Cases ============
+
+  function test_transferAssetsNoNative_revertsWhen_feeOnTransferUnderDelivers() public {
+    FeeOnTransferERC20Mock feeToken = new FeeOnTransferERC20Mock('Fee', 'FEE', 100); // 1% fee
+    feeToken.mint(address(harness), 1_000 ether);
+
+    Asset[] memory assets = AssetHelper.makeERC20(address(feeToken), 100 ether).toArray();
+    Terms memory terms = _makeTermsWithAssets(assets);
+
+    vm.expectRevert(TermsLib.UnexpectedAmountReceived.selector);
+    harness.exposed_transferAssetsNoNative(terms, address(harness), BOB);
+  }
+
   // ============ Fuzz Tests ============
+
+  function testFuzz_transferAssetsNoNative_revertsWhen_feeOnTransfer(uint256 feeBps) public {
+    feeBps = bound(feeBps, 1, 10_000);
+    FeeOnTransferERC20Mock feeToken = new FeeOnTransferERC20Mock('Fee', 'FEE', feeBps);
+    feeToken.mint(address(harness), 1_000 ether);
+
+    Asset[] memory assets = AssetHelper.makeERC20(address(feeToken), 100 ether).toArray();
+    Terms memory terms = _makeTermsWithAssets(assets);
+
+    vm.expectRevert(TermsLib.UnexpectedAmountReceived.selector);
+    harness.exposed_transferAssetsNoNative(terms, address(harness), BOB);
+  }
 
   function testFuzz_transferAssetsNoNative_skipsNative(uint256 nativeAmount, uint256 erc20Amount) public {
     nativeAmount = bound(nativeAmount, 1, 10 ether);
