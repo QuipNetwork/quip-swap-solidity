@@ -28,6 +28,12 @@ interface IOmnibus {
   /// @notice thrown when lock state transition is not allowed
   error InvalidLockAdvancement();
 
+  /// @notice thrown when a commit would re-post an already-posted side
+  error TermsAlreadyPosted();
+
+  /// @notice thrown when paying out a side that was never posted for the lock
+  error TermsNotPosted();
+
   /// @notice thrown when fee exceeds MAX_FEE
   error FeeExceedsMax();
 
@@ -59,13 +65,19 @@ interface IOmnibus {
 
   /// @notice returns the state of a lock
   /// @param lock the hashlock identifier
-  /// @return the lock state
-  function lockState(bytes32 lock) external view returns (LockState);
+  /// @return state the lock state
+  function lockState(bytes32 lock) external view returns (LockState state);
 
   /// @notice returns the terms hash for a lock
   /// @param lock the hashlock identifier
-  /// @return the canonical terms hash
-  function termsHash(bytes32 lock) external view returns (bytes32);
+  /// @return canonicalDigest the canonical terms hash
+  function termsHash(bytes32 lock) external view returns (bytes32 canonicalDigest);
+
+  /// @notice returns whether a side was posted for a lock
+  /// @param lock the hashlock identifier
+  /// @param termsDigest the side's terms digest
+  /// @return isPosted whether that side has been posted
+  function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
 
   /// @notice commits assets and collateral to a swap
   /// @param lock the hashlock identifier

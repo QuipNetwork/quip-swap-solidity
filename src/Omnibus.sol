@@ -24,10 +24,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   uint256 public commitmentFee;
 
   /// @inheritdoc IOmnibus
-  mapping(bytes32 lock => LockState) public lockState;
+  mapping(bytes32 lock => LockState state) public lockState;
 
   /// @inheritdoc IOmnibus
-  mapping(bytes32 lock => bytes32) public termsHash;
+  mapping(bytes32 lock => bytes32 canonicalDigest) public termsHash;
+
+  /// @inheritdoc IOmnibus
+  mapping(bytes32 lock => mapping(bytes32 termsDigest => bool isPosted)) public posted;
 
   /// @notice initializes the contract with an owner
   /// @param initialOwner the address that will own the contract
@@ -44,24 +47,30 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     counterparty.validateTerms();
     _enforceCorrectNative(party.totalNative() + commitmentFee);
 
-    bytes32 termsDigest = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 partyDigest = party.digestTerms();
     LockState current = lockState[lock];
     LockState target;
 
     // invalid states (committed, spent) will revert at _advanceLockTo since is either `Free` or `Committed`
     // and no valid advancement from committed => free.committed or spent => free/committed
     if (current == LockState.Unused) {
-      termsHash[lock] = termsDigest;
+      termsHash[lock] = canonicalDigest;
       target = party.chainId == counterparty.chainId ? LockState.Free : LockState.Committed;
     }
     // no need to check sameness of chain; only way that current == LockState.Free
     // is if the terms had same chain in the previous `commit` call
     if (current == LockState.Free) {
-      _enforceSameTerms(termsHash[lock], termsDigest);
+      _enforceSameTerms(termsHash[lock], canonicalDigest);
+      // second same-chain commit must post the other side, not re-post the same one
+      if (posted[lock][partyDigest]) revert TermsAlreadyPosted();
       target = LockState.Committed;
     }
 
     _advanceLockTo(lock, current, target);
+
+    // record the side this commit posts
+    posted[lock][partyDigest] = true;
 
     // transfer non-native assets
     party.transferAssetsNoNative(party.signatory, address(this));
@@ -93,12 +102,17 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // mark as spent
     _advanceLockTo(lock, current, LockState.Spent);
 
+    // party's side must have been posted for this lock
+    _enforcePosted(lock, party.digestTerms());
+
     // party's assets to counterparty's recipient
     party.transferAssets(address(this), counterparty.recipient);
 
     // if counterparty is on chainId, prevent double-spend by executing on counterparty
     // terms
     if (counterparty.chainId == block.chainid) {
+      // counterparty's side must have been posted for this lock
+      _enforcePosted(lock, counterparty.digestTerms());
       // counterparty's assets to party's recipient
       counterparty.transferAssets(address(this), party.recipient);
     }
@@ -110,6 +124,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
     // reclaim is assumed to be called for party
     party.enforceTermStaleness();
+    // party's side must have been posted for this lock
+    _enforcePosted(lock, party.digestTerms());
     party.enforceChainId(block.chainid);
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
@@ -124,6 +140,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     if (counterparty.chainId == block.chainid && current == LockState.Committed) {
       // return everything to counterparty's signatory
       counterparty.enforceTermStaleness();
+      // counterparty's side must have been posted for this lock
+      _enforcePosted(lock, counterparty.digestTerms());
       counterparty.transferAssets(address(this), counterparty.signatory);
       emit Reclaimed(lock, counterparty.signatory);
     }
@@ -207,6 +225,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @param current the current lock state
   function _enforceCommittedLock(LockState current) internal pure {
     if (current != LockState.Committed) revert InvalidLockState();
+  }
+
+  /// @notice reverts if a side was not posted for the lock
+  /// @param lock the hashlock identifier
+  /// @param termsDigest the side's terms digest
+  function _enforcePosted(bytes32 lock, bytes32 termsDigest) internal view {
+    if (!posted[lock][termsDigest]) revert TermsNotPosted();
   }
 
   /// @notice generates a lock from a secret

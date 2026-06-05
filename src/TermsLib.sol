@@ -75,6 +75,15 @@ library TermsLib {
 
   // ============ Hashing ============
 
+  /// @notice computes the digest of a single side's terms
+  /// @param terms the side's terms
+  /// @return digest the sub-digest used for ordering and posted tracking
+  function digestTerms(Terms calldata terms) internal pure returns (bytes32 digest) {
+    digest = EfficientHashLib.hash(
+      abi.encode(terms.chainId, terms.signatory, terms.recipient, terms.deadline, terms.assets)
+    );
+  }
+
   /// @notice computes a canonical digest of terms regardless of party/counterparty order
   /// @dev same hash regardless of which party is passed first
   /// @param party the first party's terms
@@ -84,12 +93,8 @@ library TermsLib {
     Terms calldata party,
     Terms calldata counterparty
   ) internal pure returns (bytes32 canonicalDigest) {
-    bytes32 partyDigest = EfficientHashLib.hash(
-      abi.encode(party.chainId, party.signatory, party.recipient, party.deadline, party.assets)
-    );
-    bytes32 counterpartyDigest = EfficientHashLib.hash(
-      abi.encode(counterparty.chainId, counterparty.signatory, counterparty.recipient, counterparty.deadline, counterparty.assets)
-    );
+    bytes32 partyDigest = digestTerms(party);
+    bytes32 counterpartyDigest = digestTerms(counterparty);
     // canonical ordering: smaller digest first
     if (uint256(partyDigest) < uint256(counterpartyDigest)) {
       canonicalDigest = EfficientHashLib.hash(partyDigest, counterpartyDigest);
