@@ -124,10 +124,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
     // reclaim is assumed to be called for party
     party.enforceTermStaleness();
-    // party's side must have been posted for this lock
-    _enforcePosted(lock, party.digestTerms());
     party.enforceChainId(block.chainid);
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
+    // party's side must have been posted for this lock; checked after the terms are
+    // proven genuine so the more specific reverts surface first
+    _enforcePosted(lock, party.digestTerms());
 
     LockState current = lockState[lock];
     // reclaim allowed on free or committed only
