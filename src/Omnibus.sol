@@ -24,6 +24,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   uint256 public commitmentFee;
 
   /// @inheritdoc IOmnibus
+  uint256 public accruedFees;
+
+  /// @inheritdoc IOmnibus
   mapping(bytes32 lock => LockState state) public lockState;
 
   /// @inheritdoc IOmnibus
@@ -68,6 +71,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     }
 
     _advanceLockTo(lock, current, target);
+
+    // accrue the fee; the rest of msg.value is escrowed native owed back to depositors
+    accruedFees += commitmentFee;
 
     // record the side this commit posts
     posted[lock][partyDigest] = true;
@@ -189,7 +195,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function withdrawFees(address to) external onlyOwner {
-    uint256 amount = address(this).balance;
+    // only accrued fees are withdrawable; escrowed native stays owed to depositors
+    uint256 amount = accruedFees;
+    delete accruedFees;
     SafeTransferLib.safeTransferETH(to, amount);
     emit FeesWithdrawn(to, amount);
   }

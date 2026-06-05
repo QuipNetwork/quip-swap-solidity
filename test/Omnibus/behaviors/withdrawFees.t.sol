@@ -9,7 +9,8 @@ import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus withdrawFees Tests
-/// @dev Tests for Omnibus.withdrawFees
+/// @dev Tests for Omnibus.withdrawFees. withdrawFees must move only accrued
+/// commitment fees; escrowed native owed back to depositors must never be swept.
 contract Omnibus_withdrawFees is OmnibusTest {
   address public TREASURY;
 
@@ -20,50 +21,99 @@ contract Omnibus_withdrawFees is OmnibusTest {
     omnibus.setCommitmentFee(0.005 ether);
   }
 
-  // ============ Success Cases ============
+  // ============ Helpers ============
 
-  function test_withdrawFees_transfersBalance() public {
-    // Commit with fee to accumulate fees
+  /// @notice commits Alice's native side on a lock, accruing one commitment fee
+  /// @return fee the fee accrued by this commit
+  function _commitAliceOn(bytes32 _lock) internal returns (uint256 fee) {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
-    uint256 fee = omnibus.commitmentFee();
+    fee = omnibus.commitmentFee();
     uint256 nativeAmount = _totalNativeForCommit(alice) + fee;
-
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
-
-    uint256 treasuryBefore = TREASURY.balance;
-    uint256 omnibusBalance = address(omnibus).balance;
-
-    omnibus.withdrawFees(TREASURY);
-
-    assertEq(TREASURY.balance - treasuryBefore, omnibusBalance);
-    assertEq(address(omnibus).balance, 0);
+    omnibus.commit{value: nativeAmount}(_lock, alice, bob);
   }
 
-  function test_withdrawFees_transfersZeroBalance() public {
-    // Drain omnibus balance first
-    omnibus.withdrawFees(TREASURY);
+  // ============ Fee Accrual ============
+
+  function test_withdrawFees_commitAccruesFee() public {
+    uint256 fee = _commitAliceOn(lock);
+    assertEq(omnibus.accruedFees(), fee);
+  }
+
+  function test_withdrawFees_accumulatesAcrossCommits() public {
+    uint256 fee = _commitAliceOn(lock);
+    _commitAliceOn(omnibus.exposed_generateLock(keccak256('secret-2')));
+    assertEq(omnibus.accruedFees(), 2 * fee);
+  }
+
+  // ============ Success Cases ============
+
+  function test_withdrawFees_transfersOnlyAccruedFees() public {
+    uint256 fee = _commitAliceOn(lock);
 
     uint256 treasuryBefore = TREASURY.balance;
+    uint256 omnibusBefore = address(omnibus).balance;
 
-    // Withdraw again with zero balance
+    omnibus.withdrawFees(TREASURY);
+
+    // exactly the accrued fee leaves the contract
+    assertEq(TREASURY.balance - treasuryBefore, fee);
+    assertEq(omnibusBefore - address(omnibus).balance, fee);
+    assertEq(omnibus.accruedFees(), 0);
+  }
+
+  /// @notice the escrowed native of a live swap is not withdrawable and stays reclaimable
+  function test_withdrawFees_doesNotSweepEscrowedNative() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+    uint256 escrow = _totalNativeForCommit(alice); // 10 ether of native escrow
+    uint256 fee = omnibus.commitmentFee();
+
+    vm.prank(ALICE);
+    omnibus.commit{value: escrow + fee}(lock, alice, bob);
+
+    // owner withdraws fees: only the fee leaves, the escrow remains
+    uint256 omnibusBefore = address(omnibus).balance;
+    omnibus.withdrawFees(TREASURY);
+    assertEq(omnibusBefore - address(omnibus).balance, fee);
+    assertEq(TREASURY.balance, fee);
+
+    // the untouched escrow is still owed to Alice and reclaimable after the deadline
+    vm.warp(alice.deadline + 1);
+    uint256 aliceBefore = ALICE.balance;
+    vm.prank(ALICE);
+    omnibus.reclaim(lock, alice, bob);
+    assertEq(ALICE.balance - aliceBefore, escrow);
+  }
+
+  /// @notice native sent directly to the contract is not counted as fees
+  function test_withdrawFees_doesNotSweepStrayNative() public {
+    // setUp already seeds the omnibus with native; no commits => no fees accrued
+    assertEq(omnibus.accruedFees(), 0);
+
+    uint256 treasuryBefore = TREASURY.balance;
+    uint256 omnibusBefore = address(omnibus).balance;
+
     omnibus.withdrawFees(TREASURY);
 
     assertEq(TREASURY.balance, treasuryBefore);
-    assertEq(address(omnibus).balance, 0);
+    assertEq(address(omnibus).balance, omnibusBefore);
+  }
+
+  function test_withdrawFees_resetsAccruedToZero() public {
+    _commitAliceOn(lock);
+    omnibus.withdrawFees(TREASURY);
+    assertEq(omnibus.accruedFees(), 0);
+
+    // a second withdrawal moves nothing
+    uint256 treasuryBefore = TREASURY.balance;
+    omnibus.withdrawFees(TREASURY);
+    assertEq(TREASURY.balance, treasuryBefore);
   }
 
   function test_withdrawFees_emitsFeesWithdrawn() public {
-    Terms memory alice = _aliceTerms();
-    Terms memory bob = _bobTerms();
-    uint256 fee = omnibus.commitmentFee();
-    uint256 nativeAmount = _totalNativeForCommit(alice) + fee;
-
-    vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
-
-    uint256 omnibusBalance = address(omnibus).balance;
+    uint256 fee = _commitAliceOn(lock);
 
     vm.recordLogs();
     omnibus.withdrawFees(TREASURY);
@@ -75,7 +125,7 @@ contract Omnibus_withdrawFees is OmnibusTest {
         address loggedTo = address(uint160(uint256(logs[i].topics[1])));
         uint256 loggedAmount = abi.decode(logs[i].data, (uint256));
         assertEq(loggedTo, TREASURY);
-        assertEq(loggedAmount, omnibusBalance);
+        assertEq(loggedAmount, fee);
         foundEvent = true;
         break;
       }
@@ -84,13 +134,13 @@ contract Omnibus_withdrawFees is OmnibusTest {
   }
 
   function test_withdrawFees_canWithdrawToAnyAddress() public {
+    uint256 fee = _commitAliceOn(lock);
     address recipient = makeAddr('random-recipient');
     uint256 recipientBefore = recipient.balance;
-    uint256 omnibusBalance = address(omnibus).balance;
 
     omnibus.withdrawFees(recipient);
 
-    assertEq(recipient.balance - recipientBefore, omnibusBalance);
+    assertEq(recipient.balance - recipientBefore, fee);
   }
 
   // ============ Revert Cases ============
@@ -102,6 +152,8 @@ contract Omnibus_withdrawFees is OmnibusTest {
   }
 
   function test_withdrawFees_revertsWhen_transferFails() public {
+    _commitAliceOn(lock);
+
     // Deploy a contract that rejects ETH
     RejectingReceiver rejecter = new RejectingReceiver();
 
@@ -111,19 +163,21 @@ contract Omnibus_withdrawFees is OmnibusTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_withdrawFees_transfersFullBalance(uint256 extraNative) public {
+  /// @notice regardless of how much native sits in the contract, only accrued fees leave
+  function testFuzz_withdrawFees_onlyAccruedRegardlessOfBalance(uint256 extraNative) public {
     extraNative = bound(extraNative, 0, 10 ether);
 
-    // Add extra native to omnibus
+    uint256 fee = _commitAliceOn(lock);
     vm.deal(address(omnibus), address(omnibus).balance + extraNative);
 
     address recipient = makeAddr('fuzz-recipient');
-    uint256 omnibusBalance = address(omnibus).balance;
+    uint256 omnibusBefore = address(omnibus).balance;
 
     omnibus.withdrawFees(recipient);
 
-    assertEq(recipient.balance, omnibusBalance);
-    assertEq(address(omnibus).balance, 0);
+    assertEq(recipient.balance, fee);
+    assertEq(omnibusBefore - address(omnibus).balance, fee);
+    assertEq(omnibus.accruedFees(), 0);
   }
 }
 

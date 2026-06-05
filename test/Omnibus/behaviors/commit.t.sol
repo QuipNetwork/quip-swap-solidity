@@ -508,6 +508,28 @@ contract Omnibus_commit is OmnibusTest {
     _assertLockState(lock, LockState.Free);
   }
 
+  function test_commit_incrementsAccruedFees() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    assertEq(omnibus.accruedFees(), 0);
+
+    // first commit accrues one fee
+    uint256 aliceNative = _totalNativeForCommit(alice);
+    vm.prank(ALICE);
+    omnibus.commit{value: aliceNative + fee}(lock, alice, bob);
+    assertEq(omnibus.accruedFees(), fee);
+
+    // second commit accrues another
+    uint256 bobNative = _totalNativeForCommit(bob);
+    vm.prank(BOB);
+    omnibus.commit{value: bobNative + fee}(lock, bob, alice);
+    assertEq(omnibus.accruedFees(), 2 * fee);
+  }
+
   function test_commit_feeAccumulatesAcrossCommits() public {
     uint256 fee = 0.005 ether;
     omnibus.setCommitmentFee(fee);

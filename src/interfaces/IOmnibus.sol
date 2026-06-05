@@ -105,6 +105,10 @@ interface IOmnibus {
   /// @return the fee in wei
   function commitmentFee() external view returns (uint256);
 
+  /// @notice the accumulated commitment fees available to withdraw
+  /// @return fees the accrued fees in wei
+  function accruedFees() external view returns (uint256 fees);
+
   /// @notice sets the commitment fee (owner only)
   /// @param newFee the new fee (must be <= MAX_FEE)
   function setCommitmentFee(uint256 newFee) external;
