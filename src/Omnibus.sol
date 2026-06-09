@@ -166,14 +166,10 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // reclaim is assumed to be called for party
     party.enforceChainId(block.chainid);
 
-    // validate claim is happening in the correct window
-    if (TermsLib.proposedByParty(party, counterparty)) {
-      // party has proposed, so their reclaim must be released and before the counterparty
-      TermsLib.enforceWithin(party.reclaimRelease, counterparty.reclaimRelease, block.timestamp);
-    } else {
-      // counterparty has proposed so the party's reclaim release must have elapsed
-      TermsLib.enforceWithin(party.reclaimRelease, type(uint64).max, block.timestamp);
-    }
+    // validate reclaim in correct window
+    // if the party is the proposer, then the party's reclaimRelease must have elapsed
+    // if the counterparty is the proposer, then the party's reclaimRelease must have elapsed
+    TermsLib.enforceWithin(party.reclaimRelease, type(uint256).max, block.timestamp);
 
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
     // party's side must have been posted for this lock; checked after the terms are
