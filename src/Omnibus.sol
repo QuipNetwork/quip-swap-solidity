@@ -3,11 +3,11 @@ pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
 import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
-import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
-import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
+import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
-import {Ownable2Step, Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
+import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
+import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 /// @title Omnibus
 /// @notice Singleton contract for cross-chain swaps using hashlock
@@ -57,11 +57,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // must not have elapsed
       // if the counterparty is the proposer, then **IT IS ASSUMED THAT THE PARTY HAS VALIDATED
       // THAT THE COUNTERPARTY HAS ALREADY COMMITTED**
-      TermsLib.enforceWithin(0, party.commitmentDeadline, block.timestamp);   
+      TermsLib.enforceWithin(0, party.commitmentDeadline, block.timestamp);
     } else {
-      // if the counterparty has proposed, the counterparty's commitment deadline must have elapsed and 
+      // if the counterparty has proposed, the counterparty's commitment deadline must have elapsed and
       // the party's commitment deadline must not have elapsed
-      // NB: the party *MUST* ensure the commitment from the counterparty has taken effect especially if 
+      // NB: the party *MUST* ensure the commitment from the counterparty has taken effect especially if
       // the swap is cross-chain
       TermsLib.enforceWithin(counterparty.commitmentDeadline, party.commitmentDeadline, block.timestamp);
     }
@@ -109,10 +109,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     bytes32 lock = _generateLock(secret);
 
     // verify terms and state
-    _enforceSameTerms(
-      termsHash[lock],
-      TermsLib.digestTermsCanonically(party, counterparty)
-    );
+    _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
     // counterparty terms _MUST_ be on same chainId
     // so that the party may receive the assets
@@ -122,7 +119,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // validate claim is happening in the correct window
     if (TermsLib.proposedByParty(party, counterparty)) {
       // party is the proposer which means the counterparty must have committed
-      // commitment check in a cross-chain swap is not on-chain enforceable so 
+      // commitment check in a cross-chain swap is not on-chain enforceable so
       // only deadlines are checked
       // in same-chain swap, the lock checks for commitment of counterparty
       TermsLib.enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp);
@@ -130,11 +127,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // counterparty is proposer which means the counterparty has revealed the secret
       // claim only after the claim deadline of the counterparty
       // NB: this path is only reachable in the following:
-      // 1. during a cross-chain swap because otherwise the lock state is spent 
+      // 1. during a cross-chain swap because otherwise the lock state is spent
       //    since claiming occurs for both parties in this call
-      // 2. during a same-chain swap if the taker has the secret and calls 
+      // 2. during a same-chain swap if the taker has the secret and calls
       //    claim first - should never occur
-      // 
+      //
       // in both cases, the claim settles correctly
       TermsLib.enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp);
     }
@@ -177,7 +174,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // counterparty has proposed so the party's reclaim release must have elapsed
       TermsLib.enforceWithin(party.reclaimRelease, type(uint64).max, block.timestamp);
     }
-    
+
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
     // party's side must have been posted for this lock; checked after the terms are
     // proven genuine so the more specific reverts surface first
@@ -185,16 +182,16 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     LockState current = lockState[lock];
 
-    bool reclaimCounterparty = counterparty.chainId == block.chainid && current == LockState.Committed; 
+    bool reclaimCounterparty = counterparty.chainId == block.chainid && current == LockState.Committed;
 
     // reclaim counterparty if on this chain and the current lock state is committed
     // meaning counterparty has committed their assets
     if (reclaimCounterparty) {
-      // lock is advanced here to ensure that reentrant calls fail since 
+      // lock is advanced here to ensure that reentrant calls fail since
       // lock will be spent:
       //
       // reclaim allowed on free or committed only
-      // marking as spent enforces only free or committed as previous state 
+      // marking as spent enforces only free or committed as previous state
       // will revert if lock state is unused or spent
       // ie if claim has completed successfully
       _advanceLockTo(lock, current, LockState.Spent);
@@ -214,7 +211,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     // return everything to party's recipient
     party.transferAssets(address(this), party.reclaimRecipient);
-      
+
     emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
   }
 

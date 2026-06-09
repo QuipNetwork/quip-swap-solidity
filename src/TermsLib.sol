@@ -36,7 +36,7 @@ struct Terms {
   address recipient;
   /// @notice timestamp after which commitment is forbidden
   uint256 commitmentDeadline;
-  /// @notice timestamp after which claiming is forbidden 
+  /// @notice timestamp after which claiming is forbidden
   uint256 claimDeadline;
   /// @notice timestamp after which reclaim is permitted
   uint256 reclaimRelease;
@@ -101,14 +101,14 @@ library TermsLib {
   function digestTerms(Terms calldata terms) internal pure returns (bytes32 digest) {
     digest = EfficientHashLib.hash(
       abi.encode(
-        terms.chainId, 
+        terms.chainId,
         terms.reclaimRecipient,
-        terms.recipient, 
-        terms.commitmentDeadline, 
-        terms.claimDeadline, 
-        terms.reclaimRelease, 
+        terms.recipient,
+        terms.commitmentDeadline,
+        terms.claimDeadline,
+        terms.reclaimRelease,
         terms.assets
-        )
+      )
     );
   }
 
@@ -205,7 +205,6 @@ library TermsLib {
       revert WindowViolated();
     }
   }
-
 
   // ============ Transfer ============
 
@@ -309,17 +308,11 @@ library TermsLib {
   /// @param A one side's terms
   /// @param B the other side's terms
   function validateTermPairing(Terms calldata A, Terms calldata B) internal pure {
-    bool aProposes = A.commitmentDeadline < B.commitmentDeadline &&
-      B.commitmentDeadline < A.claimDeadline &&
-      A.claimDeadline < B.claimDeadline &&
-      B.claimDeadline < A.reclaimRelease &&
-      A.reclaimRelease < B.reclaimRelease;
+    bool aProposes = A.commitmentDeadline < B.commitmentDeadline && B.commitmentDeadline < A.claimDeadline
+      && A.claimDeadline < B.claimDeadline && B.claimDeadline < A.reclaimRelease && A.reclaimRelease < B.reclaimRelease;
 
-    bool bProposes = B.commitmentDeadline < A.commitmentDeadline &&
-      A.commitmentDeadline < B.claimDeadline &&
-      B.claimDeadline < A.claimDeadline &&
-      A.claimDeadline < B.reclaimRelease &&
-      B.reclaimRelease < A.reclaimRelease;
+    bool bProposes = B.commitmentDeadline < A.commitmentDeadline && A.commitmentDeadline < B.claimDeadline
+      && B.claimDeadline < A.claimDeadline && A.claimDeadline < B.reclaimRelease && B.reclaimRelease < A.reclaimRelease;
 
     if (!(aProposes || bProposes)) {
       revert DisordedDeadlines();
