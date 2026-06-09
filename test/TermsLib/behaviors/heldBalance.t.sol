@@ -2,8 +2,8 @@
 pragma solidity 0.8.33;
 
 import {Asset} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib heldBalance Tests
 /// @dev Tests for TermsLib.heldBalance

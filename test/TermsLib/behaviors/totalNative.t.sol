@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Asset, Terms} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib totalNative Tests
 /// @dev Tests for TermsLib.totalNative
@@ -86,8 +86,13 @@ contract TermsLib_totalNative is TermsLibTest {
     Asset[] memory emptyAssets = new Asset[](0);
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT,
-      DEFAULT_COMMITMENT_DEADLINE, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, emptyAssets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      emptyAssets
     );
 
     uint256 total = harness.exposed_totalNative(terms);
@@ -113,10 +118,7 @@ contract TermsLib_totalNative is TermsLibTest {
     assertEq(total, assetAmount);
   }
 
-  function testFuzz_totalNative_twoNativeAssets(
-    uint256 amount1,
-    uint256 amount2
-  ) public view {
+  function testFuzz_totalNative_twoNativeAssets(uint256 amount1, uint256 amount2) public view {
     amount1 = bound(amount1, 1, type(uint128).max);
     amount2 = bound(amount2, 1, type(uint128).max);
 

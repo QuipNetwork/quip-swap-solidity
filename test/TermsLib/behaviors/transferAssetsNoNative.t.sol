@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Asset, Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
-import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib transferAssetsNoNative Tests
@@ -17,8 +17,13 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
 
   function _makeTermsWithAssets(Asset[] memory assets) internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT,
-      DEFAULT_COMMITMENT_DEADLINE, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, assets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      assets
     );
   }
 
@@ -103,7 +108,7 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
 
   function test_transferAssetsNoNative_revertsWhen_feeOnTransferUnderDelivers() public {
     FeeOnTransferERC20Mock feeToken = new FeeOnTransferERC20Mock('Fee', 'FEE', 100); // 1% fee
-    feeToken.mint(address(harness), 1_000 ether);
+    feeToken.mint(address(harness), 1000 ether);
 
     Asset[] memory assets = AssetHelper.makeERC20(address(feeToken), 100 ether).toArray();
     Terms memory terms = _makeTermsWithAssets(assets);
@@ -117,7 +122,7 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
   function testFuzz_transferAssetsNoNative_revertsWhen_feeOnTransfer(uint256 feeBps) public {
     feeBps = bound(feeBps, 1, 10_000);
     FeeOnTransferERC20Mock feeToken = new FeeOnTransferERC20Mock('Fee', 'FEE', feeBps);
-    feeToken.mint(address(harness), 1_000 ether);
+    feeToken.mint(address(harness), 1000 ether);
 
     Asset[] memory assets = AssetHelper.makeERC20(address(feeToken), 100 ether).toArray();
     Terms memory terms = _makeTermsWithAssets(assets);

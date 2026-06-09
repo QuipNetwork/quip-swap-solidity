@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Terms} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib proposedByParty Tests
 /// @dev Tests for TermsLib.proposedByParty — the proposer is the side that commits first,
@@ -18,7 +18,12 @@ contract TermsLib_proposedByParty is TermsLibTest {
 
   function _sideWithCommitment(uint256 commitment) internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, commitment, commitment + 100, commitment + 200,
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      commitment,
+      commitment + 100,
+      commitment + 200,
       _makeNativeAsset(1 ether).toArray()
     );
   }

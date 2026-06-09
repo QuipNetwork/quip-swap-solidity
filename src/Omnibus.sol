@@ -6,6 +6,7 @@ import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
+import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IERC165.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -234,7 +235,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @notice ERC165 interface support
   function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-    return interfaceId == type(IERC721Receiver).interfaceId || interfaceId == type(IERC1155Receiver).interfaceId;
+    return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721Receiver).interfaceId
+      || interfaceId == type(IERC1155Receiver).interfaceId;
   }
 
   /// @inheritdoc IOmnibus

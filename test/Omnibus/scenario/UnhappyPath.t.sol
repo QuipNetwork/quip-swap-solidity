@@ -1,318 +1,188 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Test} from 'forge-std-1.14.0/Test.sol';
-
 import {Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
-import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
-import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
-import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {OmnibusTest} from '../Omnibus.t.sol';
 
 /// @title Omnibus Unhappy Path Scenarios
-/// @dev Tests for failure scenarios (deadlines, misconfigs, etc.)
-contract Omnibus_UnhappyPath is Test {
+/// @dev Failure scenarios under the windowed timing model. Inherits the canonical schedule
+///      and actors from OmnibusTest. Timing is enforced per-action by TermsLib.enforceWithin,
+///      so out-of-window actions revert with WindowViolated rather than a terms-expiry error.
+contract Omnibus_UnhappyPath is OmnibusTest {
   using AssetHelper for *;
-  using TermsHelper for *;
 
-  // ============ Actors ============
+  // ============ Terms Builders ============
 
-  address public ALICE = makeAddr('alice');
-  address public BOB = makeAddr('bob');
-  address public CHARLIE = makeAddr('charlie');
-  address public ALICE_RECIPIENT = makeAddr('aliceRecipient');
-  address public BOB_RECIPIENT = makeAddr('bobRecipient');
-
-  // ============ Contracts ============
-
-  OmnibusHarness public omnibus;
-  ERC20Mock public mockERC20;
-
-  // ============ Test Data ============
-
-  bytes32 public constant SECRET = keccak256('secret');
-  bytes32 public lock;
-
-  // ============ Setup ============
-
-  function setUp() public virtual {
-    mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
-    omnibus = new OmnibusHarness(address(this));
-    lock = omnibus.exposed_generateLock(SECRET);
-
-    vm.deal(ALICE, 100 ether);
-    vm.deal(BOB, 100 ether);
-    vm.deal(CHARLIE, 100 ether);
-
-    mockERC20.mint(ALICE, 1_000_000 ether);
-    mockERC20.mint(BOB, 1_000_000 ether);
-
-    vm.prank(ALICE);
-    mockERC20.approve(address(omnibus), type(uint256).max);
-    vm.prank(BOB);
-    mockERC20.approve(address(omnibus), type(uint256).max);
+  function _aliceNative(uint256 assetAmount) internal view returns (Terms memory) {
+    return _aliceTermsOn(block.chainid, _makeNativeAssets(assetAmount));
   }
 
-  // ============ Scenario 7: Execute Fails After Party Deadline ============
-
-  /// @notice Test execute fails after party deadline expires
-  function test_scenario_executeFailsAfterDeadline_partyExpired() public {
-    uint256 assetAmount = 1 ether;
-    uint64 aliceDeadline = uint64(block.timestamp + 1 days);
-    uint64 bobDeadline = uint64(block.timestamp + 2 days);
-
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      aliceDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      bobDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Commit both parties
-    vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
-
-    // Warp past Alice's deadline but before Bob's
-    vm.warp(aliceDeadline + 12 hours);
-
-    // Try execute - should fail
-    vm.expectRevert(TermsLib.TermsExpired.selector);
-    omnibus.execute(SECRET, aliceTerms, bobTerms);
-
-    // Verify: lock state unchanged
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+  function _bobNative(uint256 assetAmount) internal view returns (Terms memory) {
+    return _bobTermsOn(block.chainid, _makeNativeAssets(assetAmount));
   }
 
-  // ============ Scenario 8: Execute Fails After Counterparty Deadline ============
-
-  /// @notice Test execute fails after counterparty deadline expires
-  function test_scenario_executeFailsAfterDeadline_counterpartyExpired() public {
-    uint256 assetAmount = 1 ether;
-    uint64 aliceDeadline = uint64(block.timestamp + 2 days);
-    uint64 bobDeadline = uint64(block.timestamp + 1 days);
-
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      aliceDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      bobDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Commit both parties
+  function _commitBoth(Terms memory aliceTerms, Terms memory bobTerms, uint256 amount) internal {
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms);
+    vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
-
-    // Warp past Bob's deadline but before Alice's
-    vm.warp(bobDeadline + 12 hours);
-
-    // Try execute - should fail because counterparty expired
-    vm.expectRevert(TermsLib.TermsExpired.selector);
-    omnibus.execute(SECRET, aliceTerms, bobTerms);
-
-    // Verify: lock state unchanged
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms);
   }
 
-  // ============ Scenario 9: Reclaim Succeeds At Exact Deadline ============
+  // ============ Scenario 7: Claim Fails After Proposer Claim Window ============
 
-  /// @notice Test reclaim succeeds at exact deadline timestamp
-  function test_scenario_reclaimSucceedsAtExactDeadline() public {
+  function test_scenario_claimFailsAfterProposerWindow() public {
     uint256 assetAmount = 1 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    _commitBoth(aliceTerms, bobTerms, assetAmount);
 
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    // proposer-claim window upper bound (ALICE_CLAIM_DEADLINE) is exclusive
+    vm.warp(ALICE_CLAIM_DEADLINE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
 
-    // Commit both parties
-    vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
+    _assertLockState(lock, LockState.Committed);
+  }
 
-    // Warp to EXACTLY deadline
-    vm.warp(deadline);
+  // ============ Scenario 8: Claim Fails Before Proposer Claim Window ============
 
-    // Record balances before reclaim
+  function test_scenario_claimFailsBeforeProposerWindow() public {
+    uint256 assetAmount = 1 ether;
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
+
+    _commitBoth(aliceTerms, bobTerms, assetAmount);
+
+    // window opens at BOB_COMMIT_DEADLINE; the taker just committed before that
+    vm.warp(BOB_COMMIT_DEADLINE - 1);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
+
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  // ============ Scenario 9: Reclaim Succeeds At Exact Release ============
+
+  function test_scenario_reclaimSucceedsAtExactRelease() public {
+    uint256 assetAmount = 1 ether;
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
+
+    _commitBoth(aliceTerms, bobTerms, assetAmount);
+
+    // lower bound of the proposer reclaim window is inclusive
+    vm.warp(ALICE_RECLAIM_RELEASE);
+
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
-    // Reclaim succeeds at exact deadline (staleness check)
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    // Verify: lock state = Spent
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
-
-    // Verify: both parties get their assets back
+    _assertLockState(lock, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);
     assertEq(BOB.balance - bobBalBefore, assetAmount);
   }
 
   // ============ Scenario 10: Second Commit With Mismatched Terms ============
 
-  /// @notice Test second commit with different terms reverts
   function test_scenario_secondCommitMismatchedTerms_reverts() public {
     uint256 assetAmount = 1 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Alice commits
+    // Alice commits (proposer)
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
 
-    // Bob tries to commit with DIFFERENT terms (1.5 ETH instead of 1 ETH)
-    Terms memory mismatchedBobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(1.5 ether).toArray() // Different amount
-    );
+    // Bob commits with DIFFERENT terms (1.5 ETH instead of 1 ETH) in the taker window
+    Terms memory mismatchedBobTerms = _bobNative(1.5 ether);
 
+    vm.warp(AT_TAKER_COMMIT);
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(BOB);
     omnibus.commit{value: 1.5 ether}(lock, mismatchedBobTerms, aliceTerms);
 
-    // Verify: lock state still = Free
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
   }
 
   // ============ Scenario 11: Commit After Lock Already Spent ============
 
-  /// @notice Test commit after lock is spent reverts
   function test_scenario_commitAfterSpent_reverts() public {
     uint256 assetAmount = 1 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
-
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
 
     // Complete full swap
+    _commitBoth(aliceTerms, bobTerms, assetAmount);
+    _warpToProposerClaim();
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
+    _assertLockState(lock, LockState.Spent);
+
+    // Re-enter the proposer commit window and try to commit the spent lock again
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ALICE);
     omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
-    omnibus.execute(SECRET, aliceTerms, bobTerms);
-
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
-
-    // Charlie tries to commit with same lock, different terms
-    Terms memory charlieTerms = TermsHelper.makeTerms(
-      block.chainid,
-      CHARLIE,
-      CHARLIE,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
-    vm.prank(CHARLIE);
-    omnibus.commit{value: assetAmount}(lock, charlieTerms, bobTerms);
   }
 
-  // ============ Scenario 12: Reclaim Fails When Party Not Expired ============
+  // ============ Scenario 12: Reclaim Fails Before Release ============
 
-  /// @notice Test reclaim fails when party deadline has not passed
-  function test_scenario_reclaimFailsPartyNotExpired() public {
+  function test_scenario_reclaimFailsBeforeRelease() public {
     uint256 assetAmount = 1 ether;
-    uint64 aliceDeadline = uint64(block.timestamp + 2 days);
-    uint64 bobDeadline = uint64(block.timestamp + 1 days);
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      aliceDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    _commitBoth(aliceTerms, bobTerms, assetAmount);
 
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      bobDeadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Commit both parties
-    vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
-
-    // Warp to Bob's deadline (passed) but before Alice's deadline
-    vm.warp(bobDeadline);
-
-    // Alice tries reclaim - should fail (her deadline hasn't passed yet)
-    vm.expectRevert(TermsLib.TermsNotExpired.selector);
+    // time is at the taker-commit anchor, well before ALICE_RECLAIM_RELEASE
+    vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    // Verify: lock still in Committed state
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  // ============ Scenario 13: Taker Commits First (Dead-End Swap) ============
+
+  /// @notice nothing forces the proposer to commit first: the taker may post an Unused lock
+  ///         inside the taker window. The proposer's own window has then already elapsed, so
+  ///         the swap can never reach Committed — the taker's escrow stays recoverable after
+  ///         their own release
+  function test_scenario_takerCommitsFirst_swapDeadEnds_takerRecovers() public {
+    uint256 assetAmount = 1 ether;
+    Terms memory aliceTerms = _aliceNative(assetAmount);
+    Terms memory bobTerms = _bobNative(assetAmount);
+
+    // Bob (taker) commits first on the unused lock, inside the taker window
+    vm.warp(AT_TAKER_COMMIT);
+    vm.prank(BOB);
+    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
+    _assertLockState(lock, LockState.Free);
+
+    // the proposer can no longer commit: her window [0, ALICE_COMMIT_DEADLINE) has elapsed
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
+
+    // the lock is stuck in Free; claiming is impossible (never Committed)
+    _warpToProposerClaim();
+    vm.expectRevert(IOmnibus.InvalidLockState.selector);
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
+
+    // the taker recovers the escrow after his own release
+    _warpToTakerReclaim();
+    uint256 bobBalBefore = BOB.balance;
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
+
+    _assertLockState(lock, LockState.Spent);
+    assertEq(BOB.balance - bobBalBefore, assetAmount);
   }
 }

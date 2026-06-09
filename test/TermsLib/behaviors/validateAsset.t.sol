@@ -29,6 +29,18 @@ contract TermsLib_validateAsset is TermsLibTest {
     harness.exposed_validateAsset(asset);
   }
 
+  function test_validateAsset_erc721WithZeroId() public view {
+    // token id 0 is a valid ERC721 token and must be accepted
+    Asset memory asset = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: 0, amount: 1});
+    harness.exposed_validateAsset(asset);
+  }
+
+  function test_validateAsset_erc1155WithZeroId() public view {
+    // token id 0 is a valid ERC1155 token and must be accepted
+    Asset memory asset = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: 0, amount: 100});
+    harness.exposed_validateAsset(asset);
+  }
+
   // ============ Fuzz Tests ============
 
   function testFuzz_validateAsset_nativeWithVariousAmounts(uint256 amount) public view {
@@ -44,13 +56,13 @@ contract TermsLib_validateAsset is TermsLibTest {
   }
 
   function testFuzz_validateAsset_erc721WithVariousIds(uint256 tokenId) public view {
-    vm.assume(tokenId > 0);
+    // id 0 is now valid, so no assumption on tokenId
     Asset memory asset = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: tokenId, amount: 1});
     harness.exposed_validateAsset(asset);
   }
 
   function testFuzz_validateAsset_erc1155WithVariousParams(uint256 tokenId, uint256 amount) public view {
-    vm.assume(tokenId > 0);
+    // id 0 is now valid; only amount must be non-zero
     vm.assume(amount > 0);
     Asset memory asset =
       Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: tokenId, amount: amount});
@@ -95,20 +107,8 @@ contract TermsLib_validateAsset is TermsLibTest {
     harness.exposed_validateAsset(asset);
   }
 
-  function test_validateAsset_revertsWhen_erc721WithZeroId() public {
-    Asset memory asset = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: 0, amount: 1});
-    vm.expectRevert(TermsLib.InvalidERC721Asset.selector);
-    harness.exposed_validateAsset(asset);
-  }
-
   function test_validateAsset_revertsWhen_erc1155WithZeroTarget() public {
     Asset memory asset = Asset({assetType: AssetType.ERC1155, target: address(0), id: 1, amount: 100});
-    vm.expectRevert(TermsLib.InvalidERC1155Asset.selector);
-    harness.exposed_validateAsset(asset);
-  }
-
-  function test_validateAsset_revertsWhen_erc1155WithZeroId() public {
-    Asset memory asset = Asset({assetType: AssetType.ERC1155, target: address(mockERC1155), id: 0, amount: 100});
     vm.expectRevert(TermsLib.InvalidERC1155Asset.selector);
     harness.exposed_validateAsset(asset);
   }

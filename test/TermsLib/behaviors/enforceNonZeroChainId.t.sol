@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib enforceNonZeroChainId Tests
 /// @dev Tests for TermsLib.enforceNonZeroChainId

@@ -37,11 +37,6 @@ contract OmnibusHarness is Omnibus {
     _enforcePosted(lock, termsDigest);
   }
 
-  /// @notice exposes _enforceSignatoryCaller
-  function exposed_enforceSignatoryCaller(Terms calldata terms) external view {
-    _enforceSignatoryCaller(terms);
-  }
-
   /// @notice helper to set lock state directly for testing
   function setLockState(bytes32 lock, LockState state) external {
     lockState[lock] = state;
@@ -60,6 +55,11 @@ contract OmnibusHarness is Omnibus {
   /// @notice helper to compute terms hash (exposed for testing)
   function computeTermsHash(Terms calldata party, Terms calldata counterparty) external pure returns (bytes32) {
     return TermsLib.digestTermsCanonically(party, counterparty);
+  }
+
+  /// @notice helper to compute a single side's terms digest (exposed for testing)
+  function computeTermsDigest(Terms calldata terms) external pure returns (bytes32) {
+    return TermsLib.digestTerms(terms);
   }
 
   /// @notice exposes _generateLock

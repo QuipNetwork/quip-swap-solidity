@@ -16,8 +16,13 @@ contract TermsLib_validateAssets is TermsLibTest {
 
   function _makeTermsWithAssets(Asset[] memory assets) internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT,
-      DEFAULT_COMMITMENT_DEADLINE, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, assets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      assets
     );
   }
 
@@ -50,21 +55,15 @@ contract TermsLib_validateAssets is TermsLibTest {
   }
 
   function test_validateAssets_multipleAssetsOfSameType() public view {
-    Asset[] memory assets = AssetHelper.toArray(
-      _makeNativeAsset(1 ether),
-      _makeNativeAsset(2 ether),
-      _makeNativeAsset(3 ether)
-    );
+    Asset[] memory assets =
+      AssetHelper.toArray(_makeNativeAsset(1 ether), _makeNativeAsset(2 ether), _makeNativeAsset(3 ether));
     Terms memory terms = _makeTermsWithAssets(assets);
     harness.exposed_validateAssets(terms);
   }
 
   function test_validateAssets_mixedAssetTypes() public view {
     Asset[] memory assets = AssetHelper.toArray(
-      _makeNativeAsset(1 ether),
-      _makeERC20Asset(100 ether),
-      _makeERC721Asset(1),
-      _makeERC1155Asset(1, 50)
+      _makeNativeAsset(1 ether), _makeERC20Asset(100 ether), _makeERC721Asset(1), _makeERC1155Asset(1, 50)
     );
     Terms memory terms = _makeTermsWithAssets(assets);
     harness.exposed_validateAssets(terms);
@@ -108,7 +107,7 @@ contract TermsLib_validateAssets is TermsLibTest {
     Asset[] memory assets = new Asset[](3);
     assets[0] = _makeNativeAsset(1 ether); // valid
     assets[1] = _makeERC20Asset(100 ether); // valid
-    assets[2] = Asset({assetType: AssetType.ERC721, target: address(mockERC721), id: 0, amount: 1}); // invalid: zero id
+    assets[2] = Asset({assetType: AssetType.ERC721, target: address(0), id: 1, amount: 1}); // invalid: zero target
 
     Terms memory terms = _makeTermsWithAssets(assets);
 

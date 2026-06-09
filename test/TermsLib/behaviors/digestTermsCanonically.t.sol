@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Terms} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib digestTermsCanonically Tests
 /// @dev Tests for TermsLib.digestTermsCanonically
@@ -144,13 +144,23 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
     amount2 = bound(amount2, 1, type(uint128).max);
 
     Terms memory terms1 = TermsHelper.makeTerms(
-      chainId1, ALICE, ALICE_RECIPIENT,
-      commitment1, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, _makeNativeAsset(amount1).toArray()
+      chainId1,
+      ALICE,
+      ALICE_RECIPIENT,
+      commitment1,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(amount1).toArray()
     );
 
     Terms memory terms2 = TermsHelper.makeTerms(
-      chainId2, BOB, BOB_RECIPIENT,
-      commitment2, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, _makeNativeAsset(amount2).toArray()
+      chainId2,
+      BOB,
+      BOB_RECIPIENT,
+      commitment2,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(amount2).toArray()
     );
 
     bytes32 hash1 = harness.exposed_digestTermsCanonically(terms1, terms2);

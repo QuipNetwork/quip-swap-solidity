@@ -4,13 +4,22 @@ pragma solidity 0.8.33;
 import {Asset, AssetType, Terms} from '../../src/TermsLib.sol';
 import {LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {TestBase} from '../utils/TestBase.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
+import {TestBase} from '../utils/TestBase.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus Base Test
-/// @dev Base contract for testing Omnibus
+/// @dev Base contract for testing Omnibus.
+///
+/// Timing model. The protocol partitions the swap timeline into half-open windows and the
+/// contract enforces, per action, that block.timestamp falls in the right one (see
+/// TermsLib.enforceWithin). Terms are strictly interleaved (TermsLib.validateTermPairing):
+/// Alice is the PROPOSER (commits first), Bob is the TAKER. The six deadlines satisfy
+///   ALICE_COMMIT < BOB_COMMIT < ALICE_CLAIM < BOB_CLAIM < ALICE_RECLAIM < BOB_RECLAIM
+/// and each action has a representative time anchor strictly inside its window. _commitFor
+/// auto-warps into the committing party's commit window based on its role, so commit call
+/// sites need no manual warping.
 contract OmnibusTest is TestBase {
   using AssetHelper for *;
   using TermsHelper for *;
@@ -22,9 +31,27 @@ contract OmnibusTest is TestBase {
   uint256 public constant ERC721_BOB_TOKEN = 2;
   uint256 public constant ERC1155_TOKEN_ID = 1;
 
+  // ============ Lifecycle Deadlines (Alice = proposer, Bob = taker) ============
+
+  uint256 public constant ALICE_COMMIT_DEADLINE = 1000;
+  uint256 public constant BOB_COMMIT_DEADLINE = 2000;
+  uint256 public constant ALICE_CLAIM_DEADLINE = 3000;
+  uint256 public constant BOB_CLAIM_DEADLINE = 4000;
+  uint256 public constant ALICE_RECLAIM_RELEASE = 5000;
+  uint256 public constant BOB_RECLAIM_RELEASE = 6000;
+
+  // ============ Action Time Anchors (each strictly inside its window) ============
+
+  uint256 public constant AT_PROPOSER_COMMIT = 500; //   [0, ALICE_COMMIT)
+  uint256 public constant AT_TAKER_COMMIT = 1500; //    [ALICE_COMMIT, BOB_COMMIT)
+  uint256 public constant AT_PROPOSER_CLAIM = 2500; //  [BOB_COMMIT, ALICE_CLAIM)
+  uint256 public constant AT_TAKER_CLAIM = 3500; //     [ALICE_CLAIM, ALICE_RECLAIM)
+  uint256 public constant AT_PROPOSER_RECLAIM = 5500; // [ALICE_RECLAIM, inf)
+  uint256 public constant AT_TAKER_RECLAIM = 6500; //   [BOB_RECLAIM, inf)
+
   // ============ Contracts ============
 
-  OmnibusHarness public omnibus; // Shadows TestBase.omnibus
+  OmnibusHarness public omnibus;
 
   // ============ Test Data ============
 
@@ -36,7 +63,7 @@ contract OmnibusTest is TestBase {
   function setUp() public virtual override {
     super.setUp();
 
-    // Deploy Omnibus harness (shadows TestBase.omnibus)
+    // Deploy Omnibus harness
     omnibus = new OmnibusHarness(address(this));
 
     // Generate lock from secret
@@ -51,6 +78,7 @@ contract OmnibusTest is TestBase {
     // Approve omnibus for actors
     _approveAllForOmnibus(ALICE);
     _approveAllForOmnibus(BOB);
+    _approveAllForOmnibus(CHARLIE);
   }
 
   function test_setUp() public view {
@@ -66,10 +94,6 @@ contract OmnibusTest is TestBase {
   /// @notice Approve omnibus harness to spend owner's tokens
   function _approveAllForOmnibus(address owner) internal {
     _approveAllFor(owner, address(omnibus));
-  }
-
-  function _expiredDeadline() internal view returns (uint64) {
-    return _expiredTimestamp();
   }
 
   // ============ Asset Helpers (single asset variants) ============
@@ -88,51 +112,49 @@ contract OmnibusTest is TestBase {
 
   // ============ Terms Helpers ============
 
-  /// @notice Creates default same-chain terms for Alice
-  function _aliceTerms() internal view returns (Terms memory) {
-    return TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      _defaultDeadline(),
-      _makeNativeAssets(DEFAULT_AMOUNT)
-    );
-  }
-
-  /// @notice Creates default same-chain terms for Bob
-  function _bobTerms() internal view returns (Terms memory) {
-    return TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      _defaultDeadline(),
-      _makeERC20Assets(DEFAULT_AMOUNT)
-    );
-  }
-
-  /// @notice Creates cross-chain terms for Bob (on OTHER_CHAIN_ID)
-  function _bobCrossChainTerms() internal view returns (Terms memory) {
-    return TermsHelper.makeTerms(
-      OTHER_CHAIN_ID,
-      BOB,
-      BOB_RECIPIENT,
-      _defaultDeadline(),
-      _makeERC20Assets(DEFAULT_AMOUNT)
-    );
-  }
-
-  /// @notice Creates terms with specific parameters
+  /// @notice Creates terms with explicit lifecycle deadlines
   function _makeTerms(
     uint256 chainId,
-    address signatory,
+    address reclaimRecipient,
     address recipient,
-    uint64 deadline,
+    uint256 commitmentDeadline,
+    uint256 claimDeadline,
+    uint256 reclaimRelease,
     Asset[] memory assets
   ) internal pure returns (Terms memory) {
-    return TermsHelper.makeTerms(chainId, signatory, recipient, deadline, assets);
+    return TermsHelper.makeTerms(
+      chainId, reclaimRecipient, recipient, commitmentDeadline, claimDeadline, reclaimRelease, assets
+    );
   }
 
-  /// @notice Calculate native amount required for commit
+  /// @notice Proposer (Alice) terms on a given chain with the proposer deadline schedule
+  function _aliceTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
+    return _makeTerms(
+      chainId, ALICE, ALICE_RECIPIENT, ALICE_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE, assets
+    );
+  }
+
+  /// @notice Taker (Bob) terms on a given chain with the taker deadline schedule
+  function _bobTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
+    return _makeTerms(chainId, BOB, BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, assets);
+  }
+
+  /// @notice Default same-chain proposer terms for Alice (native)
+  function _aliceTerms() internal view returns (Terms memory) {
+    return _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT));
+  }
+
+  /// @notice Default same-chain taker terms for Bob (ERC20)
+  function _bobTerms() internal view returns (Terms memory) {
+    return _bobTermsOn(block.chainid, _makeERC20Assets(DEFAULT_AMOUNT));
+  }
+
+  /// @notice Cross-chain taker terms for Bob (on OTHER_CHAIN_ID)
+  function _bobCrossChainTerms() internal view returns (Terms memory) {
+    return _bobTermsOn(OTHER_CHAIN_ID, _makeERC20Assets(DEFAULT_AMOUNT));
+  }
+
+  /// @notice Calculate native amount required for commit (excludes fee)
   function _totalNativeForCommit(Terms memory terms) internal pure returns (uint256 total) {
     for (uint256 i = 0; i < terms.assets.length; i++) {
       if (terms.assets[i].assetType == AssetType.Native) {
@@ -141,28 +163,54 @@ contract OmnibusTest is TestBase {
     }
   }
 
-  // ============ Commit Helpers ============
+  // ============ Timing Helpers ============
 
-  /// @notice Helper to commit terms for a party
-  function _commitFor(
-    address committer,
-    bytes32 _lock,
-    Terms memory party,
-    Terms memory counterparty
-  ) internal {
-    uint256 nativeAmount = _totalNativeForCommit(party);
-    vm.prank(committer);
-    omnibus.commit{value: nativeAmount}(_lock, party, counterparty);
+  /// @notice true if `party` is the proposer of the pairing (commits first)
+  function _isProposer(Terms memory party, Terms memory counterparty) internal pure returns (bool) {
+    return party.commitmentDeadline < counterparty.commitmentDeadline;
   }
 
-  /// @notice Helper to commit both parties for same-chain swaps
-  function _commitBothParties(
-    bytes32 _lock,
-    Terms memory alice,
-    Terms memory bob
-  ) internal {
+  function _warpToProposerClaim() internal {
+    vm.warp(AT_PROPOSER_CLAIM);
+  }
+
+  function _warpToTakerClaim() internal {
+    vm.warp(AT_TAKER_CLAIM);
+  }
+
+  function _warpToProposerReclaim() internal {
+    vm.warp(AT_PROPOSER_RECLAIM);
+  }
+
+  function _warpToTakerReclaim() internal {
+    vm.warp(AT_TAKER_RECLAIM);
+  }
+
+  // ============ Commit Helpers ============
+
+  /// @notice Commit `party` against `counterparty`, auto-warping into the party's commit
+  ///         window (proposer commits before its deadline; taker commits after the proposer's
+  ///         deadline) and forwarding the required native value plus the current fee
+  function _commitFor(address committer, bytes32 _lock, Terms memory party, Terms memory counterparty) internal {
+    vm.warp(_isProposer(party, counterparty) ? AT_PROPOSER_COMMIT : AT_TAKER_COMMIT);
+    uint256 value = _totalNativeForCommit(party) + omnibus.commitmentFee();
+    vm.prank(committer);
+    omnibus.commit{value: value}(_lock, party, counterparty);
+  }
+
+  /// @notice Helper to commit both parties for same-chain swaps (proposer then taker)
+  function _commitBothParties(bytes32 _lock, Terms memory alice, Terms memory bob) internal {
     _commitFor(ALICE, _lock, alice, bob);
     _commitFor(BOB, _lock, bob, alice);
+  }
+
+  /// @notice Commit both, then settle same-chain by having the proposer (secret holder)
+  ///         claim in the proposer-claim window (one claim settles both legs same-chain)
+  function _settleSameChain(bytes32 _lock, Terms memory alice, Terms memory bob) internal {
+    _commitBothParties(_lock, alice, bob);
+    _warpToProposerClaim();
+    vm.prank(ALICE);
+    omnibus.claim(SECRET, alice, bob);
   }
 
   // ============ Assertion Helpers ============
@@ -173,17 +221,13 @@ contract OmnibusTest is TestBase {
   }
 
   /// @notice Assert event was emitted with specific topic
-  function _assertEventEmitted(
-    Vm.Log[] memory logs,
-    bytes32 eventSelector,
-    bytes32 expectedTopic1
-  ) internal pure {
+  function _assertEventEmitted(Vm.Log[] memory logs, bytes32 eventSelector, bytes32 expectedTopic1) internal pure {
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == eventSelector) {
         assertEq(logs[i].topics[1], expectedTopic1);
         return;
       }
     }
-    revert("Event not found");
+    revert('Event not found');
   }
 }

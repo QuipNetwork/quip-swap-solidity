@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Asset, AssetType, Terms, TermsLib} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib validateTerms Tests
 /// @dev Tests for TermsLib.validateTerms
@@ -183,30 +183,29 @@ contract TermsLib_validateTerms is TermsLibTest {
     harness.exposed_validateTerms(terms);
   }
 
-  // ============ Deadline Freshness ============
+  // ============ Deadline Non-Zero ============
+  // validateTerms only sanity-checks deadlines as non-zero; per-action freshness is enforced
+  // by the commit/claim/reclaim windows, NOT here (see validateTerms NatSpec)
 
-  function test_validateTerms_succeedsWhen_commitmentJustInFuture() public {
-    // block.timestamp one tick before the commitment deadline still validates
-    vm.warp(DEFAULT_COMMITMENT_DEADLINE - 1);
-    harness.exposed_validateTerms(_validTerms());
+  function test_validateTerms_revertsWhen_commitmentDeadlineZero() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      0, // zero commitment deadline - invalid
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.ZeroDeadline.selector);
+    harness.exposed_validateTerms(terms);
   }
 
-  function test_validateTerms_revertsWhen_commitmentAtCurrentTime() public {
-    // deadline must be strictly greater than now; equality is expired
-    vm.warp(DEFAULT_COMMITMENT_DEADLINE);
-    vm.expectRevert(TermsLib.DeadlineInPast.selector);
-    harness.exposed_validateTerms(_validTerms());
-  }
-
-  function test_validateTerms_revertsWhen_commitmentInPast() public {
-    vm.warp(DEFAULT_COMMITMENT_DEADLINE + 1);
-    vm.expectRevert(TermsLib.DeadlineInPast.selector);
-    harness.exposed_validateTerms(_validTerms());
-  }
-
-  function test_validateTerms_revertsWhen_allDeadlinesInPast() public {
+  function test_validateTerms_succeedsWhen_deadlinesElapsedButNonZero() public {
+    // an elapsed (past) commitment deadline still validates: freshness is not checked here.
+    // this is the case the taker hits when committing after the proposer's commit deadline
     vm.warp(DEFAULT_RECLAIM_RELEASE + 1);
-    vm.expectRevert(TermsLib.DeadlineInPast.selector);
     harness.exposed_validateTerms(_validTerms());
   }
 

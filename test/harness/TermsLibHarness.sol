@@ -27,7 +27,7 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes validateTerms
-  function exposed_validateTerms(Terms calldata terms) external view {
+  function exposed_validateTerms(Terms calldata terms) external pure {
     TermsLib.validateTerms(terms);
   }
 
@@ -57,10 +57,7 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   }
 
   /// @notice exposes proposedByParty
-  function exposed_proposedByParty(
-    Terms calldata party,
-    Terms calldata counterparty
-  ) external pure returns (bool) {
+  function exposed_proposedByParty(Terms calldata party, Terms calldata counterparty) external pure returns (bool) {
     return TermsLib.proposedByParty(party, counterparty);
   }
 

@@ -9,8 +9,8 @@ import {TermsLibTest} from '../TermsLib.t.sol';
 ///      Lower bound is INCLUSIVE, upper bound is EXCLUSIVE. These boundary semantics are
 ///      the protocol's "one action per window" invariant; the tests pin them exactly.
 contract TermsLib_enforceWithin is TermsLibTest {
-  uint256 constant LOWER = 1_000;
-  uint256 constant UPPER = 2_000;
+  uint256 constant LOWER = 1000;
+  uint256 constant UPPER = 2000;
 
   // ============ Success Cases ============
 
@@ -20,7 +20,7 @@ contract TermsLib_enforceWithin is TermsLibTest {
   }
 
   function test_enforceWithin_succeedsStrictlyInside() public view {
-    harness.exposed_enforceWithin(LOWER, UPPER, 1_500);
+    harness.exposed_enforceWithin(LOWER, UPPER, 1500);
   }
 
   function test_enforceWithin_succeedsAtLastValidInstant() public view {
@@ -70,7 +70,7 @@ contract TermsLib_enforceWithin is TermsLibTest {
 
   function test_enforceWithin_revertsWhen_lowerGreaterThanUpper() public {
     vm.expectRevert(TermsLib.InvalidRange.selector);
-    harness.exposed_enforceWithin(UPPER, LOWER, 1_500);
+    harness.exposed_enforceWithin(UPPER, LOWER, 1500);
   }
 
   function test_enforceWithin_revertsWhen_bothZero() public {

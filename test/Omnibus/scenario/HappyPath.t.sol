@@ -1,470 +1,357 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Test} from 'forge-std-1.14.0/Test.sol';
-
 import {Asset, Terms} from '../../../src/TermsLib.sol';
 import {LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
-import {ERC1155Mock} from '../../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
-import {ERC721Mock} from '../../mocks/ERC721Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
-import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {OmnibusTest} from '../Omnibus.t.sol';
 
 /// @title Omnibus Happy Path Scenarios
-/// @dev Tests for successful swap flows
-contract Omnibus_HappyPath is Test {
+/// @dev Successful swap flows under the windowed timing model. Inherits the canonical
+///      schedule, actors, and helpers from OmnibusTest (Alice = proposer, Bob = taker);
+///      adds per-chain instances and fresh tokens for the cross-chain legs. The base
+///      pre-funding of the harness is zeroed so scenarios can assert exact end-to-end
+///      contract-balance accounting.
+contract Omnibus_HappyPath is OmnibusTest {
   using AssetHelper for *;
-  using TermsHelper for *;
 
-  // ============ Constants ============
+  // ============ Scenario Fixtures ============
 
-  uint256 constant CHAIN_A = 1;
-  uint256 constant CHAIN_B = 137;
+  uint256 public constant CHAIN_A = 1;
+  uint256 public constant CHAIN_B = 137;
 
-  // ============ Actors ============
-
-  address public ALICE = makeAddr('alice');
-  address public BOB = makeAddr('bob');
-  address public CHARLIE = makeAddr('charlie');
-  address public ALICE_RECIPIENT = makeAddr('aliceRecipient');
-  address public BOB_RECIPIENT = makeAddr('bobRecipient');
-
-  // ============ Contracts ============
-
-  OmnibusHarness public omnibus;
   OmnibusHarness public omnibusA;
   OmnibusHarness public omnibusB;
-  ERC20Mock public mockERC20;
   ERC20Mock public tokenA;
   ERC20Mock public tokenB;
-  ERC721Mock public mockERC721;
-  ERC1155Mock public mockERC1155;
+  address public TREASURY;
 
-  // ============ Test Data ============
+  function setUp() public override {
+    super.setUp();
 
-  bytes32 public constant SECRET = keccak256('secret');
-  bytes32 public lock;
+    // scenarios assert exact contract-balance accounting; drop the base pre-funding
+    vm.deal(address(omnibus), 0);
 
-  // ============ Setup ============
-
-  function setUp() public virtual {
-    // Deploy mock tokens
-    mockERC20 = new ERC20Mock('MockToken', 'MTK', 18);
-    mockERC721 = new ERC721Mock('MockNFT', 'MNFT');
-    mockERC1155 = new ERC1155Mock('https://example.com/token/{id}.json');
-
-    // Deploy Omnibus instances
-    omnibus = new OmnibusHarness(address(this));
     omnibusA = new OmnibusHarness(address(this));
     omnibusB = new OmnibusHarness(address(this));
-
-    // Deploy chain-specific tokens
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
-
-    // Generate lock from secret
-    lock = omnibus.exposed_generateLock(SECRET);
-
-    // Fund actors
-    vm.deal(ALICE, 100 ether);
-    vm.deal(BOB, 100 ether);
-    vm.deal(CHARLIE, 100 ether);
-
-    // Mint tokens to actors
-    _mintTokensTo(ALICE);
-    _mintTokensTo(BOB);
-
-    // Approve omnibus for all actors
-    _approveAllForOmnibus(ALICE, omnibus);
-    _approveAllForOmnibus(BOB, omnibus);
+    TREASURY = makeAddr('treasury');
   }
 
   // ============ Scenario 1: Same-Chain Native Swap ============
 
-  /// @notice Test successful same-chain native swap between Alice and Bob
   function test_scenario_sameChain_nativeSwap_success() public {
     uint256 aliceAssetAmount = 1 ether;
     uint256 bobAssetAmount = 0.5 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(aliceAssetAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceTermsOn(block.chainid, _makeNativeAssets(aliceAssetAmount));
+    Terms memory bobTerms = _bobTermsOn(block.chainid, _makeNativeAssets(bobAssetAmount));
 
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(bobAssetAmount).toArray()
-    );
-
-    // Step 1: Alice commits first (same-chain -> Free state)
+    // Step 1: Alice (proposer) commits first (same-chain -> Free state)
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: aliceAssetAmount}(lock, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
-    // Step 2: Bob commits second (same-chain -> Committed state)
+    // Step 2: Bob (taker) commits second (same-chain -> Committed state)
+    vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: bobAssetAmount}(lock, bobTerms, aliceTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
-    // Record balances before execution
     uint256 bobRecipientBalBefore = BOB_RECIPIENT.balance;
     uint256 aliceRecipientBalBefore = ALICE_RECIPIENT.balance;
 
-    // Step 3: Charlie executes with secret
+    // Step 3: settle with the secret in the proposer-claim window
+    _warpToProposerClaim();
     vm.prank(CHARLIE);
-    omnibus.execute(SECRET, aliceTerms, bobTerms);
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
 
-    // Verify: lock state = Spent
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
-
-    // Verify: BOB_RECIPIENT received Alice's assets
+    _assertLockState(lock, LockState.Spent);
+    // BOB_RECIPIENT received Alice's assets
     assertEq(BOB_RECIPIENT.balance - bobRecipientBalBefore, aliceAssetAmount);
-
-    // Verify: ALICE_RECIPIENT received Bob's assets
+    // ALICE_RECIPIENT received Bob's assets
     assertEq(ALICE_RECIPIENT.balance - aliceRecipientBalBefore, bobAssetAmount);
-
-    // Verify: Omnibus balance = 0
     assertEq(address(omnibus).balance, 0);
   }
 
   // ============ Scenario 2: Same-Chain Mixed Assets Swap ============
 
-  /// @notice Test successful same-chain swap with mixed asset types
   function test_scenario_sameChain_mixedAssets_success() public {
-    // Build terms using helper
     (Terms memory aliceTerms, Terms memory bobTerms) = _buildMixedAssetTerms();
 
-    // Alice commits with 1 ETH msg.value
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: 1 ether}(lock, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
-    // Bob commits with 0 msg.value (no native)
+    vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bobTerms, aliceTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
-    // Record balances
     uint256 bobRecipientEthBefore = BOB_RECIPIENT.balance;
     uint256 bobRecipientERC20Before = mockERC20.balanceOf(BOB_RECIPIENT);
+    uint256 aliceRecipient1155Before = mockERC1155.balanceOf(ALICE_RECIPIENT, ERC1155_TOKEN_ID);
 
-    // Execute
-    omnibus.execute(SECRET, aliceTerms, bobTerms);
+    _warpToProposerClaim();
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
 
-    // Verify: BOB_RECIPIENT received 1 ETH + 100 ERC20
+    // BOB_RECIPIENT received 1 ETH + 100 ERC20 (Alice's assets)
     assertEq(BOB_RECIPIENT.balance - bobRecipientEthBefore, 1 ether);
     assertEq(mockERC20.balanceOf(BOB_RECIPIENT) - bobRecipientERC20Before, 100 ether);
-
-    // Verify: ALICE_RECIPIENT received 10 ERC1155
-    assertEq(mockERC1155.balanceOf(ALICE_RECIPIENT, 1), 10);
+    // ALICE_RECIPIENT received 10 ERC1155 (Bob's assets)
+    assertEq(mockERC1155.balanceOf(ALICE_RECIPIENT, ERC1155_TOKEN_ID) - aliceRecipient1155Before, 10);
   }
 
-  /// @dev Helper to build mixed asset terms (reduces stack depth)
   function _buildMixedAssetTerms() internal view returns (Terms memory aliceTerms, Terms memory bobTerms) {
-    uint64 deadline = uint64(block.timestamp + 1 days);
-
-    // Alice terms: 1 ETH native + 100 ERC20
     Asset[] memory aliceAssets = new Asset[](2);
-    aliceAssets[0] = AssetHelper.makeNative(1 ether);
-    aliceAssets[1] = AssetHelper.makeERC20(address(mockERC20), 100 ether);
+    aliceAssets[0] = _makeNativeAsset(1 ether);
+    aliceAssets[1] = _makeERC20Asset(100 ether);
+    aliceTerms = _aliceTermsOn(block.chainid, aliceAssets);
 
-    aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      aliceAssets
-    );
-
-    // Bob terms: 10 ERC1155
-    Asset[] memory bobAssets = new Asset[](1);
-    bobAssets[0] = AssetHelper.makeERC1155(address(mockERC1155), 1, 10);
-
-    bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      bobAssets
-    );
+    bobTerms = _bobTermsOn(block.chainid, _makeERC1155Assets(ERC1155_TOKEN_ID, 10));
   }
 
   // ============ Scenario 3: Cross-Chain Complete Swap ============
 
-  /// @notice Test successful cross-chain swap (Alice on Chain A, Bob on Chain B)
   function test_scenario_crossChain_completeSwap_success() public {
     bytes32 secret = keccak256('crosschain-secret');
     bytes32 crossLock = omnibus.exposed_generateLock(secret);
-    uint64 deadline = uint64(block.timestamp + 1 days);
     uint256 tokenAAmount = 100 ether;
     uint256 tokenBAmount = 200 ether;
 
-    // Mint tokens
     tokenA.mint(ALICE, tokenAAmount);
     tokenB.mint(BOB, tokenBAmount);
 
-    // Create Terms
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      CHAIN_A,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeERC20(address(tokenA), tokenAAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceTermsOn(CHAIN_A, AssetHelper.makeERC20(address(tokenA), tokenAAmount).toArray());
+    Terms memory bobTerms = _bobTermsOn(CHAIN_B, AssetHelper.makeERC20(address(tokenB), tokenBAmount).toArray());
 
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      CHAIN_B,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeERC20(address(tokenB), tokenBAmount).toArray()
-    );
-
-    // Alice commits on Chain A
+    // Alice commits on Chain A (proposer window)
     vm.chainId(CHAIN_A);
-    vm.startPrank(ALICE);
+    vm.prank(ALICE);
     tokenA.approve(address(omnibusA), tokenAAmount);
-    vm.stopPrank();
-
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibusA.commit(crossLock, aliceTerms, bobTerms);
-
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(tokenA.balanceOf(address(omnibusA)), tokenAAmount);
 
-    // Bob commits on Chain B
+    // Bob commits on Chain B (taker window)
     vm.chainId(CHAIN_B);
-    vm.startPrank(BOB);
+    vm.prank(BOB);
     tokenB.approve(address(omnibusB), tokenBAmount);
-    vm.stopPrank();
-
+    vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibusB.commit(crossLock, bobTerms, aliceTerms);
-
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(tokenB.balanceOf(address(omnibusB)), tokenBAmount);
 
-    // Execute on Chain A
-    vm.chainId(CHAIN_A);
-    uint256 bobRecipientTokenBefore = tokenA.balanceOf(BOB_RECIPIENT);
-
-    omnibusA.execute(secret, aliceTerms, bobTerms);
-
-    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Spent));
-    assertEq(tokenA.balanceOf(BOB_RECIPIENT) - bobRecipientTokenBefore, tokenAAmount);
-
-    // Execute on Chain B
+    // Alice reveals the secret on Chain B, claiming Bob's leg (proposer-claim window)
     vm.chainId(CHAIN_B);
+    _warpToProposerClaim();
     uint256 aliceRecipientTokenBefore = tokenB.balanceOf(ALICE_RECIPIENT);
-
-    omnibusB.execute(secret, bobTerms, aliceTerms);
-
+    omnibusB.claim(secret, aliceTerms, bobTerms);
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Spent));
     assertEq(tokenB.balanceOf(ALICE_RECIPIENT) - aliceRecipientTokenBefore, tokenBAmount);
 
-    // Final verification
+    // Bob uses the revealed secret on Chain A, claiming Alice's leg (taker-claim window)
+    vm.chainId(CHAIN_A);
+    _warpToTakerClaim();
+    uint256 bobRecipientTokenBefore = tokenA.balanceOf(BOB_RECIPIENT);
+    omnibusA.claim(secret, bobTerms, aliceTerms);
+    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Spent));
+    assertEq(tokenA.balanceOf(BOB_RECIPIENT) - bobRecipientTokenBefore, tokenAAmount);
+
     assertEq(tokenA.balanceOf(address(omnibusA)), 0);
     assertEq(tokenB.balanceOf(address(omnibusB)), 0);
   }
 
   // ============ Scenario 4: Cross-Chain Reclaim ============
 
-  /// @notice Test cross-chain reclaim where both parties cancel
   function test_scenario_crossChain_reclaimBothChains_success() public {
     bytes32 secret = keccak256('reclaim-secret');
     bytes32 reclaimLock = omnibus.exposed_generateLock(secret);
-    uint64 deadline = uint64(block.timestamp + 1 days);
     uint256 tokenAAmount = 100 ether;
     uint256 tokenBAmount = 200 ether;
 
-    // Mint tokens
     tokenA.mint(ALICE, tokenAAmount);
     tokenB.mint(BOB, tokenBAmount);
 
-    // Create terms
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      CHAIN_A,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeERC20(address(tokenA), tokenAAmount).toArray()
-    );
-
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      CHAIN_B,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeERC20(address(tokenB), tokenBAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceTermsOn(CHAIN_A, AssetHelper.makeERC20(address(tokenA), tokenAAmount).toArray());
+    Terms memory bobTerms = _bobTermsOn(CHAIN_B, AssetHelper.makeERC20(address(tokenB), tokenBAmount).toArray());
 
     // Commits
     vm.chainId(CHAIN_A);
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), tokenAAmount);
     omnibusA.commit(reclaimLock, aliceTerms, bobTerms);
     vm.stopPrank();
 
     vm.chainId(CHAIN_B);
+    vm.warp(AT_TAKER_COMMIT);
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), tokenBAmount);
     omnibusB.commit(reclaimLock, bobTerms, aliceTerms);
     vm.stopPrank();
 
-    // Warp to deadline (reclaim requires staleness)
-    vm.warp(deadline);
-
-    // Reclaim on Chain A
+    // Reclaim on Chain A after Alice's reclaim release
     vm.chainId(CHAIN_A);
+    _warpToProposerReclaim();
     uint256 aliceTokenBefore = tokenA.balanceOf(ALICE);
-
     vm.prank(ALICE);
     omnibusA.reclaim(reclaimLock, aliceTerms, bobTerms);
-
     assertEq(uint8(omnibusA.lockState(reclaimLock)), uint8(LockState.Spent));
     assertEq(tokenA.balanceOf(ALICE) - aliceTokenBefore, tokenAAmount);
 
-    // Reclaim on Chain B
+    // Reclaim on Chain B after Bob's reclaim release
     vm.chainId(CHAIN_B);
+    _warpToTakerReclaim();
     uint256 bobTokenBefore = tokenB.balanceOf(BOB);
-
     vm.prank(BOB);
     omnibusB.reclaim(reclaimLock, bobTerms, aliceTerms);
-
     assertEq(uint8(omnibusB.lockState(reclaimLock)), uint8(LockState.Spent));
     assertEq(tokenB.balanceOf(BOB) - bobTokenBefore, tokenBAmount);
 
-    // Both omnibus contracts empty
     assertEq(tokenA.balanceOf(address(omnibusA)), 0);
     assertEq(tokenB.balanceOf(address(omnibusB)), 0);
   }
 
-  // ============ Scenario 5: Same-Chain Reclaim After Deadline ============
+  // ============ Scenario 5: Same-Chain Reclaim After Release ============
 
-  /// @notice Test same-chain reclaim after deadline (mutual cancel)
   function test_scenario_sameChain_reclaimAfterDeadline_mutualCancel() public {
     uint256 assetAmount = 1 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceTermsOn(block.chainid, _makeNativeAssets(assetAmount));
+    Terms memory bobTerms = _bobTermsOn(block.chainid, _makeNativeAssets(assetAmount));
 
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      block.chainid,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Alice commits -> Free
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    _assertLockState(lock, LockState.Free);
 
-    // Bob commits -> Committed
+    vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
-    // Warp to deadline
-    vm.warp(deadline);
-
-    // Record balances
+    // Proposer reclaim after release refunds both sides
+    _warpToProposerReclaim();
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
-    // Alice reclaims
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    // Verify: lock state = Spent
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
-
-    // Verify: both received their assets back
+    _assertLockState(lock, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);
     assertEq(BOB.balance - bobBalBefore, assetAmount);
-
-    // Omnibus should be empty
     assertEq(address(omnibus).balance, 0);
   }
 
   // ============ Scenario 6: Reclaim From Committed State (Cross-Chain) ============
 
-  /// @notice Test reclaim from cross-chain Committed state (only Alice's side)
   function test_scenario_reclaimFromCommitted_crossChain_success() public {
     uint256 assetAmount = 1 ether;
-    uint64 deadline = uint64(block.timestamp + 1 days);
 
-    Terms memory aliceTerms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
-
-    // Bob's terms on different chain
-    Terms memory bobTerms = TermsHelper.makeTerms(
-      CHAIN_B,
-      BOB,
-      BOB_RECIPIENT,
-      deadline,
-      AssetHelper.makeNative(assetAmount).toArray()
-    );
+    Terms memory aliceTerms = _aliceTermsOn(block.chainid, _makeNativeAssets(assetAmount));
+    // Bob's terms on a different chain
+    Terms memory bobTerms = _bobTermsOn(CHAIN_B, _makeNativeAssets(assetAmount));
 
     // Alice commits -> Committed (cross-chain goes directly to Committed)
+    vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    _assertLockState(lock, LockState.Committed);
 
-    // Warp to deadline (reclaim requires staleness)
-    vm.warp(deadline);
-
-    // Record Alice's balance
+    // Alice reclaims from Committed state after her release
+    _warpToProposerReclaim();
     uint256 aliceBalBefore = ALICE.balance;
-
-    // Alice reclaims from Committed state
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    // Verify: lock state = Spent
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
-
-    // Verify: ALICE received her assets
+    _assertLockState(lock, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);
-
-    // Omnibus should be empty
     assertEq(address(omnibus).balance, 0);
   }
 
-  // ============ Internal Helpers ============
+  // ============ Scenario 7: Fee-Inclusive Settlement ============
 
-  function _mintTokensTo(address account) internal {
-    mockERC20.mint(account, 1_000_000 ether);
-    mockERC1155.mint(account, 1, 10000, '');
-    mockERC1155.mint(account, 2, 10000, '');
+  /// @notice with a nonzero commitment fee, payouts carry exactly the declared asset amounts,
+  ///         the fees accrue separately, and withdrawing them empties the contract to zero
+  function test_scenario_sameChain_withFee_settleAndWithdraw() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    uint256 aliceAssetAmount = 1 ether;
+    uint256 bobAssetAmount = 0.5 ether;
+    Terms memory aliceTerms = _aliceTermsOn(block.chainid, _makeNativeAssets(aliceAssetAmount));
+    Terms memory bobTerms = _bobTermsOn(block.chainid, _makeNativeAssets(bobAssetAmount));
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.prank(ALICE);
+    omnibus.commit{value: aliceAssetAmount + fee}(lock, aliceTerms, bobTerms);
+
+    vm.warp(AT_TAKER_COMMIT);
+    vm.prank(BOB);
+    omnibus.commit{value: bobAssetAmount + fee}(lock, bobTerms, aliceTerms);
+
+    assertEq(omnibus.accruedFees(), 2 * fee);
+
+    _warpToProposerClaim();
+    vm.prank(ALICE);
+    omnibus.claim(SECRET, aliceTerms, bobTerms);
+
+    // recipients receive exactly the declared asset amounts; fees never leak into payouts
+    assertEq(BOB_RECIPIENT.balance, aliceAssetAmount);
+    assertEq(ALICE_RECIPIENT.balance, bobAssetAmount);
+    assertEq(address(omnibus).balance, 2 * fee);
+    assertEq(omnibus.accruedFees(), 2 * fee);
+
+    // withdrawing the accrued fees leaves the contract exactly empty
+    omnibus.withdrawFees(TREASURY);
+    assertEq(TREASURY.balance, 2 * fee);
+    assertEq(address(omnibus).balance, 0);
   }
 
-  function _approveAllForOmnibus(address owner, OmnibusHarness target) internal {
-    vm.startPrank(owner);
-    mockERC20.approve(address(target), type(uint256).max);
-    mockERC721.setApprovalForAll(address(target), true);
-    mockERC1155.setApprovalForAll(address(target), true);
-    vm.stopPrank();
+  // ============ Scenario 8: Fee-Inclusive Reclaim ============
+
+  /// @notice reclaim refunds exactly the escrowed assets — never the commitment fees, which
+  ///         stay accrued and withdrawable
+  function test_scenario_sameChain_withFee_reclaimRefundsEscrowNotFee() public {
+    uint256 fee = 0.005 ether;
+    omnibus.setCommitmentFee(fee);
+
+    uint256 assetAmount = 1 ether;
+    Terms memory aliceTerms = _aliceTermsOn(block.chainid, _makeNativeAssets(assetAmount));
+    Terms memory bobTerms = _bobTermsOn(block.chainid, _makeNativeAssets(assetAmount));
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.prank(ALICE);
+    omnibus.commit{value: assetAmount + fee}(lock, aliceTerms, bobTerms);
+
+    vm.warp(AT_TAKER_COMMIT);
+    vm.prank(BOB);
+    omnibus.commit{value: assetAmount + fee}(lock, bobTerms, aliceTerms);
+
+    _warpToProposerReclaim();
+    uint256 aliceBalBefore = ALICE.balance;
+    uint256 bobBalBefore = BOB.balance;
+
+    vm.prank(ALICE);
+    omnibus.reclaim(lock, aliceTerms, bobTerms);
+
+    // each side gets back exactly its escrowed assets, not the fee it paid
+    assertEq(ALICE.balance - aliceBalBefore, assetAmount);
+    assertEq(BOB.balance - bobBalBefore, assetAmount);
+    assertEq(omnibus.accruedFees(), 2 * fee);
+    assertEq(address(omnibus).balance, 2 * fee);
+
+    omnibus.withdrawFees(TREASURY);
+    assertEq(address(omnibus).balance, 0);
   }
 }

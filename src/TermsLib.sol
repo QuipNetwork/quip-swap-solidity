@@ -74,8 +74,8 @@ library TermsLib {
   /// @notice thrown when terms have no assets
   error EmptyAssets();
 
-  /// @notice thrown when a deadline is at or before the current timestamp
-  error DeadlineInPast();
+  /// @notice thrown when a lifecycle deadline is zero
+  error ZeroDeadline();
 
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
@@ -152,25 +152,30 @@ library TermsLib {
       revert InvalidERC20Asset();
     }
 
-    if (isERC721 && (isZeroTarget || isZeroId)) {
+    // ERC721/ERC1155 token id 0 is valid; only a zero target is rejected
+    if (isERC721 && isZeroTarget) {
       revert InvalidERC721Asset();
     }
 
-    if (isERC1155 && (isZeroTarget || isZeroId)) {
+    if (isERC1155 && isZeroTarget) {
       revert InvalidERC1155Asset();
     }
   }
 
   /// @notice validates terms for commit
   /// @param terms the terms to validate
-  function validateTerms(Terms calldata terms) internal view {
+  function validateTerms(Terms calldata terms) internal pure {
     if (terms.assets.length == 0) revert EmptyAssets();
     if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
       revert ZeroAddressRecipient();
     }
-    // fail fast on the cheapest check: the earliest deadline must lie in the future.
-    // combined with the strict ordering below, this guarantees every deadline is future-dated
-    if (terms.commitmentDeadline <= block.timestamp) revert DeadlineInPast();
+    // deadlines are only sanity-checked as non-zero here; actual freshness (a deadline still
+    // lying in the future) is enforced per-action by the commit/claim/reclaim windows via
+    // TermsLib.enforceWithin. validateTerms must NOT reject elapsed deadlines, because commit
+    // validates both sides and the taker commits only AFTER the proposer's commitment deadline
+    // has passed — a freshness check here would wrongly reject the proposer's (counterparty's)
+    // already-elapsed deadline. strict ordering below then makes claim and reclaim non-zero too
+    if (terms.commitmentDeadline == 0) revert ZeroDeadline();
     // lifecycle deadlines must be strictly increasing: commitment < claim < reclaim
     if (!(terms.commitmentDeadline < terms.claimDeadline && terms.claimDeadline < terms.reclaimRelease)) {
       revert DisordedDeadlines();

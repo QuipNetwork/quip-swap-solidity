@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from '../../../src/TermsLib.sol';
-import {TermsLibTest} from '../TermsLib.t.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
+import {TermsLibTest} from '../TermsLib.t.sol';
 
 /// @title TermsLib validateTermPairing Tests
 /// @dev Tests for TermsLib.validateTermPairing — enforces that the two sides' lifecycle
@@ -104,10 +104,7 @@ contract TermsLib_validateTermPairing is TermsLibTest {
 
   // ============ Fuzz Tests ============
 
-  function testFuzz_validateTermPairing_succeedsWhenStrictlyInterleaved(
-    uint256 ac,
-    uint256 gap
-  ) public view {
+  function testFuzz_validateTermPairing_succeedsWhenStrictlyInterleaved(uint256 ac, uint256 gap) public view {
     // build six strictly increasing deadlines from a base and a positive gap
     ac = bound(ac, 1, type(uint64).max);
     gap = bound(gap, 1, 1_000_000);
