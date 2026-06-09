@@ -44,12 +44,28 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable {
+    // it is assumed the msg.sender represents the `party`
     // validate both terms (only party.chainId must match current chain)
     party.enforceChainId(block.chainid);
-    // assets are pulled from party.signatory, so only the signatory may commit its side
-    _enforceSignatoryCaller(party);
     party.validateTerms();
     counterparty.validateTerms();
+    // term pairing validity ensures deadline ordering
+    TermsLib.validateTermPairing(party, counterparty);
+
+    if (TermsLib.proposedByParty(party, counterparty)) {
+      // if the party is the proposer, then this is the first commitment, so the party's commitment
+      // must not have elapsed
+      // if the counterparty is the proposer, then **IT IS ASSUMED THAT THE PARTY HAS VALIDATED
+      // THAT THE COUNTERPARTY HAS ALREADY COMMITTED**
+      TermsLib.enforceWithin(0, party.commitmentDeadline, block.timestamp);   
+    } else {
+      // if the counterparty has proposed, the counterparty's commitment deadline must have elapsed and 
+      // the party's commitment deadline must not have elapsed
+      // NB: the party *MUST* ensure the commitment from the counterparty has taken effect especially if 
+      // the swap is cross-chain
+      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.commitmentDeadline, block.timestamp);
+    }
+
     _enforceCorrectNative(party.totalNative() + commitmentFee);
 
     bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
@@ -74,20 +90,22 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     _advanceLockTo(lock, current, target);
 
-    // accrue the fee; the rest of msg.value is escrowed native owed back to depositors
+    // accrue the fee; the rest of msg.value is escrowed native owed back to reclaimRecipients
     accruedFees += commitmentFee;
 
     // record the side this commit posts
     posted[lock][partyDigest] = true;
 
     // transfer non-native assets
-    party.transferAssetsNoNative(party.signatory, address(this));
+    party.transferAssetsNoNative(msg.sender, address(this));
 
     emit Commitment(lock, party, msg.sender);
   }
 
   /// @inheritdoc IOmnibus
-  function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external {
+  function claim(bytes32 secret, Terms calldata party, Terms calldata counterparty) external {
+    // it is assumed the msg.sender represents the `party`
+    // ie the claim is being done by the party on the counterparty terms
     bytes32 lock = _generateLock(secret);
 
     // verify terms and state
@@ -96,18 +114,29 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       TermsLib.digestTermsCanonically(party, counterparty)
     );
 
-    // party terms _MUST_ be on same chainId
-    // counterparty terms _MAY_ be on same chainId
-    party.enforceChainId(block.chainid);
+    // counterparty terms _MUST_ be on same chainId
+    // so that the party may receive the assets
+    // party terms _MAY_ be on same chainId
+    counterparty.enforceChainId(block.chainid);
 
-    // the local (party) leg must be fresh: this gates execute vs reclaim on this chain
-    party.enforceTermFreshness();
-    // only enforce the counterparty leg when it settles here too (same-chain, atomic).
-    // for a cross-chain swap the counterparty leg lives on another deployment, so tying
-    // this claim to its deadline would collapse both legs to min(deadline) and remove the
-    // post-reveal safety buffer; each chain must gate on its own leg only
-    if (counterparty.chainId == block.chainid) {
-      counterparty.enforceTermFreshness();
+    // validate claim is happening in the correct window
+    if (TermsLib.proposedByParty(party, counterparty)) {
+      // party is the proposer which means the counterparty must have committed
+      // commitment check in a cross-chain swap is not on-chain enforceable so 
+      // only deadlines are checked
+      // in same-chain swap, the lock checks for commitment of counterparty
+      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp);
+    } else {
+      // counterparty is proposer which means the counterparty has revealed the secret
+      // claim only after the claim deadline of the counterparty
+      // NB: this path is only reachable in the following:
+      // 1. during a cross-chain swap because otherwise the lock state is spent 
+      //    since claiming occurs for both parties in this call
+      // 2. during a same-chain swap if the taker has the secret and calls 
+      //    claim first - should never occur
+      // 
+      // in both cases, the claim settles correctly
+      TermsLib.enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp);
     }
 
     LockState current = lockState[lock];
@@ -116,55 +145,77 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // mark as spent
     _advanceLockTo(lock, current, LockState.Spent);
 
-    // party's side must have been posted for this lock
-    _enforcePosted(lock, party.digestTerms());
+    // counterParty's side must have been posted for this lock
+    _enforcePosted(lock, counterparty.digestTerms());
 
-    // party's assets to counterparty's recipient
-    party.transferAssets(address(this), counterparty.recipient);
+    // counterparty's assets to party's recipient
+    counterparty.transferAssets(address(this), party.recipient);
 
     // if counterparty is on chainId, prevent double-spend by executing on counterparty
     // terms
-    if (counterparty.chainId == block.chainid) {
+    if (party.chainId == block.chainid) {
       // counterparty's side must have been posted for this lock
-      _enforcePosted(lock, counterparty.digestTerms());
-      // counterparty's assets to party's recipient
-      counterparty.transferAssets(address(this), party.recipient);
+      _enforcePosted(lock, party.digestTerms());
+      // party's assets to counterparty's recipient
+      party.transferAssets(address(this), counterparty.recipient);
     }
 
-    emit Claim(lock, secret);
+    emit Claim(msg.sender, lock, secret);
   }
 
   /// @inheritdoc IOmnibus
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external {
+    // it is assumed msg.sender is representing the party
     // reclaim is assumed to be called for party
-    party.enforceTermStaleness();
     party.enforceChainId(block.chainid);
+
+    // validate claim is happening in the correct window
+    if (TermsLib.proposedByParty(party, counterparty)) {
+      // party has proposed, so their reclaim must be released and before the counterparty
+      TermsLib.enforceWithin(party.reclaimRelease, counterparty.reclaimRelease, block.timestamp);
+    } else {
+      // counterparty has proposed so the party's reclaim release must have elapsed
+      TermsLib.enforceWithin(party.reclaimRelease, type(uint64).max, block.timestamp);
+    }
+    
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
     // party's side must have been posted for this lock; checked after the terms are
     // proven genuine so the more specific reverts surface first
     _enforcePosted(lock, party.digestTerms());
 
     LockState current = lockState[lock];
-    // reclaim allowed on free or committed only
-    // marking as spent enforces only free or committed as previous state 
-    // will revert if lock state is unused or spent
-    _advanceLockTo(lock, current, LockState.Spent);
 
-    // reclaim counterparty if on this chain and the current state is committed
+    bool reclaimCounterparty = counterparty.chainId == block.chainid && current == LockState.Committed; 
+
+    // reclaim counterparty if on this chain and the current lock state is committed
     // meaning counterparty has committed their assets
-    if (counterparty.chainId == block.chainid && current == LockState.Committed) {
-      // return everything to counterparty's signatory
-      counterparty.enforceTermStaleness();
+    if (reclaimCounterparty) {
+      // lock is advanced here to ensure that reentrant calls fail since 
+      // lock will be spent:
+      //
+      // reclaim allowed on free or committed only
+      // marking as spent enforces only free or committed as previous state 
+      // will revert if lock state is unused or spent
+      // ie if claim has completed successfully
+      _advanceLockTo(lock, current, LockState.Spent);
+
+      // return everything to counterparty's recipient
       // counterparty's side must have been posted for this lock
       _enforcePosted(lock, counterparty.digestTerms());
-      counterparty.transferAssets(address(this), counterparty.signatory);
-      emit Reclaimed(lock, counterparty.signatory);
+      counterparty.transferAssets(address(this), counterparty.reclaimRecipient);
+
+      emit Reclaimed(msg.sender, lock, counterparty.reclaimRecipient);
     }
 
-    // return everything to party's signatory
-    party.transferAssets(address(this), party.signatory);
+    // must advance lock if it will not be updated by counterparty reclaim
+    if (!reclaimCounterparty) {
+      _advanceLockTo(lock, current, LockState.Spent);
+    }
+
+    // return everything to party's recipient
+    party.transferAssets(address(this), party.reclaimRecipient);
       
-    emit Reclaimed(lock, party.signatory);
+    emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
   }
 
   /// @notice ERC721 receiver callback to accept NFT transfers
@@ -203,7 +254,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function withdrawFees(address to) external onlyOwner {
-    // only accrued fees are withdrawable; escrowed native stays owed to depositors
+    // only accrued fees are withdrawable; escrowed native stays owed to reclaimRecipients
     uint256 amount = accruedFees;
     delete accruedFees;
     SafeTransferLib.safeTransferETH(to, amount);
@@ -249,12 +300,6 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @param termsDigest the side's terms digest
   function _enforcePosted(bytes32 lock, bytes32 termsDigest) internal view {
     if (!posted[lock][termsDigest]) revert TermsNotPosted();
-  }
-
-  /// @notice reverts if the caller is not the signatory of the side
-  /// @param terms the side's terms whose assets would be pulled
-  function _enforceSignatoryCaller(Terms calldata terms) internal view {
-    if (msg.sender != terms.signatory) revert CallerNotSignatory();
   }
 
   /// @notice generates a lock from a secret

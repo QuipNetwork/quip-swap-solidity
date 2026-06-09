@@ -28,14 +28,18 @@ struct Asset {
 
 /// @notice the terms for a single party in an Omnibus swap
 struct Terms {
-  /// @notice the chain where these terms are valid
+  /// @notice the chain where the assets of these terms are held
   uint256 chainId;
-  /// @notice the address of the party (commits assets)
-  address signatory;
+  /// @notice address which will receive committed assets upon reclaim
+  address reclaimRecipient;
   /// @notice the address that receives the counterparty's assets
   address recipient;
-  /// @notice the deadline timestamp
-  uint64 deadline;
+  /// @notice timestamp after which commitment is forbidden
+  uint256 commitmentDeadline;
+  /// @notice timestamp after which claiming is forbidden 
+  uint256 claimDeadline;
+  /// @notice timestamp after which reclaim is permitted
+  uint256 reclaimRelease;
   /// @notice the assets offered by the party
   Asset[] assets;
 }
@@ -51,6 +55,9 @@ library TermsLib {
 
   /// @notice thrown when chainId does not match expected chain
   error ChainIdMismatch();
+
+  /// @notice thrown when deadlines are not strictly increasing
+  error DisordedDeadlines();
 
   /// @notice thrown when a native asset has invalid fields
   error InvalidNativeAsset();
@@ -76,6 +83,16 @@ library TermsLib {
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
 
+  /// @notice thrown when the current timestamp falls outside an action's window
+  /// (before its lower bound or at/after its upper bound)
+  error WindowViolated();
+
+  /// @notice thrown when either recipient or reclaimRecipient is the zero address
+  error ZeroAddressRecipient();
+
+  /// @notice thrown when a window's bounds are degenerate (lower >= upper)
+  error InvalidRange();
+
   // ============ Hashing ============
 
   /// @notice computes the digest of a single side's terms
@@ -83,7 +100,15 @@ library TermsLib {
   /// @return digest the sub-digest used for ordering and posted tracking
   function digestTerms(Terms calldata terms) internal pure returns (bytes32 digest) {
     digest = EfficientHashLib.hash(
-      abi.encode(terms.chainId, terms.signatory, terms.recipient, terms.deadline, terms.assets)
+      abi.encode(
+        terms.chainId, 
+        terms.reclaimRecipient,
+        terms.recipient, 
+        terms.commitmentDeadline, 
+        terms.claimDeadline, 
+        terms.reclaimRelease, 
+        terms.assets
+        )
     );
   }
 
@@ -143,8 +168,10 @@ library TermsLib {
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal view {
     if (terms.assets.length == 0) revert EmptyAssets();
+    if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
+      revert ZeroAddressRecipient();
+    }
     enforceNonZeroChainId(terms);
-    enforceTermFreshness(terms);
     validateAssets(terms);
   }
 
@@ -161,21 +188,24 @@ library TermsLib {
     if (terms.chainId != chainId) revert ChainIdMismatch();
   }
 
-  /// @notice reverts if the terms deadline has passed
-  /// @param terms the terms to check
-  function enforceTermFreshness(Terms calldata terms) internal view {
-    if (block.timestamp >= terms.deadline) {
-      revert TermsExpired();
+  /// @notice enforces that `timestamp` falls within the half-open window [lower, upper)
+  /// @dev lower bound is inclusive, upper bound is EXCLUSIVE. The exclusive upper is
+  ///      deliberate: adjacent windows share a boundary (one window's upper is the
+  ///      next window's lower), and exclusivity ensures exactly one window accepts the
+  ///      shared instant — preserving the "one action per window" invariant. Do not
+  ///      relax `upper <= timestamp` to `<`.
+  /// @param lower the window's lower bound (inclusive)
+  /// @param upper the window's upper bound (exclusive)
+  /// @param timestamp the time to check (caller passes block.timestamp)
+  function enforceWithin(uint256 lower, uint256 upper, uint256 timestamp) internal pure {
+    if (lower >= upper) {
+      revert InvalidRange();
+    }
+    if (lower > timestamp || upper <= timestamp) {
+      revert WindowViolated();
     }
   }
 
-  /// @notice reverts if the terms deadline has not passed
-  /// @param terms the terms to check
-  function enforceTermStaleness(Terms calldata terms) internal view {
-    if (block.timestamp < terms.deadline) {
-      revert TermsNotExpired();
-    }
-  }
 
   // ============ Transfer ============
 
@@ -269,4 +299,45 @@ library TermsLib {
       validateAsset(terms.assets[i]);
     }
   }
+
+  /// @notice enforces that two sides' lifecycle deadlines strictly interleave
+  /// @dev whichever side proposes terms must precede the other at every stage;
+  ///      requires either (A proposes)
+  ///      A.commitmentDeadline < B.commitmentDeadline < A.claimDeadline <
+  ///      B.claimDeadline < A.reclaimRelease < B.reclaimRelease,
+  ///      or the same chain with A and B swapped (B proposes). reverts otherwise
+  /// @param A one side's terms
+  /// @param B the other side's terms
+  function validateTermPairing(Terms calldata A, Terms calldata B) internal pure {
+    bool aProposes = A.commitmentDeadline < B.commitmentDeadline &&
+      B.commitmentDeadline < A.claimDeadline &&
+      A.claimDeadline < B.claimDeadline &&
+      B.claimDeadline < A.reclaimRelease &&
+      A.reclaimRelease < B.reclaimRelease;
+
+    bool bProposes = B.commitmentDeadline < A.commitmentDeadline &&
+      A.commitmentDeadline < B.claimDeadline &&
+      B.claimDeadline < A.claimDeadline &&
+      A.claimDeadline < B.reclaimRelease &&
+      B.reclaimRelease < A.reclaimRelease;
+
+    if (!(aProposes || bProposes)) {
+      revert DisordedDeadlines();
+    }
+  }
+
+  /// @notice identifies which side proposed in a validated pairing
+  /// @dev the proposer is the side that commits first; only meaningful after
+  ///      validateTermPairing has passed, which guarantees the commitment
+  ///      deadlines are strictly ordered and never equal
+  /// @param party the first side's terms
+  /// @param counterparty the second side's terms
+  /// @return partyProposed true if `party` proposed, false if `counterparty` did
+  function proposedByParty(
+    Terms calldata party,
+    Terms calldata counterparty
+  ) internal pure returns (bool partyProposed) {
+    partyProposed = party.commitmentDeadline < counterparty.commitmentDeadline;
+  }
 }
+

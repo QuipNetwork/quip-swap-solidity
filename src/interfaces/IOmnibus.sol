@@ -57,14 +57,16 @@ interface IOmnibus {
   event Commitment(bytes32 indexed lock, Terms party, address indexed committer);
 
   /// @notice emitted when a swap is executed
+  /// @param recipient address receiving assets of claim
   /// @param lock the hashlock identifier
   /// @param secret the preimage that unlocked the swap
-  event Claim(bytes32 indexed lock, bytes32 secret);
+  event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
 
   /// @notice emitted when a party reclaims their assets
+  /// @param caller address which initiated reclaim
   /// @param lock the hashlock identifier
-  /// @param signatory the address that reclaimed
-  event Reclaimed(bytes32 indexed lock, address indexed signatory);
+  /// @param recipient the address that received the reclaim
+  event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
 
   /// @notice returns the state of a lock
   /// @param lock the hashlock identifier
@@ -100,7 +102,7 @@ interface IOmnibus {
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function execute(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
+  function claim(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
 
   /// @notice reclaims assets after deadline expires
   /// @param lock the hashlock identifier
