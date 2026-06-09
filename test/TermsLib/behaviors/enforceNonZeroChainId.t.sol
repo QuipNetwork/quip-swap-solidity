@@ -19,7 +19,9 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       block.chainid, // Non-zero chainId
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -32,7 +34,9 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       1, // Ethereum mainnet
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -45,7 +49,9 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       type(uint256).max, // Max chainId
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -60,7 +66,9 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       0, // Zero chainId - invalid
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -77,7 +85,9 @@ contract TermsLib_enforceNonZeroChainId is TermsLibTest {
       chainId,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 

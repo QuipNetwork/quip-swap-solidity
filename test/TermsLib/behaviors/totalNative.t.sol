@@ -19,7 +19,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(5 ether).toArray()
     );
 
@@ -34,7 +36,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       assets
     );
 
@@ -47,7 +51,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeERC20Asset(100 ether).toArray()
     );
 
@@ -66,7 +72,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       mixedAssets
     );
 
@@ -78,7 +86,8 @@ contract TermsLib_totalNative is TermsLibTest {
     Asset[] memory emptyAssets = new Asset[](0);
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, DEFAULT_DEADLINE, emptyAssets
+      block.chainid, ALICE, ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, emptyAssets
     );
 
     uint256 total = harness.exposed_totalNative(terms);
@@ -94,7 +103,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(assetAmount).toArray()
     );
 
@@ -115,7 +126,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       assets
     );
 
@@ -130,7 +143,9 @@ contract TermsLib_totalNative is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeERC20Asset(erc20Amount).toArray()
     );
 

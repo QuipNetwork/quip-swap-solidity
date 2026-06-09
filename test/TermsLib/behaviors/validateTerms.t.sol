@@ -23,7 +23,9 @@ contract TermsLib_validateTerms is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
   }
@@ -40,7 +42,9 @@ contract TermsLib_validateTerms is TermsLibTest {
       OTHER_CHAIN_ID,
       BOB,
       BOB_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeERC20Asset(1 ether).toArray()
     );
 
@@ -59,7 +63,9 @@ contract TermsLib_validateTerms is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       mixedAssets
     );
 
@@ -72,11 +78,136 @@ contract TermsLib_validateTerms is TermsLibTest {
     Asset[] memory emptyAssets = new Asset[](0);
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, uint64(block.timestamp + 1 days), emptyAssets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      emptyAssets
     );
 
     vm.expectRevert(TermsLib.EmptyAssets.selector);
     harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_zeroReclaimRecipient() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      address(0), // zero reclaimRecipient - invalid
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.ZeroAddressRecipient.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_zeroRecipient() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      address(0), // zero recipient - invalid
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.ZeroAddressRecipient.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  // ============ Deadline Ordering ============
+
+  function test_validateTerms_revertsWhen_commitmentEqualsClaim() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_CLAIM_DEADLINE, // commitment == claim breaks strict ordering
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.DisordedDeadlines.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_commitmentAfterClaim() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_CLAIM_DEADLINE + 1, // commitment > claim
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.DisordedDeadlines.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_claimEqualsReclaim() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE, // claim == reclaim breaks strict ordering
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.DisordedDeadlines.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_claimAfterReclaim() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE + 1, // claim > reclaim
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.DisordedDeadlines.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  // ============ Deadline Freshness ============
+
+  function test_validateTerms_succeedsWhen_commitmentJustInFuture() public {
+    // block.timestamp one tick before the commitment deadline still validates
+    vm.warp(DEFAULT_COMMITMENT_DEADLINE - 1);
+    harness.exposed_validateTerms(_validTerms());
+  }
+
+  function test_validateTerms_revertsWhen_commitmentAtCurrentTime() public {
+    // deadline must be strictly greater than now; equality is expired
+    vm.warp(DEFAULT_COMMITMENT_DEADLINE);
+    vm.expectRevert(TermsLib.DeadlineInPast.selector);
+    harness.exposed_validateTerms(_validTerms());
+  }
+
+  function test_validateTerms_revertsWhen_commitmentInPast() public {
+    vm.warp(DEFAULT_COMMITMENT_DEADLINE + 1);
+    vm.expectRevert(TermsLib.DeadlineInPast.selector);
+    harness.exposed_validateTerms(_validTerms());
+  }
+
+  function test_validateTerms_revertsWhen_allDeadlinesInPast() public {
+    vm.warp(DEFAULT_RECLAIM_RELEASE + 1);
+    vm.expectRevert(TermsLib.DeadlineInPast.selector);
+    harness.exposed_validateTerms(_validTerms());
   }
 
   function test_validateTerms_revertsWhen_chainIdZero() public {
@@ -84,37 +215,13 @@ contract TermsLib_validateTerms is TermsLibTest {
       0, // Zero chainId - invalid
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
     vm.expectRevert(TermsLib.ZeroChainId.selector);
-    harness.exposed_validateTerms(terms);
-  }
-
-  function test_validateTerms_revertsWhen_expired() public {
-    Terms memory terms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      uint64(block.timestamp - 1), // Expired
-      _makeNativeAsset(1 ether).toArray()
-    );
-
-    vm.expectRevert(TermsLib.TermsExpired.selector);
-    harness.exposed_validateTerms(terms);
-  }
-
-  function test_validateTerms_revertsWhen_atExactDeadline() public {
-    Terms memory terms = TermsHelper.makeTerms(
-      block.chainid,
-      ALICE,
-      ALICE_RECIPIENT,
-      uint64(block.timestamp), // At exact deadline - expired
-      _makeNativeAsset(1 ether).toArray()
-    );
-
-    vm.expectRevert(TermsLib.TermsExpired.selector);
     harness.exposed_validateTerms(terms);
   }
 
@@ -123,7 +230,13 @@ contract TermsLib_validateTerms is TermsLibTest {
     invalidAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 0});
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, uint64(block.timestamp + 1 days), invalidAssets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      invalidAssets
     );
 
     vm.expectRevert(TermsLib.ZeroAmount.selector);
@@ -135,7 +248,13 @@ contract TermsLib_validateTerms is TermsLibTest {
     invalidAssets[0] = Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: 1 ether});
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, uint64(block.timestamp + 1 days), invalidAssets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      invalidAssets
     );
 
     vm.expectRevert(TermsLib.InvalidNativeAsset.selector);
@@ -147,7 +266,13 @@ contract TermsLib_validateTerms is TermsLibTest {
     invalidAssets[0] = Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: 1 ether});
 
     Terms memory terms = TermsHelper.makeTerms(
-      block.chainid, ALICE, ALICE_RECIPIENT, uint64(block.timestamp + 1 days), invalidAssets
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      invalidAssets
     );
 
     vm.expectRevert(TermsLib.InvalidERC20Asset.selector);

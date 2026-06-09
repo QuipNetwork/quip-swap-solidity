@@ -74,11 +74,8 @@ library TermsLib {
   /// @notice thrown when terms have no assets
   error EmptyAssets();
 
-  /// @notice thrown when the terms have expired
-  error TermsExpired();
-
-  /// @notice thrown when the terms have not yet expired
-  error TermsNotExpired();
+  /// @notice thrown when a deadline is at or before the current timestamp
+  error DeadlineInPast();
 
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
@@ -170,6 +167,13 @@ library TermsLib {
     if (terms.assets.length == 0) revert EmptyAssets();
     if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
       revert ZeroAddressRecipient();
+    }
+    // fail fast on the cheapest check: the earliest deadline must lie in the future.
+    // combined with the strict ordering below, this guarantees every deadline is future-dated
+    if (terms.commitmentDeadline <= block.timestamp) revert DeadlineInPast();
+    // lifecycle deadlines must be strictly increasing: commitment < claim < reclaim
+    if (!(terms.commitmentDeadline < terms.claimDeadline && terms.claimDeadline < terms.reclaimRelease)) {
+      revert DisordedDeadlines();
     }
     enforceNonZeroChainId(terms);
     validateAssets(terms);

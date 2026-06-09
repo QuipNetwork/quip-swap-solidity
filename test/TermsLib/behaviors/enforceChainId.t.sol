@@ -23,7 +23,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -35,7 +37,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       OTHER_CHAIN_ID,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -49,7 +53,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       OTHER_CHAIN_ID,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -62,7 +68,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -79,7 +87,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       chainId,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 
@@ -93,7 +103,9 @@ contract TermsLib_enforceChainId is TermsLibTest {
       termsChainId,
       ALICE,
       ALICE_RECIPIENT,
-      uint64(block.timestamp + 1 days),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
 

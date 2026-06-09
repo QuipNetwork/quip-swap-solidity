@@ -16,7 +16,10 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
   // ============ Helpers ============
 
   function _makeTermsWithAssets(Asset[] memory assets) internal view returns (Terms memory) {
-    return TermsHelper.makeTerms(block.chainid, ALICE, ALICE_RECIPIENT, DEFAULT_DEADLINE, assets);
+    return TermsHelper.makeTerms(
+      block.chainid, ALICE, ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE, DEFAULT_CLAIM_DEADLINE, DEFAULT_RECLAIM_RELEASE, assets
+    );
   }
 
   // ============ Success Cases ============
