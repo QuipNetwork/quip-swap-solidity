@@ -33,7 +33,9 @@ contract TermsLibTest is Test {
 
   // ============ Constants ============
 
-  uint64 public constant DEFAULT_DEADLINE = 1_000_000;
+  uint256 public constant DEFAULT_COMMITMENT_DEADLINE = 1_000_000;
+  uint256 public constant DEFAULT_CLAIM_DEADLINE = 2_000_000;
+  uint256 public constant DEFAULT_RECLAIM_RELEASE = 3_000_000;
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
 
   // ============ Setup ============
@@ -96,7 +98,9 @@ contract TermsLibTest is Test {
       block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      DEFAULT_DEADLINE,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
   }

@@ -6,25 +6,31 @@ import {Asset, Terms} from '../../src/TermsLib.sol';
 /// @title Terms Helper
 /// @dev Utility functions for building Terms structs in tests
 library TermsHelper {
-  /// @notice creates Terms struct
-  /// @param chainId the chain where these terms are valid
-  /// @param signatory the party's address
-  /// @param recipient the recipient's address
-  /// @param deadline the deadline timestamp
+  /// @notice creates a Terms struct from explicit lifecycle deadlines
+  /// @param chainId the chain where these terms' assets are held
+  /// @param reclaimRecipient address that receives committed assets on reclaim
+  /// @param recipient address that receives the counterparty's assets on claim
+  /// @param commitmentDeadline timestamp after which commitment is forbidden
+  /// @param claimDeadline timestamp after which claiming is forbidden
+  /// @param reclaimRelease timestamp after which reclaim is permitted
   /// @param assets the assets array
   /// @return terms the constructed Terms struct
   function makeTerms(
     uint256 chainId,
-    address signatory,
+    address reclaimRecipient,
     address recipient,
-    uint64 deadline,
+    uint256 commitmentDeadline,
+    uint256 claimDeadline,
+    uint256 reclaimRelease,
     Asset[] memory assets
   ) internal pure returns (Terms memory terms) {
     terms = Terms({
       chainId: chainId,
-      signatory: signatory,
+      reclaimRecipient: reclaimRecipient,
       recipient: recipient,
-      deadline: deadline,
+      commitmentDeadline: commitmentDeadline,
+      claimDeadline: claimDeadline,
+      reclaimRelease: reclaimRelease,
       assets: assets
     });
   }

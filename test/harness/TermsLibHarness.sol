@@ -13,6 +13,11 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
     TermsLib.validateAsset(asset);
   }
 
+  /// @notice exposes digestTerms
+  function exposed_digestTerms(Terms calldata terms) external pure returns (bytes32) {
+    return TermsLib.digestTerms(terms);
+  }
+
   /// @notice exposes digestTermsCanonically
   function exposed_digestTermsCanonically(
     Terms calldata party,
@@ -29,6 +34,34 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   /// @notice exposes validateAssets
   function exposed_validateAssets(Terms calldata terms) external pure {
     TermsLib.validateAssets(terms);
+  }
+
+  /// @notice exposes enforceNonZeroChainId
+  function exposed_enforceNonZeroChainId(Terms calldata terms) external pure {
+    TermsLib.enforceNonZeroChainId(terms);
+  }
+
+  /// @notice exposes enforceChainId
+  function exposed_enforceChainId(Terms calldata terms, uint256 chainId) external pure {
+    TermsLib.enforceChainId(terms, chainId);
+  }
+
+  /// @notice exposes enforceWithin
+  function exposed_enforceWithin(uint256 lower, uint256 upper, uint256 timestamp) external pure {
+    TermsLib.enforceWithin(lower, upper, timestamp);
+  }
+
+  /// @notice exposes validateTermPairing
+  function exposed_validateTermPairing(Terms calldata party, Terms calldata counterparty) external pure {
+    TermsLib.validateTermPairing(party, counterparty);
+  }
+
+  /// @notice exposes proposedByParty
+  function exposed_proposedByParty(
+    Terms calldata party,
+    Terms calldata counterparty
+  ) external pure returns (bool) {
+    return TermsLib.proposedByParty(party, counterparty);
   }
 
   /// @notice exposes transferAsset
@@ -54,26 +87,6 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
   /// @notice exposes heldBalance
   function exposed_heldBalance(Asset memory asset, address account) external view returns (uint256) {
     return TermsLib.heldBalance(asset, account);
-  }
-
-  /// @notice exposes enforceTermFreshness
-  function exposed_enforceTermFreshness(Terms calldata terms) external view {
-    TermsLib.enforceTermFreshness(terms);
-  }
-
-  /// @notice exposes enforceTermStaleness
-  function exposed_enforceTermStaleness(Terms calldata terms) external view {
-    TermsLib.enforceTermStaleness(terms);
-  }
-
-  /// @notice exposes enforceNonZeroChainId
-  function exposed_enforceNonZeroChainId(Terms calldata terms) external pure {
-    TermsLib.enforceNonZeroChainId(terms);
-  }
-
-  /// @notice exposes enforceChainId
-  function exposed_enforceChainId(Terms calldata terms, uint256 chainId) external pure {
-    TermsLib.enforceChainId(terms, chainId);
   }
 
   /// @notice allows receiving native currency for transfer tests
