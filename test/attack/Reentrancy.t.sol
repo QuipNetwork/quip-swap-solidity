@@ -6,6 +6,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 import {Terms} from '../../src/TermsLib.sol';
 import {LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
+import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -59,13 +60,20 @@ contract Omnibus_Reentrancy is Test {
   address public BOB_RECIPIENT = makeAddr('bobRecipient');
 
   OmnibusHarness public omnibus;
+  QuipFactoryMock public quipFactory;
   ReentrantRecipient public attacker;
 
   bytes32 public constant SECRET = keccak256('secret');
   bytes32 public lock;
 
   function setUp() public {
-    omnibus = new OmnibusHarness(address(this));
+    // commit is gated to factory-deployed quip wallets; the reentrant attacker sits on
+    // the payout legs (claim/reclaim), which stay permissionless, so it needs no registration
+    quipFactory = new QuipFactoryMock();
+    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
+    quipFactory.registerWallet(BOB, bytes32(uint256(uint160(BOB))), BOB);
+
+    omnibus = new OmnibusHarness(address(this), address(quipFactory));
     attacker = new ReentrantRecipient();
     lock = omnibus.exposed_generateLock(SECRET);
 

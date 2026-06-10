@@ -7,6 +7,7 @@ import {Terms, TermsLib} from '../../src/TermsLib.sol';
 import {LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
+import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -51,6 +52,7 @@ contract Omnibus_CrossChainFreeOption is Test {
   OmnibusHarness public omnibusB; // chain B
   ERC20Mock public tokenA; // Alice's asset
   ERC20Mock public tokenB; // Bob's asset
+  QuipFactoryMock public quipFactory;
 
   // ============ Test Data ============
 
@@ -58,8 +60,13 @@ contract Omnibus_CrossChainFreeOption is Test {
   bytes32 public lock;
 
   function setUp() public {
-    omnibusA = new OmnibusHarness(address(this));
-    omnibusB = new OmnibusHarness(address(this));
+    // commit is gated to factory-deployed quip wallets; one registry serves both legs
+    quipFactory = new QuipFactoryMock();
+    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
+    quipFactory.registerWallet(BOB, bytes32(uint256(uint160(BOB))), BOB);
+
+    omnibusA = new OmnibusHarness(address(this), address(quipFactory));
+    omnibusB = new OmnibusHarness(address(this), address(quipFactory));
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
 

@@ -7,6 +7,7 @@ import {Terms} from '../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
+import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -45,11 +46,18 @@ contract Omnibus_MingledFundDrainage is Test {
 
   OmnibusHarness public omnibus;
   ERC20Mock public usdc;
+  QuipFactoryMock public quipFactory;
 
   // ============ Setup ============
 
   function setUp() public {
-    omnibus = new OmnibusHarness(address(this));
+    // commit is gated to factory-deployed quip wallets; the attacker is registered too
+    // since the drain protections must hold even against quip wallets
+    quipFactory = new QuipFactoryMock();
+    quipFactory.registerWallet(VICTIM, bytes32(uint256(uint160(VICTIM))), VICTIM);
+    quipFactory.registerWallet(ATTACKER, bytes32(uint256(uint160(ATTACKER))), ATTACKER);
+
+    omnibus = new OmnibusHarness(address(this), address(quipFactory));
     usdc = new ERC20Mock('USD Coin', 'USDC', 6);
 
     vm.deal(ATTACKER, 100 ether);

@@ -6,6 +6,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 import {Terms} from '../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
+import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -41,12 +42,19 @@ contract Omnibus_LockPoisoning is Test {
   address public BOB_RECIPIENT = makeAddr('bobRecipient');
 
   OmnibusHarness public omnibus;
+  QuipFactoryMock public quipFactory;
 
   bytes32 public constant SECRET = keccak256('secret');
   bytes32 public lock;
 
   function setUp() public {
-    omnibus = new OmnibusHarness(address(this));
+    // commit is gated to factory-deployed quip wallets; the attacker is registered too
+    // since lock poisoning remains expressible by a malicious quip wallet
+    quipFactory = new QuipFactoryMock();
+    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
+    quipFactory.registerWallet(ATTACKER, bytes32(uint256(uint160(ATTACKER))), ATTACKER);
+
+    omnibus = new OmnibusHarness(address(this), address(quipFactory));
     lock = omnibus.exposed_generateLock(SECRET);
     vm.deal(ALICE, 100 ether);
     vm.deal(ATTACKER, 100 ether);

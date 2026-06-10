@@ -34,8 +34,9 @@ contract Omnibus_HappyPath is OmnibusTest {
     // scenarios assert exact contract-balance accounting; drop the base pre-funding
     vm.deal(address(omnibus), 0);
 
-    omnibusA = new OmnibusHarness(address(this));
-    omnibusB = new OmnibusHarness(address(this));
+    // actors are already registered on the base quipFactory; reuse it on both chains
+    omnibusA = new OmnibusHarness(address(this), address(quipFactory));
+    omnibusB = new OmnibusHarness(address(this), address(quipFactory));
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
     TREASURY = makeAddr('treasury');

@@ -233,11 +233,40 @@ contract Omnibus_commit is OmnibusTest {
     _assertLockState(lock, LockState.Committed);
   }
 
+  // ============ Access Control ============
+
+  function test_commit_revertsWhen_callerNotQuipWallet() public {
+    // only post-quantum secure wallets (deployed by the quip factory) may commit
+    address nonQuipWallet = makeAddr('nonQuipWallet');
+    vm.deal(nonQuipWallet, DEFAULT_AMOUNT);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.CallerNotQuipWallet.selector);
+    vm.prank(nonQuipWallet);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+  }
+
+  function test_commit_revertsWhen_walletUnregistered() public {
+    // a wallet whose registration is removed (vaultId back to zero) can no longer commit
+    quipFactory.unregisterWallet(ALICE);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.CallerNotQuipWallet.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+  }
+
   // ============ Revert Cases ============
 
   function test_commit_pullsFromCaller_notNamedParty() public {
-    // commit is permissionless and pulls assets from msg.sender, NOT from the side's named
-    // reclaimRecipient. A caller (Charlie) naming a victim (Alice) on an ERC20 side cannot
+    // commit pulls assets from msg.sender, NOT from the side's named reclaimRecipient.
+    // A quip-wallet caller (Charlie) naming a victim (Alice) on an ERC20 side cannot
     // drain Alice's standing approval: the pull debits Charlie, leaving Alice untouched.
     Terms memory victim = _proposerSide(ALICE, ALICE_RECIPIENT, _makeERC20Assets(DEFAULT_AMOUNT));
     Terms memory attacker = _bobTermsOn(OTHER_CHAIN_ID, _makeERC20Assets(DEFAULT_AMOUNT));

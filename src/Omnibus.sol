@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
 import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
+import {IQuipFactory} from './interfaces/IQuipFactory.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
@@ -22,6 +23,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   uint256 public constant MAX_FEE = 0.01 ether;
 
   /// @inheritdoc IOmnibus
+  IQuipFactory public immutable QUIP_FACTORY;
+
+  /// @inheritdoc IOmnibus
   uint256 public commitmentFee;
 
   /// @inheritdoc IOmnibus
@@ -36,15 +40,27 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @inheritdoc IOmnibus
   mapping(bytes32 lock => mapping(bytes32 termsDigest => bool isPosted)) public posted;
 
-  /// @notice initializes the contract with an owner
+  /// @notice restricts the caller to factory-deployed QuipWallets
+  /// @dev only post-quantum secure wallets (QuipWallets deployed by QUIP_FACTORY) may
+  /// enter swaps; a wallet qualifies iff QUIP_FACTORY.vaultIdOf(wallet) != bytes32(0)
+  modifier onlyQuipWallet() {
+    if (QUIP_FACTORY.vaultIdOf(msg.sender) == bytes32(0)) revert CallerNotQuipWallet();
+    _;
+  }
+
+  /// @notice initializes the contract with an owner and the quip factory
   /// @param initialOwner the address that will own the contract
-  constructor(address initialOwner) Ownable(initialOwner) {}
+  /// @param quipFactory the QuipFactory whose wallet registry gates commit
+  constructor(address initialOwner, address quipFactory) Ownable(initialOwner) {
+    if (quipFactory == address(0)) revert ZeroQuipFactory();
+    QUIP_FACTORY = IQuipFactory(quipFactory);
+  }
 
   /// @notice allows this contract to receive native currency
   receive() external payable {}
 
   /// @inheritdoc IOmnibus
-  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable {
+  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable onlyQuipWallet {
     // it is assumed the msg.sender represents the `party`
     // validate both terms (only party.chainId must match current chain)
     party.enforceChainId(block.chainid);

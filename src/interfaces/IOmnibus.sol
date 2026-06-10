@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {Terms} from '../TermsLib.sol';
+import {IQuipFactory} from './IQuipFactory.sol';
 
 /// @notice the lock state for Omnibus swaps
 enum LockState {
@@ -36,6 +37,12 @@ interface IOmnibus {
 
   /// @notice thrown when fee exceeds MAX_FEE
   error FeeExceedsMax();
+
+  /// @notice thrown when the caller is not a factory-deployed QuipWallet
+  error CallerNotQuipWallet();
+
+  /// @notice thrown when the quip factory address is zero
+  error ZeroQuipFactory();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -82,6 +89,8 @@ interface IOmnibus {
   function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
 
   /// @notice commits assets and collateral to a swap
+  /// @dev only callable by a factory-deployed QuipWallet (post-quantum secure);
+  /// a wallet qualifies iff QUIP_FACTORY.vaultIdOf(wallet) != bytes32(0)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
@@ -110,6 +119,10 @@ interface IOmnibus {
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei
   function MAX_FEE() external view returns (uint256);
+
+  /// @notice the QuipFactory whose wallet registry gates commit
+  /// @return the quip factory
+  function QUIP_FACTORY() external view returns (IQuipFactory);
 
   /// @notice the current commitment fee
   /// @return the fee in wei

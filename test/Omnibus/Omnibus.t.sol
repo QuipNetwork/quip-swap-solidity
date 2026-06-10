@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {Asset, AssetType, Terms} from '../../src/TermsLib.sol';
 import {LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
+import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
@@ -52,6 +53,7 @@ contract OmnibusTest is TestBase {
   // ============ Contracts ============
 
   OmnibusHarness public omnibus;
+  QuipFactoryMock public quipFactory;
 
   // ============ Test Data ============
 
@@ -63,8 +65,15 @@ contract OmnibusTest is TestBase {
   function setUp() public virtual override {
     super.setUp();
 
+    // Deploy QuipFactory mock and register actors as quip wallets (commit is
+    // gated to factory-deployed wallets)
+    quipFactory = new QuipFactoryMock();
+    _registerQuipWallet(ALICE);
+    _registerQuipWallet(BOB);
+    _registerQuipWallet(CHARLIE);
+
     // Deploy Omnibus harness
-    omnibus = new OmnibusHarness(address(this));
+    omnibus = new OmnibusHarness(address(this), address(quipFactory));
 
     // Generate lock from secret
     lock = omnibus.exposed_generateLock(SECRET);
@@ -87,6 +96,10 @@ contract OmnibusTest is TestBase {
     assertNotEq(address(mockERC721), address(0));
     assertNotEq(address(mockERC1155), address(0));
     assertEq(omnibus.VERSION(), 0);
+    assertEq(address(omnibus.QUIP_FACTORY()), address(quipFactory));
+    assertNotEq(quipFactory.vaultIdOf(ALICE), bytes32(0));
+    assertNotEq(quipFactory.vaultIdOf(BOB), bytes32(0));
+    assertNotEq(quipFactory.vaultIdOf(CHARLIE), bytes32(0));
   }
 
   // ============ Internal Helpers ============
@@ -94,6 +107,11 @@ contract OmnibusTest is TestBase {
   /// @notice Approve omnibus harness to spend owner's tokens
   function _approveAllForOmnibus(address owner) internal {
     _approveAllFor(owner, address(omnibus));
+  }
+
+  /// @notice Register `wallet` in the factory mock so it passes the onlyQuipWallet gate
+  function _registerQuipWallet(address wallet) internal {
+    quipFactory.registerWallet(wallet, bytes32(uint256(uint160(wallet))), wallet);
   }
 
   // ============ Asset Helpers (single asset variants) ============
