@@ -20,7 +20,7 @@ import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {QuipSdkError, extractContractErrorName} from '../../src/errors.js'
+import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
@@ -122,7 +122,7 @@ async function expectContractError(promise: Promise<unknown>, errorName: string)
     await promise
     expect.unreachable(`expected revert ${errorName}`)
   } catch (error) {
-    if (error instanceof QuipSdkError) {
+    if (error instanceof QuipSwapError) {
       expect(error.contractErrorName, `expected ${errorName}, got SDK code ${error.code}`).toBe(errorName)
       return
     }
@@ -243,7 +243,7 @@ describe('QuipWallet gating', () => {
       await charlieClient.commit({lock, party: alice, counterparty: bob})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('NOT_QUIP_WALLET')
+      expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
     }
   })
 
@@ -655,7 +655,7 @@ describe('reclaim flows', () => {
       await aliceClient.reclaim({lock, party: alice, counterparty: bob})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('WINDOW_VIOLATED')
+      expect((error as QuipSwapError).code).toBe('WINDOW_VIOLATED')
     }
     // the contract agrees (raw call bypassing preflight)
     await expectContractError(
@@ -762,7 +762,7 @@ describe('invalid operations', () => {
       await aliceClient.commit({lock, party: alice, counterparty: bob})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('CHAIN_ID_MISMATCH')
+      expect((error as QuipSwapError).code).toBe('CHAIN_ID_MISMATCH')
     }
   })
 

@@ -1,7 +1,7 @@
 /**
  * SDK error type and contract custom-error decoding.
  *
- * Every error the SDK raises is a {@link QuipSdkError} carrying a stable
+ * Every error the SDK raises is a {@link QuipSwapError} carrying a stable
  * machine-readable `code`. Errors that originate from a reverted contract
  * call additionally carry the decoded Solidity custom-error name in
  * `contractErrorName`, and the original Viem error is always preserved in
@@ -17,7 +17,7 @@ import {BaseError, ContractFunctionRevertedError} from 'viem'
  * BEFORE any transaction is sent. SDK validation mirrors but never replaces
  * contract enforcement.
  */
-export type QuipSdkErrorCode =
+export type QuipSwapErrorCode =
   // asset / terms structural validation (mirrors TermsLib.validateAsset / validateTerms)
   | 'ZERO_AMOUNT'
   | 'INVALID_NATIVE_ASSET'
@@ -53,11 +53,11 @@ export type QuipSdkErrorCode =
   | 'CONTRACT_REVERT'
 
 /**
- * Structured details carried by every {@link QuipSdkError}.
+ * Structured details carried by every {@link QuipSwapError}.
  */
-export interface QuipSdkErrorDetails {
+export interface QuipSwapErrorDetails {
   /** Stable machine-readable code; safe to branch on. */
-  readonly code: QuipSdkErrorCode
+  readonly code: QuipSwapErrorCode
   /** Human-readable explanation with remediation guidance. */
   readonly message: string
   /**
@@ -80,20 +80,20 @@ export interface QuipSdkErrorDetails {
  * try {
  *   await client.commit({lock, party, counterparty})
  * } catch (err) {
- *   if (err instanceof QuipSdkError && err.code === 'NOT_QUIP_WALLET') {
+ *   if (err instanceof QuipSwapError && err.code === 'NOT_QUIP_WALLET') {
  *     // the sender is not registered with the QuipFactory
  *   }
  * }
  * ```
  */
-export class QuipSdkError extends Error implements QuipSdkErrorDetails {
-  override readonly name = 'QuipSdkError'
-  readonly code: QuipSdkErrorCode
+export class QuipSwapError extends Error implements QuipSwapErrorDetails {
+  override readonly name = 'QuipSwapError'
+  readonly code: QuipSwapErrorCode
   readonly contractErrorName?: string
   override readonly cause?: unknown
   readonly details?: unknown
 
-  constructor(args: QuipSdkErrorDetails) {
+  constructor(args: QuipSwapErrorDetails) {
     super(args.message)
     this.code = args.code
     if (args.contractErrorName !== undefined) this.contractErrorName = args.contractErrorName
@@ -126,18 +126,18 @@ export function extractContractErrorName(error: unknown): string | undefined {
 
 /**
  * Wraps an error thrown by a Viem contract action into a
- * {@link QuipSdkError} with code `CONTRACT_REVERT`, preserving the original
+ * {@link QuipSwapError} with code `CONTRACT_REVERT`, preserving the original
  * error in `cause` and the decoded custom-error name (when available) in
  * `contractErrorName`.
  *
  * @param error - The original error thrown by Viem.
  * @param context - Short description of the operation that failed.
- * @returns A `QuipSdkError` wrapping the original error.
+ * @returns A `QuipSwapError` wrapping the original error.
  */
-export function wrapContractError(error: unknown, context: string): QuipSdkError {
+export function wrapContractError(error: unknown, context: string): QuipSwapError {
   const contractErrorName = extractContractErrorName(error)
   const suffix = contractErrorName !== undefined ? ` (contract error: ${contractErrorName})` : ''
-  return new QuipSdkError({
+  return new QuipSwapError({
     code: 'CONTRACT_REVERT',
     message: `${context} reverted${suffix}`,
     ...(contractErrorName !== undefined ? {contractErrorName} : {}),

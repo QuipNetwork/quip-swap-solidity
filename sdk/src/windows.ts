@@ -14,7 +14,7 @@
  * `block.timestamp`, not the client's clock. Off-chain window validation is
  * a preflight convenience; it never replaces on-chain enforcement.
  */
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 import {proposedBy} from './terms.js'
 import type {Terms} from './types.js'
 
@@ -46,7 +46,7 @@ export interface TimeWindow {
  * @param lower - Inclusive lower bound (Unix seconds).
  * @param upper - Exclusive upper bound (Unix seconds).
  * @param timestamp - The instant to test (pass the chain's `block.timestamp`).
- * @throws QuipSdkError `INVALID_RANGE` when `lower >= upper` (degenerate
+ * @throws QuipSwapError `INVALID_RANGE` when `lower >= upper` (degenerate
  *   window — contract: InvalidRange); `WINDOW_VIOLATED` when the timestamp
  *   is before `lower` or at/after `upper` (contract: WindowViolated).
  * @see TermsLib.enforceWithin
@@ -58,14 +58,14 @@ export interface TimeWindow {
  */
 export function enforceWithin(lower: bigint, upper: bigint, timestamp: bigint): void {
   if (lower >= upper) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_RANGE',
       message: `Degenerate window: lower (${lower}) must be strictly less than upper (${upper}) (contract: InvalidRange)`,
       details: {lower, upper, timestamp},
     })
   }
   if (lower > timestamp || upper <= timestamp) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'WINDOW_VIOLATED',
       message:
         `Timestamp ${timestamp} is outside the half-open window [${lower}, ${upper}) ` +
@@ -182,7 +182,7 @@ export function reclaimWindow(leg: Terms): TimeWindow {
  * @param counterparty - The other side's terms.
  * @param currentTimestamp - The chain's current `block.timestamp` (Unix
  *   seconds) — pass an explicit value; this helper never reads a clock.
- * @throws QuipSdkError `WINDOW_VIOLATED` | `INVALID_RANGE` as in
+ * @throws QuipSwapError `WINDOW_VIOLATED` | `INVALID_RANGE` as in
  *   {@link enforceWithin}.
  * @see Omnibus.commit
  * @example
@@ -210,7 +210,7 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
  * @param party - The claimant role's terms (the side the claimant acts for).
  * @param counterparty - The other side's terms (the leg being claimed).
  * @param currentTimestamp - The chain's current `block.timestamp` (Unix seconds).
- * @throws QuipSdkError `WINDOW_VIOLATED` | `INVALID_RANGE` as in
+ * @throws QuipSwapError `WINDOW_VIOLATED` | `INVALID_RANGE` as in
  *   {@link enforceWithin}.
  * @see Omnibus.claim
  */
@@ -229,7 +229,7 @@ export function validateClaimWindow(party: Terms, counterparty: Terms, currentTi
  *
  * @param party - The terms of the leg being reclaimed.
  * @param currentTimestamp - The chain's current `block.timestamp` (Unix seconds).
- * @throws QuipSdkError `WINDOW_VIOLATED` when the release has not elapsed.
+ * @throws QuipSwapError `WINDOW_VIOLATED` when the release has not elapsed.
  * @see Omnibus.reclaim
  */
 export function validateReclaimWindow(party: Terms, currentTimestamp: bigint): void {

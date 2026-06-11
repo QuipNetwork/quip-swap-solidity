@@ -10,7 +10,7 @@
  * oracle), not assumed.
  */
 import {concat, encodeAbiParameters, isHex, keccak256} from 'viem'
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 import type {Hex32, Terms} from './types.js'
 
 /**
@@ -159,7 +159,7 @@ export function digestTermsCanonically(party: Terms, counterparty: Terms): Hex32
  *   before hashing — externally supplied secrets of the wrong length would
  *   otherwise silently produce a lock that can never be claimed.
  * @returns The 32-byte lock, `keccak256(secret)`.
- * @throws QuipSdkError `INVALID_HEX32` if `secret` is not exactly 32 bytes
+ * @throws QuipSwapError `INVALID_HEX32` if `secret` is not exactly 32 bytes
  *   of valid hex.
  * @see Omnibus._generateLock
  * @example
@@ -177,12 +177,12 @@ export function generateLock(secret: Hex32): Hex32 {
  *
  * @param value - The value to check.
  * @param label - Name used in the error message (e.g. `"secret"`, `"lock"`).
- * @throws QuipSdkError `INVALID_HEX32` when malformed or the wrong length.
+ * @throws QuipSwapError `INVALID_HEX32` when malformed or the wrong length.
  */
 export function assertHex32(value: string, label: string): asserts value is Hex32 {
   if (!isHex(value, {strict: true}) || value.length !== 66) {
     // do not echo the value itself: it may be a secret and must never be logged
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_HEX32',
       message: `${label} must be a 0x-prefixed 32-byte hex string (66 chars total); received ${
         typeof value === 'string' ? `${value.length} chars` : typeof value

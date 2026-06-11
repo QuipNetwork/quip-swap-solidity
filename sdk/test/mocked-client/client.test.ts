@@ -18,7 +18,7 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {QuipSdkError} from '../../src/errors.js'
+import {QuipSwapError} from '../../src/errors.js'
 import {digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {
   aliceTerms,
@@ -129,10 +129,10 @@ async function codeOf(promise: Promise<unknown>): Promise<string> {
   try {
     await promise
   } catch (error) {
-    if (error instanceof QuipSdkError) return error.code
+    if (error instanceof QuipSwapError) return error.code
     throw error
   }
-  throw new Error('expected the promise to reject with a QuipSdkError')
+  throw new Error('expected the promise to reject with a QuipSwapError')
 }
 
 /** The 7-field tuple shape the ABI expects for Terms. */
@@ -236,9 +236,9 @@ describe('commit orchestration', () => {
       await mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice})
       expect.unreachable()
     } catch (error) {
-      expect(error).toBeInstanceOf(QuipSdkError)
-      expect((error as QuipSdkError).code).toBe('WINDOW_VIOLATED')
-      expect((error as QuipSdkError).message).toContain('has not opened yet')
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('WINDOW_VIOLATED')
+      expect((error as QuipSwapError).message).toContain('has not opened yet')
     }
   })
 })

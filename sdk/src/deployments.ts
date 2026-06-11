@@ -18,7 +18,7 @@
  */
 import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 
 /** A verified Omnibus deployment on one chain. */
 export interface OmnibusDeployment {
@@ -45,7 +45,7 @@ export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
  * @param chainId - The target chain id.
  * @param override - Optional application-supplied deployment for this chain.
  * @returns The resolved deployment.
- * @throws QuipSdkError `UNKNOWN_DEPLOYMENT` when no verified deployment
+ * @throws QuipSwapError `UNKNOWN_DEPLOYMENT` when no verified deployment
  *   exists and no override was provided, or when the override is malformed
  *   or names a different chain.
  * @example
@@ -59,14 +59,14 @@ export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
 export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment): OmnibusDeployment {
   if (override !== undefined) {
     if (!isAddress(override.omnibusAddress, {strict: false}) || override.omnibusAddress.toLowerCase() === zeroAddress) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'UNKNOWN_DEPLOYMENT',
         message: `Deployment override for chain ${chainId} has an invalid omnibusAddress`,
         details: {override},
       })
     }
     if (override.chainId !== chainId) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'UNKNOWN_DEPLOYMENT',
         message: `Deployment override names chain ${override.chainId} but chain ${chainId} was requested`,
         details: {override, chainId},
@@ -76,7 +76,7 @@ export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment)
   }
   const known = knownDeployments.get(chainId)
   if (known === undefined) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'UNKNOWN_DEPLOYMENT',
       message:
         `No verified Omnibus deployment is known for chain ${chainId} and no override was provided. ` +

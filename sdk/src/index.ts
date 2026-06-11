@@ -19,8 +19,8 @@ export {AssetType, LockState} from './types.js'
 export type {Asset, Terms, Hex32, SecretLockPair} from './types.js'
 
 // errors
-export {QuipSdkError, extractContractErrorName, wrapContractError} from './errors.js'
-export type {QuipSdkErrorCode, QuipSdkErrorDetails} from './errors.js'
+export {QuipSwapError, extractContractErrorName, wrapContractError} from './errors.js'
+export type {QuipSwapErrorCode, QuipSwapErrorDetails} from './errors.js'
 
 // asset builders + validation
 export {nativeAsset, erc20Asset, erc721Asset, erc1155Asset, validateAsset, totalNative} from './assets.js'

@@ -11,7 +11,7 @@
  * count, timeout, retry, and finality policy per call.
  */
 import type {Hash, PublicClient, TransactionReceipt} from 'viem'
-import {QuipSdkError, wrapContractError} from './errors.js'
+import {QuipSwapError, wrapContractError} from './errors.js'
 import {decodeClaimEvents, decodeCommitmentEvents, decodeReclaimedEvents} from './events.js'
 import type {ClaimEvent, CommitmentEvent, ReclaimedEvent} from './events.js'
 
@@ -47,7 +47,7 @@ export interface OmnibusReceipt {
  *   finality policy — one confirmation on a reorg-prone chain is weak
  *   evidence.
  * @returns The typed {@link OmnibusReceipt}.
- * @throws QuipSdkError `TRANSACTION_REVERTED` when the receipt status is
+ * @throws QuipSwapError `TRANSACTION_REVERTED` when the receipt status is
  *   `'reverted'`; `CONTRACT_REVERT` (with `cause`) when waiting itself
  *   fails (timeout, replacement, RPC error).
  * @example
@@ -74,7 +74,7 @@ export async function waitForOmnibusReceipt(
   }
 
   if (receipt.status !== 'success') {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'TRANSACTION_REVERTED',
       message: `Transaction ${hash} was mined but reverted`,
       details: {receipt},

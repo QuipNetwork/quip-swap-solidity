@@ -6,7 +6,7 @@
  * reversed schedules, buffer sizing, and the reaction-buffer formula.
  */
 import {describe, expect, it} from 'vitest'
-import {QuipSdkError} from '../../src/errors.js'
+import {QuipSwapError} from '../../src/errors.js'
 import {validateCrossChainSchedule} from '../../src/workflows/crossChain.js'
 import {
   ALICE_CLAIM_DEADLINE,
@@ -22,10 +22,10 @@ function codeOf(fn: () => unknown): string {
   try {
     fn()
   } catch (error) {
-    if (error instanceof QuipSdkError) return error.code
+    if (error instanceof QuipSwapError) return error.code
     throw error
   }
-  throw new Error('expected the call to throw a QuipSdkError')
+  throw new Error('expected the call to throw a QuipSwapError')
 }
 
 // Alice = proposer + secret holder on Chain A; Bob = taker on Chain B.

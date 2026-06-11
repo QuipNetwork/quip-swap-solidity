@@ -7,7 +7,7 @@
 import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
 import {validateAsset} from './assets.js'
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 import type {Asset, Terms} from './types.js'
 
 /** Input shape for {@link createTerms}; identical to {@link Terms}. */
@@ -38,7 +38,7 @@ export interface CreateTermsArgs {
  * @param args - The seven Terms fields; see {@link CreateTermsArgs} for
  *   units and constraints.
  * @returns A frozen, structurally valid `Terms`.
- * @throws QuipSdkError - every code listed on {@link validateTerms}.
+ * @throws QuipSwapError - every code listed on {@link validateTerms}.
  * @see TermsLib.validateTerms
  * @example
  * ```ts
@@ -90,7 +90,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  * reject the proposer's already-elapsed deadline during the taker's commit.
  *
  * @param terms - The terms to validate (e.g. parsed from JSON or an API).
- * @throws QuipSdkError `EMPTY_ASSETS` | `ZERO_ADDRESS_RECIPIENT` |
+ * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_ADDRESS_RECIPIENT` |
  *   `ZERO_DEADLINE` | `DISORDERED_DEADLINES` | `ZERO_CHAIN_ID`, plus every
  *   asset-level code from {@link validateAsset}.
  * @see TermsLib.validateTerms
@@ -101,13 +101,13 @@ export function createTerms(args: CreateTermsArgs): Terms {
  */
 export function validateTerms(terms: Terms): void {
   if (terms.assets.length === 0) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'EMPTY_ASSETS',
       message: 'Terms must contain at least one asset (contract: EmptyAssets)',
     })
   }
   if (!isRecipientAddress(terms.reclaimRecipient) || !isRecipientAddress(terms.recipient)) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_ADDRESS_RECIPIENT',
       message:
         'Both recipient and reclaimRecipient must be valid non-zero addresses (contract: ZeroAddressRecipient)',
@@ -115,14 +115,14 @@ export function validateTerms(terms: Terms): void {
     })
   }
   if (terms.commitmentDeadline === 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_DEADLINE',
       message: 'commitmentDeadline must be non-zero (contract: ZeroDeadline)',
     })
   }
   // lifecycle deadlines must be STRICTLY increasing: commitment < claim < reclaim
   if (!(terms.commitmentDeadline < terms.claimDeadline && terms.claimDeadline < terms.reclaimRelease)) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'DISORDERED_DEADLINES',
       message:
         'Lifecycle timestamps must satisfy commitmentDeadline < claimDeadline < reclaimRelease, strictly ' +
@@ -135,7 +135,7 @@ export function validateTerms(terms: Terms): void {
     })
   }
   if (terms.chainId <= 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_CHAIN_ID',
       message: 'chainId must be greater than zero (contract: ZeroChainId)',
       details: {chainId: terms.chainId},
@@ -169,7 +169,7 @@ function isRecipientAddress(value: Address): boolean {
  *
  * @param a - One side's terms.
  * @param b - The other side's terms.
- * @throws QuipSdkError `DISORDERED_DEADLINES` when neither interleaving
+ * @throws QuipSwapError `DISORDERED_DEADLINES` when neither interleaving
  *   holds (contract: DisordedDeadlines).
  * @see TermsLib.validateTermPairing
  * @example
@@ -193,7 +193,7 @@ export function validateTermPairing(a: Terms, b: Terms): void {
     b.reclaimRelease < a.reclaimRelease
 
   if (!(aProposes || bProposes)) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'DISORDERED_DEADLINES',
       message:
         "The two sides' lifecycle timestamps must strictly interleave " +

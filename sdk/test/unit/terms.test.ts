@@ -12,7 +12,7 @@
 import {zeroAddress} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {nativeAsset} from '../../src/assets.js'
-import {QuipSdkError} from '../../src/errors.js'
+import {QuipSwapError} from '../../src/errors.js'
 import {createTerms, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
 import type {Asset} from '../../src/types.js'
@@ -22,10 +22,10 @@ function codeOf(fn: () => unknown): string {
   try {
     fn()
   } catch (error) {
-    if (error instanceof QuipSdkError) return error.code
+    if (error instanceof QuipSwapError) return error.code
     throw error
   }
-  throw new Error('expected the call to throw a QuipSdkError')
+  throw new Error('expected the call to throw a QuipSwapError')
 }
 
 const valid = aliceTerms(CHAIN_A)

@@ -7,7 +7,7 @@
  */
 import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 import {AssetType} from './types.js'
 import type {Asset, Terms} from './types.js'
 
@@ -20,7 +20,7 @@ import type {Asset, Terms} from './types.js'
  *
  * @param amount - Amount of native currency in wei; must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: Native`.
- * @throws QuipSdkError `ZERO_AMOUNT` if `amount` is zero or negative.
+ * @throws QuipSwapError `ZERO_AMOUNT` if `amount` is zero or negative.
  * @see TermsLib.validateAsset
  * @example
  * ```ts
@@ -29,7 +29,7 @@ import type {Asset, Terms} from './types.js'
  */
 export function nativeAsset(amount: bigint): Asset {
   if (amount <= 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_AMOUNT',
       message: 'Native asset amount must be greater than zero (contract: ZeroAmount)',
       details: {amount},
@@ -48,7 +48,7 @@ export function nativeAsset(amount: bigint): Asset {
  * @param target - The ERC-20 token contract address; must be non-zero.
  * @param amount - Token amount in the token's base units; must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: ERC20` and `id: 0n`.
- * @throws QuipSdkError `INVALID_ERC20_ASSET` if `target` is the zero address
+ * @throws QuipSwapError `INVALID_ERC20_ASSET` if `target` is the zero address
  *   or not a valid address; `ZERO_AMOUNT` if `amount <= 0n`.
  * @see TermsLib.validateAsset
  * @example
@@ -59,7 +59,7 @@ export function nativeAsset(amount: bigint): Asset {
 export function erc20Asset(target: Address, amount: bigint): Asset {
   assertTokenTarget(target, 'INVALID_ERC20_ASSET', 'ERC-20')
   if (amount <= 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_AMOUNT',
       message: 'ERC-20 asset amount must be greater than zero (contract: ZeroAmount)',
       details: {target, amount},
@@ -88,7 +88,7 @@ export function erc20Asset(target: Address, amount: bigint): Asset {
  * @param target - The ERC-721 token contract address; must be non-zero.
  * @param tokenId - The NFT's token id; `0n` is valid.
  * @returns A canonical, frozen `Asset` with `assetType: ERC721` and `amount: 1n`.
- * @throws QuipSdkError `INVALID_ERC721_ASSET` if `target` is the zero
+ * @throws QuipSwapError `INVALID_ERC721_ASSET` if `target` is the zero
  *   address or not a valid address.
  * @see TermsLib.validateAsset
  * @example
@@ -100,7 +100,7 @@ export function erc20Asset(target: Address, amount: bigint): Asset {
 export function erc721Asset(target: Address, tokenId: bigint): Asset {
   assertTokenTarget(target, 'INVALID_ERC721_ASSET', 'ERC-721')
   if (tokenId < 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ERC721_ASSET',
       message: 'ERC-721 token id must be non-negative',
       details: {target, tokenId},
@@ -118,7 +118,7 @@ export function erc721Asset(target: Address, tokenId: bigint): Asset {
  * @param tokenId - The token id; `0n` is valid.
  * @param amount - Quantity of the token id; must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: ERC1155`.
- * @throws QuipSdkError `INVALID_ERC1155_ASSET` if `target` is invalid;
+ * @throws QuipSwapError `INVALID_ERC1155_ASSET` if `target` is invalid;
  *   `ZERO_AMOUNT` if `amount <= 0n`.
  * @see TermsLib.validateAsset
  * @example
@@ -129,14 +129,14 @@ export function erc721Asset(target: Address, tokenId: bigint): Asset {
 export function erc1155Asset(target: Address, tokenId: bigint, amount: bigint): Asset {
   assertTokenTarget(target, 'INVALID_ERC1155_ASSET', 'ERC-1155')
   if (tokenId < 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ERC1155_ASSET',
       message: 'ERC-1155 token id must be non-negative',
       details: {target, tokenId},
     })
   }
   if (amount <= 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_AMOUNT',
       message: 'ERC-1155 asset amount must be greater than zero (contract: ZeroAmount)',
       details: {target, tokenId, amount},
@@ -165,7 +165,7 @@ export function erc1155Asset(target: Address, tokenId: bigint, amount: bigint): 
  * contract for objects that may already exist in committed terms).
  *
  * @param asset - The asset to validate.
- * @throws QuipSdkError `ZERO_AMOUNT` | `INVALID_NATIVE_ASSET` |
+ * @throws QuipSwapError `ZERO_AMOUNT` | `INVALID_NATIVE_ASSET` |
  *   `INVALID_ERC20_ASSET` | `INVALID_ERC721_ASSET` | `INVALID_ERC1155_ASSET`
  *   | `INVALID_ASSET_TYPE`, each naming the matching contract error.
  * @see TermsLib.validateAsset
@@ -183,21 +183,21 @@ export function validateAsset(asset: Asset): void {
   ) {
     // the contract cannot receive an out-of-range enum (ABI decoding reverts);
     // the SDK surfaces the same condition as a structured error
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ASSET_TYPE',
       message: `Unknown asset type ${String(asset.assetType)}; expected 0 (Native), 1 (ERC20), 2 (ERC721), or 3 (ERC1155)`,
       details: {asset},
     })
   }
   if (asset.amount <= 0n) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'ZERO_AMOUNT',
       message: 'Asset amount must be greater than zero for every asset type (contract: ZeroAmount)',
       details: {asset},
     })
   }
   if (!isAddress(asset.target, {strict: false})) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: assetTypeErrorCode(asset.assetType),
       message: `Asset target ${String(asset.target)} is not a valid address`,
       details: {asset},
@@ -208,14 +208,14 @@ export function validateAsset(asset: Asset): void {
   const isZeroId = asset.id === 0n
 
   if (asset.assetType === AssetType.Native && (!isZeroTarget || !isZeroId)) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_NATIVE_ASSET',
       message: 'Native asset must have zero target and zero id (contract: InvalidNativeAsset)',
       details: {asset},
     })
   }
   if (asset.assetType === AssetType.ERC20 && (isZeroTarget || !isZeroId)) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ERC20_ASSET',
       message: 'ERC-20 asset must have a non-zero target and id 0 (contract: InvalidERC20Asset)',
       details: {asset},
@@ -223,14 +223,14 @@ export function validateAsset(asset: Asset): void {
   }
   // ERC721/ERC1155: token id 0 is valid; only a zero target is rejected
   if (asset.assetType === AssetType.ERC721 && isZeroTarget) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ERC721_ASSET',
       message: 'ERC-721 asset must have a non-zero target (contract: InvalidERC721Asset)',
       details: {asset},
     })
   }
   if (asset.assetType === AssetType.ERC1155 && isZeroTarget) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'INVALID_ERC1155_ASSET',
       message: 'ERC-1155 asset must have a non-zero target (contract: InvalidERC1155Asset)',
       details: {asset},
@@ -261,7 +261,7 @@ function assertTokenTarget(
   label: string,
 ): void {
   if (!isAddress(target, {strict: false}) || target.toLowerCase() === zeroAddress) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code,
       message: `${label} asset target must be a non-zero contract address`,
       details: {target},

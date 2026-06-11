@@ -14,7 +14,7 @@
  * satisfied. A satisfied plan is necessary, not sufficient.
  */
 import type {Address, PublicClient, WalletClient} from 'viem'
-import {QuipSdkError, wrapContractError} from './errors.js'
+import {QuipSwapError, wrapContractError} from './errors.js'
 import {AssetType} from './types.js'
 import type {Terms} from './types.js'
 
@@ -193,7 +193,7 @@ export interface PlanApprovalsArgs {
  *
  * @param args - See {@link PlanApprovalsArgs}.
  * @returns The typed {@link ApprovalPlan}.
- * @throws QuipSdkError `CONTRACT_REVERT` when an allowance/approval read
+ * @throws QuipSwapError `CONTRACT_REVERT` when an allowance/approval read
  *   itself reverts (e.g. a non-token target address).
  * @see TermsLib.transferAssetsNoNative
  * @example
@@ -325,7 +325,7 @@ const MAX_UINT256 = (1n << 256n) - 1n
  * @param args - See {@link SubmitApprovalArgs}.
  * @returns The transaction hash. Wait for its receipt before re-planning —
  *   a hash alone does not mean the approval landed.
- * @throws QuipSdkError `MISSING_ACCOUNT` when the wallet client has no
+ * @throws QuipSwapError `MISSING_ACCOUNT` when the wallet client has no
  *   account; `INVALID_RANGE` (mode missing for ERC-20); `CONTRACT_REVERT`
  *   when simulation/submission fails.
  * @example
@@ -341,7 +341,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
   const {publicClient, walletClient, omnibusAddress, item} = args
   const account = walletClient.account
   if (account === undefined) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'MISSING_ACCOUNT',
       message: 'The wallet client must have an account to submit an approval',
     })
@@ -350,7 +350,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
   try {
     if (item.kind === 'erc20') {
       if (args.erc20Mode === undefined) {
-        throw new QuipSdkError({
+        throw new QuipSwapError({
           code: 'INVALID_RANGE',
           message:
             "ERC-20 approvals require an explicit erc20Mode ('exact' or 'unlimited'); the SDK never defaults to unlimited",
@@ -398,7 +398,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
     })
     return await walletClient.writeContract(request)
   } catch (error) {
-    if (error instanceof QuipSdkError) throw error
+    if (error instanceof QuipSwapError) throw error
     throw wrapContractError(error, `Approving ${item.kind} ${item.token}`)
   }
 }

@@ -10,7 +10,7 @@
  * model documented in `test/Omnibus/Omnibus.t.sol`.
  */
 import {describe, expect, it} from 'vitest'
-import {QuipSdkError} from '../../src/errors.js'
+import {QuipSwapError} from '../../src/errors.js'
 import {
   enforceWithin,
   isWithinWindow,
@@ -43,10 +43,10 @@ function codeOf(fn: () => unknown): string {
   try {
     fn()
   } catch (error) {
-    if (error instanceof QuipSdkError) return error.code
+    if (error instanceof QuipSwapError) return error.code
     throw error
   }
-  throw new Error('expected the call to throw a QuipSdkError')
+  throw new Error('expected the call to throw a QuipSwapError')
 }
 
 const alice = aliceTerms(CHAIN_A) // proposer

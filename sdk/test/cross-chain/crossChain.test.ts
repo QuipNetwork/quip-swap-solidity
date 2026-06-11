@@ -21,7 +21,7 @@ import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {QuipSdkError, extractContractErrorName} from '../../src/errors.js'
+import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {extractRevealedSecret} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {generateLock} from '../../src/hashing.js'
@@ -268,7 +268,7 @@ describe('cross-chain validator guards', () => {
       validateCrossChainSchedule({proposerTerms: bob, takerTerms: alice, minimumBufferSeconds: 1n})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('SECRET_HOLDER_NOT_PROPOSER')
+      expect((error as QuipSwapError).code).toBe('SECRET_HOLDER_NOT_PROPOSER')
     }
   })
 
@@ -287,7 +287,7 @@ describe('cross-chain validator guards', () => {
       validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1n})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('DISORDERED_DEADLINES')
+      expect((error as QuipSwapError).code).toBe('DISORDERED_DEADLINES')
     }
     // the contract agrees on chain A (raw call bypassing SDK preflight)
     await warpBoth(s.anchors.proposerCommit)
@@ -319,7 +319,7 @@ describe('cross-chain validator guards', () => {
       validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1001n})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSdkError).code).toBe('INSUFFICIENT_BUFFER')
+      expect((error as QuipSwapError).code).toBe('INSUFFICIENT_BUFFER')
     }
   })
 })

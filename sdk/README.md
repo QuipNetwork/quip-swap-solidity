@@ -262,15 +262,15 @@ A buffer comfortable on a fast-finality L2 may be recklessly small on a congeste
 
 ## Error handling
 
-Every SDK error is a `QuipSdkError` with a stable `code`, and on-chain reverts carry the decoded custom-error name:
+Every SDK error is a `QuipSwapError` with a stable `code`, and on-chain reverts carry the decoded custom-error name:
 
 ```ts
-import {QuipSdkError} from '@quip.network/quip-swap-sdk'
+import {QuipSwapError} from '@quip.network/quip-swap-sdk'
 
 try {
   await client.commit({lock, party, counterparty})
 } catch (err) {
-  if (err instanceof QuipSdkError) {
+  if (err instanceof QuipSwapError) {
     err.code              // 'NOT_QUIP_WALLET' | 'WINDOW_VIOLATED' | 'CONTRACT_REVERT' | ...
     err.contractErrorName // 'CallerNotQuipWallet' | 'WindowViolated' | ... (when decodable)
     err.cause             // the original Viem error, always preserved

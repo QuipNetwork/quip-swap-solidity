@@ -50,7 +50,7 @@ export function generateSecret(): SecretLockPair {
  *
  * @param secret - A 0x-prefixed 32-byte hex string.
  * @returns The validated {@link SecretLockPair}.
- * @throws QuipSdkError `INVALID_HEX32` if the secret is malformed or not
+ * @throws QuipSwapError `INVALID_HEX32` if the secret is malformed or not
  *   exactly 32 bytes (the error never echoes the supplied value).
  * @example
  * ```ts

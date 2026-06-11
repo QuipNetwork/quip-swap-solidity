@@ -32,7 +32,7 @@
  * "free option" the interleaving exists to prevent (see
  * `test/attack/CrossChainFreeOption.t.sol`).
  */
-import {QuipSdkError} from '../errors.js'
+import {QuipSwapError} from '../errors.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
 import {LockState} from '../types.js'
@@ -100,7 +100,7 @@ export interface CrossChainSchedule {
  * @param args - See {@link ValidateCrossChainScheduleArgs}; parameter names
  *   are protocol roles (`proposerTerms`/`takerTerms`), not call-site roles.
  * @returns The {@link CrossChainSchedule} summary (buffers included).
- * @throws QuipSdkError - structural codes; `DISORDERED_DEADLINES`;
+ * @throws QuipSwapError - structural codes; `DISORDERED_DEADLINES`;
  *   `SECRET_HOLDER_NOT_PROPOSER` when the roles are inverted;
  *   `CHAIN_ID_MISMATCH` when both legs share a chain;
  *   `INSUFFICIENT_BUFFER` when any adjacent gap is below the minimum.
@@ -123,7 +123,7 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
   // SECURITY: the secret holder must be the proposer. proposedBy returns
   // 'party' iff the first argument has the smaller commitmentDeadline.
   if (proposedBy(proposerTerms, takerTerms) !== 'party') {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'SECRET_HOLDER_NOT_PROPOSER',
       message:
         "The secret holder's leg must be the proposer (smaller commitmentDeadline). A secret-holding taker " +
@@ -137,7 +137,7 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
   }
 
   if (proposerTerms.chainId === takerTerms.chainId) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'CHAIN_ID_MISMATCH',
       message: `Cross-chain schedule requires the two legs on different chains; both are on ${proposerTerms.chainId}`,
       details: {chainId: proposerTerms.chainId},
@@ -160,7 +160,7 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
     const [nextName, next] = sequence[i] as [string, bigint]
     const gap = next - prev
     if (gap < minimumBufferSeconds) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'INSUFFICIENT_BUFFER',
         message:
           `Gap between ${prevName} (${prev}) and ${nextName} (${next}) is ${gap}s, below the required ` +
@@ -250,7 +250,7 @@ export async function verifyRemoteCommitment(
  *
  * @param secret - The proposer's 32-byte secret.
  * @returns The shared lock used on BOTH chains.
- * @throws QuipSdkError `INVALID_HEX32` for malformed secrets.
+ * @throws QuipSwapError `INVALID_HEX32` for malformed secrets.
  * @see Omnibus._generateLock
  */
 export function deriveSharedLock(secret: Hex32): Hex32 {

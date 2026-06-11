@@ -18,7 +18,7 @@
  */
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
-import {QuipSdkError, wrapContractError} from './errors.js'
+import {QuipSwapError, wrapContractError} from './errors.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {assertHex32, digestTerms, digestTermsCanonically, generateLock} from './hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
@@ -104,7 +104,7 @@ export interface OmnibusAdmin {
    *
    * @param newFee - The new fee in wei; must be `<= MAX_FEE`.
    * @returns The transaction hash.
-   * @throws QuipSdkError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
+   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
    * @see Omnibus.setCommitmentFee
    */
   setCommitmentFee(newFee: bigint): Promise<Hash>
@@ -114,7 +114,7 @@ export interface OmnibusAdmin {
    *
    * @param to - The recipient of the accrued fees.
    * @returns The transaction hash.
-   * @throws QuipSdkError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
+   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
    * @see Omnibus.withdrawFees
    */
   withdrawFees(to: Address): Promise<Hash>
@@ -206,7 +206,7 @@ export interface OmnibusClient {
    *
    * @param args - See {@link CommitArgs}.
    * @returns The transaction hash (not finality — wait for the receipt).
-   * @throws QuipSdkError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
+   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
    *   | `CHAIN_ID_MISMATCH` | `NOT_QUIP_WALLET` | `WINDOW_VIOLATED` |
    *   `CONTRACT_REVERT`.
@@ -236,7 +236,7 @@ export interface OmnibusClient {
    *
    * @param args - See {@link ClaimArgs}.
    * @returns The transaction hash (not finality).
-   * @throws QuipSdkError `INVALID_HEX32` | structural/pairing codes |
+   * @throws QuipSwapError `INVALID_HEX32` | structural/pairing codes |
    *   `CHAIN_ID_MISMATCH` | `WINDOW_VIOLATED` | `TERMS_NOT_ON_CHAIN` |
    *   `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
    * @see Omnibus.claim
@@ -259,7 +259,7 @@ export interface OmnibusClient {
    *
    * @param args - See {@link ReclaimArgs}.
    * @returns The transaction hash (not finality).
-   * @throws QuipSdkError structural/pairing codes | `CHAIN_ID_MISMATCH` |
+   * @throws QuipSwapError structural/pairing codes | `CHAIN_ID_MISMATCH` |
    *   `WINDOW_VIOLATED` | `TERMS_NOT_ON_CHAIN` | `MISSING_WALLET_CLIENT` |
    *   `CONTRACT_REVERT`.
    * @see Omnibus.reclaim
@@ -332,14 +332,14 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   /** Resolves the wallet client + account or throws actionable errors. */
   function requireWallet(): {wallet: WalletClient; sender: Address} {
     if (walletClient === undefined) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'MISSING_WALLET_CLIENT',
         message: 'This operation submits a transaction; create the client with a walletClient to use it',
       })
     }
     const account = walletClient.account
     if (account === undefined) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'MISSING_ACCOUNT',
         message: 'The wallet client has no account; hoist an account onto the wallet client',
       })
@@ -377,7 +377,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     ])
     const expected = digestTermsCanonically(party, counterparty)
     if (onChainTermsHash.toLowerCase() !== expected.toLowerCase()) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'TERMS_NOT_ON_CHAIN',
         message:
           'The on-chain termsHash for this lock does not match the canonical digest of the supplied terms ' +
@@ -386,7 +386,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       })
     }
     if (!isPosted) {
-      throw new QuipSdkError({
+      throw new QuipSwapError({
         code: 'TERMS_NOT_ON_CHAIN',
         message:
           "The required side's terms have not been posted for this lock (contract would revert TermsNotPosted)",
@@ -492,7 +492,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       // 3. only the LOCAL side's chainId must match; the counterparty may be remote
       const connectedChainId = BigInt(await publicClient.getChainId())
       if (party.chainId !== connectedChainId) {
-        throw new QuipSdkError({
+        throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
           message:
             `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +
@@ -504,7 +504,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       // 4. QuipWallet gate — the most likely integration failure, so check
       // it before burning a simulation round-trip
       if (!(await isQuipWallet(sender))) {
-        throw new QuipSdkError({
+        throw new QuipSwapError({
           code: 'NOT_QUIP_WALLET',
           message:
             `Sender ${sender} is not a factory-deployed QuipWallet (QUIP_FACTORY.vaultIdOf is zero); ` +
@@ -520,12 +520,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         validateCommitWindow(party, counterparty, timestamp)
       } catch (error) {
         if (
-          error instanceof QuipSdkError &&
+          error instanceof QuipSwapError &&
           error.code === 'WINDOW_VIOLATED' &&
           proposedBy(party, counterparty) === 'counterparty' &&
           timestamp < counterparty.commitmentDeadline
         ) {
-          throw new QuipSdkError({
+          throw new QuipSwapError({
             code: 'WINDOW_VIOLATED',
             message:
               `Taker commit window has not opened yet: it opens at the proposer's commitmentDeadline ` +
@@ -574,7 +574,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       // 4. the CLAIMED leg (counterparty) must be local; party may be remote
       const connectedChainId = BigInt(await publicClient.getChainId())
       if (counterparty.chainId !== connectedChainId) {
-        throw new QuipSdkError({
+        throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
           message:
             `counterparty.chainId (${counterparty.chainId}) does not match the connected chain ` +
@@ -620,7 +620,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       // 2. the reclaimed leg must be local
       const connectedChainId = BigInt(await publicClient.getChainId())
       if (party.chainId !== connectedChainId) {
-        throw new QuipSdkError({
+        throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
           message:
             `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +

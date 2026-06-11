@@ -21,7 +21,7 @@
  */
 import {parseEventLogs} from 'viem'
 import type {Address, BlockNumber, BlockTag, Log, PublicClient} from 'viem'
-import {QuipSdkError} from './errors.js'
+import {QuipSwapError} from './errors.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {AssetType} from './types.js'
 import type {Hex32, Terms} from './types.js'
@@ -71,7 +71,7 @@ export interface ReclaimedEvent {
 /** Narrow a decoded uint8 to the {@link AssetType} enum, rejecting out-of-range values. */
 function toAssetType(value: number): AssetType {
   if (value === 0 || value === 1 || value === 2 || value === 3) return value as AssetType
-  throw new QuipSdkError({
+  throw new QuipSwapError({
     code: 'INVALID_ASSET_TYPE',
     message: `Decoded asset type ${value} is out of range`,
   })
@@ -284,7 +284,7 @@ async function getOmnibusLogs(
   )
   /* v8 ignore next 3 -- the generated ABI always contains all three events */
   if (event === undefined) {
-    throw new QuipSdkError({code: 'EVENT_NOT_FOUND', message: `Event ${eventName} missing from generated ABI`})
+    throw new QuipSwapError({code: 'EVENT_NOT_FOUND', message: `Event ${eventName} missing from generated ABI`})
   }
   return (await args.publicClient.getLogs({
     address: args.address,

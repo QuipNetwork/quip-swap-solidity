@@ -43,7 +43,7 @@ import {
 } from '../windows.js'
 import type {TimeWindow} from '../windows.js'
 import type {OmnibusClient} from '../client.js'
-import {QuipSdkError} from '../errors.js'
+import {QuipSwapError} from '../errors.js'
 
 /**
  * A validated same-chain swap plan with both sides normalized into
@@ -82,7 +82,7 @@ export interface SameChainSwapPlan {
  * @param a - One side's terms.
  * @param b - The other side's terms.
  * @returns The normalized plan with windows and digests precomputed.
- * @throws QuipSdkError - structural codes from {@link validateTerms};
+ * @throws QuipSwapError - structural codes from {@link validateTerms};
  *   `DISORDERED_DEADLINES` for a non-interleaved schedule;
  *   `CHAIN_ID_MISMATCH` when the sides name different chains.
  * @see TermsLib.validateTermPairing
@@ -98,7 +98,7 @@ export function planSameChainSwap(a: Terms, b: Terms): SameChainSwapPlan {
   validateTerms(b)
   validateTermPairing(a, b)
   if (a.chainId !== b.chainId) {
-    throw new QuipSdkError({
+    throw new QuipSwapError({
       code: 'CHAIN_ID_MISMATCH',
       message: `Same-chain plan requires both sides on one chain; got ${a.chainId} and ${b.chainId}`,
       details: {aChainId: a.chainId, bChainId: b.chainId},
