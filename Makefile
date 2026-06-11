@@ -59,7 +59,7 @@ anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=BASE_SEPOLIA_RP
 	anvil --fork-url $(RPC_URL)
 
 .PHONY: deploy-local
-deploy-local: ## Deploy to local Anvil (requires DEPLOYER_PK, PORTAL_ADMIN, SENDER)
+deploy-local: ## Deploy to local Anvil (requires DEPLOYER_PK, SENDER)
 	forge script script/DeployTestnet.s.sol \
 		--rpc-url $(ANVIL_RPC_URL) \
 		--sender $(SENDER) \
@@ -100,6 +100,48 @@ deploy-production-dry: ## Dry run production deployment. Usage: make deploy-prod
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--sender $(SENDER)
+
+# ==============================================================================
+# TypeScript SDK (sdk/)
+# ==============================================================================
+# The SDK consumes Foundry artifacts from out/, so sdk-generate depends on a
+# fresh `forge build`. Integration and cross-chain targets manage their own
+# Anvil nodes (no manual node startup needed).
+
+.PHONY: sdk-install
+sdk-install: ## Install SDK dependencies (bun)
+	cd sdk && bun install
+
+.PHONY: sdk-generate
+sdk-generate: build ## Generate the Omnibus ABI from Foundry artifacts
+	cd sdk && bun run generate:abi
+
+.PHONY: sdk-typecheck
+sdk-typecheck: ## Typecheck the SDK (strict tsc, no emit)
+	cd sdk && bun run typecheck
+
+.PHONY: sdk-test
+sdk-test: ## Run SDK unit + mocked-client tests (no chain needed)
+	cd sdk && bun run test
+
+.PHONY: sdk-test-integration
+sdk-test-integration: ## Run single-chain Anvil integration + differential tests (starts its own Anvil)
+	cd sdk && bun run test:integration
+
+.PHONY: sdk-test-cross-chain
+sdk-test-cross-chain: ## Run two-chain end-to-end tests (slower; starts two Anvil nodes)
+	cd sdk && bun run test:cross-chain
+
+.PHONY: sdk-build
+sdk-build: ## Build the publishable SDK bundle (dist/)
+	cd sdk && bun run build
+
+# ==============================================================================
+# Full Verification
+# ==============================================================================
+
+.PHONY: check
+check: fmt-check build test sdk-typecheck sdk-test sdk-build sdk-test-integration ## Run all reasonable checks (Foundry + SDK; cross-chain excluded — run sdk-test-cross-chain separately)
 
 # ==============================================================================
 # Utilities

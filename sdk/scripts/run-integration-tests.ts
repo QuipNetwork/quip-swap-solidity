@@ -1,0 +1,59 @@
+/**
+ * Single-chain integration-test runner.
+ *
+ * Lifecycle (step by step):
+ * 1. `forge build` at the repository root — the tests deploy real Foundry
+ *    artifacts (Omnibus, QuipFactoryMock, mock tokens, harnesses), so the
+ *    artifacts must be fresh.
+ * 2. Start one Anvil node on an OS-assigned free port with chain id 31337
+ *    and wait for RPC readiness (see test/helpers/anvil.ts).
+ * 3. Run `vitest run test/integration` with the node's RPC URL and chain id
+ *    exported via QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID. Each test file
+ *    deploys its own fixture (QuipFactoryMock first, wallet registration,
+ *    then Omnibus with the two-argument constructor, mocks, harnesses) and
+ *    drives block timestamps with evm_setNextBlockTimestamp + mining.
+ * 4. ALWAYS stop Anvil (finally), pass or fail, and exit with vitest's
+ *    exit code.
+ *
+ * Developers never start Anvil manually for `bun run test:integration`.
+ */
+import {spawnSync} from 'node:child_process'
+import {dirname, join} from 'node:path'
+import {fileURLToPath} from 'node:url'
+import {startAnvil} from '../test/helpers/anvil.js'
+
+const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const repoRoot = join(sdkRoot, '..')
+
+// 1. fresh artifacts — fail loudly if forge is unavailable or the build breaks
+console.log('[integration] forge build ...')
+const build = spawnSync('forge', ['build'], {cwd: repoRoot, stdio: 'inherit'})
+if (build.status !== 0) {
+  console.error('[integration] forge build failed; aborting')
+  process.exit(build.status ?? 1)
+}
+
+// 2. one Anvil node on a free port
+const anvil = await startAnvil({chainId: 31_337})
+console.log(`[integration] anvil ready at ${anvil.rpcUrl} (chain ${anvil.chainId})`)
+
+let exitCode = 1
+try {
+  // 3. the actual test run; env carries the node coordinates to the tests
+  const result = spawnSync('bunx', ['vitest', 'run', 'test/integration'], {
+    cwd: sdkRoot,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      QUIP_SDK_RPC_URL: anvil.rpcUrl,
+      QUIP_SDK_CHAIN_ID: String(anvil.chainId),
+    },
+  })
+  exitCode = result.status ?? 1
+} finally {
+  // 4. teardown happens pass OR fail
+  anvil.stop()
+  console.log('[integration] anvil stopped')
+}
+
+process.exit(exitCode)
