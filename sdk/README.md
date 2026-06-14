@@ -5,7 +5,7 @@ TypeScript SDK for the Quip Swap **Omnibus** protocol: non-custodial, hashlocked
 The SDK gives browser apps, Node.js backends, QuipWallet front-ends, and cross-chain coordinators safe, typed access to the `Omnibus` singleton:
 
 - **Pure protocol helpers** — asset builders, terms construction and validation, pairing/window math, Solidity-exact hashing, secure secret generation. No RPC required.
-- **Chain access** — a typed client (reads + preflighted, simulated writes), approval planning, receipt decoding, event queries.
+- **Chain access** — a typed client (reads + preflighted writes with node-side gas estimation and a safety-buffered gas limit), approval planning, receipt decoding, event queries.
 - **Workflow helpers** — same-chain plan/status helpers and cross-chain schedule validation/coordination.
 
 The SDK never takes custody of private keys, never auto-approves tokens, and never hides wallet signing. SDK-side validation mirrors the contract's checks to fail early with actionable errors — it never replaces on-chain enforcement.
@@ -188,6 +188,33 @@ for (const item of plan.items.filter(i => !i.satisfied)) {
 - ERC-721: `getApproved(tokenId) == omnibus` **or** `isApprovedForAll`.
 - ERC-1155: `isApprovedForAll`.
 - **Fee-on-transfer caveat:** commit reconciles received balances; a token that delivers less than the declared amount reverts `UnexpectedAmountReceived` even with a satisfied approval plan.
+
+## Write flow: gas estimation, safety buffer, and TxOptions
+
+Every write (`commit`, `claim`, `reclaim`, `admin.*`) follows the same pipeline:
+
+1. **Protocol preflights** — structural/pairing validation, chain-id, windows, the QuipWallet gate (commit), and a lock-state check (`verifyOnChainState`, default on): claim requires the lock `Committed`, reclaim requires `Free` or `Committed`, and a commit into a `Free` lock must match the canonical `termsHash` and must not re-post an already-posted side. Failures produce precise codes (`INVALID_LOCK_STATE`, `TERMS_ALREADY_POSTED`, `TERMS_NOT_ON_CHAIN`) before any transaction exists.
+2. **Balance preflight** — BEFORE estimation, bare call value only: throws `BALANCE_TOO_LOW` with `{required, balance}` when the sender can't cover `totalValue`. Value-less calls (claim/reclaim/admin) skip it — gas funding is deliberately not preflighted (it's the wallet app's concern); a gas-unfunded sender's SEND-time failure is still mapped to `BALANCE_TOO_LOW`, never mislabeled `CONTRACT_REVERT`. Running this first means insufficient funds can never masquerade as a gas-estimation failure.
+3. **Gas estimation** — `publicClient.estimateContractGas` executes the call node-side, so a would-be revert surfaces here as a decoded `CONTRACT_REVERT` (this replaces the earlier `simulateContract` step).
+4. **Safety buffer** — `gas = floor(estimate × multiplier)`, default `1.2`, clamped to `[1.0, 2.0]`, computed with exact bigint math. Unused gas is refunded, so the buffer costs nothing at execution; it prevents out-of-gas failures from state drift between estimation and inclusion — which matters here because writes happen inside closing time windows.
+5. **Submission** — `writeContract` with the prepared gas, fees, and nonce.
+
+Every write accepts an optional final `TxOptions`:
+
+```ts
+await client.commit({lock, party, counterparty}, {
+  gas: 400_000n,            // explicit limit: skips estimation AND the multiplier
+  gasMultiplier: 1.5,       // or tune the buffer (clamped to [1.0, 2.0])
+  maxFeePerGas: 5n * 10n ** 9n,        // EIP-1559 (exclusive with gasPrice)
+  maxPriorityFeePerGas: 10n ** 9n,
+  // gasPrice: ...,         // legacy pricing for non-1559 chains
+  nonce: 7,                 // pin the nonce; default: viem fetches it
+  skipPreflightChecks: true // skips ONLY the balance (call value) check —
+                            // protocol preflights always run
+})
+```
+
+Only explicitly-set fee fields are forwarded, so viem's automatic fee pricing keeps working for everything you leave unset.
 
 ## Same-chain flow
 

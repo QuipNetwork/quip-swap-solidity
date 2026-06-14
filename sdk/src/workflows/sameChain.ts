@@ -127,7 +127,18 @@ export function planSameChainSwap(a: Terms, b: Terms): SameChainSwapPlan {
 export type SameChainSwapStatus =
   /** Nothing committed; the proposer's commit window is open. */
   | 'awaiting-proposer-commit'
-  /** Nothing committed and the proposer's window has closed — the swap is dead. */
+  /**
+   * Nothing committed and the proposer's window has closed. The swap can
+   * no longer COMPLETE (the proposer can never commit, so the lock can
+   * never reach Committed) — but the contract will still accept a
+   * taker-first commit in `[proposer.commitmentDeadline,
+   * taker.commitmentDeadline)`: `Omnibus.commit` checks only the window,
+   * not that the proposer actually committed (verifying the counterparty's
+   * commitment is the committer's duty, per the contract comments). Such a
+   * commit is pointless and self-harming — it moves the lock Unused→Free
+   * and strands the taker's assets until `taker.reclaimRelease` (reclaim
+   * from Free). Treat this status as terminal and do NOT commit into it.
+   */
   | 'proposer-commit-expired'
   /** Proposer committed (lock Free); the taker's window has not opened yet. */
   | 'awaiting-taker-window'

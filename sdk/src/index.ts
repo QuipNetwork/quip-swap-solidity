@@ -62,6 +62,19 @@ export {generateSecret, secretToPair} from './secrets.js'
 export {knownDeployments, resolveDeployment} from './deployments.js'
 export type {OmnibusDeployment} from './deployments.js'
 
+// gas estimation + transaction options
+export {
+  DEFAULT_GAS_MULTIPLIER,
+  MIN_GAS_MULTIPLIER,
+  MAX_GAS_MULTIPLIER,
+  resolveGasMultiplier,
+  applyGasMultiplier,
+  buildFeeOverrides,
+  preflightBalanceCheck,
+  prepareTx,
+} from './gas.js'
+export type {TxOptions, FeeOverrides, PrepareTxArgs, PrepareTxContractParams, PreparedTx} from './gas.js'
+
 // client
 export {createOmnibusClient, quipFactoryAbi} from './client.js'
 export type {

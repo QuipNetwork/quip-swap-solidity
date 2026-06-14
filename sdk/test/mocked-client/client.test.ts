@@ -3,8 +3,9 @@
  *
  * These tests verify the SDK client's ORCHESTRATION only: which contract
  * function is selected, the exact arguments and msg.value, the read-before-
- * write ordering (fee and vaultIdOf), simulate-before-write, and that every
- * preflight rejection happens BEFORE any transaction is submitted.
+ * write ordering (fee, vaultIdOf, lock state), estimate-before-write with
+ * the buffered gas limit, and that every preflight rejection happens BEFORE
+ * any transaction is submitted.
  *
  * They deliberately do NOT prove ABI-encoding equivalence with Solidity —
  * `test/integration/differential.test.ts` does that against the deployed
@@ -14,17 +15,21 @@
  * (`as unknown as PublicClient`) — the minimum needed to satisfy Viem's
  * client types in a mock.
  */
+import {ContractFunctionRevertedError, InsufficientFundsError, encodeErrorResult} from 'viem'
 import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError} from '../../src/errors.js'
-import {digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
+import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {LockState} from '../../src/types.js'
 import {
   aliceTerms,
   AT_PROPOSER_CLAIM,
   AT_PROPOSER_COMMIT,
   AT_PROPOSER_RECLAIM,
+  AT_TAKER_COMMIT,
   bobTerms,
   CHAIN_A,
   CHAIN_B,
@@ -36,18 +41,20 @@ const OMNIBUS: Address = '0x9990000000000000000000000000000000000999'
 const FACTORY: Address = '0x8880000000000000000000000000000000000888'
 const SENDER: Address = '0x7770000000000000000000000000000000000777'
 const TX_HASH = `0x${'ab'.repeat(32)}` as const
+const GAS_ESTIMATE = 100_000n
+const BUFFERED_GAS = 120_000n // estimate * default 1.2 multiplier
 
 const alice = aliceTerms(CHAIN_A) // proposer (local on chain A)
 const bob = bobTerms(CHAIN_A) // taker, same chain
 
 /** A recorded call log shared by the mock public and wallet clients. */
 interface CallLog {
-  /** Ordered operation names, e.g. 'read:commitmentFee', 'simulate:commit', 'write'. */
+  /** Ordered operation names, e.g. 'read:commitmentFee', 'estimate:commit', 'write'. */
   readonly sequence: string[]
-  /** Captured simulateContract arguments. */
-  readonly simulations: Record<string, unknown>[]
+  /** Captured estimateContractGas arguments. */
+  readonly estimations: Record<string, unknown>[]
   /** Captured writeContract requests. */
-  readonly writes: unknown[]
+  readonly writes: Record<string, unknown>[]
 }
 
 interface MockSetup {
@@ -64,7 +71,11 @@ function setup(
     vaultId?: `0x${string}`
     termsHash?: `0x${string}`
     posted?: boolean
+    lockState?: LockState
+    balance?: bigint
     withWallet?: boolean
+    estimateError?: unknown
+    writeError?: unknown
   } = {},
 ): MockSetup {
   const {
@@ -73,15 +84,24 @@ function setup(
     fee = 25n,
     vaultId = `0x${'11'.repeat(32)}` as const,
     posted = true,
+    lockState = LockState.Committed,
+    balance = 10n ** 24n,
     withWallet = true,
   } = options
   const termsHash = options.termsHash ?? digestTermsCanonically(alice, bob)
 
-  const log: CallLog = {sequence: [], simulations: [], writes: []}
+  const log: CallLog = {sequence: [], estimations: [], writes: []}
 
   const publicClient = {
     getChainId: async () => Number(chainId),
     getBlock: async () => ({timestamp}),
+    getBalance: async () => {
+      log.sequence.push('read:balance')
+      return balance
+    },
+    // NOTE: no estimateFeesPerGas mock — prepareTx must never need fee data
+    // (the balance preflight checks the bare call value only); an attempt to
+    // call it fails loudly here
     readContract: async (args: {address: Address; functionName: string}) => {
       log.sequence.push(`read:${args.functionName}`)
       switch (args.functionName) {
@@ -91,6 +111,8 @@ function setup(
           return vaultId
         case 'commitmentFee':
           return fee
+        case 'lockState':
+          return lockState
         case 'termsHash':
           return termsHash
         case 'posted':
@@ -99,19 +121,19 @@ function setup(
           throw new Error(`unexpected read: ${args.functionName}`)
       }
     },
-    simulateContract: async (args: Record<string, unknown>) => {
-      log.sequence.push(`simulate:${String(args['functionName'])}`)
-      log.simulations.push(args)
-      // tag the returned request so we can prove the SIMULATED request is
-      // what gets written, not a re-built one
-      return {request: {...args, __simulated: true}}
+    estimateContractGas: async (args: Record<string, unknown>) => {
+      log.sequence.push(`estimate:${String(args['functionName'])}`)
+      log.estimations.push(args)
+      if (options.estimateError !== undefined) throw options.estimateError
+      return GAS_ESTIMATE
     },
   } as unknown as PublicClient
 
   const walletClient = {
     account: {address: SENDER, type: 'json-rpc'},
-    writeContract: async (request: unknown) => {
+    writeContract: async (request: Record<string, unknown>) => {
       log.sequence.push('write')
+      if (options.writeError !== undefined) throw options.writeError
       log.writes.push(request)
       return TX_HASH
     },
@@ -152,40 +174,55 @@ describe('commit orchestration', () => {
   let mocks: MockSetup
 
   beforeEach(() => {
-    mocks = setup()
+    // a fresh lock for a first commit is Unused
+    mocks = setup({lockState: LockState.Unused})
   })
 
   it('selects the commit function with 7-field Terms tuples and exact msg.value', async () => {
     const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
     expect(hash).toBe(TX_HASH)
 
-    const sim = mocks.log.simulations[0] as {
+    const est = mocks.log.estimations[0] as {
       functionName: string
       args: [unknown, unknown, unknown]
       value: bigint
       address: Address
       account: Address
     }
-    expect(sim.functionName).toBe('commit')
-    expect(sim.address).toBe(OMNIBUS)
-    expect(sim.args[0]).toBe(FOUNDRY_LOCK)
-    expectAbiTerms(sim.args[1], alice)
-    expectAbiTerms(sim.args[2], bob)
+    expect(est.functionName).toBe('commit')
+    expect(est.address).toBe(OMNIBUS)
+    expect(est.args[0]).toBe(FOUNDRY_LOCK)
+    expectAbiTerms(est.args[1], alice)
+    expectAbiTerms(est.args[2], bob)
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
-    expect(sim.value).toBe(10n ** 18n + 25n)
+    expect(est.value).toBe(10n ** 18n + 25n)
+    // the write carries the same function/args/value
+    const write = mocks.log.writes[0] as {functionName: string; value: bigint}
+    expect(write.functionName).toBe('commit')
+    expect(write.value).toBe(10n ** 18n + 25n)
   })
 
-  it('reads commitmentFee and vaultIdOf BEFORE simulating, and simulates BEFORE writing', async () => {
+  it('reads commitmentFee, vaultIdOf, and lock state BEFORE estimating, and estimates BEFORE writing', async () => {
     await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
     const seq = mocks.log.sequence
-    expect(seq.indexOf('read:vaultIdOf')).toBeLessThan(seq.indexOf('simulate:commit'))
-    expect(seq.indexOf('read:commitmentFee')).toBeLessThan(seq.indexOf('simulate:commit'))
-    expect(seq.indexOf('simulate:commit')).toBeLessThan(seq.indexOf('write'))
+    expect(seq.indexOf('read:vaultIdOf')).toBeLessThan(seq.indexOf('estimate:commit'))
+    expect(seq.indexOf('read:lockState')).toBeLessThan(seq.indexOf('estimate:commit'))
+    expect(seq.indexOf('read:commitmentFee')).toBeLessThan(seq.indexOf('estimate:commit'))
+    expect(seq.indexOf('estimate:commit')).toBeLessThan(seq.indexOf('write'))
   })
 
-  it('passes the SIMULATED request into writeContract', async () => {
+  it('passes the BUFFERED gas (estimate x 1.2) into writeContract', async () => {
     await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
-    expect((mocks.log.writes[0] as {__simulated: boolean}).__simulated).toBe(true)
+    expect((mocks.log.writes[0] as {gas: bigint}).gas).toBe(BUFFERED_GAS)
+  })
+
+  it('estimateContractGas receives the exact contract params (function, args, value, account)', async () => {
+    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    const est = mocks.log.estimations[0] as Record<string, unknown>
+    expect(est['functionName']).toBe('commit')
+    expect(est['account']).toBe(SENDER)
+    expect(est['value']).toBe(10n ** 18n + 25n)
+    expect((est['args'] as unknown[])[0]).toBe(FOUNDRY_LOCK)
   })
 
   it('rejects a missing wallet client with a clear error', async () => {
@@ -201,7 +238,7 @@ describe('commit orchestration', () => {
     expect(await codeOf(gated.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
       'NOT_QUIP_WALLET',
     )
-    expect(gated.log.sequence).not.toContain('simulate:commit')
+    expect(gated.log.sequence).not.toContain('estimate:commit')
     expect(gated.log.writes).toHaveLength(0)
   })
 
@@ -243,25 +280,103 @@ describe('commit orchestration', () => {
   })
 })
 
+describe('commit lock-state preflight', () => {
+  it('Spent and Committed locks reject with INVALID_LOCK_STATE before estimation', async () => {
+    for (const state of [LockState.Spent, LockState.Committed]) {
+      const mocks = setup({lockState: state})
+      expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+        'INVALID_LOCK_STATE',
+      )
+      expect(mocks.log.sequence).not.toContain('estimate:commit')
+      expect(mocks.log.writes).toHaveLength(0)
+    }
+  })
+
+  it('a Free lock with this side already posted rejects TERMS_ALREADY_POSTED', async () => {
+    // the second same-chain commit must post the OTHER side; bob (taker)
+    // re-posting bob's own already-posted side is the contract's
+    // TermsAlreadyPosted case
+    const mocks = setup({lockState: LockState.Free, posted: true, timestamp: AT_TAKER_COMMIT})
+    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice}))).toBe(
+      'TERMS_ALREADY_POSTED',
+    )
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('a Free lock with a mismatched termsHash rejects TERMS_NOT_ON_CHAIN', async () => {
+    const mocks = setup({
+      lockState: LockState.Free,
+      posted: false,
+      timestamp: AT_TAKER_COMMIT,
+      termsHash: `0x${'99'.repeat(32)}`,
+    })
+    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice}))).toBe(
+      'TERMS_NOT_ON_CHAIN',
+    )
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('a Free lock with matching termsHash and an un-posted side proceeds', async () => {
+    const mocks = setup({lockState: LockState.Free, posted: false, timestamp: AT_TAKER_COMMIT})
+    await expect(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice})).resolves.toBe(TX_HASH)
+  })
+
+  it('verifyOnChainState: false skips the lock reads and falls through to estimation', async () => {
+    const mocks = setup({lockState: LockState.Spent}) // would reject if read
+    await expect(
+      mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, verifyOnChainState: false}),
+    ).resolves.toBe(TX_HASH)
+    expect(mocks.log.sequence).not.toContain('read:lockState')
+  })
+})
+
 describe('claim orchestration', () => {
   it('selects the claim function with the secret and 7-field tuples', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_CLAIM})
     await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
-    const sim = mocks.log.simulations[0] as {functionName: string; args: [unknown, unknown, unknown]; value?: bigint}
-    expect(sim.functionName).toBe('claim')
-    expect(sim.args[0]).toBe(FOUNDRY_SECRET)
-    expectAbiTerms(sim.args[1], alice)
-    expectAbiTerms(sim.args[2], bob)
-    expect(sim.value).toBeUndefined() // claim is not payable
+    const est = mocks.log.estimations[0] as {functionName: string; args: [unknown, unknown, unknown]; value?: bigint}
+    expect(est.functionName).toBe('claim')
+    expect(est.args[0]).toBe(FOUNDRY_SECRET)
+    expectAbiTerms(est.args[1], alice)
+    expectAbiTerms(est.args[2], bob)
+    expect(est.value).toBeUndefined() // claim is not payable
   })
 
-  it('derives the lock from the secret for on-chain state verification', async () => {
+  it('derives the lock from the secret and verifies lockState + termsHash + posted in one batch', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_CLAIM})
     await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
-    // termsHash + posted were read (verifyOnChainState defaults to true)
+    expect(mocks.log.sequence).toContain('read:lockState')
     expect(mocks.log.sequence).toContain('read:termsHash')
     expect(mocks.log.sequence).toContain('read:posted')
     expect(generateLock(FOUNDRY_SECRET)).toBe(FOUNDRY_LOCK)
+  })
+
+  it.each([
+    [LockState.Unused, 'nothing has been committed'],
+    [LockState.Free, 'counterparty has not committed'],
+    [LockState.Spent, 'already claimed or reclaimed'],
+  ])('rejects a non-Committed lock (state %s) with INVALID_LOCK_STATE and a per-state cause', async (state, cause) => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: state as LockState})
+    try {
+      await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain(cause)
+      expect((error as QuipSwapError).details).toMatchObject({lockState: state, required: 'Committed'})
+    }
+    expect(mocks.log.sequence).not.toContain('estimate:claim')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('verifyOnChainState: false skips the lock reads and falls through to estimation', async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Spent})
+    await expect(
+      mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob, verifyOnChainState: false}),
+    ).resolves.toBe(TX_HASH)
+    expect(mocks.log.sequence).not.toContain('read:lockState')
+    expect(mocks.log.sequence).toContain('estimate:claim')
   })
 
   it('rejects when the COUNTERPARTY leg is not local (claim settles the local counterparty leg)', async () => {
@@ -310,11 +425,37 @@ describe('reclaim orchestration', () => {
   it('selects the reclaim function and validates the release window', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_RECLAIM})
     await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
-    const sim = mocks.log.simulations[0] as {functionName: string; args: [unknown, unknown, unknown]}
-    expect(sim.functionName).toBe('reclaim')
-    expect(sim.args[0]).toBe(FOUNDRY_LOCK)
-    expectAbiTerms(sim.args[1], alice)
-    expectAbiTerms(sim.args[2], bob)
+    const est = mocks.log.estimations[0] as {functionName: string; args: [unknown, unknown, unknown]}
+    expect(est.functionName).toBe('reclaim')
+    expect(est.args[0]).toBe(FOUNDRY_LOCK)
+    expectAbiTerms(est.args[1], alice)
+    expectAbiTerms(est.args[2], bob)
+  })
+
+  it('accepts Free and Committed locks; rejects Unused and Spent with INVALID_LOCK_STATE', async () => {
+    for (const state of [LockState.Free, LockState.Committed]) {
+      const ok = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
+      await expect(ok.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
+    }
+    for (const state of [LockState.Unused, LockState.Spent]) {
+      const bad = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
+      try {
+        await bad.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+        expect.unreachable()
+      } catch (error) {
+        expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+        expect((error as QuipSwapError).details).toMatchObject({lockState: state, required: 'Free or Committed'})
+      }
+      expect(bad.log.writes).toHaveLength(0)
+    }
+  })
+
+  it('verifyOnChainState: false skips the lock reads', async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Spent})
+    await expect(
+      mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, verifyOnChainState: false}),
+    ).resolves.toBe(TX_HASH)
+    expect(mocks.log.sequence).not.toContain('read:lockState')
   })
 
   it('rejects before the reclaimRelease', async () => {
@@ -331,6 +472,110 @@ describe('reclaim orchestration', () => {
       'CHAIN_ID_MISMATCH',
     )
     expect(mocks.log.writes).toHaveLength(0)
+  })
+})
+
+describe('gas estimation and balance preflight', () => {
+  it('a contract revert during estimation produces a decoded CONTRACT_REVERT, not a generic failure', async () => {
+    // a real viem revert error carrying decodable Omnibus error data
+    const revert = new ContractFunctionRevertedError({
+      abi: omnibusAbi,
+      functionName: 'claim',
+      data: encodeErrorResult({abi: omnibusAbi, errorName: 'InvalidLockState'}),
+    })
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, estimateError: revert})
+    try {
+      await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('CONTRACT_REVERT')
+      expect((error as QuipSwapError).contractErrorName).toBe('InvalidLockState')
+    }
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('a non-revert estimation failure produces GAS_ESTIMATION_FAILED with the cause preserved', async () => {
+    const network = new Error('connection refused')
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, estimateError: network})
+    try {
+      await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('GAS_ESTIMATION_FAILED')
+      expect((error as QuipSwapError).cause).toBe(network)
+    }
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('a sender underfunded for the call VALUE is rejected BALANCE_TOO_LOW and estimation is NEVER attempted', async () => {
+    // commit carries value (1 ether native + 25 wei fee); a zero-balance
+    // sender fails the stage-1 preflight BEFORE eth_estimateGas, so
+    // insufficient funds can no longer masquerade as GAS_ESTIMATION_FAILED
+    const mocks = setup({lockState: LockState.Unused, balance: 0n})
+    try {
+      await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
+      expect((error as QuipSwapError).details).toMatchObject({balance: 0n, required: 10n ** 18n + 25n})
+    }
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('value-less calls (claim) have NO balance preflight — getBalance is never read', async () => {
+    // claim carries no value; gas funding is deliberately not preflighted
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, balance: 0n})
+    await expect(mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
+    expect(mocks.log.sequence).not.toContain('read:balance')
+  })
+
+  it('a send-time InsufficientFundsError surfaces as BALANCE_TOO_LOW, not CONTRACT_REVERT', async () => {
+    // value-less calls skip the preflight, so a gas-unfunded sender fails
+    // at SEND time; submitWrite maps viem's InsufficientFundsError
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, writeError: new InsufficientFundsError()})
+    try {
+      await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
+      expect((error as QuipSwapError).message).toContain('fund the account')
+    }
+  })
+
+  it('skipPreflightChecks skips ONLY the balance check — protocol preflights still run', async () => {
+    // the value-underfunded commit would fail the preflight, but the option waives it
+    const skipped = setup({lockState: LockState.Unused, balance: 0n})
+    await expect(
+      skipped.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}, {skipPreflightChecks: true}),
+    ).resolves.toBe(TX_HASH)
+    expect(skipped.log.sequence).not.toContain('read:balance')
+
+    // ...but the same option does NOT waive a protocol preflight (window)
+    const wrongWindow = setup({timestamp: AT_PROPOSER_COMMIT, balance: 0n})
+    expect(
+      await codeOf(
+        wrongWindow.client.claim(
+          {secret: FOUNDRY_SECRET, party: alice, counterparty: bob},
+          {skipPreflightChecks: true},
+        ),
+      ),
+    ).toBe('WINDOW_VIOLATED')
+  })
+
+  it('explicit opts.gas bypasses estimation; caller fee fields are forwarded selectively', async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM})
+    await mocks.client.claim(
+      {secret: FOUNDRY_SECRET, party: alice, counterparty: bob},
+      {gas: 555_555n, maxFeePerGas: 9n},
+    )
+    expect(mocks.log.sequence).not.toContain('estimate:claim')
+    const write = mocks.log.writes[0] as Record<string, unknown>
+    expect(write['gas']).toBe(555_555n) // verbatim, no multiplier
+    expect(write['maxFeePerGas']).toBe(9n)
+    expect('maxPriorityFeePerGas' in write).toBe(false) // unset fields never forwarded
+    expect('gasPrice' in write).toBe(false)
   })
 })
 

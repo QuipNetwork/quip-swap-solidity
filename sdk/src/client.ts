@@ -7,8 +7,11 @@
  *   accounts, backends, hardware-wallet transports, and (in production)
  *   clients whose sender is a QuipWallet contract. The SDK never takes
  *   custody of private keys, raw RPC URLs, or a specific wallet impl.
- * - Every write simulates first (`simulateContract` → `writeContract`);
- *   nothing is sent blind.
+ * - Every write runs the protocol preflights first, then `prepareTx`
+ *   (a balance preflight on the bare call value, then node-side gas
+ *   estimation — which surfaces would-be reverts before submission — with
+ *   a safety-buffered gas limit), then `writeContract`. Nothing is sent
+ *   blind.
  * - Every write preflights the same conditions the contract enforces, so
  *   integration failures surface as actionable errors BEFORE a transaction
  *   exists. Preflight mirrors but never replaces on-chain enforcement.
@@ -16,9 +19,12 @@
  *   (`admin.*`) are exposed on separate namespaces so they cannot be
  *   confused.
  */
+import {BaseError, InsufficientFundsError} from 'viem'
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
+import {prepareTx} from './gas.js'
+import type {TxOptions} from './gas.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {assertHex32, digestTerms, digestTermsCanonically, generateLock} from './hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
@@ -65,6 +71,18 @@ export interface CommitArgs {
   readonly party: Terms
   /** The other side's terms. */
   readonly counterparty: Terms
+  /**
+   * When `true` (default), preflight additionally reads the lock's
+   * on-chain state: a `Spent` or `Committed` lock rejects with
+   * `INVALID_LOCK_STATE` (no commit can advance from those states), and a
+   * `Free` lock requires the canonical `termsHash` to match
+   * (`TERMS_NOT_ON_CHAIN` otherwise) and the committing side to not
+   * already be posted (`TERMS_ALREADY_POSTED` otherwise — the second
+   * same-chain commit must post the OTHER side). Costs three extra
+   * parallel reads; with the flag off, gas estimation still catches every
+   * case as a decoded `CONTRACT_REVERT`.
+   */
+  readonly verifyOnChainState?: boolean
 }
 
 /** Arguments for {@link OmnibusClient.claim}. */
@@ -76,10 +94,13 @@ export interface ClaimArgs {
   /** The other side's terms — the leg being claimed; must be local. */
   readonly counterparty: Terms
   /**
-   * When `true` (default), preflight additionally verifies on-chain state:
-   * `termsHash(lock)` equals the canonical digest and the counterparty's
-   * side is `posted`. Costs two extra reads; disable only if you have just
-   * verified the state yourself.
+   * When `true` (default), preflight additionally verifies on-chain state
+   * in one parallel read batch: `lockState(lock)` must be `Committed`
+   * (`INVALID_LOCK_STATE` otherwise, with the actual state and likely
+   * cause), `termsHash(lock)` must equal the canonical digest, and the
+   * counterparty's side must be `posted` (`TERMS_NOT_ON_CHAIN` otherwise).
+   * Costs three extra parallel reads; disable only if you have just
+   * verified the state yourself — estimation still catches everything.
    */
   readonly verifyOnChainState?: boolean
 }
@@ -92,7 +113,14 @@ export interface ReclaimArgs {
   readonly party: Terms
   /** The other side's terms. */
   readonly counterparty: Terms
-  /** As in {@link ClaimArgs.verifyOnChainState}; default `true`. */
+  /**
+   * When `true` (default), preflight additionally verifies on-chain state
+   * in one parallel read batch: `lockState(lock)` must be `Free` or
+   * `Committed` (`INVALID_LOCK_STATE` otherwise — `Unused` was never
+   * committed, `Spent` was already settled), `termsHash(lock)` must equal
+   * the canonical digest, and the party's side must be `posted`
+   * (`TERMS_NOT_ON_CHAIN` otherwise).
+   */
   readonly verifyOnChainState?: boolean
 }
 
@@ -103,47 +131,54 @@ export interface OmnibusAdmin {
    * `MAX_FEE`, `OwnableUnauthorizedAccount` for non-owners.
    *
    * @param newFee - The new fee in wei; must be `<= MAX_FEE`.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
-   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
+   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT` |
+   *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW`.
    * @see Omnibus.setCommitmentFee
    */
-  setCommitmentFee(newFee: bigint): Promise<Hash>
+  setCommitmentFee(newFee: bigint, opts?: TxOptions): Promise<Hash>
   /**
    * Withdraws all accrued fees to `to`. Owner only. Escrowed swap native is
    * NOT withdrawable — only accrued fees.
    *
    * @param to - The recipient of the accrued fees.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
-   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
+   * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT` |
+   *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW`.
    * @see Omnibus.withdrawFees
    */
-  withdrawFees(to: Address): Promise<Hash>
+  withdrawFees(to: Address, opts?: TxOptions): Promise<Hash>
   /**
    * Starts the two-step ownership transfer (Ownable2Step): the new owner
    * must later call {@link acceptOwnership}.
    *
    * @param newOwner - The proposed new owner.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
    * @see Ownable2Step.transferOwnership
    */
-  transferOwnership(newOwner: Address): Promise<Hash>
+  transferOwnership(newOwner: Address, opts?: TxOptions): Promise<Hash>
   /**
    * Completes a pending two-step ownership transfer; must be sent by the
    * pending owner.
    *
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
    * @see Ownable2Step.acceptOwnership
    */
-  acceptOwnership(): Promise<Hash>
+  acceptOwnership(opts?: TxOptions): Promise<Hash>
 }
 
 /**
  * A typed client bound to one deployed Omnibus contract.
  *
  * Created by {@link createOmnibusClient}. Read methods mirror the
- * contract's getters one-to-one; write methods preflight, simulate, and
- * submit. Write methods return the transaction HASH only — pair them with
- * {@link waitForOmnibusReceipt} to confirm success and decode events.
+ * contract's getters one-to-one; write methods preflight, estimate gas
+ * with a safety buffer, and submit. Write methods return the transaction
+ * HASH only — pair them with {@link waitForOmnibusReceipt} to confirm
+ * success and decode events.
  */
 export interface OmnibusClient {
   /** The Omnibus contract address this client is bound to. */
@@ -185,7 +220,7 @@ export interface OmnibusClient {
    */
   isQuipWallet(account: Address): Promise<boolean>
 
-  // ---- writes (simulate → write; hash returned, NOT finality) ----
+  // ---- writes (preflight → estimate+buffer → write; hash returned, NOT finality) ----
 
   /**
    * Commits the sender's side of a swap. QuipWallet-gated and payable.
@@ -198,18 +233,32 @@ export interface OmnibusClient {
    *    sender's commit window — proposer `[0, party.commitmentDeadline)`,
    *    taker `[counterparty.commitmentDeadline, party.commitmentDeadline)`
    *    (the taker's window OPENS only when the proposer's deadline
-   *    elapses); 6. the fee is re-read; 7. `msg.value` is computed as
-   *    exactly `totalNative(party) + commitmentFee` — the contract checks
-   *    strict equality (`IncorrectNativeAmountReceived`), so over- and
-   *    underpayment both revert; 8. simulate; 9. submit the simulated
-   *    request.
+   *    elapses); 6. unless `verifyOnChainState` is disabled, the lock's
+   *    on-chain state permits this commit (see
+   *    {@link CommitArgs.verifyOnChainState}); 7. the fee is re-read;
+   *    8. `msg.value` is computed as exactly
+   *    `totalNative(party) + commitmentFee` — the contract checks strict
+   *    equality (`IncorrectNativeAmountReceived`), so over- and
+   *    underpayment both revert; 9. the balance preflight runs (bare
+   *    `msg.value` only — gas funding is not preflighted); 10. gas is
+   *    estimated node-side (a would-be revert surfaces here, decoded) and
+   *    buffered by the safety multiplier; 11. submit.
+   *
+   * Unused gas is refunded, so the default 1.2x buffer costs nothing at
+   * execution; it exists to prevent out-of-gas failures from state drift
+   * between estimation and inclusion — which matters here because writes
+   * happen inside closing time windows.
    *
    * @param args - See {@link CommitArgs}.
+   * @param opts - Optional per-transaction gas/fee/nonce options
+   *   ({@link TxOptions}); `skipPreflightChecks` skips ONLY the balance
+   *   check, never the protocol preflights.
    * @returns The transaction hash (not finality — wait for the receipt).
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
    *   | `CHAIN_ID_MISMATCH` | `NOT_QUIP_WALLET` | `WINDOW_VIOLATED` |
-   *   `CONTRACT_REVERT`.
+   *   `INVALID_LOCK_STATE` | `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN`
+   *   | `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.commit (onlyQuipWallet)
    * @example
    * ```ts
@@ -217,7 +266,7 @@ export interface OmnibusClient {
    * const result = await waitForOmnibusReceipt(client.publicClient, hash)
    * ```
    */
-  commit(args: CommitArgs): Promise<Hash>
+  commit(args: CommitArgs, opts?: TxOptions): Promise<Hash>
 
   /**
    * Claims a swap by revealing the secret. PERMISSIONLESS — the contract
@@ -231,17 +280,21 @@ export interface OmnibusClient {
    * Preflight: secret is valid 32-byte hex; both terms valid and paired;
    * `counterparty.chainId` matches the connected chain (the CLAIMED leg is
    * local; `party.chainId` may be remote in a cross-chain claim); the
-   * timestamp is inside the claimant role's window; optionally the lock's
-   * on-chain `termsHash`/`posted` state is verified; then simulate/submit.
+   * timestamp is inside the claimant role's window; unless disabled, the
+   * lock is `Committed` and its `termsHash`/`posted` state matches (see
+   * {@link ClaimArgs.verifyOnChainState}); then balance preflight,
+   * estimate+buffer gas (the pre-submission revert check), submit.
    *
    * @param args - See {@link ClaimArgs}.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash (not finality).
    * @throws QuipSwapError `INVALID_HEX32` | structural/pairing codes |
-   *   `CHAIN_ID_MISMATCH` | `WINDOW_VIOLATED` | `TERMS_NOT_ON_CHAIN` |
-   *   `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT`.
+   *   `CHAIN_ID_MISMATCH` | `WINDOW_VIOLATED` | `INVALID_LOCK_STATE` |
+   *   `TERMS_NOT_ON_CHAIN` | `MISSING_WALLET_CLIENT` |
+   *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.claim
    */
-  claim(args: ClaimArgs): Promise<Hash>
+  claim(args: ClaimArgs, opts?: TxOptions): Promise<Hash>
 
   /**
    * Reclaims escrowed assets after the local leg's `reclaimRelease`.
@@ -254,17 +307,22 @@ export interface OmnibusClient {
    * is also valid from `Free` (a half-committed same-chain swap).
    *
    * Preflight: terms valid and paired; `party.chainId` matches the
-   * connected chain; current timestamp `>= party.reclaimRelease`;
-   * optionally on-chain `termsHash`/`posted` verified; simulate/submit.
+   * connected chain; current timestamp `>= party.reclaimRelease`; unless
+   * disabled, the lock is `Free` or `Committed` and its
+   * `termsHash`/`posted` state matches (see
+   * {@link ReclaimArgs.verifyOnChainState}); then balance preflight,
+   * estimate+buffer gas (the pre-submission revert check), submit.
    *
    * @param args - See {@link ReclaimArgs}.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash (not finality).
    * @throws QuipSwapError structural/pairing codes | `CHAIN_ID_MISMATCH` |
-   *   `WINDOW_VIOLATED` | `TERMS_NOT_ON_CHAIN` | `MISSING_WALLET_CLIENT` |
-   *   `CONTRACT_REVERT`.
+   *   `WINDOW_VIOLATED` | `INVALID_LOCK_STATE` | `TERMS_NOT_ON_CHAIN` |
+   *   `MISSING_WALLET_CLIENT` | `GAS_ESTIMATION_FAILED` |
+   *   `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.reclaim
    */
-  reclaim(args: ReclaimArgs): Promise<Hash>
+  reclaim(args: ReclaimArgs, opts?: TxOptions): Promise<Hash>
 
   /** Owner-only operations, namespaced to avoid mixing with user flows. */
   readonly admin: OmnibusAdmin
@@ -281,6 +339,11 @@ function toAbiTerms(terms: Terms) {
     reclaimRelease: terms.reclaimRelease,
     assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   }
+}
+
+/** Human-readable name of a lock state for error messages. */
+function lockStateName(state: LockState): string {
+  return LockState[state] ?? `unknown(${state})`
 }
 
 /**
@@ -369,12 +432,25 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     }
   }
 
-  /** Preflight check that the lock's on-chain termsHash/posted state matches the supplied terms. */
-  async function verifyPostedState(lock: Hex32, party: Terms, counterparty: Terms, postedSide: Terms): Promise<void> {
-    const [onChainTermsHash, isPosted] = await Promise.all([
+  /**
+   * One parallel batch of the three on-chain lock reads every
+   * `verifyOnChainState` preflight uses — a single round of reads, no
+   * sequential extra latency.
+   */
+  async function readLockBatch(
+    lock: Hex32,
+    postedDigest: Hex32,
+  ): Promise<{state: LockState; onChainTermsHash: Hex32; isPosted: boolean}> {
+    const [state, onChainTermsHash, isPosted] = await Promise.all([
+      read<number>('lockState', [lock]),
       read<Hex32>('termsHash', [lock]),
-      read<boolean>('posted', [lock, digestTerms(postedSide)]),
+      read<boolean>('posted', [lock, postedDigest]),
     ])
+    return {state: state as LockState, onChainTermsHash, isPosted}
+  }
+
+  /** Throws TERMS_NOT_ON_CHAIN when the on-chain termsHash disagrees with the supplied pairing. */
+  function checkTermsHash(lock: Hex32, onChainTermsHash: Hex32, party: Terms, counterparty: Terms): void {
     const expected = digestTermsCanonically(party, counterparty)
     if (onChainTermsHash.toLowerCase() !== expected.toLowerCase()) {
       throw new QuipSwapError({
@@ -385,6 +461,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         details: {lock, onChainTermsHash, expected},
       })
     }
+  }
+
+  /** Throws TERMS_NOT_ON_CHAIN when the required side has not been posted for the lock. */
+  function checkPosted(lock: Hex32, isPosted: boolean): void {
     if (!isPosted) {
       throw new QuipSwapError({
         code: 'TERMS_NOT_ON_CHAIN',
@@ -395,61 +475,189 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     }
   }
 
+  /**
+   * Claim preflight against on-chain state: the lock must be `Committed`
+   * (`Omnibus._enforceCommittedLock`), the termsHash must bind this exact
+   * pairing, and the claimed (counterparty) side must be posted.
+   *
+   * Deliberately NOT checked: `posted(lock, digestTerms(party))`. The
+   * contract's party-side `_enforcePosted` in `claim` runs only when
+   * `party.chainId == block.chainid` — unreachable in a cross-chain claim
+   * (the claimant's own leg is on the other chain by definition). For
+   * same-chain swaps, `Committed` is reachable only via
+   * Unused→Free→Committed where the second commit must match the same
+   * canonical termsHash and post the not-yet-posted side, so Committed
+   * (same-chain) provably implies BOTH sides are posted. With the
+   * `Committed` check above in place, a party-side posted read can never
+   * fire — zero information content, so it is skipped. (The counterparty
+   * read below is, strictly, also implied; it is KEPT because it costs no
+   * extra latency inside the Promise.all and, since the three reads are
+   * not atomic, it localizes which value disagrees under an RPC race or a
+   * violated invariant instead of leaving a confusing revert.)
+   */
+  async function verifyClaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(counterparty))
+    if (state !== LockState.Committed) {
+      const cause =
+        state === LockState.Unused
+          ? 'nothing has been committed under this lock on this chain'
+          : state === LockState.Free
+            ? 'the counterparty has not committed yet (same-chain swap is half-committed)'
+            : 'the lock was already claimed or reclaimed'
+      throw new QuipSwapError({
+        code: 'INVALID_LOCK_STATE',
+        message:
+          `Cannot claim: lock state is ${lockStateName(state)} but claim requires Committed — ${cause} ` +
+          '(contract would revert InvalidLockState)',
+        details: {lock, lockState: state, required: 'Committed'},
+      })
+    }
+    checkTermsHash(lock, onChainTermsHash, party, counterparty)
+    checkPosted(lock, isPosted)
+  }
+
+  /**
+   * Reclaim preflight against on-chain state: `_advanceLockTo` permits
+   * only Free→Spent and Committed→Spent, so the lock must be `Free` or
+   * `Committed`; the termsHash must bind this pairing; and the reclaimed
+   * (party) side must be posted.
+   */
+  async function verifyReclaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+    if (state !== LockState.Free && state !== LockState.Committed) {
+      const cause =
+        state === LockState.Unused
+          ? 'nothing has been committed under this lock on this chain'
+          : 'the lock was already claimed or reclaimed'
+      throw new QuipSwapError({
+        code: 'INVALID_LOCK_STATE',
+        message:
+          `Cannot reclaim: lock state is ${lockStateName(state)} but reclaim requires Free or Committed — ` +
+          `${cause} (contract would revert InvalidLockAdvancement)`,
+        details: {lock, lockState: state, required: 'Free or Committed'},
+      })
+    }
+    checkTermsHash(lock, onChainTermsHash, party, counterparty)
+    checkPosted(lock, isPosted)
+  }
+
+  /**
+   * Commit preflight against on-chain state: `Spent`/`Committed` can never
+   * accept another commit; a `Free` lock (second same-chain commit) must
+   * carry the same canonical termsHash and must NOT already have the
+   * committing side posted — the second commit posts the OTHER side
+   * (`Omnibus.commit`: `if (posted[lock][partyDigest]) revert
+   * TermsAlreadyPosted()`); `Unused` needs nothing extra.
+   */
+  async function verifyCommitState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+    // all three reads go out in one parallel batch; the Free-only checks
+    // simply ignore the extra values for other states
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+    if (state === LockState.Spent || state === LockState.Committed) {
+      throw new QuipSwapError({
+        code: 'INVALID_LOCK_STATE',
+        message:
+          `Cannot commit: lock state is ${lockStateName(state)} and no commit can advance from it ` +
+          '(contract would revert InvalidLockAdvancement)',
+        details: {lock, lockState: state, required: 'Unused or Free'},
+      })
+    }
+    if (state === LockState.Free) {
+      checkTermsHash(lock, onChainTermsHash, party, counterparty)
+      if (isPosted) {
+        throw new QuipSwapError({
+          code: 'TERMS_ALREADY_POSTED',
+          message:
+            "This side's terms are already posted for the lock; the second same-chain commit must post the " +
+            'OTHER side (contract would revert TermsAlreadyPosted)',
+          details: {lock, partyDigest: digestTerms(party)},
+        })
+      }
+    }
+    // Unused: no extra requirement
+  }
+
+  /**
+   * Shared write path: prepare (balance preflight on the bare call value,
+   * then node-side gas estimation — a would-be revert surfaces here
+   * decoded — with the safety multiplier applied) and submit with the
+   * prepared gas/fees/nonce.
+   */
+  async function submitWrite(params: {
+    wallet: WalletClient
+    sender: Address
+    functionName: string
+    args: readonly unknown[]
+    value?: bigint
+    opts: TxOptions | undefined
+    context: string
+  }): Promise<Hash> {
+    const prepared = await prepareTx({
+      publicClient,
+      contractParams: {
+        address,
+        abi: omnibusAbi,
+        functionName: params.functionName,
+        args: params.args,
+        ...(params.value !== undefined ? {value: params.value} : {}),
+        account: params.sender,
+      },
+      totalValue: params.value ?? 0n,
+      ...(params.opts !== undefined ? {opts: params.opts} : {}),
+    })
+    try {
+      return await params.wallet.writeContract({
+        ...contract,
+        functionName: params.functionName,
+        args: params.args as unknown[],
+        account: params.wallet.account ?? params.sender,
+        chain: params.wallet.chain ?? publicClient.chain ?? null,
+        ...(params.value !== undefined ? {value: params.value} : {}),
+        gas: prepared.gas,
+        ...prepared.fees,
+        ...(prepared.nonce !== undefined ? {nonce: prepared.nonce} : {}),
+        // dynamic functionName + optional payable value cannot satisfy viem's
+        // conditional parameter types statically; the runtime shape is
+        // exercised by the mocked-client and Anvil integration suites
+      } as unknown as Parameters<WalletClient['writeContract']>[0])
+    } catch (error) {
+      // value-less calls (claim/reclaim/admin) carry no balance preflight,
+      // so a gas-unfunded sender's failure surfaces at SEND time — map it
+      // to BALANCE_TOO_LOW instead of mislabeling it CONTRACT_REVERT
+      if (error instanceof BaseError && error.walk(e => e instanceof InsufficientFundsError) !== null) {
+        throw new QuipSwapError({
+          code: 'BALANCE_TOO_LOW',
+          message: `Sender cannot cover gas for ${params.functionName}; fund the account and retry`,
+          cause: error,
+        })
+      }
+      throw wrapContractError(error, params.context)
+    }
+  }
+
   const admin: OmnibusAdmin = {
-    async setCommitmentFee(newFee: bigint): Promise<Hash> {
+    async setCommitmentFee(newFee: bigint, opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'setCommitmentFee',
-          args: [newFee],
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'setCommitmentFee')
-      }
+      return submitWrite({wallet, sender, functionName: 'setCommitmentFee', args: [newFee], opts, context: 'setCommitmentFee'})
     },
-    async withdrawFees(to: Address): Promise<Hash> {
+    async withdrawFees(to: Address, opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'withdrawFees',
-          args: [to],
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'withdrawFees')
-      }
+      return submitWrite({wallet, sender, functionName: 'withdrawFees', args: [to], opts, context: 'withdrawFees'})
     },
-    async transferOwnership(newOwner: Address): Promise<Hash> {
+    async transferOwnership(newOwner: Address, opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'transferOwnership',
-          args: [newOwner],
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'transferOwnership')
-      }
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'transferOwnership',
+        args: [newOwner],
+        opts,
+        context: 'transferOwnership',
+      })
     },
-    async acceptOwnership(): Promise<Hash> {
+    async acceptOwnership(opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'acceptOwnership',
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'acceptOwnership')
-      }
+      return submitWrite({wallet, sender, functionName: 'acceptOwnership', args: [], opts, context: 'acceptOwnership'})
     },
   }
 
@@ -480,7 +688,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
     isQuipWallet,
 
-    async commit({lock, party, counterparty}: CommitArgs): Promise<Hash> {
+    async commit({lock, party, counterparty, verifyOnChainState = true}: CommitArgs, opts?: TxOptions): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()
 
@@ -502,7 +710,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       }
 
       // 4. QuipWallet gate — the most likely integration failure, so check
-      // it before burning a simulation round-trip
+      // it before burning an estimation round-trip
       if (!(await isQuipWallet(sender))) {
         throw new QuipSwapError({
           code: 'NOT_QUIP_WALLET',
@@ -538,29 +746,35 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         throw error
       }
 
-      // 6-7. SECURITY: re-read the fee immediately before simulation — the
+      // 6. lock-state preflight (Spent/Committed cannot accept a commit;
+      // Free requires matching termsHash and an un-posted party side)
+      if (verifyOnChainState) {
+        await verifyCommitState(lock, party, counterparty)
+      }
+
+      // 7-8. SECURITY: re-read the fee immediately before estimating — the
       // owner can change it, and the contract checks msg.value for EXACT
       // equality (IncorrectNativeAmountReceived); a stale fee bricks the tx
       // in either direction (under- AND overpayment revert)
       const fee = await read<bigint>('commitmentFee')
       const value = totalNative(party) + fee
 
-      // 8-9. simulate, then submit the SIMULATED request
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'commit',
-          args: [lock, toAbiTerms(party), toAbiTerms(counterparty)],
-          value,
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'commit')
-      }
+      // 9-11. balance preflight + estimate (revert check) + buffer + submit
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'commit',
+        args: [lock, toAbiTerms(party), toAbiTerms(counterparty)],
+        value,
+        opts,
+        context: 'commit',
+      })
     },
 
-    async claim({secret, party, counterparty, verifyOnChainState = true}: ClaimArgs): Promise<Hash> {
+    async claim(
+      {secret, party, counterparty, verifyOnChainState = true}: ClaimArgs,
+      opts?: TxOptions,
+    ): Promise<Hash> {
       // 1-2. validate the secret and derive the lock from it
       assertHex32(secret, 'secret')
       const lock = generateLock(secret)
@@ -588,27 +802,28 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       const timestamp = await chainTimestamp()
       validateClaimWindow(party, counterparty, timestamp)
 
-      // 6. optional on-chain state verification (termsHash + posted)
+      // 6. optional on-chain state verification (lockState + termsHash + posted)
       if (verifyOnChainState) {
-        await verifyPostedState(lock, party, counterparty, counterparty)
+        await verifyClaimState(lock, party, counterparty)
       }
 
-      // 7-8. simulate, then submit. NOTE: claim is permissionless — any
-      // sender with the secret may claim; no caller check is added here
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'claim',
-          args: [secret, toAbiTerms(party), toAbiTerms(counterparty)],
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'claim')
-      }
+      // 7-9. balance preflight + estimate (revert check) + buffer + submit.
+      // NOTE: claim is permissionless — any sender with the secret may
+      // claim; no caller check is added here
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'claim',
+        args: [secret, toAbiTerms(party), toAbiTerms(counterparty)],
+        opts,
+        context: 'claim',
+      })
     },
 
-    async reclaim({lock, party, counterparty, verifyOnChainState = true}: ReclaimArgs): Promise<Hash> {
+    async reclaim(
+      {lock, party, counterparty, verifyOnChainState = true}: ReclaimArgs,
+      opts?: TxOptions,
+    ): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()
 
@@ -634,23 +849,20 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       const timestamp = await chainTimestamp()
       validateReclaimWindow(party, timestamp)
 
-      // 4. optional on-chain state verification (party's side must be posted)
+      // 4. optional on-chain state verification (lockState + termsHash + posted)
       if (verifyOnChainState) {
-        await verifyPostedState(lock, party, counterparty, party)
+        await verifyReclaimState(lock, party, counterparty)
       }
 
-      // 5-6. simulate, then submit
-      try {
-        const {request} = await publicClient.simulateContract({
-          ...contract,
-          functionName: 'reclaim',
-          args: [lock, toAbiTerms(party), toAbiTerms(counterparty)],
-          account: sender,
-        })
-        return await wallet.writeContract(request)
-      } catch (error) {
-        throw wrapContractError(error, 'reclaim')
-      }
+      // 5-7. balance preflight + estimate (revert check) + buffer + submit
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'reclaim',
+        args: [lock, toAbiTerms(party), toAbiTerms(counterparty)],
+        opts,
+        context: 'reclaim',
+      })
     },
 
     admin,

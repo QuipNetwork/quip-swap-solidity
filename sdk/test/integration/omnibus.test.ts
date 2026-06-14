@@ -13,8 +13,9 @@
  * Run via `bun run test:integration` (the runner starts Anvil, builds
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import {getAddress, keccak256, toHex} from 'viem'
+import {createWalletClient, getAddress, http, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
+import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
@@ -800,7 +801,7 @@ describe('invalid operations', () => {
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'DisordedDeadlines')
   })
 
-  it('re-posting the same side reverts TermsAlreadyPosted', async () => {
+  it('re-posting the same side: TERMS_ALREADY_POSTED preflight; contract TermsAlreadyPosted with the flag off', async () => {
     // the second same-chain commit must post the OTHER side; the committer
     // re-posting its own side inside its still-open window hits the
     // posted[partyDigest] guard (lock is Free at that point)
@@ -810,10 +811,25 @@ describe('invalid operations', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
     await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+
+    // SDK preflight catches the duplicate with its precise code, before estimation
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('TERMS_ALREADY_POSTED')
+    }
+    // with the flag off, the same scenario surfaces through the gas-estimation
+    // path as the decoded contract error
+    await expectContractError(
+      aliceClient.commit({lock, party: alice, counterparty: bob, verifyOnChainState: false}),
+      'TermsAlreadyPosted',
+    )
+    // and the raw contract call agrees
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'TermsAlreadyPosted')
   })
 
-  it('a second commit with DIFFERENT terms reverts TermsMismatch', async () => {
+  it('a second commit with DIFFERENT terms: TERMS_NOT_ON_CHAIN preflight; contract TermsMismatch with the flag off', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
@@ -823,7 +839,38 @@ describe('invalid operations', () => {
     // bob commits against MUTATED alice terms — canonical digest differs
     const mutatedAlice: Terms = {...alice, recipient: BOB_RECIPIENT}
     await ctx.warpTo(s.anchors.takerCommit)
+    try {
+      await bobClient.commit({lock, party: bob, counterparty: mutatedAlice})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('TERMS_NOT_ON_CHAIN')
+    }
+    await expectContractError(
+      bobClient.commit({lock, party: bob, counterparty: mutatedAlice, verifyOnChainState: false}),
+      'TermsMismatch',
+    )
     await expectContractError(rawCommit(ctx.bob, lock, bob, mutatedAlice, 0n), 'TermsMismatch')
+  })
+
+  it('reclaim on an Unused lock: INVALID_LOCK_STATE preflight; contract TermsMismatch with the flag off', async () => {
+    // nothing was ever committed under this lock; the contract hits the
+    // termsHash check first (zero != canonical digest), the preflight names
+    // the actual cause
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerReclaim)
+    try {
+      await aliceClient.reclaim({lock, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+    }
+    await expectContractError(
+      aliceClient.reclaim({lock, party: alice, counterparty: bob, verifyOnChainState: false}),
+      'TermsMismatch',
+    )
   })
 
   it('claim with the wrong secret reverts TermsMismatch (the wrong lock has no termsHash)', async () => {
@@ -863,8 +910,16 @@ describe('invalid operations', () => {
     await ctx.warpTo(s.anchors.proposerCommit)
     await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
 
-    // lock is Free (only one side committed): claim reverts InvalidLockState
+    // lock is Free (only one side committed): the SDK preflight names the
+    // cause; the raw contract call reverts InvalidLockState
     await ctx.warpTo(s.anchors.proposerClaim)
+    try {
+      await aliceClient.claim({secret, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('counterparty has not committed')
+    }
     await expectContractError(
       ctx.publicClient.simulateContract({
         address: fixture.omnibus,
@@ -896,6 +951,21 @@ describe('invalid operations', () => {
     await waitForOmnibusReceipt(
       ctx.publicClient,
       await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2}),
+    )
+    // double claim (lock now Spent): SDK preflight catches it with its
+    // precise code instead of a generic CONTRACT_REVERT...
+    try {
+      await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('already claimed or reclaimed')
+    }
+    // ...with the flag off, the same scenario surfaces through the
+    // gas-estimation path as the decoded contract error
+    await expectContractError(
+      aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2, verifyOnChainState: false}),
+      'InvalidLockState',
     )
     await expectContractError(
       ctx.publicClient.simulateContract({
@@ -975,5 +1045,118 @@ describe('fee-on-transfer token', () => {
     // receive 9900 != 10000 — the contract's balance reconciliation reverts
     await ctx.warpTo(s.anchors.proposerCommit)
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 0n), 'UnexpectedAmountReceived')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// gas estimation and balance preflight (the estimate-before-write flow)
+// ---------------------------------------------------------------------------
+
+describe('gas and balance preflight', () => {
+  it('a commit sender underfunded for the VALUE is rejected BALANCE_TOO_LOW before any transaction exists', async () => {
+    // a fixed key that is NOT one of anvil's funded dev accounts → 0 balance;
+    // register it as a quip wallet so the balance preflight (not the gate)
+    // is the failing check
+    const pauper = privateKeyToAccount(`0x${'77'.repeat(32)}`)
+    expect(await ctx.publicClient.getBalance({address: pauper.address})).toBe(0n)
+    const registerHash = await ctx.deployer.walletClient.writeContract({
+      address: fixture.quipFactory,
+      abi: quipFactoryMockAbi,
+      functionName: 'registerWallet',
+      args: [pauper.address, `0x${'33'.repeat(32)}`, pauper.address],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash: registerHash})
+    const pauperClient = createOmnibusClient({
+      address: fixture.omnibus,
+      publicClient: ctx.publicClient,
+      walletClient: createWalletClient({
+        chain: ctx.publicClient.chain,
+        transport: http(RPC_URL),
+        account: pauper,
+      }),
+    })
+
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const NATIVE = 10n ** 18n
+    const alice = s.aliceTerms([nativeAsset(NATIVE)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    // the stage-1 value preflight rejects BEFORE gas estimation — were the
+    // order reversed, anvil's insufficient-funds estimation error would
+    // mislabel this GAS_ESTIMATION_FAILED
+    try {
+      await pauperClient.commit({lock, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
+      expect((error as QuipSwapError).details).toMatchObject({balance: 0n, required: NATIVE})
+    }
+    // nothing reached the chain
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused)
+  })
+
+  it('a gas-unfunded claimer fails at SEND time as BALANCE_TOO_LOW (value-less calls have no preflight)', async () => {
+    // arrange a claimable swap (claim is permissionless, so ANY account may try)
+    const {secret, lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(100n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await ctx.warpTo(s.anchors.takerCommit)
+    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await ctx.warpTo(s.anchors.proposerClaim)
+
+    const pauper = privateKeyToAccount(`0x${'78'.repeat(32)}`) // 0 balance, never funded
+    const pauperClient = createOmnibusClient({
+      address: fixture.omnibus,
+      publicClient: ctx.publicClient,
+      walletClient: createWalletClient({
+        chain: ctx.publicClient.chain,
+        transport: http(RPC_URL),
+        account: pauper,
+      }),
+    })
+
+    // claim carries no value, so no balance preflight runs; the node rejects
+    // the SEND for gas funds and submitWrite maps viem's
+    // InsufficientFundsError to BALANCE_TOO_LOW (not CONTRACT_REVERT)
+    try {
+      await pauperClient.claim({secret, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
+    }
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
+
+    // a funded (still permissionless, unregistered) claimer settles the swap
+    // end-to-end through the same prepare+write flow
+    await waitForOmnibusReceipt(
+      ctx.publicClient,
+      await charlieClient.claim({secret, party: alice, counterparty: bob}),
+    )
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+  })
+
+  it('explicit TxOptions are honored on a real transaction (gas verbatim, pinned fees)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+    const hash = await aliceClient.commit(
+      {lock, party: alice, counterparty: bob},
+      {gas: 400_000n, maxFeePerGas: 5_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n},
+    )
+    const receipt = await ctx.publicClient.waitForTransactionReceipt({hash})
+    expect(receipt.status).toBe('success')
+    const tx = await ctx.publicClient.getTransaction({hash})
+    expect(tx.gas).toBe(400_000n) // verbatim — no multiplier applied
+    expect(tx.maxFeePerGas).toBe(5_000_000_000n)
+    expect(tx.maxPriorityFeePerGas).toBe(1_000_000_000n)
   })
 })

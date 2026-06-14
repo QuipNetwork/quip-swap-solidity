@@ -680,7 +680,7 @@ The exact commit transaction value must be:
 totalNative(party) + current commitmentFee
 ```
 
-Read `commitmentFee` from the deployed contract immediately before simulation.
+Read `commitmentFee` from the deployed contract immediately before gas estimation.
 
 Do not hardcode the fee.
 
@@ -801,20 +801,30 @@ Do not mix regular user operations and owner administration confusingly.
 
 # 15. Write-Method Safety
 
-All writes must use Viem simulation before submission:
+All writes must use node-side gas estimation with a safety multiplier
+before submission (NOT `simulateContract` — see `sdk/src/gas.ts` and
+`sdk_fixes_round1.md` Fix 4 for the full semantics):
 
 ```ts
-const { request } = await publicClient.simulateContract(...)
-const hash = await walletClient.writeContract(request)
+const estimate = await publicClient.estimateContractGas(contractParams) // revert check
+const gas = applyGasMultiplier(estimate, opts) // floor(estimate * 1.2 default, clamped [1.0, 2.0])
+// balance preflight: totalValue + gas * feePerGas, then:
+const hash = await walletClient.writeContract({...contractParams, gas, ...feeOverrides})
 ```
 
-Do not call `writeContract` directly without simulation.
+`estimateContractGas` executes the call node-side, so contract reverts
+surface before submission exactly as simulation did (decoded into
+`CONTRACT_REVERT` with `contractErrorName`). Every write accepts an
+optional `TxOptions` (explicit `gas` bypasses estimation and the
+multiplier; `skipPreflightChecks` skips ONLY the balance check — protocol
+preflights always run). Do not call `writeContract` without the
+estimation/preparation step.
 
 In all flows below, "party" means the terms of the role the sender is acting for, and "counterparty" means the other side, matching the contract's parameter conventions.
 
 ## Commit flow
 
-Before simulating `commit`:
+Before estimating gas for `commit`:
 
 1. Validate both terms structurally (Section 9).
 2. Validate the pairing interleaving (Section 9).
@@ -825,35 +835,35 @@ Before simulating `commit`:
    - taker: `[counterparty.commitmentDeadline, party.commitmentDeadline)` — the taker can only commit AFTER the proposer's commitment deadline has elapsed; surface this clearly when the window has not opened yet.
 6. Read the latest `commitmentFee`.
 7. Calculate exact `msg.value = totalNative(party) + commitmentFee`.
-8. Simulate the contract call.
-9. Submit the simulated request.
+8. Estimate gas (the node-side revert check), apply the safety multiplier, run the balance preflight.
+9. Submit with the prepared gas/fees/nonce.
 
 Do not substitute the QuipWallet's owner EOA for the wallet. The committer is the QuipWallet contract itself; assets and approvals must belong to it (Section 28).
 
 ## Claim flow
 
-Before simulating `claim`:
+Before estimating gas for `claim`:
 
 1. Validate the secret (32-byte hex).
 2. Derive the lock with `generateLock`.
 3. Validate both terms structurally and as a pairing.
 4. Ensure `counterparty.chainId` matches the connected chain — the claimed leg must be local. (`party.chainId` may be remote in a cross-chain claim.)
 5. Validate the claim window for the claimant's role (Section 9).
-6. Optionally verify `termsHash(lock)` equals the canonical digest, and that `posted(lock, digestTerms(counterparty))` is true.
-7. Simulate.
+6. Optionally (default on) verify the lock state is `Committed`, `termsHash(lock)` equals the canonical digest, and `posted(lock, digestTerms(counterparty))` is true.
+7. Estimate gas + multiplier + balance preflight.
 8. Submit.
 
 Do not add a caller restriction: the contract permits anyone with the correct secret to claim. Note for same-chain claims: when `party.chainId == block.chainid`, a single claim settles BOTH legs (counterparty's assets to `party.recipient` and party's assets to `counterparty.recipient`).
 
 ## Reclaim flow
 
-Before simulating `reclaim`:
+Before estimating gas for `reclaim`:
 
 1. Validate terms structurally and as a pairing.
 2. Ensure `party.chainId` matches the connected chain.
 3. Ensure `currentTimestamp >= party.reclaimRelease`.
-4. Optionally verify the canonical terms hash and posted state.
-5. Simulate.
+4. Optionally (default on) verify the lock state is `Free` or `Committed`, the canonical terms hash, and the posted state.
+5. Estimate gas + multiplier + balance preflight.
 6. Submit.
 
 Do not add an off-chain caller restriction that does not exist in Solidity — reclaim is permissionless, and assets go to `reclaimRecipient` regardless of caller. Note: when `counterparty.chainId` is local and the lock is `Committed`, a single reclaim returns BOTH legs to their respective `reclaimRecipient` addresses and emits two `Reclaimed` events. Reclaim is also valid from the `Free` state (half-committed same-chain swap).
@@ -1381,8 +1391,8 @@ correct ABI arguments passed (7-field Terms tuples)
 exact msg.value calculated
 commitmentFee read before commit
 quip-wallet eligibility (vaultIdOf) read before commit
-simulation called before write
-simulated request passed into writeContract
+gas estimated before write (estimateContractGas with the exact params)
+buffered gas (estimate * multiplier) passed into writeContract
 missing wallet client produces a clear error
 non-quip-wallet sender rejected before submission with a clear error
 chain mismatch rejected before submission (party local for commit/reclaim,
@@ -1821,7 +1831,7 @@ Docstrings on protocol-level functions must state the invariant they uphold and 
 
 ### Inline comments
 
-- Comment the WHY, not the what. Do not narrate obvious code (`// increment i`); do explain every protocol-driven decision, e.g. why structural validation deliberately skips deadline freshness, why ERC-721 amounts are canonicalized to `1n` when the contract only requires non-zero, why digests are compared as unsigned bigints rather than strings, why the fee is re-read immediately before simulation.
+- Comment the WHY, not the what. Do not narrate obvious code (`// increment i`); do explain every protocol-driven decision, e.g. why structural validation deliberately skips deadline freshness, why ERC-721 amounts are canonicalized to `1n` when the contract only requires non-zero, why digests are compared as unsigned bigints rather than strings, why the fee is re-read immediately before gas estimation.
 - Wherever TypeScript logic is a transcription of Solidity, include a short comment quoting or paraphrasing the corresponding Solidity lines so a reviewer can diff the two by eye.
 - Mark every deliberate divergence from contract behavior (there should be very few; ERC-721 canonicalization is the known one) with a clearly searchable comment such as `// SDK-STRICTER-THAN-CONTRACT: ...`.
 - Annotate security-sensitive lines (secret handling, value calculation, address checks) so they survive future refactors.

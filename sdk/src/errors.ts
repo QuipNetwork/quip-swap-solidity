@@ -41,6 +41,13 @@ export type QuipSwapErrorCode =
   | 'MISSING_WALLET_CLIENT'
   | 'MISSING_ACCOUNT'
   | 'TERMS_NOT_ON_CHAIN'
+  // lock-state preflight (preflight equivalents of the contract's
+  // InvalidLockState / InvalidLockAdvancement / TermsAlreadyPosted)
+  | 'INVALID_LOCK_STATE'
+  | 'TERMS_ALREADY_POSTED'
+  // transaction preparation (gas estimation + balance preflight)
+  | 'GAS_ESTIMATION_FAILED'
+  | 'BALANCE_TOO_LOW'
   // cross-chain schedule validation
   | 'SECRET_HOLDER_NOT_PROPOSER'
   | 'INSUFFICIENT_BUFFER'
