@@ -12,6 +12,8 @@
  *    deploys its own fixture (QuipFactoryMock first, wallet registration,
  *    then Omnibus with the two-argument constructor, mocks, harnesses) and
  *    drives block timestamps with evm_setNextBlockTimestamp + mining.
+ *    Extra CLI args after `--` are forwarded to vitest (e.g.
+ *    `bun run test:integration -- --reporter=verbose`).
  * 4. ALWAYS stop Anvil (finally), pass or fail, and exit with vitest's
  *    exit code.
  *
@@ -24,6 +26,9 @@ import {startAnvil} from '../test/helpers/anvil.js'
 
 const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const repoRoot = join(sdkRoot, '..')
+
+/** Vitest flags/files passed after `--` (or directly to this script). */
+const vitestExtraArgs = process.argv.slice(2)
 
 // 1. fresh artifacts — fail loudly if forge is unavailable or the build breaks
 console.log('[integration] forge build ...')
@@ -40,7 +45,7 @@ console.log(`[integration] anvil ready at ${anvil.rpcUrl} (chain ${anvil.chainId
 let exitCode = 1
 try {
   // 3. the actual test run; env carries the node coordinates to the tests
-  const result = spawnSync('bunx', ['vitest', 'run', 'test/integration'], {
+  const result = spawnSync('bunx', ['vitest', 'run', 'test/integration', ...vitestExtraArgs], {
     cwd: sdkRoot,
     stdio: 'inherit',
     env: {

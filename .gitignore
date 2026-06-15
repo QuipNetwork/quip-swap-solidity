@@ -16,3 +16,6 @@ docs/
 
 # Soldeer
 /dependencies
+
+# Prompt planning / SDK task specs and audit reports (local working artifacts)
+_prompt_planning/

@@ -24,6 +24,7 @@
     "test:unit": "vitest run test/unit",
     "test:mocked": "vitest run test/mocked-client",
     "test:integration": "bun run scripts/run-integration-tests.ts",
+    "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
     "smoke": "bun run scripts/smoke.ts",
     "build": "tsup",

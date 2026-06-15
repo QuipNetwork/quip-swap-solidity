@@ -233,10 +233,10 @@ describe('QuipWallet gating', () => {
   })
 
   it('an unregistered committer surfaces CallerNotQuipWallet as CONTRACT_REVERT; registering flips the SAME commit to success', async () => {
-    // the SDK does NOT preflight the gate (it is being removed). While the
+    // the SDK does NOT preflight the gate for quipwallet. While the
     // contract gate exists, an unregistered sender reverts at gas estimation
     // and the reason stays fully visible via contractErrorName — no
-    // dedicated code. Charlie acts for the PROPOSER side, so the window is
+    // dedicated code. Charlie (account deliberately not registered as a QuipWallet) acts for the PROPOSER side, so the window is
     // open and the gate is the only thing that can fail.
     const {lock} = nextSecret()
     const s = await freshSchedule()
