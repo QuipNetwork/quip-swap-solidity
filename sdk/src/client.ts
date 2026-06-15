@@ -688,6 +688,8 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
     isQuipWallet,
 
+
+    // @audit-ok
     async commit({lock, party, counterparty, verifyOnChainState = true}: CommitArgs, opts?: TxOptions): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()
@@ -711,6 +713,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
       // 4. QuipWallet gate — the most likely integration failure, so check
       // it before burning an estimation round-trip
+      // probably will be removed later based on updates
       if (!(await isQuipWallet(sender))) {
         throw new QuipSwapError({
           code: 'NOT_QUIP_WALLET',
@@ -771,6 +774,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       })
     },
 
+    // @audit-ok
     async claim(
       {secret, party, counterparty, verifyOnChainState = true}: ClaimArgs,
       opts?: TxOptions,

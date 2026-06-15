@@ -328,6 +328,17 @@ Or from the repository root: `make sdk-install sdk-generate sdk-typecheck sdk-te
 
 The differential tests treat the deployed `TermsLibHarness`/`OmnibusHarness` as the **oracle** — TypeScript hashing, window math, pairing decisions, and native totals are compared byte-for-byte / decision-for-decision against Solidity on a live node.
 
+### Smoke test
+
+```bash
+cd sdk
+bun run smoke
+```
+
+`bun run smoke` is a fast "is the whole stack on fire?" gate: it drives **one same-chain swap and one cross-chain swap end-to-end through the workflow layer** (`planSameChainSwap` + `getSameChainSwapStatus`, then `validateCrossChainSchedule` + `verifyRemoteCommitment`) against two real Anvil nodes (chains 31337 and 31338). It is **fail-fast** — it stops at the first broken step, prints `SMOKE FAILED at step N` with the error, and exits non-zero (the exit code is what CI keys on); on success it logs one `ok` line per step and prints `SMOKE PASSED`.
+
+Run it as a quick pre-push / CI gate **before** the slower, exhaustive `test:integration` and `test:cross-chain` suites — it proves the layers compose and the happy path works at all, and is deliberately shallow on edge cases (those suites own them). It is a standalone script, not a vitest file: it starts and stops its own Anvil nodes on every exit path (success, failure, interrupt), so nothing leaks. **Foundry must be installed** (it runs `forge build` first and spawns `anvil`).
+
 ## Security limitations
 
 - SDK validation is a preflight convenience; only the contract enforces the protocol.
