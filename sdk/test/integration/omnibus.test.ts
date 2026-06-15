@@ -232,20 +232,55 @@ describe('QuipWallet gating', () => {
     expect(await aliceClient.isQuipWallet(ctx.charlie.address)).toBe(false)
   })
 
-  it('the SDK preflight catches an unregistered committer BEFORE submission', async () => {
+  it('an unregistered committer surfaces CallerNotQuipWallet as CONTRACT_REVERT; registering flips the SAME commit to success', async () => {
+    // the SDK does NOT preflight the gate (it is being removed). While the
+    // contract gate exists, an unregistered sender reverts at gas estimation
+    // and the reason stays fully visible via contractErrorName — no
+    // dedicated code. Charlie acts for the PROPOSER side, so the window is
+    // open and the gate is the only thing that can fail.
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
+
     try {
-      // charlie acts for the PROPOSER side here (earlier schedule), so the
-      // window is open and the gate is the first failing check
       await charlieClient.commit({lock, party: alice, counterparty: bob})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('CONTRACT_REVERT')
+      expect((error as QuipSwapError).contractErrorName).toBe('CallerNotQuipWallet')
     }
+
+    // sanity: registering the SAME sender flips the SAME commit to success —
+    // proving the gate, not an unrelated failure, was the cause
+    const regHash = await ctx.deployer.walletClient.writeContract({
+      address: fixture.quipFactory,
+      abi: quipFactoryMockAbi,
+      functionName: 'registerWallet',
+      args: [ctx.charlie.address, `0x${'cc'.repeat(32)}`, ctx.charlie.address],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash: regHash})
+    const commitReceipt = await waitForOmnibusReceipt(
+      ctx.publicClient,
+      await charlieClient.commit({lock, party: alice, counterparty: bob}),
+    )
+    expect(commitReceipt.commitments).toHaveLength(1)
+
+    // restore the unregistered precondition for the tests that follow
+    const unregHash = await ctx.charlie.walletClient.writeContract({
+      address: fixture.quipFactory,
+      abi: quipFactoryMockAbi,
+      functionName: 'unregisterWallet',
+      args: [ctx.charlie.address],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.charlie.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash: unregHash})
+    expect(await aliceClient.isQuipWallet(ctx.charlie.address)).toBe(false)
   })
 
   it('the CONTRACT reverts CallerNotQuipWallet for an unregistered committer', async () => {

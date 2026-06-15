@@ -209,40 +209,47 @@ export interface OmnibusClient {
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
   getPendingOwner(): Promise<Address>
   /**
-   * Checks whether `account` passes the `onlyQuipWallet` gate: reads
-   * `vaultIdOf(account)` on the contract's `QUIP_FACTORY` and reports
-   * whether it is non-zero. Only factory-deployed QuipWallets can commit.
+   * Convenience read of `QUIP_FACTORY.vaultIdOf(account) != 0`, reflecting
+   * the contract's CURRENT `onlyQuipWallet` gate on commit. TRANSITIONAL:
+   * the gate is being removed as the protocol moves wallet-agnostic; do not
+   * build durable logic on this method. Not used internally by `commit`.
    *
-   * @param account - The would-be commit sender (the QuipWallet contract
-   *   address, NOT its owner's EOA).
-   * @returns `true` iff the account can commit.
-   * @see Omnibus.commit (onlyQuipWallet), IQuipFactory.vaultIdOf
+   * @param account - The account to check (the QuipWallet contract address,
+   *   NOT its owner's EOA).
+   * @returns `true` iff `vaultIdOf(account)` is non-zero.
+   * @see Omnibus.commit (onlyQuipWallet, transitional), IQuipFactory.vaultIdOf
    */
   isQuipWallet(account: Address): Promise<boolean>
 
   // ---- writes (preflight → estimate+buffer → write; hash returned, NOT finality) ----
 
   /**
-   * Commits the sender's side of a swap. QuipWallet-gated and payable.
+   * Commits the sender's side of a swap. Payable.
+   *
+   * The contract currently gates commit with `onlyQuipWallet`, but that gate
+   * is being removed (the protocol is moving wallet-agnostic), so the SDK
+   * deliberately does NOT preflight or name it. While it exists, a non-wallet
+   * sender reverts `CallerNotQuipWallet` at gas estimation and surfaces
+   * generically as `CONTRACT_REVERT` with
+   * `contractErrorName === 'CallerNotQuipWallet'`.
    *
    * Preflight (in order, all before any transaction exists):
    * 1. Both terms structurally valid; 2. pairing strictly interleaves;
    * 3. `party.chainId` matches the connected chain (`counterparty.chainId`
-   *    may differ — cross-chain); 4. the sender passes the QuipWallet gate
-   *    (`vaultIdOf != 0`); 5. the chain's current timestamp is inside the
-   *    sender's commit window — proposer `[0, party.commitmentDeadline)`,
+   *    may differ — cross-chain); 4. the chain's current timestamp is inside
+   *    the sender's commit window — proposer `[0, party.commitmentDeadline)`,
    *    taker `[counterparty.commitmentDeadline, party.commitmentDeadline)`
    *    (the taker's window OPENS only when the proposer's deadline
-   *    elapses); 6. unless `verifyOnChainState` is disabled, the lock's
+   *    elapses); 5. unless `verifyOnChainState` is disabled, the lock's
    *    on-chain state permits this commit (see
-   *    {@link CommitArgs.verifyOnChainState}); 7. the fee is re-read;
-   *    8. `msg.value` is computed as exactly
+   *    {@link CommitArgs.verifyOnChainState}); 6. the fee is re-read;
+   *    7. `msg.value` is computed as exactly
    *    `totalNative(party) + commitmentFee` — the contract checks strict
    *    equality (`IncorrectNativeAmountReceived`), so over- and
-   *    underpayment both revert; 9. the balance preflight runs (bare
-   *    `msg.value` only — gas funding is not preflighted); 10. gas is
+   *    underpayment both revert; 8. the balance preflight runs (bare
+   *    `msg.value` only — gas funding is not preflighted); 9. gas is
    *    estimated node-side (a would-be revert surfaces here, decoded) and
-   *    buffered by the safety multiplier; 11. submit.
+   *    buffered by the safety multiplier; 10. submit.
    *
    * Unused gas is refunded, so the default 1.2x buffer costs nothing at
    * execution; it exists to prevent out-of-gas failures from state drift
@@ -256,10 +263,11 @@ export interface OmnibusClient {
    * @returns The transaction hash (not finality — wait for the receipt).
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
-   *   | `CHAIN_ID_MISMATCH` | `NOT_QUIP_WALLET` | `WINDOW_VIOLATED` |
-   *   `INVALID_LOCK_STATE` | `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN`
-   *   | `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
-   * @see Omnibus.commit (onlyQuipWallet)
+   *   | `CHAIN_ID_MISMATCH` | `WINDOW_VIOLATED` | `INVALID_LOCK_STATE` |
+   *   `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN` | `GAS_ESTIMATION_FAILED`
+   *   | `BALANCE_TOO_LOW` | `CONTRACT_REVERT` (a `CallerNotQuipWallet` gate
+   *   revert arrives via the last two, not a dedicated code).
+   * @see Omnibus.commit (onlyQuipWallet, transitional)
    * @example
    * ```ts
    * const hash = await client.commit({lock, party: myTerms, counterparty: theirTerms})
@@ -416,7 +424,9 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     return block.timestamp
   }
 
-  /** The onlyQuipWallet gate: QUIP_FACTORY.vaultIdOf(account) != bytes32(0). */
+  // Transitional convenience reflecting the contract's current onlyQuipWallet
+  // gate (QUIP_FACTORY.vaultIdOf(account) != 0); NOT called by commit — the
+  // SDK does not preflight the gate, which is being removed.
   async function isQuipWallet(account: Address): Promise<boolean> {
     const factory = await getQuipFactory()
     try {
@@ -711,21 +721,14 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         })
       }
 
-      // 4. QuipWallet gate — the most likely integration failure, so check
-      // it before burning an estimation round-trip
-      // probably will be removed later based on updates
-      if (!(await isQuipWallet(sender))) {
-        throw new QuipSwapError({
-          code: 'NOT_QUIP_WALLET',
-          message:
-            `Sender ${sender} is not a factory-deployed QuipWallet (QUIP_FACTORY.vaultIdOf is zero); ` +
-            'only QuipWallet contracts can commit (contract: CallerNotQuipWallet). The committer must be the ' +
-            "QuipWallet CONTRACT address — never substitute the wallet owner's EOA",
-          details: {sender},
-        })
-      }
+      // The contract currently gates commit with onlyQuipWallet, but that gate is
+      // being removed (protocol going wallet-agnostic), so the SDK does NOT
+      // preflight or name it. While it exists, a non-wallet sender reverts
+      // CallerNotQuipWallet at estimation, surfaced generically as CONTRACT_REVERT
+      // (contractErrorName: 'CallerNotQuipWallet'). No SDK change is needed when
+      // the modifier is later dropped.
 
-      // 5. role-aware commit window; surfaces "taker too early" clearly
+      // 4. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()
       try {
         validateCommitWindow(party, counterparty, timestamp)
@@ -749,20 +752,20 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         throw error
       }
 
-      // 6. lock-state preflight (Spent/Committed cannot accept a commit;
+      // 5. lock-state preflight (Spent/Committed cannot accept a commit;
       // Free requires matching termsHash and an un-posted party side)
       if (verifyOnChainState) {
         await verifyCommitState(lock, party, counterparty)
       }
 
-      // 7-8. SECURITY: re-read the fee immediately before estimating — the
+      // 6-7. SECURITY: re-read the fee immediately before estimating — the
       // owner can change it, and the contract checks msg.value for EXACT
       // equality (IncorrectNativeAmountReceived); a stale fee bricks the tx
       // in either direction (under- AND overpayment revert)
       const fee = await read<bigint>('commitmentFee')
       const value = totalNative(party) + fee
 
-      // 9-11. balance preflight + estimate (revert check) + buffer + submit
+      // 8-10. balance preflight + estimate (revert check) + buffer + submit
       return submitWrite({
         wallet,
         sender,

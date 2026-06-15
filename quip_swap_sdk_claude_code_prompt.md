@@ -829,7 +829,7 @@ Before estimating gas for `commit`:
 1. Validate both terms structurally (Section 9).
 2. Validate the pairing interleaving (Section 9).
 3. Read the connected chain ID and ensure `party.chainId` matches it. Only the local side's chainId must match; `counterparty.chainId` may differ (cross-chain).
-4. Check the sender passes the QuipWallet gate: `QUIP_FACTORY.vaultIdOf(sender) != bytes32(0)`. Produce a clear, actionable error if not — this is the most likely integration failure.
+4. Do NOT preflight the QuipWallet gate. The `onlyQuipWallet` modifier is transitional (being removed as the protocol goes wallet-agnostic), so the SDK does not check or name it; while it exists, a non-wallet sender reverts `CallerNotQuipWallet` at gas estimation and surfaces generically as `CONTRACT_REVERT` (with `contractErrorName: 'CallerNotQuipWallet'`).
 5. Determine the sender's role via `proposedBy` and validate the current timestamp against the correct commit window:
    - proposer: `[0, party.commitmentDeadline)`
    - taker: `[counterparty.commitmentDeadline, party.commitmentDeadline)` — the taker can only commit AFTER the proposer's commitment deadline has elapsed; surface this clearly when the window has not opened yet.
@@ -1390,7 +1390,7 @@ correct contract function selected (commit / claim / reclaim)
 correct ABI arguments passed (7-field Terms tuples)
 exact msg.value calculated
 commitmentFee read before commit
-quip-wallet eligibility (vaultIdOf) read before commit
+commit does NOT read vaultIdOf (the gate is not preflighted); a CallerNotQuipWallet revert surfaces as CONTRACT_REVERT with contractErrorName
 gas estimated before write (estimateContractGas with the exact params)
 buffered gas (estimate * multiplier) passed into writeContract
 missing wallet client produces a clear error
@@ -1505,7 +1505,7 @@ Test:
 ```text
 registered wallet can commit
 unregistered account reverts CallerNotQuipWallet
-SDK preflight catches the unregistered case before submission
+unregistered committer surfaces as CONTRACT_REVERT (contractErrorName: CallerNotQuipWallet) via the live estimation path; registering flips the same commit to success
 claim and reclaim succeed from unregistered accounts
 ```
 
@@ -1858,7 +1858,7 @@ Pay special attention to these invariants:
 
 1. TypeScript hashing must match Solidity exactly (seven-field Terms encoding).
 2. Commit must send exact `msg.value = totalNative(party) + commitmentFee`.
-3. Only registered QuipWallets can commit; the SDK must preflight `vaultIdOf`.
+3. Only registered QuipWallets can commit (contract-enforced, transitional gate); the SDK does NOT preflight `vaultIdOf` and does not name the gate — the revert surfaces generically as `CONTRACT_REVERT`/`contractErrorName: 'CallerNotQuipWallet'`.
 4. ERC-721 represents one specific NFT; the SDK canonicalizes `amount: 1n` even though the contract only enforces `amount != 0`.
 5. ERC-20 assets must have `id == 0n` (contract-enforced).
 6. For commit and reclaim, only `party.chainId` must match the connected chain; for claim, `counterparty.chainId` must (the claimed leg is local).
@@ -1959,7 +1959,7 @@ Explain the implemented layers:
 Pure protocol helpers (assets, terms, pairing, windows, hashing, secrets)
 ABI generation
 Read client
-Write client (with QuipWallet preflight)
+Write client (no QuipWallet preflight — transitional gate surfaces generically via CONTRACT_REVERT)
 Approval planner
 Receipt helpers
 Event helpers
@@ -2020,7 +2020,7 @@ Hash compatibility
 Exact msg.value
 ERC-721 canonicalization
 ERC-20 id-zero rule
-QuipWallet gating and preflight
+QuipWallet gating (transitional; not preflighted by the SDK, surfaces as CONTRACT_REVERT/contractErrorName)
 Window validation
 Cross-chain role assignment and buffer validation
 Event confirmations

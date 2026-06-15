@@ -153,9 +153,9 @@ const {secret, lock} = generateSecret() // crypto.getRandomValues — CSPRNG onl
 - Losing the secret makes claiming impossible; assets are then only recoverable via reclaim after `reclaimRelease`.
 - The SDK never logs secrets, and error messages never echo them.
 
-## The QuipWallet gate on commit
+## The QuipWallet gate on commit (transitional)
 
-Only contracts deployed by the QuipFactory may commit:
+The contract currently gates `commit` so only contracts deployed by the QuipFactory may commit:
 
 ```solidity
 modifier onlyQuipWallet() {
@@ -164,9 +164,13 @@ modifier onlyQuipWallet() {
 }
 ```
 
+This gate is **transitional** — the protocol is moving wallet-agnostic and the `onlyQuipWallet` modifier is planned for removal. The SDK therefore deliberately does **not** preflight or name it: there is no dedicated error code for it, so no SDK change is needed when the modifier is dropped.
+
+- While the gate exists, a non-wallet `commit` reverts at **gas estimation** and surfaces as a `QuipSwapError` with `code: 'CONTRACT_REVERT'` and `contractErrorName === 'CallerNotQuipWallet'` — the reason is fully visible, just not via a dedicated code.
+- **Caveat:** the clean `contractErrorName` depends on the RPC returning revert data; a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` (with no name) instead.
+- `client.isQuipWallet(account)` remains as an **optional, transitional** proactive check (reads `vaultIdOf` on `QUIP_FACTORY`); it is **no longer run automatically** before `commit`. Don't build durable logic on it.
 - The committer is the **QuipWallet contract address** — never its owner's EOA. Assets must belong to the wallet; approvals must be issued by the wallet.
 - `claim` and `reclaim` have **no** gate — any account (EOA, relayer, contract) may call them.
-- Preflight check: `await client.isQuipWallet(account)` reads `vaultIdOf` on the contract's `QUIP_FACTORY` and is run automatically before every `commit`. This is the most common integration failure; the SDK error (`NOT_QUIP_WALLET`) explains it before any gas is spent.
 - In tests, `QuipFactoryMock.registerWallet` lets plain EOAs pass the gate — a test convenience, not a production pattern.
 
 ## Approval checking
@@ -193,7 +197,7 @@ for (const item of plan.items.filter(i => !i.satisfied)) {
 
 Every write (`commit`, `claim`, `reclaim`, `admin.*`) follows the same pipeline:
 
-1. **Protocol preflights** — structural/pairing validation, chain-id, windows, the QuipWallet gate (commit), and a lock-state check (`verifyOnChainState`, default on): claim requires the lock `Committed`, reclaim requires `Free` or `Committed`, and a commit into a `Free` lock must match the canonical `termsHash` and must not re-post an already-posted side. Failures produce precise codes (`INVALID_LOCK_STATE`, `TERMS_ALREADY_POSTED`, `TERMS_NOT_ON_CHAIN`) before any transaction exists.
+1. **Protocol preflights** — structural/pairing validation, chain-id, windows, and a lock-state check (`verifyOnChainState`, default on): claim requires the lock `Committed`, reclaim requires `Free` or `Committed`, and a commit into a `Free` lock must match the canonical `termsHash` and must not re-post an already-posted side. Failures produce precise codes (`INVALID_LOCK_STATE`, `TERMS_ALREADY_POSTED`, `TERMS_NOT_ON_CHAIN`) before any transaction exists. (The contract's `onlyQuipWallet` gate is deliberately **not** preflighted — see "The QuipWallet gate on commit".)
 2. **Balance preflight** — BEFORE estimation, bare call value only: throws `BALANCE_TOO_LOW` with `{required, balance}` when the sender can't cover `totalValue`. Value-less calls (claim/reclaim/admin) skip it — gas funding is deliberately not preflighted (it's the wallet app's concern); a gas-unfunded sender's SEND-time failure is still mapped to `BALANCE_TOO_LOW`, never mislabeled `CONTRACT_REVERT`. Running this first means insufficient funds can never masquerade as a gas-estimation failure.
 3. **Gas estimation** — `publicClient.estimateContractGas` executes the call node-side, so a would-be revert surfaces here as a decoded `CONTRACT_REVERT` (this replaces the earlier `simulateContract` step).
 4. **Safety buffer** — `gas = floor(estimate × multiplier)`, default `1.2`, clamped to `[1.0, 2.0]`, computed with exact bigint math. Unused gas is refunded, so the buffer costs nothing at execution; it prevents out-of-gas failures from state drift between estimation and inclusion — which matters here because writes happen inside closing time windows.
@@ -298,7 +302,7 @@ try {
   await client.commit({lock, party, counterparty})
 } catch (err) {
   if (err instanceof QuipSwapError) {
-    err.code              // 'NOT_QUIP_WALLET' | 'WINDOW_VIOLATED' | 'CONTRACT_REVERT' | ...
+    err.code              // 'WINDOW_VIOLATED' | 'INVALID_LOCK_STATE' | 'CONTRACT_REVERT' | ...
     err.contractErrorName // 'CallerNotQuipWallet' | 'WindowViolated' | ... (when decodable)
     err.cause             // the original Viem error, always preserved
   }
@@ -308,6 +312,26 @@ try {
 Decoded contract errors cover `IOmnibus` (`TermsMismatch`, `InvalidLockState`, `IncorrectNativeAmountReceived`, `InvalidLockAdvancement`, `TermsAlreadyPosted`, `TermsNotPosted`, `FeeExceedsMax`, `CallerNotQuipWallet`, `ZeroQuipFactory`), `TermsLib` (`ZeroAmount`, `ZeroChainId`, `ChainIdMismatch`, `DisordedDeadlines`, `InvalidNativeAsset`, `InvalidERC20Asset`, `InvalidERC721Asset`, `InvalidERC1155Asset`, `EmptyAssets`, `ZeroDeadline`, `UnexpectedAmountReceived`, `WindowViolated`, `ZeroAddressRecipient`, `InvalidRange`), and OpenZeppelin's `OwnableUnauthorizedAccount`/`OwnableInvalidOwner` on admin paths. Timing failures surface as `WindowViolated`; ordering failures as `DisordedDeadlines`.
 
 Note on receipts: a transaction **hash is not finality**. Use `waitForOmnibusReceipt(publicClient, hash, {confirmations, timeout})` to wait, check status, and decode events; pick confirmation counts per your finality policy. Events can be duplicated or reorganized — `Reclaimed` legitimately appears twice in a dual-leg reclaim, and a log observed once is not final.
+
+## Catching contract reverts
+
+Any contract revert that reaches the SDK is decoded generically — there is no per-error SDK code to maintain, and you can still see exactly what failed. The SDK surfaces it as a `QuipSwapError` with `code: 'CONTRACT_REVERT'`, `contractErrorName` set to the Solidity error name, and `cause` preserving the original viem error:
+
+```ts
+try {
+  // e.g. committing with the wrong msg.value
+  await client.commit({lock, party, counterparty})
+} catch (err) {
+  if (err instanceof QuipSwapError && err.code === 'CONTRACT_REVERT') {
+    err.contractErrorName // 'IncorrectNativeAmountReceived'
+    err.cause             // the original viem ContractFunctionRevertedError
+  }
+}
+```
+
+This is also how the **transitional** `onlyQuipWallet` gate surfaces today: an unregistered committer reverts at gas estimation as `CONTRACT_REVERT` with `contractErrorName === 'CallerNotQuipWallet'`, rather than via a dedicated code (the gate is being removed, so the SDK does not couple to it).
+
+**Caveat:** `contractErrorName` is only populated when the RPC returns the revert data. A provider that strips revert data yields `code: 'GAS_ESTIMATION_FAILED'` with no name, so branch on `code` first and treat `contractErrorName` as best-effort detail.
 
 ## Running the tests
 

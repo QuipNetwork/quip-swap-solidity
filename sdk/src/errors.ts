@@ -37,7 +37,6 @@ export type QuipSwapErrorCode =
   | 'INVALID_HEX32'
   // client preflight
   | 'CHAIN_ID_MISMATCH'
-  | 'NOT_QUIP_WALLET'
   | 'MISSING_WALLET_CLIENT'
   | 'MISSING_ACCOUNT'
   | 'TERMS_NOT_ON_CHAIN'
@@ -87,8 +86,9 @@ export interface QuipSwapErrorDetails {
  * try {
  *   await client.commit({lock, party, counterparty})
  * } catch (err) {
- *   if (err instanceof QuipSwapError && err.code === 'NOT_QUIP_WALLET') {
- *     // the sender is not registered with the QuipFactory
+ *   if (err instanceof QuipSwapError && err.code === 'CONTRACT_REVERT') {
+ *     // a contract revert; err.contractErrorName names the Solidity error
+ *     // (e.g. 'IncorrectNativeAmountReceived', 'CallerNotQuipWallet')
  *   }
  * }
  * ```
