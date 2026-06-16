@@ -33,8 +33,16 @@ export const MAX_GAS_MULTIPLIER = 2.0
  */
 export interface TxOptions {
   /**
-   * Explicit gas limit. When set, gas estimation AND the multiplier are
-   * skipped entirely — the value is used verbatim.
+   * Explicit gas limit. When set, THREE things are skipped: (a) gas
+   * estimation, (b) the safety multiplier, and (c) the pre-submission
+   * revert check — because `estimateContractGas` is also what catches a
+   * would-be revert before broadcast, and it does not run. The protocol
+   * preflights still run, but a call that would revert is signed and
+   * broadcast anyway and burns its gas. Use an explicit `gas` only when the
+   * call is known to succeed (e.g. replaying a previously simulated call)
+   * and you accept on-chain revert risk; leave `gas` unset to keep the
+   * revert check, and use {@link TxOptions.gasMultiplier} if you only want
+   * to tune the buffer.
    */
   readonly gas?: bigint
   /**
@@ -56,9 +64,8 @@ export interface TxOptions {
   /**
    * Skips the stage-1 BALANCE preflight ONLY (the bare-call-value check
    * that runs before gas estimation; see {@link preflightBalanceCheck}).
-   * The protocol preflights (windows, pairing, quip-wallet gate, chain id,
-   * lock state) ALWAYS run — they are correctness checks, not robustness
-   * checks.
+   * The protocol preflights (windows, pairing, chain id, lock state) ALWAYS
+   * run — they are correctness checks, not robustness checks.
    */
   readonly skipPreflightChecks?: boolean
 }
@@ -212,8 +219,9 @@ export async function preflightBalanceCheck(
  *    funds — insufficient funds can no longer masquerade as
  *    `GAS_ESTIMATION_FAILED`.
  * 2. **Gas** — explicit `opts.gas` is used verbatim (no estimation, no
- *    multiplier). Otherwise `publicClient.estimateContractGas` runs the
- *    call node-side, so a contract revert surfaces HERE, decoded into a
+ *    multiplier, and therefore NO pre-submission revert check). Otherwise
+ *    `publicClient.estimateContractGas` runs the call node-side, so a
+ *    contract revert surfaces HERE, decoded into a
  *    `CONTRACT_REVERT` error with `contractErrorName` — this stage is the
  *    pre-submission revert check that replaced `simulateContract` — and
  *    the estimate is buffered by {@link applyGasMultiplier}.
@@ -245,8 +253,9 @@ export async function prepareTx(args: PrepareTxArgs): Promise<PreparedTx> {
   }
 
   // Stage 2: gas — explicit opts.gas is used verbatim (no estimation, no
-  // multiplier); otherwise estimate (contract reverts surface here,
-  // decoded — this is the pre-submission revert check) and buffer.
+  // multiplier, and therefore no pre-submission revert check); otherwise
+  // estimate (contract reverts surface here, decoded — this is the
+  // pre-submission revert check) and buffer.
   let gas: bigint
   if (opts.gas !== undefined) {
     gas = opts.gas

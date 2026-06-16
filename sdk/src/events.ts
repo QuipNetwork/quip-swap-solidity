@@ -148,6 +148,14 @@ export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] 
  * claims — watch the counterparty chain for `Claim` on the shared lock and
  * extract `secret`.
  *
+ * NOTE: This helper does NOT filter by Omnibus contract address — it decodes
+ * any log in `logs` whose shape matches the `Claim` ABI. Callers passing
+ * unscoped logs (e.g. a full receipt or a broad `getLogs` result) may pick up
+ * unrelated contracts. {@link extractRevealedSecret} inherits this behavior
+ * and can then return a spoofed secret if a non-Omnibus log mimics `Claim`.
+ * Prefer {@link getClaimEvents} / {@link watchClaimEvents} (address-scoped)
+ * or pre-filter `logs` to the known Omnibus deployment before decoding.
+ *
  * @param logs - Raw logs to scan; non-`Claim` logs are skipped.
  * @returns All decoded `Claim` events, in log order.
  * @see IOmnibus.Claim

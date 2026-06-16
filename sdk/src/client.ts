@@ -510,7 +510,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     if (state !== LockState.Committed) {
       const cause =
         state === LockState.Unused
-          ? 'nothing has been committed under this lock on this chain'
+          ? 'nothing has been committed under this lock on this chain — either the swap was never committed here, or the supplied secret is not the preimage for this swap (a wrong secret derives a different lock)'
           : state === LockState.Free
             ? 'the counterparty has not committed yet (same-chain swap is half-committed)'
             : 'the lock was already claimed or reclaimed'
