@@ -130,9 +130,13 @@ function toTerms(decoded: DecodedTermsTuple): Terms {
  * @see IOmnibus.Commitment
  * @example
  * ```ts
- * const receipt = await publicClient.waitForTransactionReceipt({hash})
- * const [commitment] = decodeCommitmentEvents(receipt.logs)
- * commitment.party.assets // typed Asset[]
+ * // PREFERRED: client.waitForReceipt scopes decoding to the Omnibus address
+ * const {commitments} = await client.waitForReceipt(hash)
+ * commitments[0]?.party.assets // typed Asset[]
+ *
+ * // low-level: only on logs ALREADY scoped to the Omnibus address
+ * const scoped = receipt.logs.filter(l => l.address.toLowerCase() === omnibus.toLowerCase())
+ * const [commitment] = decodeCommitmentEvents(scoped)
  * ```
  */
 export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] {

@@ -274,7 +274,7 @@ export interface OmnibusClient {
    * @example
    * ```ts
    * const hash = await client.commit({lock, party: myTerms, counterparty: theirTerms})
-   * const result = await waitForOmnibusReceipt(client.publicClient, hash)
+   * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
   commit(args: CommitArgs, opts?: TxOptions): Promise<Hash>
