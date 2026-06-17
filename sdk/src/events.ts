@@ -172,8 +172,13 @@ export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] 
  * @see IOmnibus.Claim
  * @example
  * ```ts
- * const claims = decodeClaimEvents(receipt.logs)
- * const secret = claims[0]?.secret // now public on-chain
+ * // PREFERRED: client.waitForReceipt scopes decoding to the Omnibus address
+ * const {claims} = await client.waitForReceipt(hash)
+ * const secret = extractSecretFromClaims(claims, lock) // verified + scoped
+ *
+ * // low-level: only on logs ALREADY scoped to the Omnibus address
+ * const scoped = receipt.logs.filter(l => l.address.toLowerCase() === omnibus.toLowerCase())
+ * const someClaim = decodeClaimEvents(scoped)[0]?.secret // now public on-chain
  * ```
  */
 export function decodeClaimEvents(logs: readonly Log[]): ClaimEvent[] {
