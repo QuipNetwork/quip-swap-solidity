@@ -39,7 +39,7 @@ bun run generate:abi   # reads that artifact, writes src/generated/omnibusAbi.ts
 The public surface (`src/index.ts`) is three layers — import only what you need:
 
 - **Pure protocol** (`hashing`, `terms`, `windows`, `assets`, `secrets`, `types`) — asset/terms builders and validators, the half-open `[lower, upper)` window math, Solidity-exact `digestTerms` / `generateLock`, and CSPRNG secret generation. **No RPC**; deterministic and unit-testable in isolation.
-- **Client** (`client`, `gas`, `approvals`, `receipts`, `events`, `errors`, `deployments`) — `createOmnibusClient({address, publicClient, walletClient?})` exposes typed reads and **preflighted writes** (`commit` / `claim` / `reclaim`, plus owner-only `admin.*`): structural/pairing/window/chain-id/lock-state checks and a balance check run before gas estimation and a safety-buffered submission. Plus approval planning, receipt decoding, address-scoped event queries, and a single `QuipSwapError` type.
+- **Client** (`client`, `gas`, `approvals`, `receipts`, `events`, `errors`, `deployments`) — `createOmnibusClient({address, publicClient, walletClient?})` exposes typed reads and **preflighted writes** (`commit` / `claim` / `reclaim`, plus owner-only `admin.*`): structural/pairing/window/chain-id/lock-state checks and a balance check run before gas estimation and a safety-buffered submission. Plus approval planning, **address-scoped receipt decoding** (`client.waitForReceipt`, or `waitForOmnibusReceipt(..., {address})`, decode only logs from the Omnibus address), address-scoped event queries, and a single `QuipSwapError` type. The raw `decode*Events` / `extractRevealedSecret` decoders are low-level and expect pre-scoped logs.
 - **Workflows** (`workflows/sameChain`, `workflows/crossChain`) — `planSameChainSwap` / `getSameChainSwapStatus` and `validateCrossChainSchedule` / `verifyRemoteCommitment`. These **plan, validate, and report only — they never submit transactions.**
 
 See [`USAGE.md`](USAGE.md) for how to use each layer.
@@ -93,10 +93,10 @@ sdk/
 │   ├── windows.ts          Half-open [lower,upper) window helpers + validators
 │   ├── hashing.ts          Solidity-exact digestTerms / digestTermsCanonically / generateLock
 │   ├── secrets.ts          generateSecret (CSPRNG), secretToPair
-│   ├── client.ts           createOmnibusClient — typed reads + preflighted writes + admin
+│   ├── client.ts           createOmnibusClient — typed reads + preflighted writes + admin + waitForReceipt
 │   ├── gas.ts              Gas estimation, multiplier clamp, balance preflight, TxOptions
 │   ├── approvals.ts        planApprovals / submitApproval (ERC-20/721/1155)
-│   ├── receipts.ts         waitForOmnibusReceipt (+ TRANSACTION_REVERTED)
+│   ├── receipts.ts         waitForOmnibusReceipt — address-scoped decoding (+ TRANSACTION_REVERTED)
 │   ├── events.ts           decode*/get*/watch event helpers
 │   ├── errors.ts           QuipSwapError + QuipSwapErrorCode
 │   ├── deployments.ts      knownDeployments (empty) + resolveDeployment

@@ -14,7 +14,7 @@
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
 import {createWalletClient, getAddress, http, keccak256, toHex} from 'viem'
-import type {Address} from 'viem'
+import type {Address, Hash} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {planApprovals, submitApproval} from '../../src/approvals.js'
@@ -25,6 +25,7 @@ import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
+import type {OmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {
@@ -162,6 +163,14 @@ async function erc20Balance(token: Address, account: Address): Promise<bigint> {
   return ctx.publicClient.readContract({address: token, abi: erc20MockAbi, functionName: 'balanceOf', args: [account]})
 }
 
+/**
+ * Address-scoped receipt wait bound to this suite's single Omnibus — every
+ * decode is filtered to `fixture.omnibus`, mirroring `client.waitForReceipt`.
+ */
+function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
+  return waitForOmnibusReceipt(ctx.publicClient, hash, {address: fixture.omnibus})
+}
+
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
   fixture = await deployFixture(ctx)
@@ -264,9 +273,7 @@ describe('QuipWallet gating', () => {
       account: ctx.deployer.account,
     })
     await ctx.publicClient.waitForTransactionReceipt({hash: regHash})
-    const commitReceipt = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await charlieClient.commit({lock, party: alice, counterparty: bob}),
+    const commitReceipt = await confirmReceipt(await charlieClient.commit({lock, party: alice, counterparty: bob}),
     )
     expect(commitReceipt.commitments).toHaveLength(1)
 
@@ -326,12 +333,12 @@ describe('QuipWallet gating', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 500n)])
 
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}))
     await ctx.warpTo(s.anchors.proposerClaim)
     const hash = await charlieClient.claim({secret, party: alice, counterparty: bob})
-    const result = await waitForOmnibusReceipt(ctx.publicClient, hash)
+    const result = await confirmReceipt(hash)
     expect(result.claims).toHaveLength(1)
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
   })
@@ -354,7 +361,7 @@ describe('native commits and fee handling', () => {
     const alice = s.aliceTerms([nativeAsset(777n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
 
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
     expect(await aliceClient.getAccruedFees()).toBe(accruedBefore + FEE)
@@ -437,7 +444,7 @@ describe('approval planning', () => {
     const omnibusBefore = await erc20Balance(fixture.erc20, fixture.omnibus)
     const aliceBefore = await erc20Balance(fixture.erc20, ctx.alice.address)
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     expect(await erc20Balance(fixture.erc20, fixture.omnibus)).toBe(omnibusBefore + 5000n)
     expect(await erc20Balance(fixture.erc20, ctx.alice.address)).toBe(aliceBefore - 5000n)
   })
@@ -519,17 +526,15 @@ describe('ERC-721 flows', () => {
 
     // commit escrows the NFT in Omnibus
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     expect((await ownerOf(tokenId)).toLowerCase()).toBe(fixture.omnibus.toLowerCase())
 
     // taker commits, proposer claims: alice's NFT goes to BOB's recipient
     // (recipient receives the COUNTERPARTY's assets)
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}))
     await ctx.warpTo(s.anchors.proposerClaim)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.claim({secret, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
     )
     expect((await ownerOf(tokenId)).toLowerCase()).toBe(BOB_RECIPIENT.toLowerCase())
   })
@@ -596,16 +601,14 @@ describe('ERC-1155 flows', () => {
 
     const omnibusBefore = await balance1155(fixture.omnibus, 1n)
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     expect(await balance1155(fixture.omnibus, 1n)).toBe(omnibusBefore + 250n)
 
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}))
     await ctx.warpTo(s.anchors.proposerClaim)
     const recipientBefore = await balance1155(BOB_RECIPIENT, 1n)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.claim({secret, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
     )
     // alice's 1155 quantity lands with BOB's recipient (counterparty's assets rule)
     expect(await balance1155(BOB_RECIPIENT, 1n)).toBe(recipientBefore + 250n)
@@ -627,9 +630,7 @@ describe('same-chain happy path', () => {
 
     // proposer commit -> Free
     await ctx.warpTo(s.anchors.proposerCommit)
-    const commitA = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.commit({lock, party: alice, counterparty: bob}),
+    const commitA = await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
     expect(await aliceClient.getTermsHash(lock)).toBe(digestTermsCanonically(alice, bob))
@@ -637,9 +638,7 @@ describe('same-chain happy path', () => {
 
     // taker MUST wait for the proposer's deadline (the window only opens there)
     await ctx.warpTo(s.anchors.takerCommit)
-    const commitB = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await bobClient.commit({lock, party: bob, counterparty: alice}),
+    const commitB = await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
 
@@ -656,9 +655,7 @@ describe('same-chain happy path', () => {
     await ctx.warpTo(s.anchors.proposerClaim)
     const bobRecipientNativeBefore = await ctx.publicClient.getBalance({address: BOB_RECIPIENT})
     const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
-    const claim = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.claim({secret, party: alice, counterparty: bob}),
+    const claim = await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
     // bob's tokens -> alice's recipient; alice's native -> bob's recipient
@@ -683,7 +680,7 @@ describe('reclaim flows', () => {
     const alice = s.aliceTerms([nativeAsset(100n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
 
     // SDK preflight rejects with the window error before any submission
     await ctx.warpTo(s.anchors.proposerClaim)
@@ -713,14 +710,12 @@ describe('reclaim flows', () => {
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
 
     await ctx.warpTo(s.anchors.proposerReclaim)
     const reclaimBalanceBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
-    const result = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      // reclaim is PERMISSIONLESS: charlie (unregistered) reclaims for alice's leg
+    const result = await confirmReceipt(// reclaim is PERMISSIONLESS: charlie (unregistered) reclaims for alice's leg
       await charlieClient.reclaim({lock, party: alice, counterparty: bob}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
@@ -738,18 +733,16 @@ describe('reclaim flows', () => {
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, TOKENS)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}))
 
     // bob reclaims his own leg after HIS release; alice's local Committed
     // counterparty leg comes back in the same transaction
     await ctx.warpTo(s.anchors.takerReclaim)
     const aliceReclaimBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
     const bobReclaimBefore = await erc20Balance(fixture.erc20, BOB_RECLAIM)
-    const result = await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await bobClient.reclaim({lock, party: bob, counterparty: alice}),
+    const result = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
     expect(result.reclaims).toHaveLength(2)
@@ -763,11 +756,9 @@ describe('reclaim flows', () => {
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     await ctx.warpTo(s.anchors.proposerReclaim)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.reclaim({lock, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}),
     )
     await expectContractError(
       ctx.publicClient.simulateContract({
@@ -845,7 +836,7 @@ describe('invalid operations', () => {
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
 
     // SDK preflight catches the duplicate with its precise code, before estimation
     try {
@@ -870,7 +861,7 @@ describe('invalid operations', () => {
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     // bob commits against MUTATED alice terms — canonical digest differs
     const mutatedAlice: Terms = {...alice, recipient: BOB_RECIPIENT}
     await ctx.warpTo(s.anchors.takerCommit)
@@ -915,14 +906,10 @@ describe('invalid operations', () => {
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.commit({lock: right.lock, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.commit({lock: right.lock, party: alice, counterparty: bob}),
     )
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await bobClient.commit({lock: right.lock, party: bob, counterparty: alice}),
+    await confirmReceipt(await bobClient.commit({lock: right.lock, party: bob, counterparty: alice}),
     )
     await ctx.warpTo(s.anchors.proposerClaim)
     await expectContractError(
@@ -943,7 +930,7 @@ describe('invalid operations', () => {
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
 
     // lock is Free (only one side committed): the SDK preflight names the
     // cause; the raw contract call reverts InvalidLockState
@@ -973,19 +960,13 @@ describe('invalid operations', () => {
     const alice2 = s2.aliceTerms([nativeAsset(10n)])
     const bob2 = s2.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s2.anchors.proposerCommit)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.commit({lock: second.lock, party: alice2, counterparty: bob2}),
+    await confirmReceipt(await aliceClient.commit({lock: second.lock, party: alice2, counterparty: bob2}),
     )
     await ctx.warpTo(s2.anchors.takerCommit)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await bobClient.commit({lock: second.lock, party: bob2, counterparty: alice2}),
+    await confirmReceipt(await bobClient.commit({lock: second.lock, party: bob2, counterparty: alice2}),
     )
     await ctx.warpTo(s2.anchors.proposerClaim)
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2}),
+    await confirmReceipt(await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2}),
     )
     // double claim (lock now Spent): SDK preflight catches it with its
     // precise code instead of a generic CONTRACT_REVERT...
@@ -1141,9 +1122,9 @@ describe('gas and balance preflight', () => {
     const alice = s.aliceTerms([nativeAsset(100n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
     await ctx.warpTo(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await aliceClient.commit({lock, party: alice, counterparty: bob}))
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob}))
     await ctx.warpTo(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(ctx.publicClient, await bobClient.commit({lock, party: bob, counterparty: alice}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice}))
     await ctx.warpTo(s.anchors.proposerClaim)
 
     const pauper = privateKeyToAccount(`0x${'78'.repeat(32)}`) // 0 balance, never funded
@@ -1170,9 +1151,7 @@ describe('gas and balance preflight', () => {
 
     // a funded (still permissionless, unregistered) claimer settles the swap
     // end-to-end through the same prepare+write flow
-    await waitForOmnibusReceipt(
-      ctx.publicClient,
-      await charlieClient.claim({secret, party: alice, counterparty: bob}),
+    await confirmReceipt(await charlieClient.claim({secret, party: alice, counterparty: bob}),
     )
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
   })

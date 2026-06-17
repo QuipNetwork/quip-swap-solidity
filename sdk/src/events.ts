@@ -22,6 +22,7 @@
 import {parseEventLogs} from 'viem'
 import type {Address, BlockNumber, BlockTag, Log, PublicClient} from 'viem'
 import {QuipSwapError} from './errors.js'
+import {generateLock} from './hashing.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {AssetType} from './types.js'
 import type {Hex32, Terms} from './types.js'
@@ -118,7 +119,13 @@ function toTerms(decoded: DecodedTermsTuple): Terms {
  *
  * Non-`Commitment` logs are skipped, not errors.
  *
- * @param logs - Raw logs (a receipt's `logs` array or a `getLogs` result).
+ * NOTE: a raw ABI decoder — it does NOT verify `log.address`, so it decodes
+ * any `Commitment`-shaped log in `logs`. Scope `logs` to the known Omnibus
+ * deployment first (prefer `client.waitForReceipt` /
+ * `waitForOmnibusReceipt(..., {address})`, or the address-scoped
+ * {@link getCommitmentEvents}).
+ *
+ * @param logs - Pre-scoped logs (a receipt's `logs` array or a `getLogs` result).
  * @returns All decoded `Commitment` events, in log order.
  * @see IOmnibus.Commitment
  * @example
@@ -180,25 +187,69 @@ export function decodeClaimEvents(logs: readonly Log[]): ClaimEvent[] {
 /**
  * Extracts the revealed secret for a specific lock from a list of logs.
  *
+ * Verifies the cryptographic relationship before returning: a `Claim` event
+ * is accepted only when both its indexed `lock` equals the requested lock
+ * AND `generateLock(event.secret)` hashes back to that lock. This rejects a
+ * same-shaped fake `Claim(lock, wrongSecret)` whose `secret` does not
+ * actually open the lock.
+ *
  * Idempotent by construction: duplicate `Claim` logs for the same lock
  * carry the same secret (the lock is `keccak256(secret)`, so only one
  * preimage can ever satisfy it), so processing the same event twice
  * returns the same value.
  *
+ * SECURITY: this does NOT filter by `log.address` — it inherits the
+ * raw-log/address behavior of the decoders. Scope `logs` to the correct
+ * Omnibus address first (prefer `client.waitForReceipt`,
+ * `waitForOmnibusReceipt(..., {address})`, or the address-scoped
+ * `getClaimEvents`/`watchClaimEvents`), or extract from an already-scoped
+ * decoded {@link ClaimEvent} array via {@link extractSecretFromClaims}.
+ *
  * @param logs - Raw logs to scan (receipt logs or a `getLogs` result).
  * @param lock - The lock whose secret to extract.
  * @returns The 32-byte secret, or `undefined` when no `Claim` for the lock
- *   is present.
- * @see IOmnibus.Claim
+ *   carries a secret that hashes to it.
+ * @see IOmnibus.Claim, Omnibus._generateLock
  * @example
  * ```ts
- * const secret = extractRevealedSecret(chainBLogs, lock)
+ * // prefer scoped claims; only use raw logs you have already address-scoped
+ * const secret = extractRevealedSecret(scopedChainBLogs, lock)
  * if (secret) await chainAClient.claim({secret, party: bobTerms, counterparty: aliceTerms})
  * ```
  */
 export function extractRevealedSecret(logs: readonly Log[], lock: Hex32): Hex32 | undefined {
+  return extractSecretFromClaims(decodeClaimEvents(logs), lock)
+}
+
+/**
+ * Extracts the revealed secret for a lock from already-decoded `Claim`
+ * events — the safe, address-scoped path (the events typically come from
+ * {@link OmnibusReceipt.claims}, which `client.waitForReceipt` /
+ * `waitForOmnibusReceipt(..., {address})` already filter by `log.address`).
+ *
+ * Like {@link extractRevealedSecret} it verifies `generateLock(secret)`
+ * hashes back to the requested lock, so a fake `Claim(lock, wrongSecret)`
+ * is ignored.
+ *
+ * @param claims - Decoded `Claim` events (e.g. `receipt.claims`).
+ * @param lock - The lock whose secret to extract.
+ * @returns The 32-byte secret, or `undefined` when none matches.
+ * @see IOmnibus.Claim, Omnibus._generateLock
+ * @example
+ * ```ts
+ * const receipt = await aliceOnB.waitForReceipt(claimHash)
+ * const secret = extractSecretFromClaims(receipt.claims, lock)
+ * ```
+ */
+export function extractSecretFromClaims(claims: readonly ClaimEvent[], lock: Hex32): Hex32 | undefined {
   const lockLower = lock.toLowerCase()
-  return decodeClaimEvents(logs).find(e => e.lock.toLowerCase() === lockLower)?.secret
+  for (const event of claims) {
+    if (event.lock.toLowerCase() !== lockLower) continue
+    // verify the secret actually opens the lock — rejects a same-shaped fake
+    if (generateLock(event.secret).toLowerCase() !== lockLower) continue
+    return event.secret
+  }
+  return undefined
 }
 
 /**
@@ -209,7 +260,11 @@ export function extractRevealedSecret(logs: readonly Log[], lock: Hex32): Hex32 
  * both legs return to their respective `reclaimRecipient` addresses in one
  * call. Always handle the array, never assume a single event.
  *
- * @param logs - Raw logs to scan; non-`Reclaimed` logs are skipped.
+ * NOTE: a raw ABI decoder — it does NOT verify `log.address`. Scope `logs`
+ * to the known Omnibus deployment first (prefer `client.waitForReceipt` /
+ * `waitForOmnibusReceipt(..., {address})`, or {@link getReclaimedEvents}).
+ *
+ * @param logs - Pre-scoped logs to scan; non-`Reclaimed` logs are skipped.
  * @returns All decoded `Reclaimed` events, in log order.
  * @see IOmnibus.Reclaimed, Omnibus.reclaim
  */

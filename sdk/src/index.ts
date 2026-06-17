@@ -109,6 +109,7 @@ export {
   decodeClaimEvents,
   decodeReclaimedEvents,
   extractRevealedSecret,
+  extractSecretFromClaims,
   getCommitmentEvents,
   getClaimEvents,
   getReclaimedEvents,

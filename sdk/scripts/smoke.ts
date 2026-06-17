@@ -35,7 +35,7 @@ import type {Address, Hex} from 'viem'
 import {
   createOmnibusClient,
   erc20Asset,
-  extractRevealedSecret,
+  extractSecretFromClaims,
   generateSecret,
   getSameChainSwapStatus,
   LockState,
@@ -46,7 +46,6 @@ import {
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
-  waitForOmnibusReceipt,
 } from '../src/index.js'
 import type {OmnibusClient} from '../src/index.js'
 import type {Terms} from '../src/index.js'
@@ -281,7 +280,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only proposer leg should need no approvals')
     const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms})
-    await waitForOmnibusReceipt(A.publicClient, hash)
+    await aliceClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Free, `expected Free, got ${LockState[lockState]}`)
     const {status} = await getSameChainSwapStatus(aliceClient, lock, plan)
@@ -302,7 +301,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.bob, bobTerms)
     assert(submitted === 1, `expected one ERC-20 approval, got ${submitted}`)
     const hash = await bobClient.commit({lock, party: bobTerms, counterparty: aliceTerms})
-    await waitForOmnibusReceipt(A.publicClient, hash)
+    await bobClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed, got ${LockState[lockState]}`)
     const {status} = await getSameChainSwapStatus(aliceClient, lock, plan)
@@ -324,7 +323,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
     const bobRecipientEthBefore = await A.publicClient.getBalance({address: SC_BOB_RECIPIENT})
 
     const hash = await aliceClient.claim({secret, party: aliceTerms, counterparty: bobTerms})
-    const receipt = await waitForOmnibusReceipt(A.publicClient, hash)
+    const receipt = await aliceClient.waitForReceipt(hash)
 
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Spent, `expected Spent, got ${LockState[lockState]}`)
@@ -340,7 +339,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
     )
     assert(bobRecipientEthAfter - bobRecipientEthBefore === NATIVE, "Alice's ETH did not reach Bob's recipient")
 
-    const revealed = extractRevealedSecret(receipt.receipt.logs, lock)
+    const revealed = extractSecretFromClaims(receipt.claims, lock)
     assert(revealed === secret, 'revealed secret from Claim event does not match the original')
     return `lock Spent, status settled, both legs settled, secret revealed`
   })
@@ -419,7 +418,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only leg should need no approvals')
     const hash = await aliceOnA.commit({lock, party: aliceTerms, counterparty: bobTerms})
-    await waitForOmnibusReceipt(A.publicClient, hash)
+    await aliceOnA.waitForReceipt(hash)
     const lockState = await aliceOnA.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on A, got ${LockState[lockState]}`)
     return 'node A lock Committed'
@@ -445,7 +444,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
       walletClient: B.bob.walletClient,
     })
     const hash = await bobOnB.commit({lock, party: bobTerms, counterparty: aliceTerms})
-    await waitForOmnibusReceipt(B.publicClient, hash)
+    await bobOnB.waitForReceipt(hash)
     const lockState = await aliceOnB.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on B, got ${LockState[lockState]}`)
     return 'node B lock Committed'
@@ -457,7 +456,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
     await warpBoth(s.atProposerClaim)
     const aliceRecipientTokensBefore = await erc20BalanceOf(B, fixtureB.erc20, XC_ALICE_RECIPIENT)
     const hash = await aliceOnB.claim({secret, party: aliceTerms, counterparty: bobTerms})
-    const receipt = await waitForOmnibusReceipt(B.publicClient, hash)
+    const receipt = await aliceOnB.waitForReceipt(hash)
     const lockState = await aliceOnB.getLockState(lock)
     assert(lockState === LockState.Spent, `expected Spent on B, got ${LockState[lockState]}`)
     const aliceRecipientTokensAfter = await erc20BalanceOf(B, fixtureB.erc20, XC_ALICE_RECIPIENT)
@@ -465,7 +464,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
       aliceRecipientTokensAfter - aliceRecipientTokensBefore === TOKENS,
       "Bob's tokens did not reach Alice's recipient on B",
     )
-    extractedSecret = extractRevealedSecret(receipt.receipt.logs, lock)
+    extractedSecret = extractSecretFromClaims(receipt.claims, lock)
     return 'node B lock Spent, Bob tokens → Alice recipient'
   })
 
@@ -482,7 +481,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
     await warpBoth(s.atTakerClaim)
     const bobRecipientEthBefore = await A.publicClient.getBalance({address: XC_BOB_RECIPIENT})
     const hash = await bobOnA.claim({secret: extractedSecret, party: bobTerms, counterparty: aliceTerms})
-    await waitForOmnibusReceipt(A.publicClient, hash)
+    await bobOnA.waitForReceipt(hash)
     const lockState = await aliceOnA.getLockState(lock)
     assert(lockState === LockState.Spent, `expected Spent on A, got ${LockState[lockState]}`)
     const bobRecipientEthAfter = await A.publicClient.getBalance({address: XC_BOB_RECIPIENT})

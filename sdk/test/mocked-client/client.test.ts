@@ -24,6 +24,7 @@ import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
+import {claimLog} from '../helpers/logs.js'
 import {
   aliceTerms,
   AT_PROPOSER_CLAIM,
@@ -38,6 +39,7 @@ import {
 } from '../helpers/fixtures.js'
 
 const OMNIBUS: Address = '0x9990000000000000000000000000000000000999'
+const IMPOSTOR: Address = '0x0000000000000000000000000000000000000bad'
 const FACTORY: Address = '0x8880000000000000000000000000000000000888'
 const SENDER: Address = '0x7770000000000000000000000000000000000777'
 const TX_HASH = `0x${'ab'.repeat(32)}` as const
@@ -607,5 +609,26 @@ describe('reads', () => {
   it('isQuipWallet returns false for a zero vaultId', async () => {
     const mocks = setup({vaultId: `0x${'00'.repeat(32)}`})
     await expect(mocks.client.isQuipWallet(SENDER)).resolves.toBe(false)
+  })
+})
+
+describe('client.waitForReceipt (uses client.address for scoping)', () => {
+  it('decodes only events from the client Omnibus address, dropping a same-shaped impostor log', async () => {
+    // a receipt with the genuine Omnibus claim and an impostor claim (same
+    // ABI shape, different emitter) in the same transaction
+    const logs = [
+      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: SENDER}),
+      claimLog({address: IMPOSTOR, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: SENDER}),
+    ]
+    const publicClient = {
+      // waitForReceipt must NOT require the caller to pass an address — the
+      // client supplies its own OMNIBUS address for filtering
+      waitForTransactionReceipt: async () => ({status: 'success', logs, transactionHash: TX_HASH}),
+    } as unknown as PublicClient
+    const client = createOmnibusClient({address: OMNIBUS, publicClient})
+
+    const result = await client.waitForReceipt(TX_HASH)
+    expect(result.claims).toHaveLength(1)
+    expect(result.claims[0]?.secret).toBe(FOUNDRY_SECRET)
   })
 })
