@@ -50,8 +50,13 @@ export const CHAIN_B = 31_338n
 export const FOUNDRY_SECRET: Hex32 = '0x65462b0520ef7d3df61b9992ed3bea0c56ead753be7c8b3614e0ce01e4cac41b'
 export const FOUNDRY_LOCK: Hex32 = '0x2ed293efa90dd457a302c46949588d43099e0897bccde03115db594d0ba62445'
 
+/** Default asset Alice's terms offer when no assets are supplied: 1 native. */
+export const ALICE_DEFAULT_ASSETS = [nativeAsset(10n ** 18n)] as const
+/** Default asset Bob's terms offer when no assets are supplied: 2 native. */
+export const BOB_DEFAULT_ASSETS = [nativeAsset(2n * 10n ** 18n)] as const
+
 /** Builds Alice's (proposer) terms on `chainId` with the canonical schedule. */
-export function aliceTerms(chainId: bigint, assets: readonly Asset[] = [nativeAsset(10n ** 18n)]): Terms {
+export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEFAULT_ASSETS): Terms {
   return {
     chainId,
     reclaimRecipient: ALICE,
@@ -64,7 +69,7 @@ export function aliceTerms(chainId: bigint, assets: readonly Asset[] = [nativeAs
 }
 
 /** Builds Bob's (taker) terms on `chainId` with the canonical schedule. */
-export function bobTerms(chainId: bigint, assets: readonly Asset[] = [nativeAsset(2n * 10n ** 18n)]): Terms {
+export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT_ASSETS): Terms {
   return {
     chainId,
     reclaimRecipient: BOB,

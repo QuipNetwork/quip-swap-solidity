@@ -2,7 +2,7 @@
 
 Task-oriented guide to integrating the Quip Swap SDK into a dapp or backend. For build/test/repo orientation see [`README.md`](README.md); for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
 
-The SDK is non-custodial: it never holds keys, never stores secrets, never auto-approves tokens, and never hides wallet signing. Its SDK-side validation mirrors the contract checks to fail early with actionable errors — it never replaces on-chain enforcement.
+The SDK is **intended to be non-custodial**: by design it does not hold keys, store secrets, auto-approve tokens, or hide wallet signing. Its SDK-side validation mirrors the contract checks to fail early with actionable errors, but it never replaces on-chain enforcement, and (like any software) it may have bugs — treat it as a convenience layer over the contracts, not a security guarantee.
 
 ---
 

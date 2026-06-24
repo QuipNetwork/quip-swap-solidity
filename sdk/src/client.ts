@@ -698,8 +698,6 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
     isQuipWallet,
 
-
-    // @audit-ok
     async commit({lock, party, counterparty, verifyOnChainState = true}: CommitArgs, opts?: TxOptions): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()
@@ -777,7 +775,6 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       })
     },
 
-    // @audit-ok
     async claim(
       {secret, party, counterparty, verifyOnChainState = true}: ClaimArgs,
       opts?: TxOptions,
