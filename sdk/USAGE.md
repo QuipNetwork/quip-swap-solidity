@@ -124,6 +124,8 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 
 `commit(args: CommitArgs, opts?)`, `claim(args: ClaimArgs, opts?)`, and `reclaim(args: ReclaimArgs, opts?)` each return a `Promise<Hash>`. `CommitArgs`/`ReclaimArgs` are `{lock, party, counterparty, verifyOnChainState?}`; `ClaimArgs` is `{secret, party, counterparty, verifyOnChainState?}` (the lock is derived from the secret).
 
+`commit` is **QuipWallet-gated**: only factory-deployed QuipWallets may commit (`Omnibus.commit` is `onlyQuipWallet`). The client preflights this via `vaultIdOf` and rejects a non-wallet sender with `NOT_QUIP_WALLET` before any transaction — the committer must be the QuipWallet **contract** address, not its owner's EOA. (`claim`/`reclaim` are ungated.) You can check eligibility up front with `await client.isQuipWallet(account)`.
+
 **Driving / observing the flow** with `getSameChainSwapStatus(client, lock, plan): Promise<SameChainSwapStatusReport>`:
 
 ```ts
