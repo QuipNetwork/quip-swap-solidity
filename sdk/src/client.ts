@@ -257,6 +257,19 @@ export interface OmnibusClient {
    * between estimation and inclusion — which matters here because writes
    * happen inside closing time windows.
    *
+   * @remarks
+   * ⚠️ ASSET-LOSS RISK (cross-chain takers). If you are the TAKER in a
+   * cross-chain swap and you commit before the PROPOSER has actually
+   * committed on their chain, the proposer — who holds the secret — can
+   * claim your escrowed leg while never funding their own, and your assets
+   * are gone. The contract enforces the proposer-first ordering for
+   * same-chain swaps, but CANNOT cross-chain (your chain cannot read the
+   * proposer's chain). Before a cross-chain taker commit, verify the
+   * proposer's commitment yourself with
+   * {@link verifyRemoteCommitment} against the proposer's chain and apply
+   * your own confirmation depth; only then call `commit`. See the
+   * "Security & risks" section of USAGE.md.
+   *
    * @param args - See {@link CommitArgs}.
    * @param opts - Optional per-transaction gas/fee/nonce options
    *   ({@link TxOptions}); `skipPreflightChecks` skips ONLY the balance

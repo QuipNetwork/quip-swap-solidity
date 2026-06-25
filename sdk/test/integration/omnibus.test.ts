@@ -27,15 +27,9 @@ import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashi
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
-import {
-  connectChain,
-  deployFixture,
-  erc1155MockAbi,
-  erc20MockAbi,
-  erc721MockAbi,
-  quipFactoryMockAbi,
-} from '../helpers/chain.js'
+import {connectChain, deployFixture} from '../helpers/chain.js'
 import type {ChainContext, Fixture, TestActor} from '../helpers/chain.js'
+import {erc1155MockAbi, erc20MockAbi, erc721MockAbi, quipFactoryMockAbi} from '../helpers/mockAbis.js'
 
 const RPC_URL = process.env['QUIP_SDK_RPC_URL']
 const CHAIN_ID = Number(process.env['QUIP_SDK_CHAIN_ID'] ?? '31337')

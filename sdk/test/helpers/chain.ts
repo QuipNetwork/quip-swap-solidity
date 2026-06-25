@@ -25,6 +25,7 @@ import {createPublicClient, createTestClient, createWalletClient, defineChain, g
 import type {Abi, Address, Hex, PublicClient, TestClient, WalletClient} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import type {PrivateKeyAccount} from 'viem/accounts'
+import {quipFactoryMockAbi} from './mockAbis.js'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
@@ -167,28 +168,6 @@ export interface Fixture {
   readonly omnibusHarness: Address
 }
 
-/** Minimal QuipFactoryMock surface used by tests. */
-export const quipFactoryMockAbi = [
-  {
-    type: 'function',
-    name: 'registerWallet',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'wallet', type: 'address'},
-      {name: 'vaultId', type: 'bytes32'},
-      {name: 'owner', type: 'address'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'unregisterWallet',
-    stateMutability: 'nonpayable',
-    inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [],
-  },
-] as const
-
 /**
  * Deploys the standard fixture onto a chain and registers alice + bob (but
  * NOT charlie) as quip wallets.
@@ -240,119 +219,3 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
 
   return {quipFactory, omnibus, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
 }
-
-/** Minimal mock-token surfaces used by tests (mint + balance/ownership reads). */
-export const erc20MockAbi = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'amount', type: 'uint256'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'balanceOf',
-    stateMutability: 'view',
-    inputs: [{name: 'account', type: 'address'}],
-    outputs: [{name: '', type: 'uint256'}],
-  },
-  {
-    type: 'function',
-    name: 'approve',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'spender', type: 'address'},
-      {name: 'amount', type: 'uint256'},
-    ],
-    outputs: [{name: '', type: 'bool'}],
-  },
-  {
-    type: 'function',
-    name: 'allowance',
-    stateMutability: 'view',
-    inputs: [
-      {name: 'owner', type: 'address'},
-      {name: 'spender', type: 'address'},
-    ],
-    outputs: [{name: '', type: 'uint256'}],
-  },
-] as const
-
-export const erc721MockAbi = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'tokenId', type: 'uint256'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'ownerOf',
-    stateMutability: 'view',
-    inputs: [{name: 'tokenId', type: 'uint256'}],
-    outputs: [{name: '', type: 'address'}],
-  },
-  {
-    type: 'function',
-    name: 'approve',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'tokenId', type: 'uint256'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'setApprovalForAll',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
-    ],
-    outputs: [],
-  },
-] as const
-
-export const erc1155MockAbi = [
-  {
-    type: 'function',
-    name: 'mint',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'id', type: 'uint256'},
-      {name: 'amount', type: 'uint256'},
-      {name: 'data', type: 'bytes'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'balanceOf',
-    stateMutability: 'view',
-    inputs: [
-      {name: 'account', type: 'address'},
-      {name: 'id', type: 'uint256'},
-    ],
-    outputs: [{name: '', type: 'uint256'}],
-  },
-  {
-    type: 'function',
-    name: 'setApprovalForAll',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
-    ],
-    outputs: [],
-  },
-] as const

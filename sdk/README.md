@@ -2,6 +2,8 @@
 
 A non-custodial TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets. Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). By design it does not custody keys or store secrets, and it never replaces on-chain enforcement (treat it as a convenience layer over the contracts, not a security guarantee). **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
 
+> **Before integrating, read [USAGE.md → "Security & risks"](USAGE.md#6-security--risks).** The primary way to lose funds is a cross-chain **taker** committing before verifying the proposer has committed — the contract cannot prevent this cross-chain; the integrator must.
+
 ---
 
 ## Requirements
@@ -40,7 +42,7 @@ The public surface (`src/index.ts`) is three layers — import only what you nee
 
 - **Pure protocol** (`hashing`, `terms`, `windows`, `assets`, `secrets`, `types`) — asset/terms builders and validators, the half-open `[lower, upper)` window math, Solidity-exact `digestTerms` / `generateLock`, and CSPRNG secret generation. **No RPC**; deterministic and unit-testable in isolation.
 - **Client** (`client`, `gas`, `approvals`, `receipts`, `events`, `errors`, `deployments`) — `createOmnibusClient({address, publicClient, walletClient?})` exposes typed reads and **preflighted writes** (`commit` / `claim` / `reclaim`, plus owner-only `admin.*`): structural/pairing/window/chain-id/quip-wallet-gate/lock-state checks and a balance check run before gas estimation and a safety-buffered submission. Plus approval planning, receipt decoding, address-scoped event queries, and a single `QuipSwapError` type.
-- **Workflows** (`workflows/sameChain`, `workflows/crossChain`) — `planSameChainSwap` / `getSameChainSwapStatus` and `validateCrossChainSchedule` / `verifyRemoteCommitment`. These **plan, validate, and report only — they never submit transactions.**
+- **Workflows** (`workflows/sameChain`, `workflows/crossChain`, `buffers`) — `planSameChainSwap` / `getSameChainSwapStatus` and `validateCrossChainSchedule` / `verifyRemoteCommitment`. These **plan, validate, and report only — they never submit transactions.** Both validators enforce **schedule buffers** (minimum gap between lifecycle timestamps) with tunable defaults (`DEFAULT_BUFFERS`, `DEFAULT_SAME_CHAIN_BUFFER_SECONDS`, `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS`); the contract checks interleaving order but never gap size, so this is the only place tight windows are caught — see USAGE → "Schedule buffers".
 
 See [`USAGE.md`](USAGE.md) for how to use each layer.
 
@@ -99,7 +101,7 @@ sdk/
 │   ├── receipts.ts         waitForOmnibusReceipt (+ TRANSACTION_REVERTED)
 │   ├── events.ts           decode*/get*/watch event helpers
 │   ├── errors.ts           QuipSwapError + QuipSwapErrorCode
-│   ├── deployments.ts      knownDeployments (empty) + resolveDeployment
+│   ├── deployments.ts      knownDeployments + resolveDeployment (Create3 default, override)
 │   ├── workflows/
 │   │   ├── sameChain.ts    planSameChainSwap, getSameChainSwapStatus
 │   │   └── crossChain.ts   validateCrossChainSchedule, verifyRemoteCommitment
@@ -118,5 +120,5 @@ sdk/
 Stated honestly so nothing here is mistaken for shipped:
 
 - **Published package.** `@quip.network/quip-swap-sdk` (v`0.1.0`, `UNLICENSED`) is **not yet published to a registry** — install-from-npm does not work yet. Consume it from this repo (built `dist/`) or your own workspace link until it is.
-- **Deployment registry addresses.** `knownDeployments` is intentionally **empty**; no verified `Omnibus` address ships with the SDK. Supply `{chainId, omnibusAddress}` via `resolveDeployment` / `createOmnibusClient` (see [`USAGE.md`](USAGE.md)). Deterministic addresses are not derived — the repo's deploy scripts encode a stale one-argument constructor while the active one is `(address initialOwner, address quipFactory)`.
+- **Deployment registry addresses.** Omnibus deploys via Create3 (one canonical address across all chains), so the SDK ships that address gated to the chains where it is verified, exposed through `resolveDeployment` / `createOmnibusClient`. The verified-chain set is **not yet populated** (`knownDeployments` is currently empty and `OMNIBUS_CREATE3_ADDRESS` is a placeholder), so for now supply `{chainId, omnibusAddress}` as an override on every chain; the override stays available even once defaults ship. The SDK never returns an unverified or derived-at-runtime address.
 - **Packaging smoke test.** There is no automated `npm pack` / tarball-resolves-exports test; `bun run build` produces `dist/` but no suite imports the built artifact.

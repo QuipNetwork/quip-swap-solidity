@@ -23,7 +23,7 @@ The SDK takes viem `PublicClient` / `WalletClient` instances **you** construct. 
 
 - **No embedded secrets or endpoints** — credential and transport choices stay in the host app.
 - **Same code everywhere** — it works identically in the browser (WalletConnect/injected), in Node, and in backend services; only the transport you pass differs.
-- **No baked-in addresses** — the deployment registry is intentionally empty (`knownDeployments` is an empty `Map`), so you supply the `Omnibus` address per chain. The SDK never invents addresses.
+- **Address resolution** — `resolveDeployment(chainId, override?)` resolves the `Omnibus` address. Because Omnibus is deployed via Create3 (same address on every chain), the SDK can ship one canonical address gated to the chains where it is verified-deployed and return it automatically there; for any other chain — or to point at a different deployment — pass an explicit `{chainId, omnibusAddress}` override. The SDK never returns an unverified or invented address. (The verified default chains are **not yet populated**, so today you must pass the override on every chain; once Quip's deployments are verified the override becomes optional on supported chains.)
 
 ```ts
 import {createPublicClient, createWalletClient, custom, http} from 'viem'
@@ -37,7 +37,8 @@ const walletClient = createWalletClient({chain: base, transport: custom(window.e
 // backend (local account):
 // const walletClient = createWalletClient({chain: base, transport: http(RPC_URL), account})
 
-// the registry is empty by design — pass your verified address as the override:
+// no verified default chains yet — pass your address as the override;
+// once Quip's deployments are verified this override becomes optional on supported chains:
 const {omnibusAddress} = resolveDeployment(8453n, {chainId: 8453n, omnibusAddress: '0x...'})
 
 const client = createOmnibusClient({address: omnibusAddress, publicClient, walletClient})
@@ -107,7 +108,7 @@ const {secret, lock} = generateSecret() // generateSecret(): SecretLockPair = {s
 ```ts
 import {planSameChainSwap, getSameChainSwapStatus, generateSecret} from '@quip.network/quip-swap-sdk'
 
-const plan = planSameChainSwap(aliceTerms, bobTerms) // validates + normalizes roles (returns SameChainSwapPlan)
+const plan = planSameChainSwap(aliceTerms, bobTerms) // validates (structure, order, chain, BUFFERS) + normalizes roles
 const {secret, lock} = generateSecret()              // the PROPOSER holds the secret
 
 // 1. proposer commits in [0, proposer.commitmentDeadline)          lock: Unused -> Free
@@ -125,6 +126,10 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 `commit(args: CommitArgs, opts?)`, `claim(args: ClaimArgs, opts?)`, and `reclaim(args: ReclaimArgs, opts?)` each return a `Promise<Hash>`. `CommitArgs`/`ReclaimArgs` are `{lock, party, counterparty, verifyOnChainState?}`; `ClaimArgs` is `{secret, party, counterparty, verifyOnChainState?}` (the lock is derived from the secret).
 
 `commit` is **QuipWallet-gated**: only factory-deployed QuipWallets may commit (`Omnibus.commit` is `onlyQuipWallet`). The client preflights this via `vaultIdOf` and rejects a non-wallet sender with `NOT_QUIP_WALLET` before any transaction — the committer must be the QuipWallet **contract** address, not its owner's EOA. (`claim`/`reclaim` are ungated.) You can check eligibility up front with `await client.isQuipWallet(account)`.
+
+Same-chain, the contract itself enforces proposer-before-taker ordering — the taker's commit requires the proposer's side to be already posted (an `Unused` lock cannot be used to drain the taker), so the same-chain taker-drain risk is materially lower than cross-chain. The dangerous, integrator-owned case is cross-chain: see the **⚠️ CRITICAL** callout in §5.
+
+`planSameChainSwap` is the validation entry point — and it is the **only** place a dangerously tight schedule is caught, because the contract checks interleaving ORDER but never gap SIZE. It validates structure, order, chain, **and** buffer sizes (defaulting to `DEFAULT_SAME_CHAIN_BUFFER_SECONDS`, overrideable via `planSameChainSwap(a, b, {minimumBufferSeconds})`). Nothing forces it, so **both parties should run it on their own terms** before acting; skipping it means committing with unvalidated windows. See the "Schedule buffers" note at the end of §5.
 
 **Driving / observing the flow** with `getSameChainSwapStatus(client, lock, plan): Promise<SameChainSwapStatusReport>`:
 
@@ -148,6 +153,8 @@ const {status, lockState, proposerPosted, takerPosted, timestamp} =
 
 A cross-chain swap is a **coordinated flow across two independent chains — not one atomic transaction.** Alice is proposer/secret-holder on Chain A; Bob is taker on Chain B.
 
+> **⚠️ CRITICAL — asset-loss risk.** If you are the **taker**, you MUST verify the **proposer** has actually committed on their chain *before* you commit. The contract cannot check this cross-chain — your chain cannot read the proposer's chain. If you skip it and the proposer never committed, the proposer (who holds the secret) can claim your escrowed leg while risking nothing, and **your assets are gone.** This is the single most likely way to lose funds with this SDK. It is not optional and not theoretical: run `verifyRemoteCommitment` against the proposer's chain, gate your commit on the result, and apply your own confirmation depth.
+
 ```ts
 import {validateCrossChainSchedule, verifyRemoteCommitment, extractRevealedSecret,
         waitForOmnibusReceipt} from '@quip.network/quip-swap-sdk'
@@ -156,15 +163,20 @@ import {validateCrossChainSchedule, verifyRemoteCommitment, extractRevealedSecre
 validateCrossChainSchedule({
   proposerTerms: aliceTermsOnA,   // the SECRET HOLDER's leg — MUST be the proposer
   takerTerms: bobTermsOnB,
-  minimumBufferSeconds: 1800n,    // REQUIRED — there is no safe default
+  // minimumBufferSeconds optional → DEFAULT_CROSS_CHAIN_BUFFER_SECONDS; pass an
+  // explicit margin for your chains, e.g. DEFAULT_BUFFERS.conservativeL1
 }) // returns CrossChainSchedule {proposerTerms, takerTerms, reactionBufferSeconds, minimumGapSeconds}
 
 // 1. Alice commits on Chain A                         (Unused -> Committed; no Free state cross-chain)
 await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB})
 
-// 2. Bob MUST verify Alice's remote commitment off-chain before committing:
+// 2. ← REQUIRED: skipping this can drain the taker's assets.
+//    Verify Alice's commitment ON ALICE'S CHAIN (aliceClientA is bound to Chain A)
+//    before Bob commits. `committed` already folds in posted + termsHash match.
 const status = await verifyRemoteCommitment(aliceClientA, lock, aliceTermsOnA, bobTermsOnB)
-if (!(status.committed && status.proposerPosted && status.termsHashMatches)) throw new Error('do not commit')
+if (!status.committed) throw new Error('proposer has not committed — do NOT commit the taker leg')
+// result is point-in-time: re-check at your own confirmation depth (a reorg can
+// undo a young commit) before treating it as final.
 
 // 3. Bob commits on Chain B in [alice.commitmentDeadline, bob.commitmentDeadline)
 await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA})
@@ -180,11 +192,45 @@ const revealed = extractRevealedSecret(receipt.logs, lock) // Hex32 | undefined
 if (revealed) await bobClientA.claim({secret: revealed, party: bobTermsOnB, counterparty: aliceTermsOnA})
 ```
 
-- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is mandatory and has **no default** — choose it from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be reckless on a congested L1.
+- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds?})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is **optional** and defaults to `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS` when omitted — choose an explicit value from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be reckless on a congested L1; **overriding below the default can expose users to missed windows and lost funds.** See the "Schedule buffers" note at the end of §5.
 - **`verifyRemoteCommitment(remoteClient, lock, proposerTerms, takerTerms)`** is the **mandatory off-chain check** Chain B cannot do for you (it cannot read Chain A). Returns `{committed, lockState, proposerPosted, termsHashMatches}`. A taker that skips it risks escrowing against a proposer who never committed.
 - **This is NOT atomic.** The buffer is the taker's reaction window between the latest possible secret reveal and the close of their claim window (`proposer.reclaimRelease - proposer.claimDeadline`). If either side stalls past their windows, each side reclaims its own leg.
 
-## 6. Reading results & events
+### Schedule buffers
+
+A swap's six timestamps must satisfy two separate things: **ORDER** (strict interleaving — the contract enforces this on every commit) and **SIZE** (enough wall-clock time between adjacent stages — the contract does **not** check this; the SDK is the only place it's caught). Buffers are the SIZE check: they protect the action/reaction windows against chain finality, reorgs, RPC outages, congestion, and relayer latency.
+
+Both validators apply a minimum-gap check across every adjacent pair: `planSameChainSwap(a, b, {minimumBufferSeconds?})` (default `DEFAULT_SAME_CHAIN_BUFFER_SECONDS`) and `validateCrossChainSchedule({..., minimumBufferSeconds?})` (default `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS`). `checkScheduleBuffers(proposer, taker, min)` is exported if you want the check standalone.
+
+Pick a value for **your** chains from the presets (starting points, not authoritative — tune them):
+
+```ts
+import {DEFAULT_BUFFERS} from '@quip.network/quip-swap-sdk'
+// DEFAULT_BUFFERS = { fastL2: 300n, standard: 1800n, conservativeL1: 3600n }
+validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds: DEFAULT_BUFFERS.conservativeL1})
+```
+
+- `fastL2` (~5 min) — fast-finality L2s with low reorg risk.
+- `standard` (~30 min) — the general default both modes use when you omit the arg.
+- `conservativeL1` (~1 hr) — congested or deep-reorg-risk L1s.
+
+Overriding **below** these is allowed but **dangerous**: too-tight windows can cause a missed claim/reaction window and forfeited or lost funds. Only do it if you genuinely understand your chains' finality.
+
+## 6. Security & risks
+
+The real failure modes, in order of severity. Read them deliberately before integrating.
+
+1. **Cross-chain taker drain (integrator's responsibility).** The loudest item. In a cross-chain swap the taker must verify the proposer actually committed — via `verifyRemoteCommitment` against the proposer's chain — *before* committing its own leg. If the taker skips this and the proposer never committed, the proposer holds the secret and can claim the taker's leg while risking nothing; the taker loses its funds. The contract enforces proposer-first ordering same-chain but **cannot** cross-chain. See the ⚠️ CRITICAL callout in §5. This is the single most likely way to lose funds with this SDK.
+
+2. **Secret loss (integrator's responsibility).** The proposer generates and holds the secret; the SDK never persists or logs it. If the secret is lost before the claim, the swap cannot be completed — the only recovery is `reclaim`, available after `reclaimRelease`, which returns each leg to its `reclaimRecipient`. Custody of the secret until claim is the application's job.
+
+3. **Missed reaction window (integrator's responsibility).** Once the proposer's claim reveals the secret on one chain, the taker must claim the other leg within `[proposer.claimDeadline, proposer.reclaimRelease)`. Miss that window and the taker forfeits the swap (the proposer can reclaim). Watch the counterparty chain for the `Claim` event rather than polling on a slow interval, and size `minimumBufferSeconds` for your finality/relay latency.
+
+4. **Reorgs / finality (integrator's responsibility).** A commitment or a revealed secret observed once is not final — a reorg can undo a young commit, and `verifyRemoteCommitment` is point-in-time. Honor a confirmation policy (re-check after N blocks) before treating any observation as settled.
+
+SDK-guarded conditions (terms/pairing/window/chain-id/quip-wallet-gate/lock-state, exact `msg.value`, address/secret validation) are preflighted and surface as typed `QuipSwapError`s; the four items above are NOT things the SDK or the contract can fully prevent for you cross-chain.
+
+## 7. Reading results & events
 
 `waitForOmnibusReceipt(publicClient, hash, options?: {confirmations?, timeout?}): Promise<OmnibusReceipt>` waits for the receipt, **throws `TRANSACTION_REVERTED` if the tx mined but reverted**, and decodes events. `OmnibusReceipt` is `{transactionHash, receipt, commitments, claims, reclaims}`.
 
@@ -200,7 +246,7 @@ Decode directly from a logs array with `decodeCommitmentEvents(logs)`, `decodeCl
 
 For **historical queries** use the address-scoped helpers — `getCommitmentEvents(args)`, `getClaimEvents(args)`, `getReclaimedEvents(args)`, and the live subscription `watchClaimEvents({...args, onClaim})` — where `args: EventQueryArgs = {publicClient, address, lock?, fromBlock?, toBlock?}`. These filter by the `Omnibus` `address`; the raw `decode*` helpers do not (see the receipt-logs footgun).
 
-## 7. Error handling
+## 8. Error handling
 
 Every SDK error is a `QuipSwapError` with a stable `code` (`QuipSwapErrorCode`); on-chain reverts also carry the decoded Solidity error name in `contractErrorName`, and the original viem error is always preserved in `cause`.
 
@@ -227,7 +273,7 @@ try {
 
 Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `CallerNotQuipWallet`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
 
-## 8. What the SDK does NOT do
+## 9. What the SDK does NOT do
 
 This is the application's job, not the library's:
 
@@ -236,12 +282,12 @@ This is the application's job, not the library's:
 - **Wallet / key management & signing UX** — you pass a viem `WalletClient`; the SDK never holds keys.
 - **Bridging / cross-chain messaging / relaying** — cross-chain settlement is a coordinated flow you (or a relayer) drive; the SDK provides validation and the off-chain commitment check, not transport.
 
-## 9. Audience notes
+## 10. Audience notes
 
 - **External integrators:** the **workflow helpers** (`planSameChainSwap`, `getSameChainSwapStatus`, `validateCrossChainSchedule`, `verifyRemoteCommitment`) are the supported high-level entry points. Prefer them over hand-rolling client calls.
 - **Teams calling the client directly:** `getSameChainSwapStatus` is a convenience whose conclusions should be **cross-checked against the client preflights** — the client (and ultimately the contract) is the enforcement point. The status helper reads state for display/coordination; it is not an authorization.
 
-## 10. Common footguns
+## 11. Common footguns
 
 Each entry is *pitfall → why → do this instead*. These describe the SDK and protocol **as they behave today** — they are usage guidance, not bugs to fix.
 

@@ -28,7 +28,15 @@
  * submit transactions on their own — every transaction is an explicit
  * application call. Status inspection combines actual on-chain state
  * (`lockState`, `posted`, `termsHash`) with the current window.
+ *
+ * Schedule validation — including gap-SIZE buffers — happens in
+ * {@link planSameChainSwap}. The contract checks interleaving ORDER but
+ * never gap size, so this is the only place a dangerously tight same-chain
+ * window is caught. There is nothing forcing it (unlike the cross-chain
+ * flow's reaction handoff), so BOTH parties should run `planSameChainSwap`
+ * on their own terms before acting — it is per-party self-protection.
  */
+import {DEFAULT_SAME_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
 import {digestTerms, digestTermsCanonically} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
 import {LockState} from '../types.js'
@@ -75,25 +83,43 @@ export interface SameChainSwapPlan {
 /**
  * Validates a same-chain pairing and assembles a {@link SameChainSwapPlan}.
  *
+ * Validates structure, interleaving (ORDER), that both sides name the SAME
+ * chain, AND the gap-SIZE buffers between adjacent schedule timestamps.
  * Accepts the two sides in either order; roles are derived from the
- * schedule (`proposedBy`). Both sides must name the SAME chain — use
- * {@link validateCrossChainSchedule} for cross-chain swaps.
+ * schedule (`proposedBy`). Use {@link validateCrossChainSchedule} for
+ * cross-chain swaps.
+ *
+ * The CONTRACT does not check buffer sizes — it only enforces interleaving
+ * order — so this is the ONLY place a dangerously tight same-chain window is
+ * caught. And nothing forces it (unlike the cross-chain reaction handoff):
+ * BOTH parties should call `planSameChainSwap` on their own terms before
+ * acting. It is per-party self-protection, not a shared gate.
  *
  * @param a - One side's terms.
  * @param b - The other side's terms.
+ * @param opts - Optional. `minimumBufferSeconds` sets the minimum acceptable
+ *   gap (seconds) between every adjacent pair of schedule timestamps;
+ *   defaults to {@link DEFAULT_SAME_CHAIN_BUFFER_SECONDS} when omitted.
+ *   Overriding BELOW the default may let dangerously tight windows through —
+ *   only do so if you understand your chain's finality.
  * @returns The normalized plan with windows and digests precomputed.
  * @throws QuipSwapError - structural codes from {@link validateTerms};
  *   `DISORDERED_DEADLINES` for a non-interleaved schedule;
- *   `CHAIN_ID_MISMATCH` when the sides name different chains.
- * @see TermsLib.validateTermPairing
+ *   `CHAIN_ID_MISMATCH` when the sides name different chains;
+ *   `INSUFFICIENT_BUFFER` when any adjacent gap is below the minimum.
+ * @see TermsLib.validateTermPairing, checkScheduleBuffers
  * @example
  * ```ts
- * const plan = planSameChainSwap(aliceTerms, bobTerms)
+ * const plan = planSameChainSwap(aliceTerms, bobTerms) // default buffer
  * // proposer commits first:
  * await client.commit({lock, party: plan.proposerTerms, counterparty: plan.takerTerms})
  * ```
  */
-export function planSameChainSwap(a: Terms, b: Terms): SameChainSwapPlan {
+export function planSameChainSwap(
+  a: Terms,
+  b: Terms,
+  opts?: {readonly minimumBufferSeconds?: bigint},
+): SameChainSwapPlan {
   validateTerms(a)
   validateTerms(b)
   validateTermPairing(a, b)
@@ -105,6 +131,8 @@ export function planSameChainSwap(a: Terms, b: Terms): SameChainSwapPlan {
     })
   }
   const [proposerTerms, takerTerms] = proposedBy(a, b) === 'party' ? [a, b] : [b, a]
+  // gap-SIZE buffer check (the contract never does this) — the new protection
+  checkScheduleBuffers(proposerTerms, takerTerms, opts?.minimumBufferSeconds ?? DEFAULT_SAME_CHAIN_BUFFER_SECONDS)
   return {
     proposerTerms,
     takerTerms,
