@@ -23,7 +23,7 @@ The SDK takes viem `PublicClient` / `WalletClient` instances **you** construct. 
 
 - **No embedded secrets or endpoints** — credential and transport choices stay in the host app.
 - **Same code everywhere** — it works identically in the browser (WalletConnect/injected), in Node, and in backend services; only the transport you pass differs.
-- **Address resolution** — `resolveDeployment(chainId, override?)` resolves the `Omnibus` address. Because Omnibus is deployed via Create3 (same address on every chain), the SDK can ship one canonical address gated to the chains where it is verified-deployed and return it automatically there; for any other chain — or to point at a different deployment — pass an explicit `{chainId, omnibusAddress}` override. The SDK never returns an unverified or invented address. (The verified default chains are **not yet populated**, so today you must pass the override on every chain; once Quip's deployments are verified the override becomes optional on supported chains.)
+- **Address resolution** — **today you must supply the `Omnibus` address** via a `{chainId, omnibusAddress}` override on every chain: the verified-default registry is not yet populated (`knownDeployments` is empty and `OMNIBUS_CREATE3_ADDRESS` is a placeholder). `resolveDeployment(chainId, override?)` resolves the address, and an override always wins. Looking ahead: because Omnibus deploys via Create3 (one canonical address across all chains), once Quip's deployments are verified the SDK will return that address automatically on supported chains and the override becomes optional there. The SDK never returns an unverified, invented, or derived-at-runtime address.
 
 ```ts
 import {createPublicClient, createWalletClient, custom, http} from 'viem'
@@ -37,8 +37,10 @@ const walletClient = createWalletClient({chain: base, transport: custom(window.e
 // backend (local account):
 // const walletClient = createWalletClient({chain: base, transport: http(RPC_URL), account})
 
-// no verified default chains yet — pass your address as the override;
-// once Quip's deployments are verified this override becomes optional on supported chains:
+// today the override is required on every chain (no verified defaults yet).
+// resolveDeployment(chainId, override?) resolves the address — an override always
+// wins; once Quip's Create3 deployments are verified it will return them
+// automatically on supported chains and this override becomes optional there:
 const {omnibusAddress} = resolveDeployment(8453n, {chainId: 8453n, omnibusAddress: '0x...'})
 
 const client = createOmnibusClient({address: omnibusAddress, publicClient, walletClient})
@@ -127,7 +129,7 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 
 `commit` is **QuipWallet-gated**: only factory-deployed QuipWallets may commit (`Omnibus.commit` is `onlyQuipWallet`). The client preflights this via `vaultIdOf` and rejects a non-wallet sender with `NOT_QUIP_WALLET` before any transaction — the committer must be the QuipWallet **contract** address, not its owner's EOA. (`claim`/`reclaim` are ungated.) You can check eligibility up front with `await client.isQuipWallet(account)`.
 
-Same-chain, the contract itself enforces proposer-before-taker ordering — the taker's commit requires the proposer's side to be already posted (an `Unused` lock cannot be used to drain the taker), so the same-chain taker-drain risk is materially lower than cross-chain. The dangerous, integrator-owned case is cross-chain: see the **⚠️ CRITICAL** callout in §5.
+Same-chain, the contract enforces the *window* ordering — the taker cannot commit until the proposer's commitment deadline has passed — but it does **not** verify the proposer actually committed. A taker who commits first (during the taker window, on an `Unused` lock) simply posts their own side, moving the lock `Unused → Free`; the swap can then never complete (the proposer's window has closed) and the taker's assets are stranded until their `reclaimRelease` (reclaim-from-Free). This is an economically irrational action that strands the taker's assets until reclaim, rather than a theft vector — no one can take the taker's funds — so the same-chain risk is materially lower than the cross-chain drain, but it is not zero. The genuinely dangerous, integrator-owned case is cross-chain: see the **⚠️ CRITICAL** callout in §5.
 
 `planSameChainSwap` is the validation entry point — and it is the **only** place a dangerously tight schedule is caught, because the contract checks interleaving ORDER but never gap SIZE. It validates structure, order, chain, **and** buffer sizes (defaulting to `DEFAULT_SAME_CHAIN_BUFFER_SECONDS`, overrideable via `planSameChainSwap(a, b, {minimumBufferSeconds})`). Nothing forces it, so **both parties should run it on their own terms** before acting; skipping it means committing with unvalidated windows. See the "Schedule buffers" note at the end of §5.
 
@@ -192,7 +194,7 @@ const revealed = extractRevealedSecret(receipt.logs, lock) // Hex32 | undefined
 if (revealed) await bobClientA.claim({secret: revealed, party: bobTermsOnB, counterparty: aliceTermsOnA})
 ```
 
-- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds?})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is **optional** and defaults to `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS` when omitted — choose an explicit value from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be reckless on a congested L1; **overriding below the default can expose users to missed windows and lost funds.** See the "Schedule buffers" note at the end of §5.
+- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds?})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is **optional** and defaults to `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS` when omitted — choose an explicit value from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be unsafe on a congested L1; **overriding below the default can expose users to missed windows and lost funds.** See the "Schedule buffers" note at the end of §5.
 - **`verifyRemoteCommitment(remoteClient, lock, proposerTerms, takerTerms)`** is the **mandatory off-chain check** Chain B cannot do for you (it cannot read Chain A). Returns `{committed, lockState, proposerPosted, termsHashMatches}`. A taker that skips it risks escrowing against a proposer who never committed.
 - **This is NOT atomic.** The buffer is the taker's reaction window between the latest possible secret reveal and the close of their claim window (`proposer.reclaimRelease - proposer.claimDeadline`). If either side stalls past their windows, each side reclaims its own leg.
 
@@ -214,13 +216,13 @@ validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds: DEF
 - `standard` (~30 min) — the general default both modes use when you omit the arg.
 - `conservativeL1` (~1 hr) — congested or deep-reorg-risk L1s.
 
-Overriding **below** these is allowed but **dangerous**: too-tight windows can cause a missed claim/reaction window and forfeited or lost funds. Only do it if you genuinely understand your chains' finality.
+Overriding **below** these is allowed but **dangerous**: too-tight windows can cause a missed claim/reaction window and forfeited or lost funds. Override only after evaluating finality, congestion, reorg risk, and relayer latency.
 
 ## 6. Security & risks
 
 The real failure modes, in order of severity. Read them deliberately before integrating.
 
-1. **Cross-chain taker drain (integrator's responsibility).** The loudest item. In a cross-chain swap the taker must verify the proposer actually committed — via `verifyRemoteCommitment` against the proposer's chain — *before* committing its own leg. If the taker skips this and the proposer never committed, the proposer holds the secret and can claim the taker's leg while risking nothing; the taker loses its funds. The contract enforces proposer-first ordering same-chain but **cannot** cross-chain. See the ⚠️ CRITICAL callout in §5. This is the single most likely way to lose funds with this SDK.
+1. **Cross-chain taker drain (integrator's responsibility).** The loudest item. In a cross-chain swap the taker must verify the proposer actually committed — via `verifyRemoteCommitment` against the proposer's chain — *before* committing its own leg. If the taker skips this and the proposer never committed, the proposer holds the secret and can claim the taker's leg while risking nothing; the taker loses its funds. Same-chain the contract enforces only the *window* ordering (the taker cannot commit before the proposer's deadline) — it does not verify the proposer committed — but a same-chain taker-first commit merely **strands** the taker's funds (reclaim-from-Free), it does not let anyone take them; cross-chain there is no such floor, and the loss is real. See the ⚠️ CRITICAL callout in §5. This is the single most likely way to lose funds with this SDK.
 
 2. **Secret loss (integrator's responsibility).** The proposer generates and holds the secret; the SDK never persists or logs it. If the secret is lost before the claim, the swap cannot be completed — the only recovery is `reclaim`, available after `reclaimRelease`, which returns each leg to its `reclaimRecipient`. Custody of the secret until claim is the application's job.
 

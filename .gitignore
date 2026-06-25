@@ -1,3 +1,7 @@
+# macOS / editor local config
+.DS_Store
+.obsidian/
+
 # Compiler files
 cache/
 out/

@@ -262,9 +262,13 @@ export interface OmnibusClient {
    * cross-chain swap and you commit before the PROPOSER has actually
    * committed on their chain, the proposer — who holds the secret — can
    * claim your escrowed leg while never funding their own, and your assets
-   * are gone. The contract enforces the proposer-first ordering for
-   * same-chain swaps, but CANNOT cross-chain (your chain cannot read the
-   * proposer's chain). Before a cross-chain taker commit, verify the
+   * are gone. The contract enforces the same-chain *window* ordering (the
+   * taker cannot commit until the proposer's commitment deadline has passed)
+   * and the same-chain lock-state guards prevent a taker-first commit from
+   * ever draining the taker — but it CANNOT protect you cross-chain (your
+   * chain cannot read the proposer's chain), where a taker-first commit
+   * against an uncommitted proposer loses your funds. Before a cross-chain
+   * taker commit, verify the
    * proposer's commitment yourself with
    * {@link verifyRemoteCommitment} against the proposer's chain and apply
    * your own confirmation depth; only then call `commit`. See the
