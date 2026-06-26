@@ -1,0 +1,5 @@
+{
+  "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical Create3 address; 'chains' lists chain ids where it is VERIFIED-deployed (verify with `make verify-omnibus`). Empty/placeholder until a real deployment is confirmed; while empty, the SDK resolves no built-in address and requires an override.",
+  "omnibusAddress": "0x0000000000000000000000000000000000000000",
+  "chains": []
+}

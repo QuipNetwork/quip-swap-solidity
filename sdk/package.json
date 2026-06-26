@@ -1,0 +1,43 @@
+{
+  "name": "@quip.network/quip-swap-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Quip Swap Omnibus protocol (hashlocked same-chain and cross-chain swaps)",
+  "type": "module",
+  "license": "UNLICENSED",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "generate:abi": "bun run scripts/generate-abi.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run test/unit test/mocked-client",
+    "test:unit": "vitest run test/unit",
+    "test:mocked": "vitest run test/mocked-client",
+    "test:integration": "bun run scripts/run-integration-tests.ts",
+    "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
+    "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
+    "smoke": "bun run scripts/smoke.ts",
+    "build": "tsup",
+    "check": "bun run typecheck && bun run test && bun run build"
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0",
+    "viem": "^2.21.0",
+    "vitest": "^2.1.0"
+  }
+}
