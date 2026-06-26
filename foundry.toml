@@ -16,6 +16,9 @@ solc_version = '0.8.33'
 evm_version = 'prague'
 optimizer_runs = 10_000
 ignored_warnings_from = ["dependencies/"]
+# Allow VerifyOmnibus.s.sol to read the SDK's canonical address file (default) and
+# any repo-relative ADDRESS_JSON override (read-only verify script).
+fs_permissions = [{access = "read", path = "./"}]
 
 [lint]
 # Disable naming convention warnings (test functions use snake_case, constants use SCREAMING_SNAKE_CASE)

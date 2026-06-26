@@ -43,6 +43,22 @@ describe('validateCrossChainSchedule', () => {
     expect(schedule.minimumGapSeconds).toBe(1000n)
   })
 
+  it('applies DEFAULT_CROSS_CHAIN_BUFFER_SECONDS when minimumBufferSeconds is omitted', () => {
+    // a wide schedule (2000s gaps) clears the default; omit the buffer arg
+    const wideAlice = withOverrides(alice, {commitmentDeadline: 2000n, claimDeadline: 6000n, reclaimRelease: 10000n})
+    const wideBob = withOverrides(bob, {commitmentDeadline: 4000n, claimDeadline: 8000n, reclaimRelease: 12000n})
+    const schedule = validateCrossChainSchedule({proposerTerms: wideAlice, takerTerms: wideBob})
+    expect(schedule.minimumGapSeconds).toBe(2000n)
+  })
+
+  it('the default buffer REJECTS the canonical 1000s schedule when omitted (default > 1000)', () => {
+    // proves the default is actually enforced: DEFAULT_CROSS_CHAIN_BUFFER_SECONDS
+    // (1800) exceeds the canonical 1000s gaps
+    expect(codeOf(() => validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob}))).toBe(
+      'INSUFFICIENT_BUFFER',
+    )
+  })
+
   it('computes the reaction buffer as proposer.reclaimRelease - proposer.claimDeadline', () => {
     const schedule = validateCrossChainSchedule({
       proposerTerms: alice,

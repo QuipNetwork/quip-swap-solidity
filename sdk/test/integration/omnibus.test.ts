@@ -27,15 +27,9 @@ import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashi
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
-import {
-  connectChain,
-  deployFixture,
-  erc1155MockAbi,
-  erc20MockAbi,
-  erc721MockAbi,
-  quipFactoryMockAbi,
-} from '../helpers/chain.js'
+import {connectChain, deployFixture} from '../helpers/chain.js'
 import type {ChainContext, Fixture, TestActor} from '../helpers/chain.js'
+import {erc1155MockAbi, erc20MockAbi, erc721MockAbi, quipFactoryMockAbi} from '../helpers/mockAbis.js'
 
 const RPC_URL = process.env['QUIP_SDK_RPC_URL']
 const CHAIN_ID = Number(process.env['QUIP_SDK_CHAIN_ID'] ?? '31337')
@@ -232,12 +226,11 @@ describe('QuipWallet gating', () => {
     expect(await aliceClient.isQuipWallet(ctx.charlie.address)).toBe(false)
   })
 
-  it('an unregistered committer surfaces CallerNotQuipWallet as CONTRACT_REVERT; registering flips the SAME commit to success', async () => {
-    // the SDK does NOT preflight the gate for quipwallet. While the
-    // contract gate exists, an unregistered sender reverts at gas estimation
-    // and the reason stays fully visible via contractErrorName — no
-    // dedicated code. Charlie (account deliberately not registered as a QuipWallet) acts for the PROPOSER side, so the window is
-    // open and the gate is the only thing that can fail.
+  it('the SDK preflight rejects an unregistered committer with NOT_QUIP_WALLET BEFORE submission; registering flips the SAME commit to success', async () => {
+    // commit preflights the onlyQuipWallet gate via vaultIdOf, so an
+    // unregistered sender is rejected with NOT_QUIP_WALLET before any
+    // transaction exists. Charlie (deliberately not registered) acts for the
+    // PROPOSER side, so the window is open and the gate is the only failure.
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
@@ -249,8 +242,7 @@ describe('QuipWallet gating', () => {
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
-      expect((error as QuipSwapError).code).toBe('CONTRACT_REVERT')
-      expect((error as QuipSwapError).contractErrorName).toBe('CallerNotQuipWallet')
+      expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
     }
 
     // sanity: registering the SAME sender flips the SAME commit to success —
