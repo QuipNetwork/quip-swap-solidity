@@ -32,6 +32,7 @@
  * "free option" the interleaving exists to prevent (see
  * `test/attack/CrossChainFreeOption.t.sol`).
  */
+import {DEFAULT_CROSS_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
 import {QuipSwapError} from '../errors.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
@@ -55,13 +56,16 @@ export interface ValidateCrossChainScheduleArgs {
    * post-reveal reaction buffer
    * (`proposer.reclaimRelease - proposer.claimDeadline`).
    *
-   * No production-safe default exists, so this parameter is REQUIRED.
-   * Choose it from: chain finality, reorg risk, RPC reliability, network
-   * congestion, relayer responsiveness, and your operational safety
-   * margin. A value that is comfortable on a fast-finality L2 may be
-   * recklessly small on a congested L1.
+   * Optional: defaults to {@link DEFAULT_CROSS_CHAIN_BUFFER_SECONDS} when
+   * omitted. Choose it from chain finality, reorg risk, RPC reliability,
+   * network congestion, relayer responsiveness, and your operational safety
+   * margin (the {@link DEFAULT_BUFFERS} presets are starting points). A
+   * value comfortable on a fast-finality L2 may be recklessly small on a
+   * congested L1. Overriding BELOW the default can expose users to missed
+   * windows and lost funds under congestion/reorgs — only do so if you
+   * understand your chains' finality.
    */
-  readonly minimumBufferSeconds: bigint
+  readonly minimumBufferSeconds?: bigint
 }
 
 /** The validated cross-chain schedule summary. */
@@ -95,7 +99,13 @@ export interface CrossChainSchedule {
  * 3. The two legs are on DIFFERENT chains (use {@link planSameChainSwap}
  *    otherwise).
  * 4. Every gap between adjacent timestamps in the interleaved schedule —
- *    including the reaction buffer — is at least `minimumBufferSeconds`.
+ *    including the reaction buffer — is at least `minimumBufferSeconds`
+ *    (defaults to {@link DEFAULT_CROSS_CHAIN_BUFFER_SECONDS} when omitted).
+ *
+ * This validates the SCHEDULE only (interleaving, roles, buffers) and reads
+ * no chain — it is NOT proof that any party has committed. A taker must
+ * still run {@link verifyRemoteCommitment} against the proposer's chain
+ * before committing; a valid schedule alone does not make a commit safe.
  *
  * @param args - See {@link ValidateCrossChainScheduleArgs}; parameter names
  *   are protocol roles (`proposerTerms`/`takerTerms`), not call-site roles.
@@ -110,12 +120,14 @@ export interface CrossChainSchedule {
  * const schedule = validateCrossChainSchedule({
  *   proposerTerms: aliceTermsOnChainA, // Alice holds the secret
  *   takerTerms: bobTermsOnChainB,
- *   minimumBufferSeconds: 1800n, // your finality/ops margin — no safe default
+ *   // minimumBufferSeconds omitted → DEFAULT_CROSS_CHAIN_BUFFER_SECONDS;
+ *   // or pass an explicit margin, e.g. DEFAULT_BUFFERS.conservativeL1
  * })
  * ```
  */
 export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs): CrossChainSchedule {
-  const {proposerTerms, takerTerms, minimumBufferSeconds} = args
+  const {proposerTerms, takerTerms} = args
+  const minimumBufferSeconds = args.minimumBufferSeconds ?? DEFAULT_CROSS_CHAIN_BUFFER_SECONDS
   validateTerms(proposerTerms)
   validateTerms(takerTerms)
   validateTermPairing(proposerTerms, takerTerms)
@@ -144,41 +156,16 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
     })
   }
 
-  // the six interleaved timestamps, in schedule order
-  const sequence: readonly [string, bigint][] = [
-    ['proposer.commitmentDeadline', proposerTerms.commitmentDeadline],
-    ['taker.commitmentDeadline', takerTerms.commitmentDeadline],
-    ['proposer.claimDeadline', proposerTerms.claimDeadline],
-    ['taker.claimDeadline', takerTerms.claimDeadline],
-    ['proposer.reclaimRelease', proposerTerms.reclaimRelease],
-    ['taker.reclaimRelease', takerTerms.reclaimRelease],
-  ]
-
-  let minimumGapSeconds: bigint | undefined
-  for (let i = 1; i < sequence.length; i++) {
-    const [prevName, prev] = sequence[i - 1] as [string, bigint]
-    const [nextName, next] = sequence[i] as [string, bigint]
-    const gap = next - prev
-    if (gap < minimumBufferSeconds) {
-      throw new QuipSwapError({
-        code: 'INSUFFICIENT_BUFFER',
-        message:
-          `Gap between ${prevName} (${prev}) and ${nextName} (${next}) is ${gap}s, below the required ` +
-          `minimum of ${minimumBufferSeconds}s. Every adjacent gap — especially the taker's post-reveal ` +
-          'reaction buffer (proposer.reclaimRelease - proposer.claimDeadline) — must cover finality, reorg ' +
-          'risk, RPC outages, congestion, and relayer latency',
-        details: {prevName, prev, nextName, next, gap, minimumBufferSeconds},
-      })
-    }
-    if (minimumGapSeconds === undefined || gap < minimumGapSeconds) minimumGapSeconds = gap
-  }
+  // gap-SIZE check across the interleaved schedule (shared with the
+  // same-chain validator); throws INSUFFICIENT_BUFFER on a too-tight gap
+  const {minimumGapSeconds} = checkScheduleBuffers(proposerTerms, takerTerms, minimumBufferSeconds)
 
   return {
     proposerTerms,
     takerTerms,
     // reactionBuffer = proposer.reclaimRelease - proposer.claimDeadline
     reactionBufferSeconds: proposerTerms.reclaimRelease - proposerTerms.claimDeadline,
-    minimumGapSeconds: minimumGapSeconds ?? 0n,
+    minimumGapSeconds,
   }
 }
 
@@ -198,15 +185,24 @@ export interface RemoteCommitmentStatus {
  * The taker's MANDATORY pre-commit check: verifies on the PROPOSER's chain
  * that the proposer's commitment has actually taken effect.
  *
- * The contract states this obligation explicitly (`Omnibus.commit`: "the
- * party MUST ensure the commitment from the counterparty has taken effect
- * especially if the swap is cross-chain") — it cannot be enforced on-chain
- * because Chain B cannot read Chain A. A taker that commits without this
- * check risks escrowing assets against a proposer who never committed.
+ * ⚠️ Skipping this before a cross-chain TAKER commit is the single most
+ * dangerous mistake you can make with this SDK. If the taker commits and
+ * the proposer never committed, the proposer (who holds the secret) can
+ * claim the taker's escrowed leg while risking nothing — the taker loses
+ * its funds. The contract states the obligation explicitly (`Omnibus.commit`:
+ * "the party MUST ensure the commitment from the counterparty has taken
+ * effect especially if the swap is cross-chain") but CANNOT enforce it
+ * cross-chain, because the taker's chain cannot read the proposer's chain.
  *
- * Finality caveat: a `true` result reflects the remote chain at query
- * time. Apply your own confirmation depth (re-check after N blocks) before
- * relying on it; a reorg can undo a young commitment.
+ * Not spoofable: this reads on-chain STORAGE (`lockState` / `posted` /
+ * `termsHash`), not events, so a forged log cannot fake a commitment. But
+ * the result is POINT-IN-TIME — a reorg can undo a young commit — so apply
+ * your own confirmation depth (re-check after N blocks) before relying on a
+ * `true` result.
+ *
+ * Chain-agnostic: pass a client bound to the PROPOSER's chain for a
+ * cross-chain swap (the case that matters); passing the local client for a
+ * same-chain swap merely duplicates a guard the contract already enforces.
  *
  * @param remoteClient - An {@link OmnibusClient} bound to the PROPOSER's chain.
  * @param lock - The shared hashlock.

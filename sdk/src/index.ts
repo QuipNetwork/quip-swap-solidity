@@ -59,7 +59,7 @@ export {
 export {generateSecret, secretToPair} from './secrets.js'
 
 // deployments
-export {knownDeployments, resolveDeployment} from './deployments.js'
+export {knownDeployments, resolveDeployment, OMNIBUS_CREATE3_ADDRESS} from './deployments.js'
 export type {OmnibusDeployment} from './deployments.js'
 
 // gas estimation + transaction options
@@ -116,6 +116,14 @@ export {
   watchClaimEvents,
 } from './events.js'
 export type {CommitmentEvent, ClaimEvent, ReclaimedEvent, EventQueryArgs} from './events.js'
+
+// buffers (schedule gap-size defaults + shared check)
+export {
+  DEFAULT_BUFFERS,
+  DEFAULT_CROSS_CHAIN_BUFFER_SECONDS,
+  DEFAULT_SAME_CHAIN_BUFFER_SECONDS,
+  checkScheduleBuffers,
+} from './buffers.js'
 
 // workflows
 export {planSameChainSwap, getSameChainSwapStatus} from './workflows/sameChain.js'

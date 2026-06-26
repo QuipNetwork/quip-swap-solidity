@@ -204,19 +204,24 @@ describe('commit orchestration', () => {
     expect(write.value).toBe(10n ** 18n + 25n)
   })
 
-  it('reads commitmentFee and lock state BEFORE estimating, and estimates BEFORE writing', async () => {
+  it('reads commitmentFee, vaultIdOf, and lock state BEFORE estimating, and estimates BEFORE writing', async () => {
     await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
     const seq = mocks.log.sequence
+    expect(seq.indexOf('read:vaultIdOf')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('read:lockState')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('read:commitmentFee')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('estimate:commit')).toBeLessThan(seq.indexOf('write'))
   })
 
-  it('NEVER reads vaultIdOf during commit — the QuipWallet gate is not preflighted', async () => {
-    // pins the removal of the commit-time gate preflight so a future
-    // re-introduction is caught; the gate is enforced only by the contract
-    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
-    expect(mocks.log.sequence).not.toContain('read:vaultIdOf')
+  it('rejects a non-QuipWallet sender with NOT_QUIP_WALLET BEFORE submission', async () => {
+    // the gate is preflighted via vaultIdOf; a zero vaultId fails before
+    // any estimation round-trip
+    const gated = setup({vaultId: `0x${'00'.repeat(32)}`})
+    expect(await codeOf(gated.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+      'NOT_QUIP_WALLET',
+    )
+    expect(gated.log.sequence).not.toContain('estimate:commit')
+    expect(gated.log.writes).toHaveLength(0)
   })
 
   it('passes the BUFFERED gas (estimate x 1.2) into writeContract', async () => {
@@ -494,14 +499,14 @@ describe('gas estimation and balance preflight', () => {
     expect(mocks.log.writes).toHaveLength(0)
   })
 
-  it('a CallerNotQuipWallet revert during commit estimation surfaces as CONTRACT_REVERT with the name (no dedicated code)', async () => {
-    // the QuipWallet gate is no longer preflighted; while the contract gate
-    // exists, a non-wallet sender reverts at estimation and the reason stays
-    // fully visible via contractErrorName — without a wallet-specific code
+  it('a contract revert during commit estimation surfaces as CONTRACT_REVERT with the name', async () => {
+    // a revert that the SDK does NOT preflight (exact-value mismatch) must
+    // still decode cleanly from the estimation path — the gate itself is
+    // caught earlier by the NOT_QUIP_WALLET preflight, so use a non-gate error
     const revert = new ContractFunctionRevertedError({
       abi: omnibusAbi,
       functionName: 'commit',
-      data: encodeErrorResult({abi: omnibusAbi, errorName: 'CallerNotQuipWallet'}),
+      data: encodeErrorResult({abi: omnibusAbi, errorName: 'IncorrectNativeAmountReceived'}),
     })
     const mocks = setup({lockState: LockState.Unused, estimateError: revert})
     try {
@@ -510,7 +515,7 @@ describe('gas estimation and balance preflight', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('CONTRACT_REVERT')
-      expect((error as QuipSwapError).contractErrorName).toBe('CallerNotQuipWallet')
+      expect((error as QuipSwapError).contractErrorName).toBe('IncorrectNativeAmountReceived')
     }
     expect(mocks.log.writes).toHaveLength(0)
   })

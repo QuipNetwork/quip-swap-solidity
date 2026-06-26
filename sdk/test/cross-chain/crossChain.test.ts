@@ -28,8 +28,9 @@ import {generateLock} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
-import {connectChain, deployFixture, erc20MockAbi} from '../helpers/chain.js'
+import {connectChain, deployFixture} from '../helpers/chain.js'
 import type {ChainContext, Fixture} from '../helpers/chain.js'
+import {erc20MockAbi} from '../helpers/mockAbis.js'
 
 const RPC_A = process.env['QUIP_SDK_CHAIN_A_RPC_URL']
 const RPC_B = process.env['QUIP_SDK_CHAIN_B_RPC_URL']

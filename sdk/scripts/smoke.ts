@@ -51,8 +51,9 @@ import type {OmnibusClient} from '../src/index.js'
 import type {Terms} from '../src/index.js'
 import {startAnvil} from '../test/helpers/anvil.js'
 import type {AnvilInstance} from '../test/helpers/anvil.js'
-import {connectChain, deployFixture, erc20MockAbi} from '../test/helpers/chain.js'
+import {connectChain, deployFixture} from '../test/helpers/chain.js'
 import type {ChainContext, Fixture} from '../test/helpers/chain.js'
+import {erc20MockAbi} from '../test/helpers/mockAbis.js'
 
 const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const repoRoot = join(sdkRoot, '..')
@@ -257,10 +258,12 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   // give Bob the tokens his leg offers (test setup)
   await mintErc20(A, fixtureA.erc20, A.bob.address, TOKEN(1_000_000n))
 
-  // step: plan + role normalization
-  let plan = planSameChainSwap(aliceTerms, bobTerms)
+  // step: plan + role normalization. The smoke schedule uses 1000s gaps
+  // (compact, for fast warping), below the default buffer — override to 1000n.
+  const planOpts = {minimumBufferSeconds: 1000n}
+  let plan = planSameChainSwap(aliceTerms, bobTerms, planOpts)
   await step(scope, 'planSameChainSwap normalizes roles', async () => {
-    plan = planSameChainSwap(aliceTerms, bobTerms)
+    plan = planSameChainSwap(aliceTerms, bobTerms, planOpts)
     assert(plan.proposerTerms === aliceTerms, 'expected Alice (smaller commitmentDeadline) to be the proposer')
     assert(plan.takerTerms === bobTerms, 'expected Bob to be the taker')
     assert(BigInt(plan.canonicalDigest) !== 0n, 'canonicalDigest must be non-zero')

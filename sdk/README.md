@@ -1,6 +1,8 @@
 # Quip Swap SDK
 
-A non-custodial TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets. Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). It never custodies keys, never stores secrets, and never replaces on-chain enforcement. **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
+A TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets. Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). By design it does not custody keys or store secrets, and it never replaces on-chain enforcement (treat it as a convenience layer over the contracts, not a security guarantee). **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
+
+> **⚠️ Before integrating, read the [DANGER — ways to lose funds](USAGE.md#danger) section.** Cross-chain takers can lose funds by skipping commitment verification; overriding the default buffers too tight can forfeit windows.
 
 ---
 
@@ -55,7 +57,7 @@ The suites live under `sdk/test/`. Unit and mocked-client tests are pure (no cha
 | **integration** (`test/integration/omnibus.test.ts`) | Full commit/claim/reclaim lifecycle on a single Anvil node — deploys `QuipFactoryMock` + `Omnibus` + mock ERC-20/721/1155 tokens, registers wallets, and asserts real settlement with balance deltas (incl. dual-leg and reclaim-from-Free). | `bun run test:integration` | Yes (1 Anvil) |
 | **differential** (`test/integration/differential.test.ts`) | Solidity↔TS oracle: TypeScript `digestTerms` / `digestTermsCanonically` / `generateLock` / `totalNative` / pairing / `enforceWithin` compared byte-for-byte against deployed `TermsLibHarness` / `OmnibusHarness`. **Why it exists:** a digest divergence would silently break real swaps (`TermsMismatch`). Runs as part of the integration runner. | `bun run test:integration` | Yes (1 Anvil) |
 | **cross-chain** (`test/cross-chain/`) | Two-chain end-to-end coordination across two Anvil nodes (chain IDs 31337 / 31338) — role assignment, buffers, `verifyRemoteCommitment`, and the secret-reveal handoff. | `bun run test:cross-chain` | Yes (2 Anvils) |
-| **smoke** (`scripts/smoke.ts`) | A fast "is the whole stack on fire?" gate: drives one same-chain and one cross-chain swap **through the workflow layer** (`planSameChainSwap` + `getSameChainSwapStatus`, then `validateCrossChainSchedule` + `verifyRemoteCommitment`) against two Anvils. Fail-fast: prints `SMOKE FAILED at step N` and exits non-zero; otherwise `SMOKE PASSED`. Standalone script, not a vitest file. | `bun run smoke` | Yes (2 Anvils) |
+| **smoke** (`scripts/smoke.ts`) | A fast end-to-end health check: drives one same-chain and one cross-chain swap **through the workflow layer** (`planSameChainSwap` + `getSameChainSwapStatus`, then `validateCrossChainSchedule` + `verifyRemoteCommitment`) against two Anvils. Fail-fast: prints `SMOKE FAILED at step N` and exits non-zero; otherwise `SMOKE PASSED`. Standalone script, not a vitest file. | `bun run smoke` | Yes (2 Anvils) |
 
 `test/helpers/` (`anvil`, `chain`, `fixtures`) is shared test infrastructure, not a suite, and is not part of the SDK's exported surface.
 
@@ -99,7 +101,7 @@ sdk/
 │   ├── receipts.ts         waitForOmnibusReceipt — address-scoped decoding (+ TRANSACTION_REVERTED)
 │   ├── events.ts           decode*/get*/watch event helpers
 │   ├── errors.ts           QuipSwapError + QuipSwapErrorCode
-│   ├── deployments.ts      knownDeployments (empty) + resolveDeployment
+│   ├── deployments.ts      knownDeployments + resolveDeployment (Create3 default, override)
 │   ├── workflows/
 │   │   ├── sameChain.ts    planSameChainSwap, getSameChainSwapStatus
 │   │   └── crossChain.ts   validateCrossChainSchedule, verifyRemoteCommitment
@@ -118,5 +120,5 @@ sdk/
 Stated honestly so nothing here is mistaken for shipped:
 
 - **Published package.** `@quip.network/quip-swap-sdk` (v`0.1.0`, `UNLICENSED`) is **not yet published to a registry** — install-from-npm does not work yet. Consume it from this repo (built `dist/`) or your own workspace link until it is.
-- **Deployment registry addresses.** `knownDeployments` is intentionally **empty**; no verified `Omnibus` address ships with the SDK. Supply `{chainId, omnibusAddress}` via `resolveDeployment` / `createOmnibusClient` (see [`USAGE.md`](USAGE.md)). Deterministic addresses are not derived — the repo's deploy scripts encode a stale one-argument constructor while the active one is `(address initialOwner, address quipFactory)`.
+- **Deployment registry addresses.** Omnibus deploys via Create3 (one canonical address across all chains), so the SDK ships that address gated to the chains where it is verified, exposed through `resolveDeployment` / `createOmnibusClient`. 
 - **Packaging smoke test.** There is no automated `npm pack` / tarball-resolves-exports test; `bun run build` produces `dist/` but no suite imports the built artifact.
