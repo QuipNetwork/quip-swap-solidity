@@ -174,8 +174,8 @@ A cross-chain swap is a **coordinated flow across two independent chains — not
 > **⚠️ Danger:** as the taker, verify the proposer actually committed (`verifyRemoteCommitment` against the proposer's chain) *before* you commit, gate your commit on it, and apply your own confirmation depth — skipping this can **permanently lose your escrowed assets**, and the contract cannot prevent it cross-chain. The single most likely way to lose funds with this SDK; full detail in [DANGER](#danger) and [§6](#6-security--risks).
 
 ```ts
-import {validateCrossChainSchedule, verifyRemoteCommitment, extractRevealedSecret,
-        waitForOmnibusReceipt} from '@quip.network/quip-swap-sdk'
+import {validateCrossChainSchedule, verifyRemoteCommitment, extractSecretFromClaims}
+  from '@quip.network/quip-swap-sdk'
 
 // 0. validate roles + buffer BEFORE any transaction
 validateCrossChainSchedule({
@@ -186,7 +186,8 @@ validateCrossChainSchedule({
 }) // returns CrossChainSchedule {proposerTerms, takerTerms, reactionBufferSeconds, minimumGapSeconds}
 
 // 1. Alice commits on Chain A                         (Unused -> Committed; no Free state cross-chain)
-await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB})
+//    confirm with the Chain A client — it scopes decoding to Chain A's Omnibus
+await aliceClientA.waitForReceipt(await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB}))
 
 // 2. ← REQUIRED: skipping this can drain the taker's assets.
 //    Verify Alice's commitment ON ALICE'S CHAIN (aliceClientA is bound to Chain A)
@@ -197,21 +198,28 @@ if (!status.committed) throw new Error('proposer has not committed — do NOT co
 // undo a young commit) before treating it as final.
 
 // 3. Bob commits on Chain B in [alice.commitmentDeadline, bob.commitmentDeadline)
-await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA})
+await bobClientB.waitForReceipt(await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA}))
 
-// 4. Alice claims Bob's leg ON CHAIN B — the Claim event REVEALS the secret
-const aliceClaimHash = await aliceClientB.claim({secret, party: aliceTermsOnA, counterparty: bobTermsOnB})
+// 4. Alice claims Bob's leg ON CHAIN B — the Claim event REVEALS the secret.
+//    waitForReceipt on the Chain B client scopes decoding to Chain B's Omnibus.
+const claimB = await aliceClientB.waitForReceipt(
+  await aliceClientB.claim({secret, party: aliceTermsOnA, counterparty: bobTermsOnB}),
+)
 
-// 5. Bob (or a relayer) extracts the revealed secret from the Chain B receipt:
-const {receipt} = await waitForOmnibusReceipt(bobPublicClientB, aliceClaimHash)
-const revealed = extractRevealedSecret(receipt.logs, lock) // Hex32 | undefined
+// 5. Bob (or a relayer) extracts the secret from the address-SCOPED decoded claims
+//    (NOT from raw receipt.logs):
+const revealed = extractSecretFromClaims(claimB.claims, lock) // Hex32 | undefined
 
 // 6. Bob claims Alice's leg ON CHAIN A in [alice.claimDeadline, alice.reclaimRelease)
-if (revealed) await bobClientA.claim({secret: revealed, party: bobTermsOnB, counterparty: aliceTermsOnA})
+if (revealed) {
+  await bobClientA.waitForReceipt(
+    await bobClientA.claim({secret: revealed, party: bobTermsOnB, counterparty: aliceTermsOnA}),
+  )
+}
 ```
 
-- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds?})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is **optional** and defaults to `DEFAULT_CROSS_CHAIN_BUFFER_SECONDS` when omitted — choose an explicit value from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be unsafe on a congested L1; **overriding below the default can expose users to missed windows and lost funds.** See the "Schedule buffers" note at the end of §5.
-- **`verifyRemoteCommitment(remoteClient, lock, proposerTerms, takerTerms)`** is the **mandatory off-chain check** Chain B cannot do for you (it cannot read Chain A). Returns `{committed, lockState, proposerPosted, termsHashMatches}`. A taker that skips it risks escrowing against a proposer who never committed.
+- **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is mandatory and has **no default** — choose it from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be reckless on a congested L1.
+- **`verifyRemoteCommitment(remoteClient, lock, proposerTerms, takerTerms)`** is the **mandatory off-chain check** Chain B cannot do for you (it cannot read Chain A). Returns `{committed, lockState, proposerPosted, termsHashMatches}`. A taker that skips it risks escrowing against a proposer who never committed. **Do not treat a `Commitment` event alone as proof that Bob may commit; taker readiness must come from `verifyRemoteCommitment`'s storage checks** (`lockState`, `posted`, `termsHash`) — an event can be reorged away or emitted by an impostor contract, whereas the storage reads reflect committed chain state.
 - **This is NOT atomic.** The buffer is the taker's reaction window between the latest possible secret reveal and the close of their claim window (`proposer.reclaimRelease - proposer.claimDeadline`). If either side stalls past their windows, each side reclaims its own leg.
 
 ### Schedule buffers
@@ -252,19 +260,33 @@ SDK-guarded conditions (terms/pairing/window/chain-id/quip-wallet-gate/lock-stat
 
 ## 7. Reading results & events
 
-`waitForOmnibusReceipt(publicClient, hash, options?: {confirmations?, timeout?}): Promise<OmnibusReceipt>` waits for the receipt, **throws `TRANSACTION_REVERTED` if the tx mined but reverted**, and decodes events. `OmnibusReceipt` is `{transactionHash, receipt, commitments, claims, reclaims}`.
+There are **three tiers** for turning a transaction into typed events, ordered by how much address scoping they do for you. Receipt decoding only counts events emitted by the Omnibus address you scope to, so a same-signature event from another contract in the same transaction is never mistaken for a genuine one.
+
+**1. Preferred — `client.waitForReceipt(hash, options?)`.** Uses the client's bound Omnibus address automatically; you never pass it again. Best for any tx you submitted through an `OmnibusClient`.
 
 ```ts
-const {commitments, claims, reclaims} = await waitForOmnibusReceipt(publicClient, hash, {confirmations: 3})
+const hash = await client.commit({lock, party, counterparty})
+const {commitments, claims, reclaims} = await client.waitForReceipt(hash, {confirmations: 3})
 ```
 
+**2. Standalone — `waitForOmnibusReceipt(publicClient, hash, options?)`.** Pass the Omnibus address explicitly to scope decoding; omitting it keeps the legacy raw behavior (decodes every matching log) and is **not** recommended for security-sensitive flows.
+
+```ts
+const {claims} = await waitForOmnibusReceipt(publicClient, hash, {address: omnibusAddress, confirmations: 3})
+```
+
+Both throw **`TRANSACTION_REVERTED`** if the tx mined but reverted, and return `OmnibusReceipt = {transactionHash, receipt, commitments, claims, reclaims}`:
 - `CommitmentEvent` → `{lock, party, committer, blockNumber, transactionHash, logIndex}`
 - `ClaimEvent` → `{recipient, lock, secret, blockNumber, transactionHash, logIndex}`
 - `ReclaimedEvent` → `{caller, lock, recipient, blockNumber, transactionHash, logIndex}`
 
-Decode directly from a logs array with `decodeCommitmentEvents(logs)`, `decodeClaimEvents(logs)`, `decodeReclaimedEvents(logs)`, or pull the revealed secret for a lock with `extractRevealedSecret(logs, lock): Hex32 | undefined`.
+Pull a revealed secret from the **scoped** decoded claims with `extractSecretFromClaims(receipt.claims, lock): Hex32 | undefined` (it also verifies the secret hashes back to the lock, so a fake `Claim(lock, wrongSecret)` is ignored).
 
-For **historical queries** use the address-scoped helpers — `getCommitmentEvents(args)`, `getClaimEvents(args)`, `getReclaimedEvents(args)`, and the live subscription `watchClaimEvents({...args, onClaim})` — where `args: EventQueryArgs = {publicClient, address, lock?, fromBlock?, toBlock?}`. These filter by the `Omnibus` `address`; the raw `decode*` helpers do not (see the receipt-logs footgun).
+**3. Low-level raw — `decodeCommitmentEvents(logs)` / `decodeClaimEvents(logs)` / `decodeReclaimedEvents(logs)` / `extractRevealedSecret(logs, lock)`.** These decode by event signature only and do **not** verify `log.address` — use them only on logs you have ALREADY scoped to the correct Omnibus address.
+
+For **historical queries** use the address-scoped helpers — `getCommitmentEvents(args)`, `getClaimEvents(args)`, `getReclaimedEvents(args)`, and the live subscription `watchClaimEvents({...args, onClaim})` — where `args: EventQueryArgs = {publicClient, address, lock?, fromBlock?, toBlock?}`. These already require and filter by the `Omnibus` `address`.
+
+**Cross-chain:** there is no single cross-chain Omnibus address — use the client for the chain where the transaction was mined. Chain A receipts go through the Chain A client (Omnibus A); Chain B receipts through the Chain B client (Omnibus B).
 
 ## 8. Error handling
 
@@ -337,6 +359,6 @@ Each entry is *pitfall → why → do this instead*. These describe the SDK and 
 
 - **USDT-style approvals.** Some non-standard ERC-20s revert on `approve` when the current allowance is non-zero. **Do:** reset the allowance to `0` first, then approve the required amount (or use `submitApproval` with an `erc20Mode` and handle the reset in your flow).
 
-- **Receipt logs are multi-contract.** A claim/reclaim receipt contains logs from every token moved, not just `Omnibus`. The raw `decode*Events(logs)` helpers match by event signature only and do **not** filter by emitter, so a same-signature event from another contract in the same transaction would be decoded as if it were `Omnibus`'s (this also affects `extractRevealedSecret`). **Do:** for historical reads use the address-scoped `getCommitmentEvents` / `getClaimEvents` / `getReclaimedEvents` (they take an `address`); when decoding a raw receipt, scope to the `Omnibus` address yourself. *(If the receipt-path decoders gain an `address` parameter in a future version, prefer it.)*
+- **Receipt logs are multi-contract.** A claim/reclaim receipt contains logs from every token moved, not just `Omnibus`. The raw `decode*Events(logs)` / `extractRevealedSecret(logs, lock)` helpers match by event signature only and do **not** filter by emitter, so a same-signature event from another contract in the same transaction would be decoded as if it were `Omnibus`'s. **Do:** confirm with `client.waitForReceipt(hash)` (or `waitForOmnibusReceipt(publicClient, hash, {address})`), which decode only logs from the Omnibus address; extract secrets from the scoped `receipt.claims` via `extractSecretFromClaims`. Reserve the raw `decode*`/`extractRevealedSecret` helpers for logs you have already scoped to the `Omnibus` address. For historical reads the address-scoped `getCommitmentEvents` / `getClaimEvents` / `getReclaimedEvents` already require an `address`.
 
 - **Reorgs.** Events and receipts observed once are not final, and `Reclaimed` legitimately appears twice in a dual-leg reclaim. **Do:** honour your confirmation/finality policy — pass `{confirmations}` to `waitForOmnibusReceipt` and don't treat a single observation as settled.

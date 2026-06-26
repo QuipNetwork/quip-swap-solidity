@@ -28,6 +28,8 @@ import type {TxOptions} from './gas.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {assertHex32, digestTerms, digestTermsCanonically, generateLock} from './hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
+import {waitForOmnibusReceipt} from './receipts.js'
+import type {OmnibusReceipt, WaitOptions} from './receipts.js'
 import {LockState} from './types.js'
 import type {Hex32, Terms} from './types.js'
 import {validateClaimWindow, validateCommitWindow, validateReclaimWindow} from './windows.js'
@@ -177,8 +179,9 @@ export interface OmnibusAdmin {
  * Created by {@link createOmnibusClient}. Read methods mirror the
  * contract's getters one-to-one; write methods preflight, estimate gas
  * with a safety buffer, and submit. Write methods return the transaction
- * HASH only — pair them with {@link waitForOmnibusReceipt} to confirm
- * success and decode events.
+ * HASH only — pair them with {@link OmnibusClient.waitForReceipt} to
+ * confirm success and decode events (it scopes decoding to this client's
+ * Omnibus address automatically).
  */
 export interface OmnibusClient {
   /** The Omnibus contract address this client is bound to. */
@@ -288,7 +291,7 @@ export interface OmnibusClient {
    * @example
    * ```ts
    * const hash = await client.commit({lock, party: myTerms, counterparty: theirTerms})
-   * const result = await waitForOmnibusReceipt(client.publicClient, hash)
+   * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
   commit(args: CommitArgs, opts?: TxOptions): Promise<Hash>
@@ -348,6 +351,28 @@ export interface OmnibusClient {
    * @see Omnibus.reclaim
    */
   reclaim(args: ReclaimArgs, opts?: TxOptions): Promise<Hash>
+
+  /**
+   * Waits for a write's receipt, verifies success, and decodes the Omnibus
+   * events — scoped to THIS client's Omnibus address, so a same-signature
+   * event from another contract in the same transaction is never decoded as
+   * genuine. This is the preferred way to confirm a `commit`/`claim`/
+   * `reclaim`; you do not pass the address again.
+   *
+   * @param hash - The transaction hash returned by a write method.
+   * @param options - Confirmation count and timeout ({@link WaitOptions});
+   *   `address` is always set to this client's Omnibus address, so you do
+   *   not pass it.
+   * @returns The typed {@link OmnibusReceipt} with address-scoped events.
+   * @throws QuipSwapError `TRANSACTION_REVERTED` | `CONTRACT_REVERT`.
+   * @see waitForOmnibusReceipt
+   * @example
+   * ```ts
+   * const hash = await client.commit({lock, party, counterparty})
+   * const {commitments} = await client.waitForReceipt(hash, {confirmations: 3})
+   * ```
+   */
+  waitForReceipt(hash: Hash, options?: WaitOptions): Promise<OmnibusReceipt>
 
   /** Owner-only operations, namespaced to avoid mixing with user flows. */
   readonly admin: OmnibusAdmin
@@ -714,6 +739,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
     isQuipWallet,
 
+    // confirm a write and decode events, always scoped to this client's
+    // Omnibus address (the client knows the right address for its chain)
+    waitForReceipt: (hash: Hash, options: WaitOptions = {}) =>
+      waitForOmnibusReceipt(publicClient, hash, {...options, address}),
+
+    // @audit-ok
     async commit({lock, party, counterparty, verifyOnChainState = true}: CommitArgs, opts?: TxOptions): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()

@@ -35,6 +35,8 @@ Or via make: `make build`, `make test`, `make fmt-check`, `make coverage`. Run `
 
 The `sdk/` directory contains a publishable TypeScript SDK providing typed access to Omnibus — asset/terms builders, Solidity-exact hashing, secret generation, a preflighted client, approval planning, event decoding, and same-chain / cross-chain workflow helpers.
 
+> Use client-bound receipt helpers or pass the Omnibus address when decoding receipts (`client.waitForReceipt(hash)` or `waitForOmnibusReceipt(..., {address})`); the raw `decode*Events` decoders are low-level and expect pre-scoped logs.
+
 ```shell
 make sdk-install            # bun install
 make sdk-generate           # forge build + generate the ABI

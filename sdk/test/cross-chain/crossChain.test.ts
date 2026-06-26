@@ -22,10 +22,9 @@ import {erc20Asset, nativeAsset} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
-import {extractRevealedSecret} from '../../src/events.js'
+import {extractSecretFromClaims} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {generateLock} from '../../src/hashing.js'
-import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
@@ -189,10 +188,8 @@ describe('cross-chain happy path', () => {
     // 1-2. Alice (proposer, secret holder) commits her leg ON CHAIN A.
     // cross-chain commit: Unused -> Committed directly (no Free state)
     await warpBoth(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(
-      chainA.publicClient,
-      await aliceOnA.commit({lock, party: alice, counterparty: bob}),
-    )
+    // Chain A receipt decoded against Chain A's Omnibus (aliceOnA is bound to it)
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob}))
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Unused) // B untouched
 
@@ -201,19 +198,18 @@ describe('cross-chain happy path', () => {
     const remote = await verifyRemoteCommitment(bobOnA, lock, alice, bob)
     expect(remote).toMatchObject({committed: true, lockState: LockState.Committed, termsHashMatches: true})
 
-    // ...then Bob commits his leg ON CHAIN B inside the taker window
+    // ...then Bob commits his leg ON CHAIN B inside the taker window.
+    // Decoded against Chain B's Omnibus (bobOnB is bound to it), NOT Chain A.
     await warpBoth(s.anchors.takerCommit)
-    await waitForOmnibusReceipt(chainB.publicClient, await bobOnB.commit({lock, party: bob, counterparty: alice}))
+    await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice}))
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Committed)
 
     // 4. Alice claims Bob's leg ON CHAIN B in the proposer-claim window —
-    // this transaction publicly REVEALS the secret on chain B
+    // this transaction publicly REVEALS the secret on chain B. The receipt
+    // is decoded against Chain B's Omnibus via aliceOnB.
     await warpBoth(s.anchors.proposerClaim)
     const aliceRecipientNativeBefore = await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})
-    const claimB = await waitForOmnibusReceipt(
-      chainB.publicClient,
-      await aliceOnB.claim({secret, party: alice, counterparty: bob}),
-    )
+    const claimB = await aliceOnB.waitForReceipt(await aliceOnB.claim({secret, party: alice, counterparty: bob}))
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
     // bob's native (counterparty leg) went to ALICE's recipient on chain B
     expect(await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})).toBe(
@@ -221,14 +217,13 @@ describe('cross-chain happy path', () => {
     )
 
     // 5. Bob (or a relayer) extracts the revealed secret from the chain B
-    // Claim event — equal to the original by construction
-    const revealed = extractRevealedSecret(claimB.receipt.logs, lock)
+    // Claim event — from the address-SCOPED decoded claims, not raw logs.
+    const revealed = extractSecretFromClaims(claimB.claims, lock)
     expect(revealed).toBe(secret)
 
-    // duplicate Claim-event processing is idempotent: feeding the same logs
-    // twice (duplicated array) yields the same single secret
-    const duplicated = [...claimB.receipt.logs, ...claimB.receipt.logs]
-    expect(extractRevealedSecret(duplicated, lock)).toBe(secret)
+    // duplicate Claim-event processing is idempotent: feeding the same scoped
+    // claims twice yields the same single secret
+    expect(extractSecretFromClaims([...claimB.claims, ...claimB.claims], lock)).toBe(secret)
 
     // 6. Bob claims Alice's leg ON CHAIN A in the taker-claim window
     if (revealed === undefined) throw new Error('secret must have been revealed')
@@ -239,10 +234,8 @@ describe('cross-chain happy path', () => {
       functionName: 'balanceOf',
       args: [BOB_RECIPIENT],
     })
-    await waitForOmnibusReceipt(
-      chainA.publicClient,
-      await bobOnA.claim({secret: revealed, party: bob, counterparty: alice}),
-    )
+    // Chain A receipt decoded against Chain A's Omnibus via bobOnA
+    await bobOnA.waitForReceipt(await bobOnA.claim({secret: revealed, party: bob, counterparty: alice}))
 
     // 7. both locks Spent; final balances verified on both chains
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
@@ -334,10 +327,7 @@ describe('cross-chain unhappy path', () => {
     const bob = s.bobTerms([nativeAsset(10n)])
 
     await warpBoth(s.anchors.proposerCommit)
-    await waitForOmnibusReceipt(
-      chainA.publicClient,
-      await aliceOnA.commit({lock, party: alice, counterparty: bob}),
-    )
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob}))
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
 
     // bob never commits. alice reclaims HER leg on chain A after HER release.
@@ -350,10 +340,7 @@ describe('cross-chain unhappy path', () => {
       functionName: 'balanceOf',
       args: [ALICE_RECLAIM],
     })
-    const result = await waitForOmnibusReceipt(
-      chainA.publicClient,
-      await aliceOnA.reclaim({lock, party: alice, counterparty: bob}),
-    )
+    const result = await aliceOnA.waitForReceipt(await aliceOnA.reclaim({lock, party: alice, counterparty: bob}))
     expect(result.reclaims).toHaveLength(1)
     expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
