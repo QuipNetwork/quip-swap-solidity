@@ -1,13 +1,19 @@
 # ==============================================================================
 # Quip Swap Makefile
 # ==============================================================================
-# Load .env file if it exists
--include .env
+# Load .env file if it exists, and EXPORT every key into the environment so
+# child processes (forge, bun, …) see them — e.g. forge's vm.envAddress reads
+# DEPLOYER_ADDRESS / OMNIBUS_OWNER / QUIP_FACTORY without any $(VAR) plumbing.
+# A missing .env is silently ignored (unscoped build/test need none of these).
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
 # ==============================================================================
 # RPC URL Indirection
 # ==============================================================================
-# Use indirection: RPC=BASE_SEPOLIA_RPC_URL will use the value of $(BASE_SEPOLIA_RPC_URL)
+# Use indirection: RPC=API_URL_BASE_SEPOLIA will use the value of $(API_URL_BASE_SEPOLIA)
 # This allows referencing any RPC URL defined in .env by name
 RPC_URL = $($(RPC))
 
@@ -51,55 +57,35 @@ clean: ## Clean build artifacts
 	forge clean
 
 # ==============================================================================
-# Deployment - Local (Anvil with fork)
+# Deployment (Omnibus via the Deployer contract — env: DEPLOYER_PK,
+# DEPLOYER_ADDRESS, OMNIBUS_OWNER, QUIP_FACTORY)
 # ==============================================================================
 
 .PHONY: anvil-fork
-anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=BASE_SEPOLIA_RPC_URL
+anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SEPOLIA
 	anvil --fork-url $(RPC_URL)
 
-.PHONY: deploy-local
-deploy-local: ## Deploy to local Anvil (requires DEPLOYER_PK, SENDER)
-	forge script script/DeployTestnet.s.sol \
-		--rpc-url $(ANVIL_RPC_URL) \
-		--sender $(SENDER) \
-		--broadcast
-
-# ==============================================================================
-# Deployment - Testnet
-# ==============================================================================
-
-.PHONY: deploy-testnet
-deploy-testnet: ## Deploy to testnet. Usage: make deploy-testnet RPC=BASE_SEPOLIA_RPC_URL
-	forge script script/DeployTestnet.s.sol \
+.PHONY: deploy
+deploy: ## Deploy Omnibus + broadcast + verify. Usage: make deploy RPC=API_URL_BASE_SEPOLIA
+	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
-		--sender $(SENDER) \
+		--private-key $(DEPLOYER_PK) \
 		--broadcast \
 		--verify
 
-.PHONY: deploy-testnet-dry
-deploy-testnet-dry: ## Dry run testnet deployment. Usage: make deploy-testnet-dry RPC=BASE_SEPOLIA_RPC_URL
-	forge script script/DeployTestnet.s.sol \
-		--rpc-url $(RPC_URL) \
-		--sender $(SENDER)
-
-# ==============================================================================
-# Deployment - Production
-# ==============================================================================
-
-.PHONY: deploy-production
-deploy-production: ## Deploy to production. Usage: make deploy-production RPC=BASE_RPC_URL
+.PHONY: deploy-dry
+deploy-dry: ## Dry run Omnibus deployment (no broadcast). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
-		--rpc-url $(RPC_URL) \
-		--sender $(SENDER) \
+		--rpc-url $(RPC_URL)
+
+# ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
+.PHONY: deploy-base-sepolia
+deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
+	forge script script/DeployOmnibus.s.sol \
+		--rpc-url base_sepolia \
+		--private-key $(DEPLOYER_PK) \
 		--broadcast \
 		--verify
-
-.PHONY: deploy-production-dry
-deploy-production-dry: ## Dry run production deployment. Usage: make deploy-production-dry RPC=BASE_RPC_URL
-	forge script script/DeployOmnibus.s.sol \
-		--rpc-url $(RPC_URL) \
-		--sender $(SENDER)
 
 # ==============================================================================
 # TypeScript SDK (sdk/)
@@ -155,12 +141,17 @@ snapshot: ## Generate gas snapshot
 # usage:
 #   make verify-omnibus                      # uses sdk/src/address.json
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
-verify-omnibus: ## Compare an address.json against the locally-predicted Create3 address (no RPC; reads DEPLOYER_PK from .env). Optional FILE=path overrides sdk/src/address.json.
+verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (Deployer, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
 
+.PHONY: verify-omnibus-base-sepolia
+verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
+	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base_sepolia -v
+
 .PHONY: help
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .DEFAULT_GOAL := help

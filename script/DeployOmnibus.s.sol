@@ -1,75 +1,63 @@
-// SPDX-License-Identifier: UNLICENSE
-pragma solidity 0.8.33;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
 
 import {Omnibus} from '../src/Omnibus.sol';
+import {IDeployer} from '../src/interfaces/IDeployer.sol';
+import {Constants} from './Constants.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
-import {ICreateX} from 'pcaversaccio-createx-1.0.0/src/ICreateX.sol';
+import {CREATE3} from 'solady-0.1.26/utils/CREATE3.sol';
 
-/// @title DeployOmnibus
-/// @notice Production deployment script for Omnibus using CreateX CREATE3
+/**
+ * @title DeployOmnibus
+ * @dev Deploys the Omnibus singleton via the Deployer contract using CREATE3
+ *      (solady's `CREATE3.deployDeterministic`). Omnibus address depends only
+ *      on (Deployer address, salt) — same on every chain, independent of the
+ *      broadcasting EOA and of constructor args. Owner / quipFactory differ per
+ *      chain but the address doesn't.
+ *
+ * Usage:
+ *   forge script script/DeployOmnibus.s.sol \
+ *       --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --verify
+ *
+ * Environment:
+ *   DEPLOYER_PK      - Operations wallet private key (broadcasting EOA)
+ *   DEPLOYER_ADDRESS - Deployer contract address (bootstrapped via DeployDeployer)
+ *   OMNIBUS_OWNER    - Initial owner of the Omnibus (Ownable2Step)
+ *   QUIP_FACTORY     - QuipFactory whose wallet registry gates commit (non-zero)
+ */
 contract DeployOmnibus is Script {
-  /// @notice CreateX factory address (same on all chains)
-  ICreateX public constant CREATEX = ICreateX(0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed);
-
-  /// @notice Salt suffix for Omnibus deployment
-  bytes11 public constant SALT_SUFFIX_OMNIBUS = bytes11(keccak256('quip.network.Omnibus.v1'));
-
-  /// @notice Owner address for the Omnibus contract
-  address public constant OMNIBUS_OWNER = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
-
-  /// @notice Computes the RAW (pre-guard) CreateX salt for a deployment.
-  /// @dev Raw salt format: deployer (20 bytes) + 0x00 (1 byte) + suffix (11 bytes).
-  /// `deployCreate3` guards this salt internally, and the on-chain address derives
-  /// from the GUARDED salt — so to predict the address via `computeCreate3Address`
-  /// (which does NOT guard) the caller must guard it first.
-  /// @param deployer The deployer address embedded in the salt (permissioned deploy)
-  /// @param suffix The 11-byte salt suffix
-  /// @return The 32-byte raw (pre-guard) salt
-  function _computeRawSalt(address deployer, bytes11 suffix) internal pure returns (bytes32) {
-    return bytes32(abi.encodePacked(deployer, bytes1(0x00), suffix));
-  }
+  bytes32 internal constant SALT = Constants.OMNIBUS_SALT;
 
   function run() external {
-    uint256 deployerPk = vm.envUint('DEPLOYER_PK');
-    address deployer = vm.addr(deployerPk);
+    address deployerAddr = vm.envAddress('DEPLOYER_ADDRESS');
+    uint256 privateKey = vm.envUint('DEPLOYER_PK');
+    address omnibusOwner = vm.envAddress('OMNIBUS_OWNER');
+    address quipFactory = vm.envAddress('QUIP_FACTORY');
 
-    console.log('Deployer:', deployer);
-    console.log('Chain ID:', block.chainid);
+    require(deployerAddr.code.length > 0, 'Deployer not deployed. Run DeployDeployer first.');
+    require(omnibusOwner != address(0), 'OMNIBUS_OWNER must be non-zero');
+    require(quipFactory != address(0), 'QUIP_FACTORY must be non-zero (Omnibus reverts ZeroQuipFactory)');
 
-    // Constructor args (config, not secrets). Owner falls back to the constant;
-    // the factory must be set — Omnibus reverts ZeroQuipFactory on a zero factory.
-    address owner = vm.envOr('OMNIBUS_OWNER', OMNIBUS_OWNER);
-    address quipFactory = vm.envOr('QUIP_FACTORY', address(0));
-    require(quipFactory != address(0), 'QUIP_FACTORY must be set (Omnibus reverts on zero factory)');
+    address expectedAddr = CREATE3.predictDeterministicAddress(SALT, deployerAddr);
+    console.log('Deployer:          ', deployerAddr);
+    console.log('Omnibus owner:     ', omnibusOwner);
+    console.log('Quip factory:      ', quipFactory);
+    console.log('Expected Omnibus:  ', expectedAddr);
 
-    // Raw salt — what deployCreate3 takes; it guards internally.
-    bytes32 rawSalt = _computeRawSalt(deployer, SALT_SUFFIX_OMNIBUS);
-
-    // Guarded salt — what CreateX actually derives the address from. For our salt
-    // (first 20 bytes == msg.sender, 21st byte == 0x00) CreateX `_guard` computes
-    // _efficientHash(bytes32(uint160(msg.sender)), salt), byte-identical to
-    // keccak256(abi.encode(deployer, rawSalt)). computeCreate3Address does NOT
-    // guard, so the prediction must use the guarded salt.
-    bytes32 guardedSalt = keccak256(abi.encode(deployer, rawSalt));
-    address expectedOmnibus = CREATEX.computeCreate3Address(guardedSalt, address(CREATEX));
-
-    console.log('Expected Omnibus address:', expectedOmnibus);
-
-    // Check if already deployed
-    if (expectedOmnibus.code.length > 0) {
-      console.log('Omnibus already deployed at expected address');
+    if (expectedAddr.code.length > 0) {
+      console.log('\nOmnibus already deployed. Skipping.');
       return;
     }
 
-    vm.startBroadcast(deployerPk);
+    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner, quipFactory));
+    console.log('Bytecode size:', bytecode.length, 'bytes');
 
-    // Deploy Omnibus via CreateX CREATE3 (pass the RAW salt — deployCreate3 guards it).
-    bytes memory omnibusInitCode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(owner, quipFactory));
-    address omnibus = CREATEX.deployCreate3(rawSalt, omnibusInitCode);
-
+    vm.startBroadcast(privateKey);
+    address deployed = IDeployer(deployerAddr).deploy(bytecode, SALT);
     vm.stopBroadcast();
 
-    console.log('Omnibus deployed at:', omnibus);
-    require(omnibus == expectedOmnibus, 'Address mismatch');
+    require(deployed == expectedAddr, 'Omnibus address mismatch');
+    require(Omnibus(payable(deployed)).owner() == omnibusOwner, 'Omnibus owner mismatch');
+    console.log('Omnibus deployed at:', deployed);
   }
 }

@@ -2,10 +2,11 @@
  * Deployment-resolution unit tests.
  *
  * Two concerns:
- * - SHIPPED STATE (placeholder address + empty verified-chain set):
- *   `resolveDeployment` throws `UNKNOWN_DEPLOYMENT` for every chain without an
- *   override; an override still resolves and still validates. This pins the
- *   "no false defaults ship" guarantee while the placeholder stands.
+ * - SHIPPED STATE (canonical address + Base Sepolia verified): the registry
+ *   resolves the canonical Omnibus for chain 84532, while `resolveDeployment`
+ *   still throws `UNKNOWN_DEPLOYMENT` for every other chain without an override;
+ *   an override still resolves and still validates. This pins both the active
+ *   deployment and the "no false defaults for unverified chains" guarantee.
  * - MECHANISM (so enabling a chain later is safe): a LOCAL registry built the
  *   same way (canonical address + a verified-chain set) returns the canonical
  *   address for a listed chain and nothing for an unlisted one — exercised
@@ -30,14 +31,18 @@ function codeOf(fn: () => unknown): string {
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
-describe('resolveDeployment — shipped (placeholder) state', () => {
-  it('ships an empty registry (no false defaults while the placeholder stands)', () => {
-    expect(knownDeployments.size).toBe(0)
-    // the canonical address is still the zero placeholder — not a real default
-    expect(OMNIBUS_CREATE3_ADDRESS).toBe('0x0000000000000000000000000000000000000000')
+// The canonical Omnibus address + verified chains shipped in src/address.json.
+const SHIPPED_OMNIBUS: Address = '0x07b74fb3805f75E669488F64E9a27E74E08fC9e0'
+const BASE_SEPOLIA = 84532n
+
+describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
+  it('ships the canonical address with Base Sepolia in the verified registry', () => {
+    expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
+    expect(knownDeployments.size).toBe(1)
+    expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
   })
 
-  it('throws UNKNOWN_DEPLOYMENT for any chain without an override', () => {
+  it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
     expect(codeOf(() => resolveDeployment(8453n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
   })

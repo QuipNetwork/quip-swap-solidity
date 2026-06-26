@@ -36,9 +36,9 @@ solady = "0.1.26"
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 [rpc_endpoints]
-base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+base_sepolia = "${API_URL_BASE_SEPOLIA}"
 
 [etherscan]
-base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

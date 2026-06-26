@@ -1,21 +1,24 @@
 /**
  * Typed deployment registry for verified Omnibus deployments.
  *
- * Omnibus is deployed via Create3 (`script/DeployOmnibus.s.sol`), whose
- * address derives only from (deployer, guarded salt, CreateX factory) — none
- * of them chain-specific — so a single deployment has the SAME address on
- * every chain. The registry therefore ships ONE canonical address
- * ({@link OMNIBUS_CREATE3_ADDRESS}) gated to the chain ids where it has been
- * VERIFIED-deployed, plus the existing per-chain override.
+ * Omnibus is deployed via CREATE3 through the canonical Deployer contract
+ * (`script/DeployOmnibus.s.sol`, using solady's `CREATE3.deployDeterministic`).
+ * The address derives only from (Deployer contract, salt) — neither
+ * chain-specific nor dependent on the broadcasting EOA — so a single
+ * deployment has the SAME address on every chain. The registry therefore ships
+ * ONE canonical address ({@link OMNIBUS_CREATE3_ADDRESS}) gated to the chain
+ * ids where it has been VERIFIED-deployed, plus the existing per-chain override.
  *
  * The address DATA is the single source of truth in `address.json` (imported
- * below), verified against a live chain by `script/VerifyOmnibus.s.sol` (run
- * `make verify-omnibus`). A chain id is added to that file's `chains` array
- * ONLY after the verify script passes on it. This module derives its
- * constants from that JSON; activating a deployment is a data-only edit.
+ * below). `script/VerifyOmnibus.s.sol` (run `make verify-omnibus`) asserts
+ * `address.json` matches the address predicted from (Deployer, salt) — pure
+ * offline math, not an on-chain semantic check. A chain id is added to that
+ * file's `chains` array ONLY after the deployed contract is confirmed on-chain
+ * for it. This module derives its constants from that JSON; activating a
+ * deployment is a data-only edit.
  *
  * Derivation is deterministic, but the SDK ships a VERIFIED constant rather
- * than deriving the address at runtime: a Create3 address ignores init code,
+ * than deriving the address at runtime: a CREATE3 address ignores init code,
  * so the contract actually sitting at the computed address must be confirmed
  * to be the correct two-argument-constructor Omnibus
  * (`constructor(address initialOwner, address quipFactory)`) before it is
@@ -40,17 +43,20 @@ export interface OmnibusDeployment {
 }
 
 /**
- * The canonical Create3 Omnibus address, sourced from `address.json`.
+ * The canonical CREATE3 Omnibus address, sourced from `address.json`.
  *
- * Create3 derives the address from (deployer, guarded salt, CreateX
- * factory) — all chain-independent — so a single Omnibus deployed via
- * `script/DeployOmnibus.s.sol` has the SAME address on every chain.
+ * CREATE3 (via the canonical Deployer contract) derives the address from
+ * (Deployer contract, salt) — both chain-independent — so a single Omnibus
+ * deployed via `script/DeployOmnibus.s.sol` has the SAME address on every
+ * chain.
  *
  * ⚠️ Currently the zero PLACEHOLDER (`address.json`). To activate: set
  * `omnibusAddress` in `address.json` to the real deployed address, run
- * `make verify-omnibus` against each target chain (Create3 addresses ignore
- * init code, so on-chain semantic verification is mandatory), and add those
- * chain ids to `chains`. No code change required.
+ * `make verify-omnibus` (offline: confirms it matches the predicted
+ * (Deployer, salt) address), confirm on-chain that the correct Omnibus sits
+ * there for each target chain (CREATE3 addresses ignore init code, so
+ * semantic verification is mandatory), and add those chain ids to `chains`.
+ * No code change required.
  */
 export const OMNIBUS_CREATE3_ADDRESS = addressData.omnibusAddress as Address
 
@@ -120,7 +126,7 @@ export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment)
       code: 'UNKNOWN_DEPLOYMENT',
       message:
         `No verified Omnibus deployment is known for chain ${chainId} and no override was provided. ` +
-        'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a Create3 address ignores ' +
+        'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a CREATE3 address ignores ' +
         'init code, so a deployment must be verified on-chain before it is trusted (run `make verify-omnibus`).',
       details: {chainId},
     })
