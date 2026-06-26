@@ -151,6 +151,14 @@ check: fmt-check build test sdk-typecheck sdk-test sdk-build sdk-test-integratio
 snapshot: ## Generate gas snapshot
 	forge snapshot
 
+.PHONY: verify-omnibus
+# usage:
+#   make verify-omnibus                      # uses sdk/src/address.json
+#   make verify-omnibus FILE=path/to/x.json  # uses a custom file
+verify-omnibus: ## Compare an address.json against the locally-predicted Create3 address (no RPC; reads DEPLOYER_PK from .env). Optional FILE=path overrides sdk/src/address.json.
+	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
+
 .PHONY: help
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

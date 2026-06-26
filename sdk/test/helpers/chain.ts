@@ -195,7 +195,6 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
   }
 
   // 3. the ACTIVE constructor: (initialOwner, quipFactory) — two arguments.
-  // (the repo's deploy scripts stale-encode one arg; tests must not copy them)
   const omnibus = await ctx.deploy(loadArtifact('Omnibus.sol', 'Omnibus'), [ctx.deployer.address, quipFactory])
 
   // 4. mock assets

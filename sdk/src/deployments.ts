@@ -8,6 +8,12 @@
  * ({@link OMNIBUS_CREATE3_ADDRESS}) gated to the chain ids where it has been
  * VERIFIED-deployed, plus the existing per-chain override.
  *
+ * The address DATA is the single source of truth in `address.json` (imported
+ * below), verified against a live chain by `script/VerifyOmnibus.s.sol` (run
+ * `make verify-omnibus`). A chain id is added to that file's `chains` array
+ * ONLY after the verify script passes on it. This module derives its
+ * constants from that JSON; activating a deployment is a data-only edit.
+ *
  * Derivation is deterministic, but the SDK ships a VERIFIED constant rather
  * than deriving the address at runtime: a Create3 address ignores init code,
  * so the contract actually sitting at the computed address must be confirmed
@@ -22,6 +28,7 @@
  */
 import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
+import addressData from './address.json'
 import {QuipSwapError} from './errors.js'
 
 /** A verified Omnibus deployment on one chain. */
@@ -33,33 +40,30 @@ export interface OmnibusDeployment {
 }
 
 /**
- * The canonical Create3 Omnibus address.
+ * The canonical Create3 Omnibus address, sourced from `address.json`.
  *
  * Create3 derives the address from (deployer, guarded salt, CreateX
  * factory) — all chain-independent — so a single Omnibus deployed via
  * `script/DeployOmnibus.s.sol` has the SAME address on every chain.
  *
- * ⚠️ PLACEHOLDER — not yet the real deployed address. Compute it with
- * `CREATEX.computeCreate3Address(guardedSalt(deployer, keccak256(
- * 'quip.network.Omnibus.v1')), CREATEX)` for Quip's deployer, VERIFY the
- * contract actually deployed there is the correct two-arg-constructor
- * Omnibus (Create3 addresses ignore init code, so verification is
- * mandatory), then replace this value and enable the chain ids in
- * {@link VERIFIED_DEPLOYMENT_CHAINS}.
+ * ⚠️ Currently the zero PLACEHOLDER (`address.json`). To activate: set
+ * `omnibusAddress` in `address.json` to the real deployed address, run
+ * `make verify-omnibus` against each target chain (Create3 addresses ignore
+ * init code, so on-chain semantic verification is mandatory), and add those
+ * chain ids to `chains`. No code change required.
  */
-export const OMNIBUS_CREATE3_ADDRESS = '0x0000000000000000000000000000000000000000' as Address // PLACEHOLDER
+export const OMNIBUS_CREATE3_ADDRESS = addressData.omnibusAddress as Address
 
 /**
- * Chain ids on which {@link OMNIBUS_CREATE3_ADDRESS} is verified-deployed.
- * EMPTY until deployments are confirmed — while empty, {@link resolveDeployment}
- * behaves exactly as the old empty-registry version (throws for every chain
- * without an override). Add a chain id ONLY after verifying the address on
- * that chain.
+ * Chain ids on which {@link OMNIBUS_CREATE3_ADDRESS} is verified-deployed,
+ * sourced from `address.json`'s `chains` array. EMPTY until deployments are
+ * confirmed — while empty, {@link resolveDeployment} behaves exactly as the
+ * old empty-registry version (throws for every chain without an override).
+ * A chain id is added ONLY after `make verify-omnibus` passes on it.
  */
-const VERIFIED_DEPLOYMENT_CHAINS: ReadonlySet<bigint> = new Set<bigint>([
-  // 8453n,   // Base — enable only when verified
-  // 42161n,  // Arbitrum — enable only when verified
-])
+const VERIFIED_DEPLOYMENT_CHAINS: ReadonlySet<bigint> = new Set<bigint>(
+  addressData.chains.map(chainId => BigInt(chainId)),
+)
 
 /**
  * Built-in verified deployments, keyed by chain id. Derived from
@@ -116,8 +120,8 @@ export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment)
       code: 'UNKNOWN_DEPLOYMENT',
       message:
         `No verified Omnibus deployment is known for chain ${chainId} and no override was provided. ` +
-        'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed, and the repository deploy ' +
-        'scripts cannot be used for derivation (they stale-encode a one-argument constructor).',
+        'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a Create3 address ignores ' +
+        'init code, so a deployment must be verified on-chain before it is trusted (run `make verify-omnibus`).',
       details: {chainId},
     })
   }

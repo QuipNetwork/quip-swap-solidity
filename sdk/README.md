@@ -2,7 +2,7 @@
 
 A TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets. Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). By design it does not custody keys or store secrets, and it never replaces on-chain enforcement (treat it as a convenience layer over the contracts, not a security guarantee). **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
 
-> **Before integrating, read [USAGE.md → "Security & risks"](USAGE.md#6-security--risks).** 
+> **⚠️ Before integrating, read the [DANGER — ways to lose funds](USAGE.md#danger) section.** Cross-chain takers can lose funds by skipping commitment verification; overriding the default buffers too tight can forfeit windows.
 
 ---
 

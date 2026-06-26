@@ -29,12 +29,15 @@ contract DeployTestnet is Script {
   uint256 public constant ERC1155_MINT_AMOUNT = 1000;
   uint256 public constant NATIVE_FUND_AMOUNT = 100 ether;
 
-  /// @notice Computes a guarded salt for CreateX deployment
-  /// @dev Guarded salt format: deployer (20 bytes) + 0x00 (1 byte) + suffix (11 bytes)
-  /// @param deployer The deployer address that will be guarded
+  /// @notice Computes the RAW (pre-guard) CreateX salt for a deployment.
+  /// @dev Raw salt format: deployer (20 bytes) + 0x00 (1 byte) + suffix (11 bytes).
+  /// `deployCreate3` guards this salt internally, and the on-chain address derives
+  /// from the GUARDED salt — so to predict the address via `computeCreate3Address`
+  /// (which does NOT guard) the caller must guard it first.
+  /// @param deployer The deployer address embedded in the salt (permissioned deploy)
   /// @param suffix The 11-byte salt suffix
-  /// @return The 32-byte guarded salt
-  function _computeGuardedSalt(address deployer, bytes11 suffix) internal pure returns (bytes32) {
+  /// @return The 32-byte raw (pre-guard) salt
+  function _computeRawSalt(address deployer, bytes11 suffix) internal pure returns (bytes32) {
     return bytes32(abi.encodePacked(deployer, bytes1(0x00), suffix));
   }
 
@@ -52,16 +55,29 @@ contract DeployTestnet is Script {
     console.log('Deployer:', deployer);
     console.log('Chain ID:', block.chainid);
 
-    // Compute expected addresses
-    bytes32 saltOmnibus = _computeGuardedSalt(deployer, SALT_SUFFIX_OMNIBUS);
-    bytes32 saltERC20 = _computeGuardedSalt(deployer, SALT_SUFFIX_ERC20_MOCK);
-    bytes32 saltERC721 = _computeGuardedSalt(deployer, SALT_SUFFIX_ERC721_MOCK);
-    bytes32 saltERC1155 = _computeGuardedSalt(deployer, SALT_SUFFIX_ERC1155_MOCK);
+    // Omnibus constructor args (config, not secrets). Owner falls back to the
+    // constant; the factory must be set (may be a mock locally) — Omnibus reverts
+    // ZeroQuipFactory on a zero factory.
+    address owner = vm.envOr('OMNIBUS_OWNER', OMNIBUS_OWNER);
+    address quipFactory = vm.envOr('QUIP_FACTORY', address(0));
+    require(quipFactory != address(0), 'QUIP_FACTORY must be set (Omnibus reverts on zero factory)');
 
-    address expectedOmnibus = CREATEX.computeCreate3Address(saltOmnibus, address(CREATEX));
-    address expectedERC20 = CREATEX.computeCreate3Address(saltERC20, address(CREATEX));
-    address expectedERC721 = CREATEX.computeCreate3Address(saltERC721, address(CREATEX));
-    address expectedERC1155 = CREATEX.computeCreate3Address(saltERC1155, address(CREATEX));
+    // Raw salts — what deployCreate3 takes; it guards each internally.
+    bytes32 saltOmnibus = _computeRawSalt(deployer, SALT_SUFFIX_OMNIBUS);
+    bytes32 saltERC20 = _computeRawSalt(deployer, SALT_SUFFIX_ERC20_MOCK);
+    bytes32 saltERC721 = _computeRawSalt(deployer, SALT_SUFFIX_ERC721_MOCK);
+    bytes32 saltERC1155 = _computeRawSalt(deployer, SALT_SUFFIX_ERC1155_MOCK);
+
+    // Expected addresses use the GUARDED salt (computeCreate3Address does NOT guard;
+    // matches CreateX `_guard` for the MsgSender + RedeployProtection.False branch).
+    // Guarded salts are inlined to keep the stack shallow (avoids stack-too-deep).
+    address expectedOmnibus =
+      CREATEX.computeCreate3Address(keccak256(abi.encode(deployer, saltOmnibus)), address(CREATEX));
+    address expectedERC20 = CREATEX.computeCreate3Address(keccak256(abi.encode(deployer, saltERC20)), address(CREATEX));
+    address expectedERC721 =
+      CREATEX.computeCreate3Address(keccak256(abi.encode(deployer, saltERC721)), address(CREATEX));
+    address expectedERC1155 =
+      CREATEX.computeCreate3Address(keccak256(abi.encode(deployer, saltERC1155)), address(CREATEX));
 
     console.log('Expected Omnibus:', expectedOmnibus);
     console.log('Expected ERC20Mock:', expectedERC20);
@@ -73,7 +89,7 @@ contract DeployTestnet is Script {
     // Deploy Omnibus
     address omnibus;
     if (expectedOmnibus.code.length == 0) {
-      bytes memory omnibusInitCode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(OMNIBUS_OWNER));
+      bytes memory omnibusInitCode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(owner, quipFactory));
       omnibus = CREATEX.deployCreate3(saltOmnibus, omnibusInitCode);
       console.log('Omnibus deployed at:', omnibus);
     } else {

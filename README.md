@@ -8,9 +8,9 @@ Non-custodial, hashlocked same-chain and cross-chain swaps between QuipWallets, 
 src/                  Production contracts (Omnibus, TermsLib, interfaces)
 test/                 Foundry test suite (behaviors, scenarios, attack tests,
                       harnesses, mocks)
-script/               Deployment scripts (NOTE: currently stale — they encode a
-                      one-argument constructor; the active Omnibus constructor
-                      is (address initialOwner, address quipFactory))
+script/               Deployment scripts (construct Omnibus with both args,
+                      (address initialOwner, address quipFactory), from the
+                      OMNIBUS_OWNER / QUIP_FACTORY env vars)
 sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 ```
 
@@ -58,4 +58,4 @@ make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
 
 ## Deployment
 
-`make deploy-testnet` / `make deploy-production` drive the scripts in `script/`. **Caveat:** both scripts currently construct `Omnibus` with `abi.encode(OMNIBUS_OWNER)` only, while the active constructor requires `(address initialOwner, address quipFactory)`. They will not deploy the active contract correctly (and no address derived from them is valid) until they are updated with a verified QuipFactory address.
+`make deploy-testnet` / `make deploy-production` drive the scripts in `script/`. Both construct `Omnibus` with the full constructor `(address initialOwner, address quipFactory)`, sourced from the `OMNIBUS_OWNER` and `QUIP_FACTORY` env vars (see `.env.example`). A real deploy requires a **non-zero `QUIP_FACTORY`** — the constructor reverts `ZeroQuipFactory` otherwise — and a non-zero `OMNIBUS_OWNER`. Because Omnibus deploys via Create3, the address is independent of these constructor args.

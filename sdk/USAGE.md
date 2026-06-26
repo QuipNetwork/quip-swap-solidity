@@ -6,6 +6,24 @@ The SDK is **intended to be non-custodial**: by design it does not hold keys, st
 
 ---
 
+<a id="danger"></a>
+
+## ⚠️ DANGER — ways to lose funds (read before integrating)
+
+The genuine fund-loss paths, loudest first. Each entry is terse — follow the link for depth (full prose lives in [§6 Security & risks](#6-security--risks)). The SDK preflights what it can, but these are the cases it (and the contract) cannot fully prevent for you.
+
+> **⚠️ DANGER — cross-chain taker drain.** A taker who commits before verifying the proposer has actually committed can **permanently lose the escrowed assets** — the proposer holds the secret and can claim the taker's leg while risking nothing. *Avoid:* run `verifyRemoteCommitment` against the proposer's chain, gate your commit on the result, and apply your own confirmation depth. → [§5 callout](#5-cross-chain-swap-end-to-end), [§6 item 1](#6-security--risks).
+
+> **⚠️ DANGER — overriding buffers below the defaults.** Too-tight `minimumBufferSeconds` (same-chain or cross-chain) can cause a **missed claim/reaction window and forfeited funds**; the contract never checks gap SIZE, so the SDK default is the only guard. *Avoid:* keep the default, or override only after evaluating finality, congestion, reorg risk, and relayer latency. → [§5 "Schedule buffers"](#schedule-buffers).
+
+> **⚠️ DANGER — secret loss.** Lose the secret before the claim and the swap **cannot complete** — only `reclaim` after `reclaimRelease` recovers the funds. The SDK never persists it; custody is yours. → [§6 item 2](#6-security--risks).
+
+> **⚠️ DANGER — missed reaction window.** After the secret is revealed, the taker must claim within `[proposer.claimDeadline, proposer.reclaimRelease)` or **forfeit** the swap. *Avoid:* watch the counterparty chain for the reveal rather than polling slowly. → [§6 item 3](#6-security--risks).
+
+> **⚠️ DANGER — reorgs / finality.** A commitment or a revealed secret observed once is **not final** — a reorg can undo it. *Avoid:* honor a confirmation policy before treating any observation as settled. → [§6 item 4](#6-security--risks).
+
+> **⚠️ DANGER — exact `msg.value` / explicit `gas`.** Commit reverts unless `msg.value` is EXACT — let the SDK compute it, never pad it — and passing an explicit `opts.gas` disables the pre-submission revert check. → [§11 Common footguns](#11-common-footguns).
+
 ## 1. Install
 
 ```bash
@@ -23,7 +41,7 @@ The SDK takes viem `PublicClient` / `WalletClient` instances **you** construct. 
 
 - **No embedded secrets or endpoints** — credential and transport choices stay in the host app.
 - **Same code everywhere** — it works identically in the browser (WalletConnect/injected), in Node, and in backend services; only the transport you pass differs.
-- **Address resolution** — **today you must supply the `Omnibus` address** via a `{chainId, omnibusAddress}` override on every chain: the verified-default registry is not yet populated (`knownDeployments` is empty and `OMNIBUS_CREATE3_ADDRESS` is a placeholder). `resolveDeployment(chainId, override?)` resolves the address, and an override always wins. Looking ahead: because Omnibus deploys via Create3 (one canonical address across all chains), once Quip's deployments are verified the SDK will return that address automatically on supported chains and the override becomes optional there. The SDK never returns an unverified, invented, or derived-at-runtime address.
+- **Address resolution** — **you supply the `Omnibus` address; the SDK does not ship one.** `knownDeployments` is empty, so pass your address as a `{chainId, omnibusAddress}` override to `resolveDeployment(chainId, override)` (or hand it straight to `createOmnibusClient`). With no override the SDK has no address to return and fails fast with `UNKNOWN_DEPLOYMENT`; it never invents, derives, or ships one.
 
 ```ts
 import {createPublicClient, createWalletClient, custom, http} from 'viem'
@@ -37,10 +55,8 @@ const walletClient = createWalletClient({chain: base, transport: custom(window.e
 // backend (local account):
 // const walletClient = createWalletClient({chain: base, transport: http(RPC_URL), account})
 
-// today the override is required on every chain (no verified defaults yet).
-// resolveDeployment(chainId, override?) resolves the address — an override always
-// wins; once Quip's Create3 deployments are verified it will return them
-// automatically on supported chains and this override becomes optional there:
+// the SDK ships no Omnibus address — you pass your own via the override
+// (resolveDeployment throws UNKNOWN_DEPLOYMENT if you don't):
 const {omnibusAddress} = resolveDeployment(8453n, {chainId: 8453n, omnibusAddress: '0x...'})
 
 const client = createOmnibusClient({address: omnibusAddress, publicClient, walletClient})
@@ -155,7 +171,7 @@ const {status, lockState, proposerPosted, takerPosted, timestamp} =
 
 A cross-chain swap is a **coordinated flow across two independent chains — not one atomic transaction.** Alice is proposer/secret-holder on Chain A; Bob is taker on Chain B.
 
-> **⚠️ CRITICAL — asset-loss risk.** If you are the **taker**, you MUST verify the **proposer** has actually committed on their chain *before* you commit. The contract cannot check this cross-chain — your chain cannot read the proposer's chain. If you skip it and the proposer never committed, the proposer (who holds the secret) can claim your escrowed leg while risking nothing, and **your assets are gone.** This is the single most likely way to lose funds with this SDK. It is not optional and not theoretical: run `verifyRemoteCommitment` against the proposer's chain, gate your commit on the result, and apply your own confirmation depth.
+> **⚠️ Danger:** as the taker, verify the proposer actually committed (`verifyRemoteCommitment` against the proposer's chain) *before* you commit, gate your commit on it, and apply your own confirmation depth — skipping this can **permanently lose your escrowed assets**, and the contract cannot prevent it cross-chain. The single most likely way to lose funds with this SDK; full detail in [DANGER](#danger) and [§6](#6-security--risks).
 
 ```ts
 import {validateCrossChainSchedule, verifyRemoteCommitment, extractRevealedSecret,
@@ -216,9 +232,11 @@ validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds: DEF
 - `standard` (~30 min) — the general default both modes use when you omit the arg.
 - `conservativeL1` (~1 hr) — congested or deep-reorg-risk L1s.
 
-Overriding **below** these is allowed but **dangerous**: too-tight windows can cause a missed claim/reaction window and forfeited or lost funds. Override only after evaluating finality, congestion, reorg risk, and relayer latency.
+Overriding **below** these defaults can forfeit windows and lose funds — see [DANGER](#danger).
 
 ## 6. Security & risks
+
+> The loud, scannable summary is the [DANGER](#danger) section at the top of this file; the entries below are the detailed prose it links to.
 
 The real failure modes, in order of severity. Read them deliberately before integrating.
 
@@ -293,7 +311,7 @@ This is the application's job, not the library's:
 
 Each entry is *pitfall → why → do this instead*. These describe the SDK and protocol **as they behave today** — they are usage guidance, not bugs to fix.
 
-- **`msg.value` must be EXACT.** Commit requires `msg.value == totalNative(party) + commitmentFee` exactly; the contract reverts `IncorrectNativeAmountReceived` on both over- and under-payment. Never pad the native value the way you pad gas. **Do:** let the SDK compute and send the value; never add a buffer to it.
+- **`msg.value` must be EXACT.** Commit requires `msg.value == totalNative(party) + commitmentFee` exactly; the contract reverts `IncorrectNativeAmountReceived` on both over- and under-payment. Never pad the native value the way you pad gas. **Do:** let the SDK compute and send the value; never add a buffer to it. (Fund-affecting — see [DANGER](#danger).)
 
 - **The commitment fee can change between read and submit.** It is owner-mutable. The SDK re-reads it immediately before building the commit tx, but a fee change in that gap can still cause `IncorrectNativeAmountReceived`. **Do:** surface a retry path on that revert rather than treating it as fatal.
 
@@ -311,7 +329,7 @@ Each entry is *pitfall → why → do this instead*. These describe the SDK and 
 
 - **A tx hash is not success.** A mined transaction can still have reverted. **Do:** always resolve the receipt and check status — `waitForOmnibusReceipt` throws `TRANSACTION_REVERTED` for you — before treating a step as done.
 
-- **Setting an explicit `gas` disables the revert check.** Passing `opts.gas` skips gas estimation — which is also the SDK's pre-submission revert check — so a call that would revert is signed and broadcast anyway and burns its gas (the protocol preflights still run). **Do:** leave `gas` unset so estimation catches reverts first; if you only want a bigger buffer use `gasMultiplier`; pass an explicit `gas` only for a call you have already confirmed will succeed.
+- **Setting an explicit `gas` disables the revert check.** Passing `opts.gas` skips gas estimation — which is also the SDK's pre-submission revert check — so a call that would revert is signed and broadcast anyway and burns its gas (the protocol preflights still run). **Do:** leave `gas` unset so estimation catches reverts first; if you only want a bigger buffer use `gasMultiplier`; pass an explicit `gas` only for a call you have already confirmed will succeed. (Fund-affecting — see [DANGER](#danger).)
 
 - **ERC-721 amount is canonicalized to `1n` by the builder.** If you hand-build an ERC-721 `Asset` with a different `amount`, both sides must use the identical value or the digests diverge and the swap won't match (`TermsMismatch`). **Do:** always use `erc721Asset(target, tokenId)`.
 
