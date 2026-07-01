@@ -87,6 +87,14 @@ deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (rea
 		--broadcast \
 		--verify
 
+.PHONY: deploy-op-sepolia
+deploy-op-sepolia: ## Deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
+	forge script script/DeployOmnibus.s.sol \
+		--rpc-url op_sepolia \
+		--private-key $(DEPLOYER_PK) \
+		--broadcast \
+		--verify
+
 # ==============================================================================
 # TypeScript SDK (sdk/)
 # ==============================================================================
@@ -149,6 +157,11 @@ verify-omnibus: ## Compare an address.json against the CREATE3 address predicted
 verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base_sepolia -v
+
+.PHONY: verify-omnibus-op-sepolia
+verify-omnibus-op-sepolia: ## Same as verify-omnibus, pinned to the op_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
+	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url op_sepolia -v
 
 .PHONY: help
 help: ## Show this help
