@@ -2,7 +2,6 @@
 pragma solidity 0.8.33;
 
 import {Terms} from '../TermsLib.sol';
-import {IQuipFactory} from './IQuipFactory.sol';
 
 /// @notice the lock state for Omnibus swaps
 enum LockState {
@@ -14,6 +13,21 @@ enum LockState {
   Committed,
   /// @notice terminal (executed or reclaimed)
   Spent
+}
+
+/// @notice auth data for one commit; identities attribute, they don't gate
+/// @dev the signature is a SOFT GUARD: it proves this exact payload (lock + both
+/// terms, on this chain, for this contract) was endorsed by the declared identity —
+/// it does NOT gate which identity may post a side. Counterparty-identity checks,
+/// where a client wants them, happen off-chain against the Commitment event
+struct CommitAuth {
+  /// @notice the committing side's identity blob (routes + verifies)
+  /// @dev length < 20 reverts MalformedSigner; length == 20 is an address
+  /// (self-auth / EOA ecrecover / ERC-1271 by code presence); length > 20 is
+  /// an ERC-7913 keyed identity: verifier(20 bytes) ‖ key
+  bytes signer;
+  /// @notice signature over commitDigest; '0x' for self-auth
+  bytes signature;
 }
 
 interface IOmnibus {
@@ -38,11 +52,17 @@ interface IOmnibus {
   /// @notice thrown when fee exceeds MAX_FEE
   error FeeExceedsMax();
 
-  /// @notice thrown when the caller is not a factory-deployed QuipWallet
-  error CallerNotQuipWallet();
+  /// @notice thrown when a verifier address is zero
+  error ZeroVerifier();
 
-  /// @notice thrown when the quip factory address is zero
-  error ZeroQuipFactory();
+  /// @notice thrown when a signer blob is shorter than 20 bytes
+  error MalformedSigner();
+
+  /// @notice thrown on the keyed route when the verifier is not allowlisted
+  error UntrustedVerifier();
+
+  /// @notice thrown when the routed verification machine rejects the signature
+  error InvalidCommitSignature();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -54,11 +74,17 @@ interface IOmnibus {
   /// @param amount the amount withdrawn
   event FeesWithdrawn(address indexed to, uint256 amount);
 
+  /// @notice emitted when a verifier's trust status changes
+  /// @param verifier the ERC-7913 verifier address
+  /// @param trusted whether the verifier is now trusted
+  event VerifierTrustUpdated(address indexed verifier, bool trusted);
+
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
   /// @param party the terms of the committing party
-  /// @param committer the address that committed
-  event Commitment(bytes32 indexed lock, Terms party, address indexed committer);
+  /// @param signer the identity blob that endorsed this commit (attribution)
+  /// @param sender the address that submitted and FUNDED the commit
+  event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
 
   /// @notice emitted when a swap is executed
   /// @param recipient address receiving assets of claim
@@ -88,13 +114,52 @@ interface IOmnibus {
   /// @return isPosted whether that side has been posted
   function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
 
+  /// @notice returns whether an ERC-7913 verifier is trusted for the keyed route
+  /// @param verifier the verifier address
+  /// @return trusted whether the verifier is allowlisted
+  function trustedVerifiers(address verifier) external view returns (bool trusted);
+
+  /// @notice sets the trust status of an ERC-7913 verifier (owner only)
+  /// @param verifier the verifier address (non-zero)
+  /// @param trusted the new trust status
+  function setVerifierTrust(address verifier, bool trusted) external;
+
+  /// @notice the domain tag bound into every commit digest
+  /// @return tag keccak256('QUIP:Omnibus:commit:v1')
+  function COMMIT_DIGEST_TAG() external view returns (bytes32 tag);
+
+  /// @notice computes the digest a committer's identity must sign
+  /// @dev pure function of caller-known data; the SDK computes it locally and
+  /// commit recomputes it from calldata — it is never transmitted. Binds the
+  /// full context: chainid + this contract (replay scope), lock, both terms,
+  /// and the declared identity (signerHash = keccak256 of the WHOLE blob)
+  /// @param lock the hashlock identifier
+  /// @param party the committing side's terms
+  /// @param counterparty the other side's terms
+  /// @param signerHash keccak256 of the committing side's identity blob
+  /// @return digest the 32-byte commit digest
+  function commitDigest(
+    bytes32 lock,
+    Terms calldata party,
+    Terms calldata counterparty,
+    bytes32 signerHash
+  ) external view returns (bytes32 digest);
+
   /// @notice commits assets and collateral to a swap
-  /// @dev only callable by a factory-deployed QuipWallet (post-quantum secure);
-  /// a wallet qualifies iff QUIP_FACTORY.vaultIdOf(wallet) != bytes32(0)
+  /// @dev permissionless: any sender may commit; the identity in `auth`
+  /// AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. The
+  /// signature is over commitDigest; self-auth (msg.sender == 20-byte signer)
+  /// requires no signature
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
-  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable;
+  /// @param auth the committing side's identity blob and signature
+  function commit(
+    bytes32 lock,
+    Terms calldata party,
+    Terms calldata counterparty,
+    CommitAuth calldata auth
+  ) external payable;
 
   /// @notice executes the swap by revealing the secret
   /// @dev a cross-chain claim is gated only on the local (party) leg's deadline; the
@@ -119,10 +184,6 @@ interface IOmnibus {
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei
   function MAX_FEE() external view returns (uint256);
-
-  /// @notice the QuipFactory whose wallet registry gates commit
-  /// @return the quip factory
-  function QUIP_FACTORY() external view returns (IQuipFactory);
 
   /// @notice the current commitment fee
   /// @return the fee in wei

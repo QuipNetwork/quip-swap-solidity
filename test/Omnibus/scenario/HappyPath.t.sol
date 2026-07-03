@@ -34,9 +34,9 @@ contract Omnibus_HappyPath is OmnibusTest {
     // scenarios assert exact contract-balance accounting; drop the base pre-funding
     vm.deal(address(omnibus), 0);
 
-    // actors are already registered on the base quipFactory; reuse it on both chains
-    omnibusA = new OmnibusHarness(address(this), address(quipFactory));
-    omnibusB = new OmnibusHarness(address(this), address(quipFactory));
+    // per-chain instances trust the same verifier as the base omnibus
+    omnibusA = new OmnibusHarness(address(this), _verifiers(address(verifierA)));
+    omnibusB = new OmnibusHarness(address(this), _verifiers(address(verifierA)));
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
     TREASURY = makeAddr('treasury');
@@ -54,13 +54,13 @@ contract Omnibus_HappyPath is OmnibusTest {
     // Step 1: Alice (proposer) commits first (same-chain -> Free state)
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: aliceAssetAmount}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: aliceAssetAmount}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
     _assertLockState(lock, LockState.Free);
 
     // Step 2: Bob (taker) commits second (same-chain -> Committed state)
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: bobAssetAmount}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: bobAssetAmount}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
     _assertLockState(lock, LockState.Committed);
 
     uint256 bobRecipientBalBefore = BOB_RECIPIENT.balance;
@@ -86,12 +86,12 @@ contract Omnibus_HappyPath is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: 1 ether}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
     _assertLockState(lock, LockState.Free);
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: 0}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
     _assertLockState(lock, LockState.Committed);
 
     uint256 bobRecipientEthBefore = BOB_RECIPIENT.balance;
@@ -137,7 +137,7 @@ contract Omnibus_HappyPath is OmnibusTest {
     tokenA.approve(address(omnibusA), tokenAAmount);
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibusA.commit(crossLock, aliceTerms, bobTerms);
+    omnibusA.commit(crossLock, aliceTerms, bobTerms, _selfAuth(ALICE));
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(tokenA.balanceOf(address(omnibusA)), tokenAAmount);
 
@@ -147,7 +147,7 @@ contract Omnibus_HappyPath is OmnibusTest {
     tokenB.approve(address(omnibusB), tokenBAmount);
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibusB.commit(crossLock, bobTerms, aliceTerms);
+    omnibusB.commit(crossLock, bobTerms, aliceTerms, _selfAuth(BOB));
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(tokenB.balanceOf(address(omnibusB)), tokenBAmount);
 
@@ -190,14 +190,14 @@ contract Omnibus_HappyPath is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), tokenAAmount);
-    omnibusA.commit(reclaimLock, aliceTerms, bobTerms);
+    omnibusA.commit(reclaimLock, aliceTerms, bobTerms, _selfAuth(ALICE));
     vm.stopPrank();
 
     vm.chainId(CHAIN_B);
     vm.warp(AT_TAKER_COMMIT);
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), tokenBAmount);
-    omnibusB.commit(reclaimLock, bobTerms, aliceTerms);
+    omnibusB.commit(reclaimLock, bobTerms, aliceTerms, _selfAuth(BOB));
     vm.stopPrank();
 
     // Reclaim on Chain A after Alice's reclaim release
@@ -232,12 +232,12 @@ contract Omnibus_HappyPath is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
     _assertLockState(lock, LockState.Free);
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
     _assertLockState(lock, LockState.Committed);
 
     // Proposer reclaim after release refunds both sides
@@ -266,7 +266,7 @@ contract Omnibus_HappyPath is OmnibusTest {
     // Alice commits -> Committed (cross-chain goes directly to Committed)
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
     _assertLockState(lock, LockState.Committed);
 
     // Alice reclaims from Committed state after her release
@@ -295,11 +295,11 @@ contract Omnibus_HappyPath is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: aliceAssetAmount + fee}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: aliceAssetAmount + fee}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: bobAssetAmount + fee}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: bobAssetAmount + fee}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
 
     assertEq(omnibus.accruedFees(), 2 * fee);
 
@@ -333,11 +333,11 @@ contract Omnibus_HappyPath is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount + fee}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: assetAmount + fee}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: assetAmount + fee}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: assetAmount + fee}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
 
     _warpToProposerReclaim();
     uint256 aliceBalBefore = ALICE.balance;

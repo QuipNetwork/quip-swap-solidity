@@ -12,8 +12,8 @@
  * Lifecycle (process orchestration):
  *   1. `forge build` (artifacts may be stale).
  *   2. Start two Anvils on free ports — chain 31337 (node A) and 31338 (node B).
- *   3. Deploy the standard fixture (QuipFactoryMock + Omnibus + mock tokens,
- *      committing accounts registered) on EACH node.
+ *   3. Deploy the standard fixture (Omnibus + mock tokens,
+ *      permissionless commits) on EACH node.
  *   4. Run the flow. On the FIRST broken step: print `SMOKE FAILED at step N`
  *      plus the error, tear down BOTH anvils, exit 1 — do not continue.
  *   5. On success: per-step `ok` log, `SMOKE PASSED`, tear down, exit 0.
@@ -43,6 +43,7 @@ import {
   planApprovals,
   planSameChainSwap,
   QuipSwapError,
+  selfAuth,
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
@@ -282,7 +283,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   await step(scope, 'proposer commits', async () => {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only proposer leg should need no approvals')
-    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms})
+    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: selfAuth(A.alice.address)})
     await aliceClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Free, `expected Free, got ${LockState[lockState]}`)
@@ -303,7 +304,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   await step(scope, 'taker commits', async () => {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.bob, bobTerms)
     assert(submitted === 1, `expected one ERC-20 approval, got ${submitted}`)
-    const hash = await bobClient.commit({lock, party: bobTerms, counterparty: aliceTerms})
+    const hash = await bobClient.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: selfAuth(A.bob.address)})
     await bobClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed, got ${LockState[lockState]}`)
@@ -420,7 +421,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
     await warpBoth(s.atProposerCommit)
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only leg should need no approvals')
-    const hash = await aliceOnA.commit({lock, party: aliceTerms, counterparty: bobTerms})
+    const hash = await aliceOnA.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: selfAuth(A.alice.address)})
     await aliceOnA.waitForReceipt(hash)
     const lockState = await aliceOnA.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on A, got ${LockState[lockState]}`)
@@ -446,7 +447,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
       publicClient: B.publicClient,
       walletClient: B.bob.walletClient,
     })
-    const hash = await bobOnB.commit({lock, party: bobTerms, counterparty: aliceTerms})
+    const hash = await bobOnB.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: selfAuth(B.bob.address)})
     await bobOnB.waitForReceipt(hash)
     const lockState = await aliceOnB.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on B, got ${LockState[lockState]}`)

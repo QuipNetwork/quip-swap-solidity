@@ -64,7 +64,7 @@ const client = createOmnibusClient({address: omnibusAddress, publicClient, walle
 
 `createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient` — `args` is `{address, publicClient, walletClient?}`. The `walletClient` is optional: reads work without it; writes (`commit`/`claim`/`reclaim`/`admin.*`) throw `MISSING_WALLET_CLIENT` / `MISSING_ACCOUNT` if it (or its account) is absent.
 
-Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getQuipFactory()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isQuipWallet(account)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`).
+Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isVerifierTrusted(verifier)`, `getCommitDigest(lock, party, counterparty, signerHash)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`, `setVerifierTrust`).
 
 ## 3. Core building blocks
 
@@ -124,26 +124,44 @@ const {secret, lock} = generateSecret() // generateSecret(): SecretLockPair = {s
 ## 4. Same-chain swap (end-to-end)
 
 ```ts
-import {planSameChainSwap, getSameChainSwapStatus, generateSecret} from '@quip.network/quip-swap-sdk'
+import {planSameChainSwap, getSameChainSwapStatus, generateSecret, selfAuth} from '@quip.network/quip-swap-sdk'
 
 const plan = planSameChainSwap(aliceTerms, bobTerms) // validates (structure, order, chain, BUFFERS) + normalizes roles
 const {secret, lock} = generateSecret()              // the PROPOSER holds the secret
 
 // 1. proposer commits in [0, proposer.commitmentDeadline)          lock: Unused -> Free
-await proposerClient.commit({lock, party: plan.proposerTerms, counterparty: plan.takerTerms})
+//    (self-auth: the sending account IS the identity, signature '0x')
+await proposerClient.commit({
+  lock, party: plan.proposerTerms, counterparty: plan.takerTerms, auth: selfAuth(proposerAddress),
+})
 
 // 2. WAIT — the taker's window only opens at proposer.commitmentDeadline
 
 // 3. taker commits (posts the OTHER side)                          lock: Free -> Committed
-await takerClient.commit({lock, party: plan.takerTerms, counterparty: plan.proposerTerms})
+await takerClient.commit({
+  lock, party: plan.takerTerms, counterparty: plan.proposerTerms, auth: selfAuth(takerAddress),
+})
 
 // 4. anyone with the secret claims in the proposer-claim window    lock: Committed -> Spent
 await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.takerTerms})
 ```
 
-`commit(args: CommitArgs, opts?)`, `claim(args: ClaimArgs, opts?)`, and `reclaim(args: ReclaimArgs, opts?)` each return a `Promise<Hash>`. `CommitArgs`/`ReclaimArgs` are `{lock, party, counterparty, verifyOnChainState?}`; `ClaimArgs` is `{secret, party, counterparty, verifyOnChainState?}` (the lock is derived from the secret).
+`commit(args: CommitArgs, opts?)`, `claim(args: ClaimArgs, opts?)`, and `reclaim(args: ReclaimArgs, opts?)` each return a `Promise<Hash>`. `CommitArgs` is `{lock, party, counterparty, auth, verifyOnChainState?}`; `ReclaimArgs` is `{lock, party, counterparty, verifyOnChainState?}`; `ClaimArgs` is `{secret, party, counterparty, verifyOnChainState?}` (the lock is derived from the secret).
 
-`commit` is **QuipWallet-gated**: only factory-deployed QuipWallets may commit (`Omnibus.commit` is `onlyQuipWallet`). The client preflights this via `vaultIdOf` and rejects a non-wallet sender with `NOT_QUIP_WALLET` before any transaction — the committer must be the QuipWallet **contract** address, not its owner's EOA. (`claim`/`reclaim` are ungated.) You can check eligibility up front with `await client.isQuipWallet(account)`.
+### Commit authorization (`auth`) and the funding model
+
+`commit` is **permissionless** — the contract authenticates the PAYLOAD, not the caller. Every commit carries a `CommitAuth {signer, signature}`:
+
+- **Self-auth** (most common): the sending account IS the identity — `auth: selfAuth(senderAddress)` (signature `'0x'`). Works for any account type, including a QuipWallet executing the commit calldata.
+- **Detached EOA** (programmatic signers only — browser wallets refuse raw 32-byte hashes): the identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})` as a RAW digest (viem: `await account.sign({hash: digest})`, NOT `personal_sign`), and any sender submits `auth: {signer: identityAddress, signature}`.
+- **ERC-1271**: a 20-byte identity WITH code routes to `isValidSignature(digest, signature)` on that contract.
+- **ERC-7913 keyed (post-quantum SHRINCS)**: `auth.signer = buildKeyedSigner(verifierAddress, publicKeyCommitment)`; the verifier must be on the contract's allowlist (`isVerifierTrusted`). The `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**.
+
+The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a relayer cannot tamper with terms in flight. It does NOT gate which identity may post a side — a client that requires the counterparty's agreed identity checks the `signer` field of the `Commitment` event off-chain before revealing the secret / committing the second leg.
+
+> **FUNDING MODEL — read this twice.** In every route, the transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. "Relayed" therefore means "the sender pays the party's leg" — a relayer submitting someone else's signed commit is donating the escrow unless it is compensated out-of-band.
+
+(`claim`/`reclaim` are unchanged and identity-free.)
 
 Same-chain, the contract enforces the *window* ordering — the taker cannot commit until the proposer's commitment deadline has passed — but it does **not** verify the proposer actually committed. A taker who commits first (during the taker window, on an `Unused` lock) simply posts their own side, moving the lock `Unused → Free`; the swap can then never complete (the proposer's window has closed) and the taker's assets are stranded until their `reclaimRelease` (reclaim-from-Free). This is an economically irrational action that strands the taker's assets until reclaim, rather than a theft vector — no one can take the taker's funds — so the same-chain risk is materially lower than the cross-chain drain, but it is not zero. The genuinely dangerous, integrator-owned case is cross-chain: see the **⚠️ CRITICAL** callout in §5.
 
@@ -187,7 +205,9 @@ validateCrossChainSchedule({
 
 // 1. Alice commits on Chain A                         (Unused -> Committed; no Free state cross-chain)
 //    confirm with the Chain A client — it scopes decoding to Chain A's Omnibus
-await aliceClientA.waitForReceipt(await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB}))
+await aliceClientA.waitForReceipt(
+  await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB, auth: selfAuth(alice)}),
+)
 
 // 2. ← REQUIRED: skipping this can drain the taker's assets.
 //    Verify Alice's commitment ON ALICE'S CHAIN (aliceClientA is bound to Chain A)
@@ -198,7 +218,9 @@ if (!status.committed) throw new Error('proposer has not committed — do NOT co
 // undo a young commit) before treating it as final.
 
 // 3. Bob commits on Chain B in [alice.commitmentDeadline, bob.commitmentDeadline)
-await bobClientB.waitForReceipt(await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA}))
+await bobClientB.waitForReceipt(
+  await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA, auth: selfAuth(bob)}),
+)
 
 // 4. Alice claims Bob's leg ON CHAIN B — the Claim event REVEALS the secret.
 //    waitForReceipt on the Chain B client scopes decoding to Chain B's Omnibus.
@@ -256,7 +278,7 @@ The real failure modes, in order of severity. Read them deliberately before inte
 
 4. **Reorgs / finality (integrator's responsibility).** A commitment or a revealed secret observed once is not final — a reorg can undo a young commit, and `verifyRemoteCommitment` is point-in-time. Honor a confirmation policy (re-check after N blocks) before treating any observation as settled.
 
-SDK-guarded conditions (terms/pairing/window/chain-id/quip-wallet-gate/lock-state, exact `msg.value`, address/secret validation) are preflighted and surface as typed `QuipSwapError`s; the four items above are NOT things the SDK or the contract can fully prevent for you cross-chain.
+SDK-guarded conditions (terms/pairing/window/chain-id/signer-blob-shape/lock-state, exact `msg.value`, address/secret validation) are preflighted and surface as typed `QuipSwapError`s; the four items above are NOT things the SDK or the contract can fully prevent for you cross-chain.
 
 ## 7. Reading results & events
 
@@ -265,7 +287,7 @@ There are **three tiers** for turning a transaction into typed events, ordered b
 **1. Preferred — `client.waitForReceipt(hash, options?)`.** Uses the client's bound Omnibus address automatically; you never pass it again. Best for any tx you submitted through an `OmnibusClient`.
 
 ```ts
-const hash = await client.commit({lock, party, counterparty})
+const hash = await client.commit({lock, party, counterparty, auth: selfAuth(sender)})
 const {commitments, claims, reclaims} = await client.waitForReceipt(hash, {confirmations: 3})
 ```
 
@@ -276,7 +298,7 @@ const {claims} = await waitForOmnibusReceipt(publicClient, hash, {address: omnib
 ```
 
 Both throw **`TRANSACTION_REVERTED`** if the tx mined but reverted, and return `OmnibusReceipt = {transactionHash, receipt, commitments, claims, reclaims}`:
-- `CommitmentEvent` → `{lock, party, committer, blockNumber, transactionHash, logIndex}`
+- `CommitmentEvent` → `{lock, party, signer, sender, blockNumber, transactionHash, logIndex}` — `signer` is the identity blob that endorsed the commit (check it off-chain if you require a specific counterparty identity); `sender` is the address that submitted and funded it
 - `ClaimEvent` → `{recipient, lock, secret, blockNumber, transactionHash, logIndex}`
 - `ReclaimedEvent` → `{caller, lock, recipient, blockNumber, transactionHash, logIndex}`
 
@@ -296,7 +318,7 @@ Every SDK error is a `QuipSwapError` with a stable `code` (`QuipSwapErrorCode`);
 import {QuipSwapError} from '@quip.network/quip-swap-sdk'
 
 try {
-  await client.commit({lock, party, counterparty})
+  await client.commit({lock, party, counterparty, auth: selfAuth(sender)})
 } catch (err) {
   if (err instanceof QuipSwapError) {
     switch (err.code) {
@@ -313,7 +335,7 @@ try {
 }
 ```
 
-Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `CallerNotQuipWallet`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
+Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `InvalidCommitSignature`, `UntrustedVerifier`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
 
 ## 9. What the SDK does NOT do
 

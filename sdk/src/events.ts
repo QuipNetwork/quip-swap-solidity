@@ -2,7 +2,7 @@
  * Typed decoding and query helpers for all active Omnibus events:
  *
  * ```solidity
- * event Commitment(bytes32 indexed lock, Terms party, address indexed committer);
+ * event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
  * event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
  * event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
  * event FeeUpdated(uint256 oldFee, uint256 newFee);
@@ -20,7 +20,7 @@
  *   is emitted.
  */
 import {parseEventLogs} from 'viem'
-import type {Address, BlockNumber, BlockTag, Log, PublicClient} from 'viem'
+import type {Address, BlockNumber, BlockTag, Hex, Log, PublicClient} from 'viem'
 import {QuipSwapError} from './errors.js'
 import {generateLock} from './hashing.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
@@ -33,8 +33,15 @@ export interface CommitmentEvent {
   readonly lock: Hex32
   /** The committing side's FULL terms, recovered from event data. */
   readonly party: Terms
-  /** The QuipWallet that committed (indexed topic). */
-  readonly committer: Address
+  /**
+   * The identity blob that endorsed this commit (event data) — the event's
+   * attribution field. A client that cares WHICH identity posted a side
+   * (e.g. requiring the counterparty's agreed PQ identity before revealing
+   * the secret) checks THIS field off-chain; the contract never does.
+   */
+  readonly signer: Hex
+  /** The address that submitted and FUNDED the commit (indexed topic). */
+  readonly sender: Address
   /** Block number the log was found in (`null` for pending logs). */
   readonly blockNumber: bigint | null
   /** Transaction hash the log was found in (`null` for pending logs). */
@@ -144,7 +151,8 @@ export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] 
   return parsed.map(log => ({
     lock: log.args.lock,
     party: toTerms(log.args.party),
-    committer: log.args.committer,
+    signer: log.args.signer,
+    sender: log.args.sender,
     blockNumber: log.blockNumber,
     transactionHash: log.transactionHash,
     logIndex: log.logIndex,

@@ -37,7 +37,7 @@ export type QuipSwapErrorCode =
   | 'INVALID_HEX32'
   // client preflight
   | 'CHAIN_ID_MISMATCH'
-  | 'NOT_QUIP_WALLET'
+  | 'MALFORMED_SIGNER'
   | 'MISSING_WALLET_CLIENT'
   | 'MISSING_ACCOUNT'
   | 'TERMS_NOT_ON_CHAIN'

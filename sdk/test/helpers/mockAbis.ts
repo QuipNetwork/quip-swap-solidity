@@ -1,33 +1,11 @@
 /**
  * Minimal mock-contract ABI surfaces used by the test suites (mint, balance
- * / ownership / approval reads, and the QuipFactoryMock registry). Kept
- * separate from `chain.ts` so the chain context / fixture deployment helper
- * stays focused on lifecycle, and the surfaces can be imported on their own.
+ * / ownership / approval reads). Kept separate from `chain.ts` so the chain
+ * context / fixture deployment helper stays focused on lifecycle, and the
+ * surfaces can be imported on their own.
  *
  * Test infrastructure only — never exported from the SDK package.
  */
-
-/** QuipFactoryMock surface: registerWallet / unregisterWallet (test gating). */
-export const quipFactoryMockAbi = [
-  {
-    type: 'function',
-    name: 'registerWallet',
-    stateMutability: 'nonpayable',
-    inputs: [
-      {name: 'wallet', type: 'address'},
-      {name: 'vaultId', type: 'bytes32'},
-      {name: 'owner', type: 'address'},
-    ],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'unregisterWallet',
-    stateMutability: 'nonpayable',
-    inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [],
-  },
-] as const
 
 /** ERC20Mock surface: mint, balanceOf, approve, allowance. */
 export const erc20MockAbi = [

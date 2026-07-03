@@ -39,7 +39,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     uint256 nativeAmount = _totalNativeForCommit(alice);
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob, _selfAuth(ALICE));
 
     // First commit on same-chain transitions to Free
     _assertLockState(lock, LockState.Free);
@@ -148,7 +148,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.recordLogs();
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob, _selfAuth(ALICE));
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
     bool foundEvent = false;
@@ -235,31 +235,19 @@ contract Omnibus_commit is OmnibusTest {
 
   // ============ Access Control ============
 
-  function test_commit_revertsWhen_callerNotQuipWallet() public {
-    // only post-quantum secure wallets (deployed by the quip factory) may commit
-    address nonQuipWallet = makeAddr('nonQuipWallet');
-    vm.deal(nonQuipWallet, DEFAULT_AMOUNT);
+  function test_commit_permissionless_anySenderCanCommit() public {
+    // commit is permissionless: any funded sender may post a side with self-authorization
+    address anySender = makeAddr('anySender');
+    vm.deal(anySender, DEFAULT_AMOUNT);
 
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     vm.warp(AT_PROPOSER_COMMIT);
-    vm.expectRevert(IOmnibus.CallerNotQuipWallet.selector);
-    vm.prank(nonQuipWallet);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
-  }
+    vm.prank(anySender);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(anySender));
 
-  function test_commit_revertsWhen_walletUnregistered() public {
-    // a wallet whose registration is removed (vaultId back to zero) can no longer commit
-    quipFactory.unregisterWallet(ALICE);
-
-    Terms memory alice = _aliceTerms();
-    Terms memory bob = _bobTerms();
-
-    vm.warp(AT_PROPOSER_COMMIT);
-    vm.expectRevert(IOmnibus.CallerNotQuipWallet.selector);
-    vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    _assertLockState(lock, LockState.Free);
   }
 
   // ============ Revert Cases ============
@@ -296,7 +284,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_proposerCommitWindowElapsed() public {
@@ -308,7 +296,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(ALICE_COMMIT_DEADLINE); // upper bound is exclusive
     vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_takerCommitsBeforeProposerDeadline() public {
@@ -322,7 +310,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(ALICE_COMMIT_DEADLINE - 1); // before the taker window opens
     vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice);
+    omnibus.commit{value: 0}(lock, bob, alice, _selfAuth(BOB));
   }
 
   function test_commit_takerSucceedsAtExactProposerDeadline() public {
@@ -334,7 +322,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(ALICE_COMMIT_DEADLINE);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice);
+    omnibus.commit{value: 0}(lock, bob, alice, _selfAuth(BOB));
 
     _assertLockState(lock, LockState.Committed);
   }
@@ -349,7 +337,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(BOB_COMMIT_DEADLINE);
     vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice);
+    omnibus.commit{value: 0}(lock, bob, alice, _selfAuth(BOB));
   }
 
   function test_commit_revertsWhen_incorrectNativeAmount() public {
@@ -361,7 +349,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: correctAmount + 1}(lock, alice, bob);
+    omnibus.commit{value: correctAmount + 1}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_excessNativeAmount() public {
@@ -373,7 +361,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: correctAmount + 1 ether}(lock, alice, bob);
+    omnibus.commit{value: correctAmount + 1 ether}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_insufficientNativeAmount() public {
@@ -385,7 +373,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: correctAmount - 1}(lock, alice, bob);
+    omnibus.commit{value: correctAmount - 1}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_lockAlreadyCommitted() public {
@@ -400,7 +388,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_lockAlreadySpent() public {
@@ -415,7 +403,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_termsMismatchOnSecondCommit() public {
@@ -431,7 +419,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(BOB);
-    omnibus.commit{value: _totalNativeForCommit(bobModified)}(lock, bobModified, alice);
+    omnibus.commit{value: _totalNativeForCommit(bobModified)}(lock, bobModified, alice, _selfAuth(BOB));
   }
 
   function test_commit_revertsWhen_repostingSameSide() public {
@@ -446,7 +434,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT); // still inside the proposer commit window
     vm.expectRevert(IOmnibus.TermsAlreadyPosted.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_feeOnTransferToken() public {
@@ -466,7 +454,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.UnexpectedAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit(lock, alice, bob);
+    omnibus.commit(lock, alice, bob, _selfAuth(ALICE));
 
     // the revert rolled back the pull; Alice keeps her tokens
     assertEq(feeToken.balanceOf(ALICE), aliceBefore);
@@ -479,7 +467,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.ZeroAmount.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 0}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_invalidNativeAsset() public {
@@ -492,7 +480,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.InvalidNativeAsset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_invalidERC20Asset() public {
@@ -505,7 +493,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.InvalidERC20Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 0}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_invalidERC721Asset() public {
@@ -518,7 +506,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.InvalidERC721Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 0}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_invalidERC1155Asset() public {
@@ -531,7 +519,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.InvalidERC1155Asset.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 0}(lock, alice, bob);
+    omnibus.commit{value: 0}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_invalidCounterpartyTerms() public {
@@ -543,7 +531,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.ZeroAmount.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   // ============ Fee Tests ============
@@ -560,7 +548,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount + fee}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount + fee}(lock, alice, bob, _selfAuth(ALICE));
 
     // Both native assets and fee should be received
     assertEq(address(omnibus).balance - omnibusBalanceBefore, nativeAmount + fee);
@@ -580,7 +568,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_revertsWhen_partialFeeIncluded() public {
@@ -596,7 +584,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.IncorrectNativeAmountReceived.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount + fee - 1}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount + fee - 1}(lock, alice, bob, _selfAuth(ALICE));
   }
 
   function test_commit_worksWithZeroFee() public {
@@ -622,7 +610,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount + maxFee}(lock, alice, bob);
+    omnibus.commit{value: nativeAmount + maxFee}(lock, alice, bob, _selfAuth(ALICE));
 
     _assertLockState(lock, LockState.Free);
   }
@@ -673,7 +661,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: amount}(lock, alice, bob);
+    omnibus.commit{value: amount}(lock, alice, bob, _selfAuth(ALICE));
 
     _assertLockState(lock, LockState.Free);
   }
@@ -687,7 +675,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(t);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, _selfAuth(ALICE));
 
     _assertLockState(lock, LockState.Free);
   }
@@ -703,7 +691,7 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(t);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice);
+    omnibus.commit{value: 0}(lock, bob, alice, _selfAuth(BOB));
 
     _assertLockState(lock, LockState.Committed);
   }

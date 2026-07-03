@@ -17,9 +17,9 @@ export const omnibusAbi = [
         "internalType": "address"
       },
       {
-        "name": "quipFactory",
-        "type": "address",
-        "internalType": "address"
+        "name": "initialVerifiers",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "stateMutability": "nonpayable"
@@ -30,6 +30,19 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "COMMIT_DIGEST_TAG",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_FEE",
     "inputs": [],
     "outputs": [
@@ -37,19 +50,6 @@ export const omnibusAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "QUIP_FACTORY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract IQuipFactory"
       }
     ],
     "stateMutability": "view"
@@ -364,10 +364,179 @@ export const omnibusAbi = [
             ]
           }
         ]
+      },
+      {
+        "name": "auth",
+        "type": "tuple",
+        "internalType": "struct CommitAuth",
+        "components": [
+          {
+            "name": "signer",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "signature",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "commitDigest",
+    "inputs": [
+      {
+        "name": "lock",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "party",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "counterparty",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "signerHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -726,6 +895,24 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "setVerifierTrust",
+    "inputs": [
+      {
+        "name": "verifier",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "trusted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "supportsInterface",
     "inputs": [
       {
@@ -774,6 +961,25 @@ export const omnibusAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "trustedVerifiers",
+    "inputs": [
+      {
+        "name": "verifier",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "trusted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -889,7 +1095,13 @@ export const omnibusAbi = [
         ]
       },
       {
-        "name": "committer",
+        "name": "signer",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "sender",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -999,9 +1211,23 @@ export const omnibusAbi = [
     "anonymous": false
   },
   {
-    "type": "error",
-    "name": "CallerNotQuipWallet",
-    "inputs": []
+    "type": "event",
+    "name": "VerifierTrustUpdated",
+    "inputs": [
+      {
+        "name": "verifier",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "trusted",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "error",
@@ -1026,6 +1252,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "IncorrectNativeAmountReceived",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidCommitSignature",
     "inputs": []
   },
   {
@@ -1061,6 +1292,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "InvalidRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MalformedSigner",
     "inputs": []
   },
   {
@@ -1107,6 +1343,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "UntrustedVerifier",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "WindowViolated",
     "inputs": []
   },
@@ -1132,7 +1373,7 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
-    "name": "ZeroQuipFactory",
+    "name": "ZeroVerifier",
     "inputs": []
   }
 ] as const

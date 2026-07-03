@@ -4,10 +4,9 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Terms, TermsLib} from '../../src/TermsLib.sol';
-import {LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
-import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -52,7 +51,6 @@ contract Omnibus_CrossChainFreeOption is Test {
   OmnibusHarness public omnibusB; // chain B
   ERC20Mock public tokenA; // Alice's asset
   ERC20Mock public tokenB; // Bob's asset
-  QuipFactoryMock public quipFactory;
 
   // ============ Test Data ============
 
@@ -60,13 +58,9 @@ contract Omnibus_CrossChainFreeOption is Test {
   bytes32 public lock;
 
   function setUp() public {
-    // commit is gated to factory-deployed quip wallets; one registry serves both legs
-    quipFactory = new QuipFactoryMock();
-    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
-    quipFactory.registerWallet(BOB, bytes32(uint256(uint160(BOB))), BOB);
-
-    omnibusA = new OmnibusHarness(address(this), address(quipFactory));
-    omnibusB = new OmnibusHarness(address(this), address(quipFactory));
+    // commit is permissionless; each caller self-authorizes with its own identity
+    omnibusA = new OmnibusHarness(address(this), new address[](0));
+    omnibusB = new OmnibusHarness(address(this), new address[](0));
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
 
@@ -77,6 +71,11 @@ contract Omnibus_CrossChainFreeOption is Test {
   }
 
   // ============ Helpers ============
+
+  /// @notice minimal self-auth blob: succeeds when `sender` is the actual msg.sender
+  function _selfAuth(address sender) private pure returns (CommitAuth memory) {
+    return CommitAuth({signer: abi.encodePacked(sender), signature: ''});
+  }
 
   function _aliceTerms() internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
@@ -108,14 +107,14 @@ contract Omnibus_CrossChainFreeOption is Test {
     vm.warp(500); // proposer commit window [0, A_COMMIT)
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), AMOUNT_A);
-    omnibusA.commit(lock, alice, bob);
+    omnibusA.commit(lock, alice, bob, _selfAuth(ALICE));
     vm.stopPrank();
 
     vm.chainId(CHAIN_B);
     vm.warp(1500); // taker commit window [A_COMMIT, B_COMMIT)
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), AMOUNT_B);
-    omnibusB.commit(lock, bob, alice);
+    omnibusB.commit(lock, bob, alice, _selfAuth(BOB));
     vm.stopPrank();
   }
 
@@ -204,7 +203,7 @@ contract Omnibus_CrossChainFreeOption is Test {
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), AMOUNT_A);
     vm.expectRevert(TermsLib.DisordedDeadlines.selector);
-    omnibusA.commit(lock, alice, bob);
+    omnibusA.commit(lock, alice, bob, _selfAuth(ALICE));
     vm.stopPrank();
   }
 }

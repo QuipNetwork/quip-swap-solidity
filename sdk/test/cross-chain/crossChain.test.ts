@@ -19,6 +19,7 @@ import {getAddress, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
+import {selfAuth} from '../../src/commitAuth.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
@@ -189,7 +190,7 @@ describe('cross-chain happy path', () => {
     // cross-chain commit: Unused -> Committed directly (no Free state)
     await warpBoth(s.anchors.proposerCommit)
     // Chain A receipt decoded against Chain A's Omnibus (aliceOnA is bound to it)
-    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob}))
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: selfAuth(chainA.alice.address)}))
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Unused) // B untouched
 
@@ -201,7 +202,7 @@ describe('cross-chain happy path', () => {
     // ...then Bob commits his leg ON CHAIN B inside the taker window.
     // Decoded against Chain B's Omnibus (bobOnB is bound to it), NOT Chain A.
     await warpBoth(s.anchors.takerCommit)
-    await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice}))
+    await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice, auth: selfAuth(chainB.bob.address)}))
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Committed)
 
     // 4. Alice claims Bob's leg ON CHAIN B in the proposer-claim window —
@@ -294,6 +295,7 @@ describe('cross-chain validator guards', () => {
           lock,
           {...alice, assets: alice.assets.map(a => ({...a}))},
           {...bob, assets: bob.assets.map(a => ({...a}))},
+          selfAuth(chainA.alice.address),
         ],
         value: 0n,
         account: chainA.alice.account,
@@ -327,7 +329,7 @@ describe('cross-chain unhappy path', () => {
     const bob = s.bobTerms([nativeAsset(10n)])
 
     await warpBoth(s.anchors.proposerCommit)
-    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob}))
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: selfAuth(chainA.alice.address)}))
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
 
     // bob never commits. alice reclaims HER leg on chain A after HER release.

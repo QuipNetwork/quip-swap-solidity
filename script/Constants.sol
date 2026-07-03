@@ -11,5 +11,12 @@ library Constants {
   /// @notice CREATE3 salt for the Omnibus singleton. The deployed address is a
   ///         function of (Deployer, salt), so this value is what pins the
   ///         cross-chain Omnibus address. Bump only for an intentional redeploy.
-  bytes32 internal constant OMNIBUS_SALT = keccak256('QUIP:Omnibus:V1.0');
+  ///         V2.0: permissionless commit with multi-scheme payload authentication
+  ///         (matches Omnibus.VERSION == 2); the V1.0 Omnibus persists on testnets.
+  bytes32 internal constant OMNIBUS_SALT = keccak256('QUIP:Omnibus:V2.0');
+
+  /// @notice CREATE3 salt for the stateful SHRINCS ERC-7913 verifier singleton.
+  ///         Deployed BEFORE Omnibus on each chain — DeployOmnibus predicts this
+  ///         verifier's address from the salt and trusts it at construction.
+  bytes32 internal constant SHRINCS_VERIFIER_V1_SALT = keccak256('QUIP:ShrincsVerifier:V1.0');
 }

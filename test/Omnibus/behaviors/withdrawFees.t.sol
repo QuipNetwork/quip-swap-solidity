@@ -31,7 +31,7 @@ contract Omnibus_withdrawFees is OmnibusTest {
     fee = omnibus.commitmentFee();
     uint256 nativeAmount = _totalNativeForCommit(alice) + fee;
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(_lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(_lock, alice, bob, _selfAuth(ALICE));
   }
 
   // ============ Fee Accrual ============
@@ -71,7 +71,7 @@ contract Omnibus_withdrawFees is OmnibusTest {
     uint256 fee = omnibus.commitmentFee();
 
     vm.prank(ALICE);
-    omnibus.commit{value: escrow + fee}(lock, alice, bob);
+    omnibus.commit{value: escrow + fee}(lock, alice, bob, _selfAuth(ALICE));
 
     // owner withdraws fees: only the fee leaves, the escrow remains
     uint256 omnibusBefore = address(omnibus).balance;

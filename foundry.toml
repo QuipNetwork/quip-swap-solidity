@@ -16,6 +16,11 @@ solc_version = '0.8.33'
 evm_version = 'prague'
 optimizer_runs = 10_000
 ignored_warnings_from = ["dependencies/"]
+# The SHRINCS integration tests run hashsigs' test-side signing helpers (keygen +
+# stateful signing) in-EVM; they need far more gas/memory than the defaults, same
+# as hashsigs-solidity's own foundry.toml. On-chain contracts are unaffected.
+gas_limit = "18446744073709551615" # u64::MAX
+memory_limit = 268_435_456
 # Allow VerifyOmnibus.s.sol to read the SDK's canonical address file (default) and
 # any repo-relative ADDRESS_JSON override (read-only verify script).
 fs_permissions = [{access = "read", path = "./"}]
@@ -32,7 +37,10 @@ out = 'out-via-ir'
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
+# TODO(QUI-781): temporary rev pin — feat/verifier-ERC7913 HEAD.
+# Re-pin to the release tag after merge; keep the branch alive (or merge with a
+# merge commit) until then — a squash-merge + branch delete orphans this rev.
+"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "7c75cc204cb6a8f8b5fb5df35daf411eb306900f" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 [rpc_endpoints]

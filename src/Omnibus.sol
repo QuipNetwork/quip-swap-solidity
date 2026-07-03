@@ -2,12 +2,16 @@
 pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
-import {IOmnibus, LockState} from './interfaces/IOmnibus.sol';
-import {IQuipFactory} from './interfaces/IQuipFactory.sol';
+import {CommitAuth, IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
+import {IERC1271} from '@openzeppelin-contracts-5.6.0-rc.1/interfaces/IERC1271.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
+import {ECDSA} from '@openzeppelin-contracts-5.6.0-rc.1/utils/cryptography/ECDSA.sol';
 import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IERC165.sol';
+import {
+  IERC7913SignatureVerifier
+} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -17,13 +21,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   using TermsLib for Terms;
 
   /// @notice the version of this omnibus implementation
-  uint256 public constant VERSION = 0;
+  uint256 public constant VERSION = 2;
 
   /// @inheritdoc IOmnibus
   uint256 public constant MAX_FEE = 0.01 ether;
 
   /// @inheritdoc IOmnibus
-  IQuipFactory public immutable QUIP_FACTORY;
+  bytes32 public constant COMMIT_DIGEST_TAG = keccak256('QUIP:Omnibus:commit:v1');
 
   /// @inheritdoc IOmnibus
   uint256 public commitmentFee;
@@ -40,28 +44,42 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @inheritdoc IOmnibus
   mapping(bytes32 lock => mapping(bytes32 termsDigest => bool isPosted)) public posted;
 
-  /// @notice restricts the caller to factory-deployed QuipWallets
-  /// @dev only post-quantum secure wallets (QuipWallets deployed by QUIP_FACTORY) may
-  /// enter swaps; a wallet qualifies iff QUIP_FACTORY.vaultIdOf(wallet) != bytes32(0)
-  modifier onlyQuipWallet() {
-    if (QUIP_FACTORY.vaultIdOf(msg.sender) == bytes32(0)) revert CallerNotQuipWallet();
-    _;
-  }
+  /// @inheritdoc IOmnibus
+  mapping(address verifier => bool trusted) public trustedVerifiers;
 
-  /// @notice initializes the contract with an owner and the quip factory
+  /// @notice initializes the contract with an owner and the initially trusted verifiers
   /// @param initialOwner the address that will own the contract
-  /// @param quipFactory the QuipFactory whose wallet registry gates commit
-  constructor(address initialOwner, address quipFactory) Ownable(initialOwner) {
-    if (quipFactory == address(0)) revert ZeroQuipFactory();
-    QUIP_FACTORY = IQuipFactory(quipFactory);
+  /// @param initialVerifiers ERC-7913 verifiers trusted from genesis (each non-zero)
+  constructor(address initialOwner, address[] memory initialVerifiers) Ownable(initialOwner) {
+    for (uint256 i; i < initialVerifiers.length; ++i) {
+      if (initialVerifiers[i] == address(0)) revert ZeroVerifier();
+      trustedVerifiers[initialVerifiers[i]] = true;
+      emit VerifierTrustUpdated(initialVerifiers[i], true);
+    }
   }
 
   /// @notice allows this contract to receive native currency
   receive() external payable {}
 
   /// @inheritdoc IOmnibus
-  function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable onlyQuipWallet {
-    // it is assumed the msg.sender represents the `party`
+  function commitDigest(
+    bytes32 lock,
+    Terms calldata party,
+    Terms calldata counterparty,
+    bytes32 signerHash
+  ) public view returns (bytes32) {
+    return _commitDigest(lock, party.digestTerms(), counterparty.digestTerms(), signerHash);
+  }
+
+  /// @inheritdoc IOmnibus
+  function commit(
+    bytes32 lock,
+    Terms calldata party,
+    Terms calldata counterparty,
+    CommitAuth calldata auth
+  ) external payable {
+    // commit is PERMISSIONLESS: the identity in `auth` authenticates the payload,
+    // msg.sender funds the party's leg + fee (the sender FUNDS, the identity AUTHORIZES)
     // validate both terms (only party.chainId must match current chain)
     party.enforceChainId(block.chainid);
     party.validateTerms();
@@ -87,6 +105,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
     bytes32 partyDigest = party.digestTerms();
+
+    // single digest code path — same fn the commitDigest view uses (no inline re-derivation)
+    _enforceCommitAuthorized(
+      auth.signer, _commitDigest(lock, partyDigest, counterparty.digestTerms(), keccak256(auth.signer)), auth.signature
+    );
+
     LockState current = lockState[lock];
     LockState target;
 
@@ -116,7 +140,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // transfer non-native assets
     party.transferAssetsNoNative(msg.sender, address(this));
 
-    emit Commitment(lock, party, msg.sender);
+    emit Commitment(lock, party, auth.signer, msg.sender);
   }
 
   /// @inheritdoc IOmnibus
@@ -256,6 +280,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   }
 
   /// @inheritdoc IOmnibus
+  function setVerifierTrust(address verifier, bool trusted) external onlyOwner {
+    if (verifier == address(0)) revert ZeroVerifier();
+    trustedVerifiers[verifier] = trusted;
+    emit VerifierTrustUpdated(verifier, trusted);
+  }
+
+  /// @inheritdoc IOmnibus
   function setCommitmentFee(uint256 newFee) external onlyOwner {
     if (newFee > MAX_FEE) revert FeeExceedsMax();
     uint256 oldFee = commitmentFee;
@@ -270,6 +301,70 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     delete accruedFees;
     SafeTransferLib.safeTransferETH(to, amount);
     emit FeesWithdrawn(to, amount);
+  }
+
+  /// @notice the ONE digest code path — commit and the public commitDigest view both call this
+  /// @dev raw tagged keccak (no EIP-712): every honest signer in this stack signs raw
+  /// 32-byte digests. Binds the FULL context: which swap instance (lock), which side is
+  /// being posted (partyTerms), the whole negotiated pairing (counterpartyTerms), the
+  /// declared identity (signerHash), and the replay scope (block.chainid +
+  /// address(this) — do NOT remove; bind less and signatures become liftable)
+  /// @param lock the hashlock identifier
+  /// @param partyTerms the committing side's terms digest
+  /// @param counterpartyTerms the other side's terms digest
+  /// @param signerHash keccak256 of the committing side's identity blob
+  /// @return digest the 32-byte commit digest
+  function _commitDigest(
+    bytes32 lock,
+    bytes32 partyTerms,
+    bytes32 counterpartyTerms,
+    bytes32 signerHash
+  ) internal view returns (bytes32) {
+    return keccak256(
+      abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this), lock, partyTerms, counterpartyTerms, signerHash)
+    );
+  }
+
+  /// @notice routes the declared identity to its verification machine and enforces validity
+  /// @dev view-only; every route resolves to STATICCALL / precompile — no reentrancy
+  /// surface. There is no membership check: identities attribute, they don't gate; the
+  /// declared blob is bound into the digest (signerHash ingredient) and into
+  /// verification itself. Routing:
+  /// - length < 20: MalformedSigner
+  /// - length == 20: an address — msg.sender itself (self-auth, no signature), an EOA
+  ///   (ecrecover), or a contract (ERC-1271 isValidSignature; strict code branch — any
+  ///   code, including an EIP-7702 delegation designator, routes to 1271, never raw
+  ///   ecrecover; raw-key support for delegated EOAs is deferred)
+  /// - length > 20: verifier(20 bytes) ‖ key — verifier must be owner-allowlisted, then
+  ///   ERC-7913 verify(key, digest, sig) must return its selector
+  /// @param signer the committing side's identity blob
+  /// @param digest the commit digest the signature must cover
+  /// @param signature the signature bytes ('0x' for self-auth)
+  function _enforceCommitAuthorized(bytes calldata signer, bytes32 digest, bytes calldata signature) internal view {
+    if (signer.length < 20) revert MalformedSigner();
+    if (signer.length == 20) {
+      address account = address(bytes20(signer[:20]));
+      // SELF-AUTH: checked BEFORE code inspection, so it works for delegated EOAs too
+      if (msg.sender == account) return;
+      if (account.code.length == 0) {
+        // EOA: raw-digest ECDSA
+        (address rec, ECDSA.RecoverError e,) = ECDSA.tryRecover(digest, signature);
+        if (e != ECDSA.RecoverError.NoError || rec != account) revert InvalidCommitSignature();
+        return;
+      }
+      // ERC-1271: unconditional has-code fallback (staticcall via view interface)
+      if (IERC1271(account).isValidSignature(digest, signature) != IERC1271.isValidSignature.selector) {
+        revert InvalidCommitSignature();
+      }
+      return;
+    }
+    // ERC-7913 keyed: verifier(20) ‖ key
+    address verifier = address(bytes20(signer[:20]));
+    if (!trustedVerifiers[verifier]) revert UntrustedVerifier();
+    if (
+      IERC7913SignatureVerifier(verifier).verify(signer[20:], digest, signature)
+        != IERC7913SignatureVerifier.verify.selector
+    ) revert InvalidCommitSignature();
   }
 
   /// @notice advances lock state to target with transition validation

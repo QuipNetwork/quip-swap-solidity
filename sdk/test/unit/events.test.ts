@@ -8,22 +8,64 @@
  * receipts.test.ts); these tests confirm a valid claim is decoded regardless
  * of the emitting address.
  */
-import {getAddress, keccak256, toHex} from 'viem'
+import {concatHex, getAddress, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
 import {describe, expect, it} from 'vitest'
-import {decodeClaimEvents, extractRevealedSecret, extractSecretFromClaims} from '../../src/events.js'
+import {
+  decodeClaimEvents,
+  decodeCommitmentEvents,
+  extractRevealedSecret,
+  extractSecretFromClaims,
+} from '../../src/events.js'
 import {generateLock} from '../../src/hashing.js'
 import type {Hex32} from '../../src/types.js'
-import {FOUNDRY_LOCK, FOUNDRY_SECRET} from '../helpers/fixtures.js'
-import {claimLog} from '../helpers/logs.js'
+import {aliceTerms, CHAIN_A, FOUNDRY_LOCK, FOUNDRY_SECRET} from '../helpers/fixtures.js'
+import {claimLog, commitmentLog} from '../helpers/logs.js'
 
 const OMNIBUS: Address = getAddress('0x0000000000000000000000000000000000000999')
 const OTHER: Address = getAddress('0x0000000000000000000000000000000000000bad')
 const RECIPIENT: Address = getAddress('0x00000000000000000000000000000000000a0001')
+const SENDER: Address = getAddress('0x00000000000000000000000000000000000a11ce')
 
 // a real second pair (secret hashes to its lock) for multi-claim cases
 const SECRET_2 = keccak256(toHex('second-secret')) as Hex32
 const LOCK_2 = generateLock(SECRET_2)
+
+describe('decodeCommitmentEvents (new event shape)', () => {
+  /** Decoded event addresses come back checksummed — normalize the fixture. */
+  function checksummedTerms(party: ReturnType<typeof aliceTerms>) {
+    return {
+      ...party,
+      reclaimRecipient: getAddress(party.reclaimRecipient),
+      recipient: getAddress(party.recipient),
+      assets: party.assets.map(a => ({...a, target: getAddress(a.target)})),
+    }
+  }
+
+  it('decodes lock (topic), party + signer (data), and sender (topic)', () => {
+    const party = aliceTerms(CHAIN_A)
+    // a self-auth commit: the signer blob IS the bare sender address
+    const [event] = decodeCommitmentEvents([
+      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer: SENDER, party}),
+    ])
+    if (event === undefined) throw new Error('expected one Commitment event')
+    expect(event.lock).toBe(FOUNDRY_LOCK)
+    expect(event.sender).toBe(SENDER)
+    expect(event.signer.toLowerCase()).toBe(SENDER.toLowerCase())
+    expect(event.party).toEqual(checksummedTerms(party))
+  })
+
+  it('decodes a DETACHED commit: signer (keyed blob) differs from sender', () => {
+    const party = aliceTerms(CHAIN_A)
+    const keyedSigner = concatHex([OTHER, keccak256(toHex('pq-key-commitment'))])
+    const [event] = decodeCommitmentEvents([
+      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer: keyedSigner, party}),
+    ])
+    if (event === undefined) throw new Error('expected one Commitment event')
+    expect(event.signer.toLowerCase()).toBe(keyedSigner.toLowerCase())
+    expect(event.sender).toBe(SENDER) // funding sender, distinct from the identity
+  })
+})
 
 describe('extractRevealedSecret', () => {
   it('returns the real secret when lock matches and generateLock(secret) === lock', () => {

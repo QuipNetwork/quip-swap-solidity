@@ -1,16 +1,17 @@
 # Quip Swap
 
-Non-custodial, hashlocked same-chain and cross-chain swaps between QuipWallets, built around the **Omnibus** singleton contract.
+Non-custodial, hashlocked same-chain and cross-chain swaps built around the **Omnibus** singleton contract, with multi-scheme commit authorization (EOA, ERC-1271, ERC-7913 post-quantum keyed identities).
 
 ## Repository layout
 
 ```text
 src/                  Production contracts (Omnibus, TermsLib, interfaces)
 test/                 Foundry test suite (behaviors, scenarios, attack tests,
-                      harnesses, mocks)
-script/               Deployment scripts (construct Omnibus with both args,
-                      (address initialOwner, address quipFactory), from the
-                      OMNIBUS_OWNER / QUIP_FACTORY env vars)
+                      harnesses, mocks, real-verifier integration)
+script/               Deployment scripts (ShrincsVerifier + Omnibus via CREATE3;
+                      Omnibus constructor (address initialOwner,
+                      address[] initialVerifiers) from OMNIBUS_OWNER; the
+                      verifier address is predicted from its salt)
 sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 ```
 
@@ -18,7 +19,10 @@ sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 
 - `Omnibus` is a singleton (Ownable2Step, ERC-721/1155 receiver) holding hashlocked escrows.
 - A swap is two `Terms` (one per side), each with three lifecycle timestamps that **strictly interleave** across sides. The side with the earlier `commitmentDeadline` is the proposer and commits first.
-- `commit` is gated to factory-deployed QuipWallets (`QUIP_FACTORY.vaultIdOf(msg.sender) != 0`); `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are permissionless.
+- All three entry points are **permissionless**. `commit` authenticates its PAYLOAD instead of its caller: every commit carries a `CommitAuth {signer, signature}` where `signer` is an identity blob routed by shape — a 20-byte address (self-auth when it IS `msg.sender`, otherwise EOA `ecrecover` for codeless accounts or ERC-1271 `isValidSignature` for accounts with code), or `verifier(20 bytes) ‖ key` for ERC-7913 keyed identities (post-quantum SHRINCS) checked against an owner-managed verifier allowlist. The signature covers a raw tagged digest binding chainid, the Omnibus address, the lock, both sides' terms, and the identity itself.
+- The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload; it does not gate WHICH identity may post a side. Clients that care who posted the counterpart side verify the `signer` blob from the `Commitment` event off-chain.
+- **Funding model:** in every route the transaction SENDER funds the committed leg + fee; the identity only authorizes. "Relayed" means the sender pays.
+- `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are unchanged and identity-free — claim is secret-gated, reclaim recipients are terms-pinned.
 - All timing windows are half-open `[lower, upper)`.
 
 ## Smart contracts (Foundry)
@@ -48,7 +52,7 @@ make sdk-test-cross-chain   # two-chain end-to-end tests (slower; two Anvils)
 make sdk-build              # build the dist/ bundle
 ```
 
-See [`sdk/README.md`](sdk/README.md) for the full SDK guide (timing model, QuipWallet gating, cross-chain coordination, buffer selection, error handling).
+See [`sdk/README.md`](sdk/README.md) for the full SDK guide (timing model, commit authorization, cross-chain coordination, buffer selection, error handling).
 
 ## Full verification
 
@@ -60,4 +64,4 @@ make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
 
 ## Deployment
 
-`make deploy-testnet` / `make deploy-production` drive the scripts in `script/`. Both construct `Omnibus` with the full constructor `(address initialOwner, address quipFactory)`, sourced from the `OMNIBUS_OWNER` and `QUIP_FACTORY` env vars (see `.env.example`). A real deploy requires a **non-zero `QUIP_FACTORY`** — the constructor reverts `ZeroQuipFactory` otherwise — and a non-zero `OMNIBUS_OWNER`. Because Omnibus deploys via Create3, the address is independent of these constructor args.
+Per-chain order (all CREATE3-deterministic through the Deployer): **Deployer → ShrincsVerifier (`make deploy-verifier`) → Omnibus (`make deploy`)**. `DeployOmnibus` predicts the verifier's address from its salt, requires code at it, and constructs `Omnibus(initialOwner, [verifier])` — the verifier is trusted from genesis and the script post-asserts `trustedVerifiers(verifier)`. Env: `DEPLOYER_PK`, `DEPLOYER_ADDRESS`, `OMNIBUS_OWNER` (non-zero). Because both contracts deploy via CREATE3, addresses are independent of constructor args and identical across chains. Note the salts are `QUIP:Omnibus:V2.0` / `QUIP:ShrincsVerifier:V1.0` — the V1.0 Omnibus persists on testnets at its old address.
