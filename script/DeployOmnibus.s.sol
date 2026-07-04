@@ -15,9 +15,11 @@ import {CREATE3} from 'solady-0.1.26/utils/CREATE3.sol';
  *      broadcasting EOA and of constructor args. Owner differs per chain but
  *      the address doesn't.
  *
- *      Per-chain deploy order: Deployer → ShrincsVerifier → Omnibus. The
- *      ShrincsVerifier address is predicted from its salt (never passed by
- *      env) and must already have code — it is trusted at construction.
+ *      Per-chain deploy order is CROSS-REPO: Deployer → ShrincsVerifier
+ *      (deployed by hashsigs-solidity's DeployShrincsVerifier — the artifact
+ *      owner) → Omnibus (this script). The verifier is consumed as a pinned
+ *      (address, runtime codehash) pair from hashsigs' release registry and
+ *      verified below before being trusted at construction.
  *
  * Usage:
  *   forge script script/DeployOmnibus.s.sol \
@@ -39,8 +41,9 @@ contract DeployOmnibus is Script {
     require(deployerAddr.code.length > 0, 'Deployer not deployed. Run DeployDeployer first.');
     require(omnibusOwner != address(0), 'OMNIBUS_OWNER must be non-zero');
 
-    address verifierAddr = CREATE3.predictDeterministicAddress(Constants.SHRINCS_VERIFIER_V1_SALT, deployerAddr);
-    require(verifierAddr.code.length > 0, 'ShrincsVerifier not deployed. Run DeployShrincsVerifier first.');
+    address verifierAddr = Constants.SHRINCS_VERIFIER;
+    // pins BOTH address and artifact; subsumes existence (empty/no account never matches)
+    require(verifierAddr.codehash == Constants.SHRINCS_VERIFIER_CODEHASH, 'verifier: wrong or missing artifact');
 
     address expectedAddr = CREATE3.predictDeterministicAddress(SALT, deployerAddr);
     console.log('Deployer:          ', deployerAddr);

@@ -60,32 +60,21 @@ clean: ## Clean build artifacts
 # Deployment (via the Deployer contract — env: DEPLOYER_PK, DEPLOYER_ADDRESS,
 # OMNIBUS_OWNER)
 #
-# Per-chain deploy ORDER (addresses are CREATE3-deterministic per salt):
-#   1. Deployer (DeployDeployer, done once per chain)
-#   2. ShrincsVerifier  (make deploy-verifier)  — trustless, no ctor args
-#   3. Omnibus          (make deploy)           — predicts + requires the verifier,
-#                                                 trusts it at construction
+# Per-chain deploy ORDER (CROSS-REPO — the verifier is deployed by its owning
+# repo, hashsigs-solidity; this repo pins its (address, codehash) in
+# script/Constants.sol from hashsigs' RELEASES.md):
+#   1. Deployer         (DeployDeployer, done once per chain)
+#   2. ShrincsVerifier  (hashsigs-solidity: script/DeployShrincsVerifier.s.sol)
+#   3. Omnibus          (make deploy) — codehash-verifies the pinned verifier,
+#                                       trusts it at construction
 # ==============================================================================
 
 .PHONY: anvil-fork
 anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SEPOLIA
 	anvil --fork-url $(RPC_URL)
 
-.PHONY: deploy-verifier
-deploy-verifier: ## Deploy ShrincsVerifier + broadcast + verify (run BEFORE deploy). Usage: make deploy-verifier RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployShrincsVerifier.s.sol \
-		--rpc-url $(RPC_URL) \
-		--private-key $(DEPLOYER_PK) \
-		--broadcast \
-		--verify
-
-.PHONY: deploy-verifier-dry
-deploy-verifier-dry: ## Dry run ShrincsVerifier deployment (no broadcast). Usage: make deploy-verifier-dry RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployShrincsVerifier.s.sol \
-		--rpc-url $(RPC_URL)
-
 .PHONY: deploy
-deploy: ## Deploy Omnibus + broadcast + verify (needs verifier deployed first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
+deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \

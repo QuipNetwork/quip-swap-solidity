@@ -15,8 +15,22 @@ library Constants {
   ///         (matches Omnibus.VERSION == 2); the V1.0 Omnibus persists on testnets.
   bytes32 internal constant OMNIBUS_SALT = keccak256('QUIP:Omnibus:V2.0');
 
-  /// @notice CREATE3 salt for the stateful SHRINCS ERC-7913 verifier singleton.
-  ///         Deployed BEFORE Omnibus on each chain — DeployOmnibus predicts this
-  ///         verifier's address from the salt and trusts it at construction.
-  bytes32 internal constant SHRINCS_VERIFIER_V1_SALT = keccak256('QUIP:ShrincsVerifier:V1.0');
+  /// @notice The canonical ShrincsVerifier singleton — deployed and OWNED by
+  ///         hashsigs-solidity (its DeployShrincsVerifier script; salt lives
+  ///         there). This repo only consumes the published (address, codehash)
+  ///         pair from hashsigs' RELEASES.md; DeployOmnibus pins BOTH before
+  ///         trusting. A verifier release bumps both constants together in one
+  ///         reviewed diff. If cross-chain address uniformity ever breaks, these
+  ///         become a chainid-keyed table — still no env vars.
+  /// TODO(QUI-781): pre-release values from hashsigs' RELEASES.md v1 rehearsal
+  /// (rev 7c75cc2 + script, production profile). Re-verify against the registry
+  /// after hashsigs' first canonical per-chain deploy.
+  address internal constant SHRINCS_VERIFIER = 0x560Ea50c83AB3952587fa3C7b9250c045cfA1252;
+
+  /// @notice `cast codehash` of the canonical deployment (runtime codehash).
+  ///         Chain-invariant because the verifier has no immutables. The compare
+  ///         in DeployOmnibus subsumes existence: a nonexistent account hashes
+  ///         to 0x0 and a code-less one to keccak('') — both fail.
+  bytes32 internal constant SHRINCS_VERIFIER_CODEHASH =
+    0x8553890af0b7136ccf8993d2d691c492618150ee85f028892f285ccb6682a5ff;
 }
