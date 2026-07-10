@@ -21,12 +21,11 @@ enum LockState {
 /// it does NOT gate which identity may post a side. Counterparty-identity checks,
 /// where a client wants them, happen off-chain against the Commitment event
 struct CommitAuth {
-  /// @notice the committing side's identity blob (routes + verifies)
-  /// @dev length < 20 reverts MalformedSigner; length == 20 is an address
-  /// (self-auth / EOA ecrecover / ERC-1271 by code presence); length > 20 is
-  /// an ERC-7913 keyed identity: verifier(20 bytes) ‖ key
+  /// @notice the committing side's identity blob
+  /// @dev the ONLY accepted shape is an ERC-7913 keyed identity:
+  /// verifier(20 bytes) ‖ key; length <= 20 reverts MalformedSigner
   bytes signer;
-  /// @notice signature over commitDigest; '0x' for self-auth
+  /// @notice signature over commitDigest, verified by the declared verifier
   bytes signature;
 }
 
@@ -55,13 +54,13 @@ interface IOmnibus {
   /// @notice thrown when a verifier address is zero
   error ZeroVerifier();
 
-  /// @notice thrown when a signer blob is shorter than 20 bytes
+  /// @notice thrown when a signer blob is not an ERC-7913 keyed identity (20 bytes or shorter)
   error MalformedSigner();
 
-  /// @notice thrown on the keyed route when the verifier is not allowlisted
-  error UntrustedVerifier();
+  /// @notice thrown when the declared verifier is not active
+  error VerifierNotActive();
 
-  /// @notice thrown when the routed verification machine rejects the signature
+  /// @notice thrown when the verifier rejects the signature
   error InvalidCommitSignature();
 
   /// @notice emitted when commitment fee is updated
@@ -74,10 +73,10 @@ interface IOmnibus {
   /// @param amount the amount withdrawn
   event FeesWithdrawn(address indexed to, uint256 amount);
 
-  /// @notice emitted when a verifier's trust status changes
+  /// @notice emitted when a verifier's activity status changes
   /// @param verifier the ERC-7913 verifier address
-  /// @param trusted whether the verifier is now trusted
-  event VerifierTrustUpdated(address indexed verifier, bool trusted);
+  /// @param active whether the verifier is now active
+  event VerifierActivityUpdated(address indexed verifier, bool active);
 
   /// @notice emitted when a party commits to a swap
   /// @param lock the hashlock identifier
@@ -114,15 +113,15 @@ interface IOmnibus {
   /// @return isPosted whether that side has been posted
   function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
 
-  /// @notice returns whether an ERC-7913 verifier is trusted for the keyed route
+  /// @notice returns whether an ERC-7913 verifier is active for the keyed route
   /// @param verifier the verifier address
-  /// @return trusted whether the verifier is allowlisted
-  function trustedVerifiers(address verifier) external view returns (bool trusted);
+  /// @return active whether the verifier is active
+  function verifierActive(address verifier) external view returns (bool active);
 
-  /// @notice sets the trust status of an ERC-7913 verifier (owner only)
+  /// @notice sets the activity status of an ERC-7913 verifier (owner only)
   /// @param verifier the verifier address (non-zero)
-  /// @param trusted the new trust status
-  function setVerifierTrust(address verifier, bool trusted) external;
+  /// @param active the new activity status
+  function setVerifierActivity(address verifier, bool active) external;
 
   /// @notice the domain tag bound into every commit digest
   /// @return tag keccak256('QUIP:Omnibus:commit:v1')
@@ -146,10 +145,9 @@ interface IOmnibus {
   ) external view returns (bytes32 digest);
 
   /// @notice commits assets and collateral to a swap
-  /// @dev permissionless: any sender may commit; the identity in `auth`
-  /// AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. The
-  /// signature is over commitDigest; self-auth (msg.sender == 20-byte signer)
-  /// requires no signature
+  /// @dev permissionless: any sender may commit; the ERC-7913 keyed identity in
+  /// `auth` AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. The
+  /// signature is over commitDigest and is checked by the declared verifier
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

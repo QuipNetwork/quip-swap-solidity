@@ -8,10 +8,9 @@ import {LockState} from '../../src/interfaces/IOmnibus.sol';
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
 contract OmnibusHarness is Omnibus {
-  /// @notice initializes the harness with an owner and the initially trusted verifiers
+  /// @notice initializes the harness with an owner
   /// @param initialOwner the address that will own the contract
-  /// @param initialVerifiers ERC-7913 verifiers trusted from genesis
-  constructor(address initialOwner, address[] memory initialVerifiers) Omnibus(initialOwner, initialVerifiers) {}
+  constructor(address initialOwner) Omnibus(initialOwner) {}
 
   /// @notice exposes _enforceCommitAuthorized (the identity router)
   function exposed_enforceCommitAuthorized(

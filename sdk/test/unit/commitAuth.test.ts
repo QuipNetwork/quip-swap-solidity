@@ -1,5 +1,5 @@
 /**
- * Unit tests for commit authorization helpers: signer blobs, self-auth,
+ * Unit tests for commit authorization helpers: keyed signer blobs,
  * blob-shape validation, and the local commit digest (the on-chain parity
  * proof lives in the integration differential suite; these tests pin the
  * pure-function behavior and encoding shape).
@@ -12,7 +12,6 @@ import {
   buildKeyedSigner,
   computeCommitDigest,
   digestTerms,
-  selfAuth,
 } from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {aliceTerms, bobTerms} from '../helpers/fixtures.js'
@@ -53,31 +52,22 @@ describe('buildKeyedSigner', () => {
     expectCode(() => buildKeyedSigner('0x1234' as never, KEY32), 'MALFORMED_SIGNER')
   })
 
-  it('rejects an empty key (a bare 20-byte blob routes as an address)', () => {
+  it('rejects an empty key (the blob must exceed 20 bytes)', () => {
     expectCode(() => buildKeyedSigner(VERIFIER, '0x'), 'MALFORMED_SIGNER')
   })
 })
 
-describe('selfAuth', () => {
-  it('wraps the account as the signer with an empty signature', () => {
-    expect(selfAuth(ACCOUNT)).toEqual({signer: ACCOUNT, signature: '0x'})
-  })
-
-  it('rejects a non-address', () => {
-    expectCode(() => selfAuth('0xdead' as never), 'MALFORMED_SIGNER')
-  })
-})
-
 describe('assertSignerBlob', () => {
-  it('accepts a 20-byte address blob and longer keyed blobs', () => {
-    expect(() => assertSignerBlob(ACCOUNT)).not.toThrow()
+  it('accepts keyed blobs longer than 20 bytes', () => {
+    expect(() => assertSignerBlob(`0x${'11'.repeat(21)}`)).not.toThrow()
     expect(() => assertSignerBlob(buildKeyedSigner(VERIFIER, KEY32))).not.toThrow()
   })
 
-  it('rejects blobs shorter than 20 bytes (contract: MalformedSigner)', () => {
+  it('rejects blobs of 20 bytes or fewer (contract: MalformedSigner)', () => {
     expectCode(() => assertSignerBlob('0x'), 'MALFORMED_SIGNER')
     expectCode(() => assertSignerBlob('0x01'), 'MALFORMED_SIGNER')
     expectCode(() => assertSignerBlob(`0x${'11'.repeat(19)}`), 'MALFORMED_SIGNER')
+    expectCode(() => assertSignerBlob(ACCOUNT), 'MALFORMED_SIGNER') // a bare address is malformed
   })
 })
 
@@ -125,7 +115,13 @@ describe('computeCommitDigest', () => {
     ).not.toBe(base)
     // a different declared identity
     expect(
-      computeCommitDigest({lock: LOCK, party, counterparty, signer: ACCOUNT, omnibusAddress: ACCOUNT}),
+      computeCommitDigest({
+        lock: LOCK,
+        party,
+        counterparty,
+        signer: buildKeyedSigner(VERIFIER, keccak256(toBytes('other key'))),
+        omnibusAddress: ACCOUNT,
+      }),
     ).not.toBe(base)
     // a different contract instance
     expect(computeCommitDigest({lock: LOCK, party, counterparty, signer, omnibusAddress: VERIFIER})).not.toBe(base)

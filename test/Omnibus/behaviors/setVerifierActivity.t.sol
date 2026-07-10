@@ -6,57 +6,57 @@ import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 
-/// @title Omnibus setVerifierTrust Tests
-/// @dev Admin + lifecycle behavior of the ERC-7913 verifier allowlist. Trust is
+/// @title Omnibus setVerifierActivity Tests
+/// @dev Admin + lifecycle behavior of the ERC-7913 verifier allowlist. Activity is
 /// checked ONLY at commit time (the keyed route); claim/reclaim never touch the
-/// router, so revoking a verifier mid-swap strands nothing
-contract Omnibus_setVerifierTrust is OmnibusTest {
-  function test_setVerifierTrust_ownerCanTrustAndRevoke() public {
-    assertFalse(omnibus.trustedVerifiers(address(verifierB)));
+/// router, so deactivating a verifier mid-swap strands nothing
+contract Omnibus_setVerifierActivity is OmnibusTest {
+  function test_setVerifierActivity_ownerCanActivateAndDeactivate() public {
+    assertFalse(omnibus.verifierActive(address(verifierB)));
 
-    omnibus.setVerifierTrust(address(verifierB), true);
-    assertTrue(omnibus.trustedVerifiers(address(verifierB)));
+    omnibus.setVerifierActivity(address(verifierB), true);
+    assertTrue(omnibus.verifierActive(address(verifierB)));
 
-    omnibus.setVerifierTrust(address(verifierB), false);
-    assertFalse(omnibus.trustedVerifiers(address(verifierB)));
+    omnibus.setVerifierActivity(address(verifierB), false);
+    assertFalse(omnibus.verifierActive(address(verifierB)));
   }
 
-  function test_setVerifierTrust_emitsEvent() public {
+  function test_setVerifierActivity_emitsEvent() public {
     vm.expectEmit(true, false, false, true);
-    emit IOmnibus.VerifierTrustUpdated(address(verifierB), true);
-    omnibus.setVerifierTrust(address(verifierB), true);
+    emit IOmnibus.VerifierActivityUpdated(address(verifierB), true);
+    omnibus.setVerifierActivity(address(verifierB), true);
 
     vm.expectEmit(true, false, false, true);
-    emit IOmnibus.VerifierTrustUpdated(address(verifierB), false);
-    omnibus.setVerifierTrust(address(verifierB), false);
+    emit IOmnibus.VerifierActivityUpdated(address(verifierB), false);
+    omnibus.setVerifierActivity(address(verifierB), false);
   }
 
-  function test_setVerifierTrust_revertsWhen_notOwner() public {
+  function test_setVerifierActivity_revertsWhen_notOwner() public {
     vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
     vm.prank(ALICE);
-    omnibus.setVerifierTrust(address(verifierB), true);
+    omnibus.setVerifierActivity(address(verifierB), true);
   }
 
-  function test_setVerifierTrust_revertsWhen_zeroVerifier() public {
+  function test_setVerifierActivity_revertsWhen_zeroVerifier() public {
     vm.expectRevert(IOmnibus.ZeroVerifier.selector);
-    omnibus.setVerifierTrust(address(0), true);
+    omnibus.setVerifierActivity(address(0), true);
   }
 
-  function test_setVerifierTrust_revocationMidSwap_blocksNewCommitsNotClaims() public {
-    // trust A + B; Alice opens a swap under an A-keyed identity
-    omnibus.setVerifierTrust(address(verifierB), true);
+  function test_setVerifierActivity_deactivationMidSwap_blocksNewCommitsNotClaims() public {
+    // activate A + B; Alice opens a swap under an A-keyed identity
+    omnibus.setVerifierActivity(address(verifierB), true);
 
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
     _commitFor(ALICE, lock, alice, bob); // keyed via verifierA
     _assertLockState(lock, LockState.Free);
 
-    // revoke A mid-swap: NEW A-keyed commits fail closed...
-    omnibus.setVerifierTrust(address(verifierA), false);
+    // deactivate A mid-swap: NEW A-keyed commits fail closed...
+    omnibus.setVerifierActivity(address(verifierA), false);
 
     bytes32 freshLock = omnibus.exposed_generateLock(keccak256('fresh-secret'));
     vm.warp(AT_PROPOSER_COMMIT);
-    vm.expectRevert(IOmnibus.UntrustedVerifier.selector);
+    vm.expectRevert(IOmnibus.VerifierNotActive.selector);
     vm.prank(ALICE);
     omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, _keyedAuth(aliceSigner));
 
@@ -65,9 +65,12 @@ contract Omnibus_setVerifierTrust is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, _keyedAuth(bViaSigner));
 
-    // ...and the swap already pinned under the revoked verifier still settles:
-    // Bob posts his side (EOA route) and Alice claims — no route call in claim
-    _commitFor(BOB, lock, bob, alice);
+    // ...and the swap already pinned under the deactivated verifier still settles:
+    // Bob posts his side keyed via the still-active B and Alice claims — no
+    // verifier call in claim
+    vm.warp(AT_TAKER_COMMIT);
+    vm.prank(BOB);
+    omnibus.commit{value: 0}(lock, bob, alice, _keyedAuth(abi.encodePacked(address(verifierB), bytes('bob-key'))));
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);

@@ -44,18 +44,19 @@ describe('decodeCommitmentEvents (new event shape)', () => {
 
   it('decodes lock (topic), party + signer (data), and sender (topic)', () => {
     const party = aliceTerms(CHAIN_A)
-    // a self-auth commit: the signer blob IS the bare sender address
+    // a keyed commit: the signer blob is verifier ‖ key (always > 20 bytes)
+    const signer = concatHex([SENDER, '0x7913'])
     const [event] = decodeCommitmentEvents([
-      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer: SENDER, party}),
+      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer, party}),
     ])
     if (event === undefined) throw new Error('expected one Commitment event')
     expect(event.lock).toBe(FOUNDRY_LOCK)
     expect(event.sender).toBe(SENDER)
-    expect(event.signer.toLowerCase()).toBe(SENDER.toLowerCase())
+    expect(event.signer.toLowerCase()).toBe(signer.toLowerCase())
     expect(event.party).toEqual(checksummedTerms(party))
   })
 
-  it('decodes a DETACHED commit: signer (keyed blob) differs from sender', () => {
+  it('decodes a commit whose signer identity differs from the sender', () => {
     const party = aliceTerms(CHAIN_A)
     const keyedSigner = concatHex([OTHER, keccak256(toHex('pq-key-commitment'))])
     const [event] = decodeCommitmentEvents([

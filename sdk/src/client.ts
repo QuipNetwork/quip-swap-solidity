@@ -62,9 +62,8 @@ export interface CommitArgs {
   readonly counterparty: Terms
   /**
    * The committing side's identity blob + signature over the commit digest
-   * (see {@link computeCommitDigest} / {@link selfAuth}). The SDK never
-   * signs: `signature` is opaque bytes from the keyholder's own tooling,
-   * or `'0x'` for self-auth (identity == the sending account).
+   * (see {@link computeCommitDigest} / {@link buildKeyedSigner}). The SDK
+   * never signs: `signature` is opaque bytes from the keyholder's own tooling.
    */
   readonly auth: CommitAuth
   /**
@@ -166,16 +165,16 @@ export interface OmnibusAdmin {
    */
   acceptOwnership(opts?: TxOptions): Promise<Hash>
   /**
-   * Sets the trust status of an ERC-7913 verifier for the keyed commit
+   * Sets the activity status of an ERC-7913 verifier for the keyed commit
    * route. Owner only; reverts `ZeroVerifier` for the zero address.
    *
    * @param verifier - The verifier contract address (non-zero).
-   * @param trusted - The new trust status.
+   * @param active - The new activity status.
    * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
-   * @see Omnibus.setVerifierTrust
+   * @see Omnibus.setVerifierActivity
    */
-  setVerifierTrust(verifier: Address, trusted: boolean, opts?: TxOptions): Promise<Hash>
+  setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash>
 }
 
 /**
@@ -215,15 +214,15 @@ export interface OmnibusClient {
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
   getPendingOwner(): Promise<Address>
   /**
-   * Reads whether an ERC-7913 verifier is on the contract's allowlist — the
+   * Reads whether an ERC-7913 verifier is active on the contract — the
    * keyed route (`signer` blob longer than 20 bytes) reverts
-   * `UntrustedVerifier` unless its leading 20 bytes name a trusted verifier.
+   * `VerifierNotActive` unless its leading 20 bytes name an active verifier.
    *
    * @param verifier - The ERC-7913 verifier contract address.
-   * @returns `true` iff the verifier is trusted.
-   * @see Omnibus.trustedVerifiers
+   * @returns `true` iff the verifier is active.
+   * @see Omnibus.verifierActive
    */
-  isVerifierTrusted(verifier: Address): Promise<boolean>
+  isVerifierActive(verifier: Address): Promise<boolean>
   /**
    * Reads the contract's commit digest for the given inputs — the on-chain
    * counterpart of {@link computeCommitDigest} (which computes the same
@@ -248,16 +247,15 @@ export interface OmnibusClient {
    * FUNDING MODEL: the SENDER (the wallet client's account) funds the
    * party's leg + fee — assets are pulled from `msg.sender` and `msg.value`
    * must cover `totalNative(party) + commitmentFee`. The identity in
-   * `auth.signer` only AUTHORIZES; "relayed" means the sender pays the
-   * party's leg. For self-auth (`auth.signature === '0x'`) the sending
-   * account must BE the 20-byte identity in `auth.signer`.
+   * Funding is independent of authorization: the identity in `auth.signer`
+   * only endorses the payload, it never pays.
    *
    * Preflight (in order, all before any transaction exists):
    * 1. Both terms structurally valid; 2. pairing strictly interleaves;
    * 3. `party.chainId` matches the connected chain (`counterparty.chainId`
    *    may differ — cross-chain); 4. `auth.signer` is a well-formed blob
-   *    (at least 20 bytes — the contract reverts `MalformedSigner` below
-   *    that; signature VALIDITY is left to the contract's router);
+   *    (more than 20 bytes — the contract reverts `MalformedSigner` at 20
+   *    or fewer; signature VALIDITY is left to the contract's verifier call);
    *    5. the chain's current timestamp is inside the committing side's
    *    commit window — proposer `[0, party.commitmentDeadline)`,
    *    taker `[counterparty.commitmentDeadline, party.commitmentDeadline)`
@@ -308,10 +306,9 @@ export interface OmnibusClient {
    * @see Omnibus.commit, Omnibus._enforceCommitAuthorized
    * @example
    * ```ts
-   * // self-auth: the sending account IS the identity
-   * const hash = await client.commit({lock, party, counterparty, auth: selfAuth(sender)})
-   * // detached: an off-band identity signed computeCommitDigest(...)
-   * const hash2 = await client.commit({lock, party, counterparty, auth: {signer, signature}})
+   * // ERC-7913 keyed: the identity signed computeCommitDigest(...) off-band
+   * const signer = buildKeyedSigner(verifierAddress, key)
+   * const hash = await client.commit({lock, party, counterparty, auth: {signer, signature}})
    * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
@@ -702,15 +699,15 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       const {wallet, sender} = requireWallet()
       return submitWrite({wallet, sender, functionName: 'acceptOwnership', args: [], opts, context: 'acceptOwnership'})
     },
-    async setVerifierTrust(verifier: Address, trusted: boolean, opts?: TxOptions): Promise<Hash> {
+    async setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
       return submitWrite({
         wallet,
         sender,
-        functionName: 'setVerifierTrust',
-        args: [verifier, trusted],
+        functionName: 'setVerifierActivity',
+        args: [verifier, active],
         opts,
-        context: 'setVerifierTrust',
+        context: 'setVerifierActivity',
       })
     },
   }
@@ -738,7 +735,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     },
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),
-    isVerifierTrusted: (verifier: Address) => read('trustedVerifiers', [verifier]),
+    isVerifierActive: (verifier: Address) => read('verifierActive', [verifier]),
     getCommitDigest: (lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32) => {
       assertHex32(lock, 'lock')
       assertHex32(signerHash, 'signerHash')
@@ -776,8 +773,8 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       }
 
       // 4. signer-blob shape preflight — the contract reverts MalformedSigner
-      // below 20 bytes. Signature VALIDITY is deliberately left to the
-      // contract's router (self-auth / ecrecover / ERC-1271 / ERC-7913): the
+      // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
+      // ERC-7913 verifier call: the
       // SDK cannot know the route's semantics off-chain, and gas estimation
       // surfaces a would-be InvalidCommitSignature as a decoded revert.
       // NOTE the funding model: `sender` (not auth.signer) funds the leg + fee.

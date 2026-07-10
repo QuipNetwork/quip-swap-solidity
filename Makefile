@@ -3,7 +3,7 @@
 # ==============================================================================
 # Load .env file if it exists, and EXPORT every key into the environment so
 # child processes (forge, bun, …) see them — e.g. forge's vm.envAddress reads
-# DEPLOYER_ADDRESS / OMNIBUS_OWNER / QUIP_FACTORY without any $(VAR) plumbing.
+# DEPLOYER_ADDRESS / OMNIBUS_OWNER without any $(VAR) plumbing.
 # A missing .env is silently ignored (unscoped build/test need none of these).
 ifneq (,$(wildcard ./.env))
     include .env
@@ -60,13 +60,11 @@ clean: ## Clean build artifacts
 # Deployment (via the Deployer contract — env: DEPLOYER_PK, DEPLOYER_ADDRESS,
 # OMNIBUS_OWNER)
 #
-# Per-chain deploy ORDER (CROSS-REPO — the verifier is deployed by its owning
-# repo, hashsigs-solidity; this repo pins its (address, codehash) in
-# script/Constants.sol from hashsigs' RELEASES.md):
+# Per-chain deploy ORDER:
 #   1. Deployer         (DeployDeployer, done once per chain)
-#   2. ShrincsVerifier  (hashsigs-solidity: script/DeployShrincsVerifier.s.sol)
-#   3. Omnibus          (make deploy) — codehash-verifies the pinned verifier,
-#                                       trusts it at construction
+#   2. Omnibus          (make deploy)
+# Verifier activation is separate: post-deploy, the owner calls
+# setVerifierActivity(verifier, true).
 # ==============================================================================
 
 .PHONY: anvil-fork

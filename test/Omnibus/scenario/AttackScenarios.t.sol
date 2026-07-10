@@ -7,6 +7,7 @@ import {Asset, Terms} from '../../../src/TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
+import {VerifierMock} from '../../mocks/VerifierMock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 
@@ -56,6 +57,7 @@ contract Omnibus_AttackScenarios is Test {
   OmnibusHarness public omnibusB;
   ERC20Mock public tokenA;
   ERC20Mock public tokenB;
+  VerifierMock public verifier;
 
   // ============ Test Data ============
 
@@ -65,11 +67,15 @@ contract Omnibus_AttackScenarios is Test {
   // ============ Setup ============
 
   function setUp() public virtual {
-    // commit is permissionless; each committer self-authorizes (signer == msg.sender).
-    // no verifiers are needed for the self-auth route
-    omnibus = new OmnibusHarness(address(this), new address[](0));
-    omnibusA = new OmnibusHarness(address(this), new address[](0));
-    omnibusB = new OmnibusHarness(address(this), new address[](0));
+    // commit is permissionless; each committer authenticates with its own keyed
+    // ERC-7913 identity through a shared AcceptAll mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
+    omnibusA = new OmnibusHarness(address(this));
+    omnibusA.setVerifierActivity(address(verifier), true);
+    omnibusB = new OmnibusHarness(address(this));
+    omnibusB.setVerifierActivity(address(verifier), true);
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
 
@@ -81,9 +87,9 @@ contract Omnibus_AttackScenarios is Test {
     vm.deal(ATTACKER, 100 ether);
   }
 
-  /// @notice self-auth: identity IS the sender; no signature
-  function _selfAuth(address account) internal pure returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(account), signature: ''});
+  /// @notice keyed ERC-7913 identity for `account` via the AcceptAll mock verifier
+  function _keyedAuth(address account) internal view returns (CommitAuth memory) {
+    return CommitAuth({signer: abi.encodePacked(address(verifier), account), signature: ''});
   }
 
   // ============ Terms Builders ============
@@ -105,11 +111,11 @@ contract Omnibus_AttackScenarios is Test {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms, _selfAuth(ALICE));
+    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms, _keyedAuth(ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, _selfAuth(BOB));
+    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, _keyedAuth(BOB));
 
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
   }
@@ -152,7 +158,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), tokenAAmount);
-    omnibusA.commit(crossLock, aliceTerms, bobTerms, _selfAuth(ALICE));
+    omnibusA.commit(crossLock, aliceTerms, bobTerms, _keyedAuth(ALICE));
     vm.stopPrank();
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Unused)); // independent
@@ -161,7 +167,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(AT_TAKER_COMMIT);
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), tokenBAmount);
-    omnibusB.commit(crossLock, bobTerms, aliceTerms, _selfAuth(BOB));
+    omnibusB.commit(crossLock, bobTerms, aliceTerms, _keyedAuth(BOB));
     vm.stopPrank();
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed)); // unchanged
@@ -267,7 +273,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(9000); // inside the replay party's commit window [0, 10_000)
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ATTACKER);
-    omnibus.commit{value: 1 ether}(lock, replayParty, replayCounter, _selfAuth(ATTACKER));
+    omnibus.commit{value: 1 ether}(lock, replayParty, replayCounter, _keyedAuth(ATTACKER));
 
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
   }

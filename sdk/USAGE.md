@@ -64,7 +64,7 @@ const client = createOmnibusClient({address: omnibusAddress, publicClient, walle
 
 `createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient` — `args` is `{address, publicClient, walletClient?}`. The `walletClient` is optional: reads work without it; writes (`commit`/`claim`/`reclaim`/`admin.*`) throw `MISSING_WALLET_CLIENT` / `MISSING_ACCOUNT` if it (or its account) is absent.
 
-Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isVerifierTrusted(verifier)`, `getCommitDigest(lock, party, counterparty, signerHash)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`, `setVerifierTrust`).
+Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isVerifierActive(verifier)`, `getCommitDigest(lock, party, counterparty, signerHash)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`, `setVerifierActivity`).
 
 ## 3. Core building blocks
 
@@ -124,22 +124,29 @@ const {secret, lock} = generateSecret() // generateSecret(): SecretLockPair = {s
 ## 4. Same-chain swap (end-to-end)
 
 ```ts
-import {planSameChainSwap, getSameChainSwapStatus, generateSecret, selfAuth} from '@quip.network/quip-swap-sdk'
+import {planSameChainSwap, getSameChainSwapStatus, generateSecret, buildKeyedSigner} from '@quip.network/quip-swap-sdk'
 
 const plan = planSameChainSwap(aliceTerms, bobTerms) // validates (structure, order, chain, BUFFERS) + normalizes roles
 const {secret, lock} = generateSecret()              // the PROPOSER holds the secret
 
+// each side's identity is an ERC-7913 keyed signer: verifier(20 bytes) ‖ key.
+// The signature envelope over computeCommitDigest(...) comes from the
+// keyholder's own tooling — the SDK never signs.
+const proposerSigner = buildKeyedSigner(verifierAddress, proposerKey)
+const takerSigner = buildKeyedSigner(verifierAddress, takerKey)
+
 // 1. proposer commits in [0, proposer.commitmentDeadline)          lock: Unused -> Free
-//    (self-auth: the sending account IS the identity, signature '0x')
 await proposerClient.commit({
-  lock, party: plan.proposerTerms, counterparty: plan.takerTerms, auth: selfAuth(proposerAddress),
+  lock, party: plan.proposerTerms, counterparty: plan.takerTerms,
+  auth: {signer: proposerSigner, signature: proposerEnvelope},
 })
 
 // 2. WAIT — the taker's window only opens at proposer.commitmentDeadline
 
 // 3. taker commits (posts the OTHER side)                          lock: Free -> Committed
 await takerClient.commit({
-  lock, party: plan.takerTerms, counterparty: plan.proposerTerms, auth: selfAuth(takerAddress),
+  lock, party: plan.takerTerms, counterparty: plan.proposerTerms,
+  auth: {signer: takerSigner, signature: takerEnvelope},
 })
 
 // 4. anyone with the secret claims in the proposer-claim window    lock: Committed -> Spent
@@ -152,14 +159,11 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 
 `commit` is **permissionless** — the contract authenticates the PAYLOAD, not the caller. Every commit carries a `CommitAuth {signer, signature}`:
 
-- **Self-auth** (most common): the sending account IS the identity — `auth: selfAuth(senderAddress)` (signature `'0x'`). Works for any account type, including a QuipWallet executing the commit calldata.
-- **Detached EOA** (programmatic signers only — browser wallets refuse raw 32-byte hashes): the identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})` as a RAW digest (viem: `await account.sign({hash: digest})`, NOT `personal_sign`), and any sender submits `auth: {signer: identityAddress, signature}`.
-- **ERC-1271**: a 20-byte identity WITH code routes to `isValidSignature(digest, signature)` on that contract.
-- **ERC-7913 keyed (post-quantum SHRINCS)**: `auth.signer = buildKeyedSigner(verifierAddress, publicKeyCommitment)`; the verifier must be on the contract's allowlist (`isVerifierTrusted`). The `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**.
+- **ERC-7913 keyed**: `auth.signer = buildKeyedSigner(verifierAddress, key)`; the verifier must be active on the contract (`isVerifierActive`). The identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})`; the `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**. Blobs of 20 bytes or fewer (including bare addresses) revert `MalformedSigner`.
 
 The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a relayer cannot tamper with terms in flight. It does NOT gate which identity may post a side — a client that requires the counterparty's agreed identity checks the `signer` field of the `Commitment` event off-chain before revealing the secret / committing the second leg.
 
-> **FUNDING MODEL — read this twice.** In every route, the transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. "Relayed" therefore means "the sender pays the party's leg" — a relayer submitting someone else's signed commit is donating the escrow unless it is compensated out-of-band.
+> **FUNDING MODEL — read this twice.** The transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. "Relayed" therefore means "the sender pays the party's leg" — a relayer submitting someone else's signed commit is donating the escrow unless it is compensated out-of-band.
 
 (`claim`/`reclaim` are unchanged and identity-free.)
 
@@ -203,10 +207,13 @@ validateCrossChainSchedule({
   // explicit margin for your chains, e.g. DEFAULT_BUFFERS.conservativeL1
 }) // returns CrossChainSchedule {proposerTerms, takerTerms, reactionBufferSeconds, minimumGapSeconds}
 
+// keyed ERC-7913 identities (see §4):
+//   aliceAuth/bobAuth = {signer: buildKeyedSigner(verifier, key), signature: <envelope>}
+
 // 1. Alice commits on Chain A                         (Unused -> Committed; no Free state cross-chain)
 //    confirm with the Chain A client — it scopes decoding to Chain A's Omnibus
 await aliceClientA.waitForReceipt(
-  await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB, auth: selfAuth(alice)}),
+  await aliceClientA.commit({lock, party: aliceTermsOnA, counterparty: bobTermsOnB, auth: aliceAuth}),
 )
 
 // 2. ← REQUIRED: skipping this can drain the taker's assets.
@@ -219,7 +226,7 @@ if (!status.committed) throw new Error('proposer has not committed — do NOT co
 
 // 3. Bob commits on Chain B in [alice.commitmentDeadline, bob.commitmentDeadline)
 await bobClientB.waitForReceipt(
-  await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA, auth: selfAuth(bob)}),
+  await bobClientB.commit({lock, party: bobTermsOnB, counterparty: aliceTermsOnA, auth: bobAuth}),
 )
 
 // 4. Alice claims Bob's leg ON CHAIN B — the Claim event REVEALS the secret.
@@ -287,7 +294,7 @@ There are **three tiers** for turning a transaction into typed events, ordered b
 **1. Preferred — `client.waitForReceipt(hash, options?)`.** Uses the client's bound Omnibus address automatically; you never pass it again. Best for any tx you submitted through an `OmnibusClient`.
 
 ```ts
-const hash = await client.commit({lock, party, counterparty, auth: selfAuth(sender)})
+const hash = await client.commit({lock, party, counterparty, auth})
 const {commitments, claims, reclaims} = await client.waitForReceipt(hash, {confirmations: 3})
 ```
 
@@ -318,7 +325,7 @@ Every SDK error is a `QuipSwapError` with a stable `code` (`QuipSwapErrorCode`);
 import {QuipSwapError} from '@quip.network/quip-swap-sdk'
 
 try {
-  await client.commit({lock, party, counterparty, auth: selfAuth(sender)})
+  await client.commit({lock, party, counterparty, auth})
 } catch (err) {
   if (err instanceof QuipSwapError) {
     switch (err.code) {
@@ -335,7 +342,7 @@ try {
 }
 ```
 
-Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `InvalidCommitSignature`, `UntrustedVerifier`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
+Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `InvalidCommitSignature`, `VerifierNotActive`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
 
 ## 9. What the SDK does NOT do
 

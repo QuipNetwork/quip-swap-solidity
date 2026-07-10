@@ -15,11 +15,6 @@ export const omnibusAbi = [
         "name": "initialOwner",
         "type": "address",
         "internalType": "address"
-      },
-      {
-        "name": "initialVerifiers",
-        "type": "address[]",
-        "internalType": "address[]"
       }
     ],
     "stateMutability": "nonpayable"
@@ -895,7 +890,7 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
-    "name": "setVerifierTrust",
+    "name": "setVerifierActivity",
     "inputs": [
       {
         "name": "verifier",
@@ -903,7 +898,7 @@ export const omnibusAbi = [
         "internalType": "address"
       },
       {
-        "name": "trusted",
+        "name": "active",
         "type": "bool",
         "internalType": "bool"
       }
@@ -964,7 +959,7 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
-    "name": "trustedVerifiers",
+    "name": "verifierActive",
     "inputs": [
       {
         "name": "verifier",
@@ -974,7 +969,7 @@ export const omnibusAbi = [
     ],
     "outputs": [
       {
-        "name": "trusted",
+        "name": "active",
         "type": "bool",
         "internalType": "bool"
       }
@@ -1212,7 +1207,7 @@ export const omnibusAbi = [
   },
   {
     "type": "event",
-    "name": "VerifierTrustUpdated",
+    "name": "VerifierActivityUpdated",
     "inputs": [
       {
         "name": "verifier",
@@ -1221,7 +1216,7 @@ export const omnibusAbi = [
         "internalType": "address"
       },
       {
-        "name": "trusted",
+        "name": "active",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1343,7 +1338,7 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
-    "name": "UntrustedVerifier",
+    "name": "VerifierNotActive",
     "inputs": []
   },
   {

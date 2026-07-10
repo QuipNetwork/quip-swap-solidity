@@ -13,8 +13,8 @@ import {console} from 'forge-std-1.14.0/console.sol';
 /// @title Omnibus × real ShrincsVerifier integration
 /// @dev End-to-end keyed route with the REAL stateful SHRINCS verifier (no mock):
 /// Alice's keyed identity signs the actual commit digest at an explicit leaf, the
-/// envelope goes through ShrincsCodec, Bob posts his side EOA-self-auth, Alice
-/// claims. Also records gas per route (the stateful verify is the expensive one)
+/// envelope goes through ShrincsCodec, Bob posts his side with a mock-keyed
+/// identity, Alice claims. Also records gas (the stateful verify is the expensive one)
 contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
   ShrincsVerifier internal shrincs;
   ShrincsTypes.SigningKey internal signingKey;
@@ -26,7 +26,7 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     super.setUp();
 
     shrincs = new ShrincsVerifier();
-    omnibus.setVerifierTrust(address(shrincs), true);
+    omnibus.setVerifierActivity(address(shrincs), true);
 
     (ShrincsTypes.SigningKey memory sk, ShrincsTypes.PublicKey memory pk, bool ok) =
       ShrincsTestSigner.keygen(bytes('quip-swap omnibus integration seed'), 4);
@@ -66,12 +66,12 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     console.log('gas: keyed commit (real stateful SHRINCS verify):', gasBefore - gasleft());
     _assertLockState(lock, LockState.Free);
 
-    // 2. EOA Bob, self-auth
+    // 2. Bob, keyed via the mock verifier
     vm.warp(AT_TAKER_COMMIT);
     gasBefore = gasleft();
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice, _selfAuth(BOB));
-    console.log('gas: self-auth commit:', gasBefore - gasleft());
+    omnibus.commit{value: 0}(lock, bob, alice, _keyedAuth(BOB));
+    console.log('gas: mock-keyed commit:', gasBefore - gasleft());
     _assertLockState(lock, LockState.Committed);
 
     // 3. claim settles to terms-pinned recipients

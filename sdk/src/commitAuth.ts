@@ -10,22 +10,16 @@
  * the counterpart side, it verifies the blob from the `Commitment` event
  * off-chain before revealing the secret / committing the second leg.
  *
- * FUNDING MODEL (state this everywhere): in every route the SENDER of the
- * transaction funds the party's leg + fee (`msg.sender` pays); the identity
- * only AUTHORIZES. "Relayed" means the sender pays the party's leg.
+ * FUNDING MODEL: the transaction SENDER funds the committed leg + fee
+ * (`msg.sender` pays). Funding is independent of authorization —
+ * `auth.signer` only endorses the payload, it never pays.
  *
- * Routing by blob shape (see `Omnibus._enforceCommitAuthorized`):
- * - length < 20 bytes  → reverts `MalformedSigner`
- * - length == 20 bytes → an ADDRESS: `msg.sender == address` self-auth (no
- *   signature); no code at address → EOA raw-digest ecrecover; code at
- *   address → ERC-1271 `isValidSignature`
- * - length > 20 bytes  → ERC-7913 keyed: `verifier(20) ‖ key`, verifier must
- *   be owner-allowlisted on the contract
+ * The accepted signer shape is an ERC-7913 keyed identity:
+ * `verifier(20) ‖ key`; the verifier must be active on the contract.
+ * Blobs of 20 bytes or fewer revert `MalformedSigner`.
  *
  * The SDK does NOT sign and does not encode signature envelopes: `signature`
- * is opaque bytes produced by the keyholder's own tooling (a SHRINCS WASM
- * signer, a programmatic EOA key signing the RAW 32-byte digest — browser
- * wallets refuse raw hashes and are out of scope — or `0x` for self-auth).
+ * is opaque bytes produced by the keyholder's own tooling.
  */
 import {concatHex, encodeAbiParameters, isAddress, isHex, keccak256, size, toBytes} from 'viem'
 import type {Address, Hex} from 'viem'
@@ -38,9 +32,9 @@ import type {Hex32, Terms} from './types.js'
  * field-for-field. Identities attribute, they don't gate.
  */
 export interface CommitAuth {
-  /** The committing side's identity blob (routes + verifies; see module docs). */
+  /** The committing side's identity blob: `verifier(20) ‖ key` (see module docs). */
   readonly signer: Hex
-  /** Signature over {@link computeCommitDigest}; `'0x'` for self-auth. */
+  /** Signature over {@link computeCommitDigest}, checked by the declared verifier. */
   readonly signature: Hex
 }
 
@@ -55,16 +49,15 @@ export const COMMIT_DIGEST_TAG: Hex32 = keccak256(toBytes('QUIP:Omnibus:commit:v
 /**
  * Builds a keyed ERC-7913 signer blob: `verifier(20 bytes) ‖ key`.
  *
- * For the SHRINCS route, `key` is the 32-byte `publicKeyCommitment` and
- * `verifier` is the chain's deployed (and Omnibus-trusted) ShrincsVerifier.
+ * `key` is the verifier-defined key material and `verifier` is a deployed,
+ * Omnibus-active ERC-7913 verifier.
  *
  * @param verifier - The ERC-7913 verifier contract address.
  * @param key - The verifier-defined key material (non-empty; the blob must
- *   exceed 20 bytes to route as keyed).
+ *   exceed 20 bytes).
  * @returns The concatenated signer blob.
  * @throws QuipSwapError `MALFORMED_SIGNER` when `verifier` is not an address
- *   or `key` is empty (a bare 20-byte blob would route as an ADDRESS, not
- *   as a keyed identity).
+ *   or `key` is empty.
  */
 export function buildKeyedSigner(verifier: Address, key: Hex): Hex {
   if (!isAddress(verifier)) {
@@ -73,40 +66,25 @@ export function buildKeyedSigner(verifier: Address, key: Hex): Hex {
   if (!isHex(key, {strict: true}) || size(key) === 0) {
     throw new QuipSwapError({
       code: 'MALFORMED_SIGNER',
-      message: 'key must be non-empty hex; a bare 20-byte blob routes as an address, not a keyed identity',
+      message: 'key must be non-empty hex; the signer blob must exceed 20 bytes',
     })
   }
   return concatHex([verifier, key])
 }
 
 /**
- * The self-auth {@link CommitAuth} for an account that will BE `msg.sender`
- * of the commit (an EOA sending directly, or a QuipWallet executing the
- * calldata): the identity is the bare address and no signature is needed.
- *
- * @param account - The address that will send (or execute) the commit.
- * @returns `{signer: account, signature: '0x'}`.
- */
-export function selfAuth(account: Address): CommitAuth {
-  if (!isAddress(account)) {
-    throw new QuipSwapError({code: 'MALFORMED_SIGNER', message: `account must be an address; received ${account}`})
-  }
-  return {signer: account, signature: '0x'}
-}
-
-/**
- * Validates a signer blob's shape: at least 20 bytes of strict hex — the
- * contract reverts `MalformedSigner` below that. Mirrors, never replaces,
- * the on-chain check.
+ * Validates a signer blob's shape: more than 20 bytes of strict hex — the
+ * contract reverts `MalformedSigner` at 20 bytes or fewer. Mirrors, never
+ * replaces, the on-chain check.
  *
  * @param signer - The identity blob.
  * @throws QuipSwapError `MALFORMED_SIGNER`.
  */
 export function assertSignerBlob(signer: Hex): void {
-  if (!isHex(signer, {strict: true}) || size(signer) < 20) {
+  if (!isHex(signer, {strict: true}) || size(signer) <= 20) {
     throw new QuipSwapError({
       code: 'MALFORMED_SIGNER',
-      message: 'signer must be at least 20 bytes of hex (contract would revert MalformedSigner)',
+      message: 'signer must be more than 20 bytes of hex (contract would revert MalformedSigner)',
     })
   }
 }

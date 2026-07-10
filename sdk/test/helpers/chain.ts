@@ -3,8 +3,10 @@
  * control, and the standard contract fixture used by integration tests.
  *
  * Deployment order in {@link deployFixture}:
- * 1. Omnibus with the ACTIVE two-argument constructor (owner, initialVerifiers)
- *    — commit is PERMISSIONLESS, so no registry mock is needed
+ * 1. Omnibus with the one-argument constructor (owner) — commit is
+ *    PERMISSIONLESS, so no registry mock is needed; an AcceptAll ERC-7913
+ *    VerifierMock is deployed and activated post-deploy via
+ *    setVerifierActivity (owner action)
  * 2. mock tokens (ERC20 / ERC721 / ERC1155 / fee-on-transfer ERC20)
  * 3. harnesses (TermsLibHarness, OmnibusHarness) for differential tests
  *
@@ -155,6 +157,8 @@ export function connectChain(rpcUrl: string, chainId: number): ChainContext {
 /** Addresses of the standard per-chain contract fixture. */
 export interface Fixture {
   readonly omnibus: Address
+  /** AcceptAll ERC-7913 VerifierMock, activated on omnibus AND omnibusHarness. */
+  readonly verifier: Address
   readonly erc20: Address
   readonly erc721: Address
   readonly erc1155: Address
@@ -171,9 +175,26 @@ export interface Fixture {
  * @returns The deployed addresses.
  */
 export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
-  // 1. the ACTIVE constructor: (initialOwner, initialVerifiers) — an empty
-  // verifier allowlist is fine (tests trust verifiers via setVerifierTrust)
-  const omnibus = await ctx.deploy(loadArtifact('Omnibus.sol', 'Omnibus'), [ctx.deployer.address, []])
+  // 1. the one-argument constructor: (initialOwner); verifiers are activated
+  // post-deploy via setVerifierActivity (owner action)
+  const omnibusArtifact = loadArtifact('Omnibus.sol', 'Omnibus')
+  const omnibus = await ctx.deploy(omnibusArtifact, [ctx.deployer.address])
+
+  // an AcceptAll ERC-7913 verifier mock backs the keyed commit route
+  const verifier = await ctx.deploy(loadArtifact('VerifierMock.sol', 'VerifierMock'))
+
+  const activateVerifier = async (target: Address): Promise<void> => {
+    const hash = await ctx.deployer.walletClient.writeContract({
+      address: target,
+      abi: omnibusArtifact.abi,
+      functionName: 'setVerifierActivity',
+      args: [verifier, true],
+      chain: null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash})
+  }
+  await activateVerifier(omnibus)
 
   // 2. mock assets
   const erc20 = await ctx.deploy(loadArtifact('ERC20Mock.sol', 'ERC20Mock'), ['MockToken', 'MTK', 18])
@@ -191,8 +212,8 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
   const termsLibHarness = await ctx.deploy(loadArtifact('TermsLibHarness.sol', 'TermsLibHarness'))
   const omnibusHarness = await ctx.deploy(loadArtifact('OmnibusHarness.sol', 'OmnibusHarness'), [
     ctx.deployer.address,
-    [],
   ])
+  await activateVerifier(omnibusHarness)
 
-  return {omnibus, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
+  return {omnibus, verifier, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
 }

@@ -62,7 +62,6 @@ export {generateSecret, secretToPair} from './secrets.js'
 export {
   COMMIT_DIGEST_TAG,
   buildKeyedSigner,
-  selfAuth,
   assertSignerBlob,
   computeCommitDigest,
 } from './commitAuth.js'

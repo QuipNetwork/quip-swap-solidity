@@ -42,13 +42,13 @@ import {
   nativeAsset,
   planApprovals,
   planSameChainSwap,
+  buildKeyedSigner,
   QuipSwapError,
-  selfAuth,
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
 } from '../src/index.js'
-import type {OmnibusClient} from '../src/index.js'
+import type {CommitAuth, OmnibusClient} from '../src/index.js'
 import type {Terms} from '../src/index.js'
 import {startAnvil} from '../test/helpers/anvil.js'
 import type {AnvilInstance} from '../test/helpers/anvil.js'
@@ -61,6 +61,14 @@ const repoRoot = join(sdkRoot, '..')
 
 const CHAIN_A_ID = 31_337
 const CHAIN_B_ID = 31_338
+
+/**
+ * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
+ * (the address doubles as the key; the mock ignores signatures, so '0x').
+ */
+function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
+  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
+}
 
 // distinct, checksummed recipients per flow/role so balance deltas are
 // unambiguous and decoded-event addresses compare byte-equal. A hex suffix
@@ -283,7 +291,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   await step(scope, 'proposer commits', async () => {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only proposer leg should need no approvals')
-    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: selfAuth(A.alice.address)})
+    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: keyedAuth(fixtureA, A.alice.address)})
     await aliceClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Free, `expected Free, got ${LockState[lockState]}`)
@@ -304,7 +312,7 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   await step(scope, 'taker commits', async () => {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.bob, bobTerms)
     assert(submitted === 1, `expected one ERC-20 approval, got ${submitted}`)
-    const hash = await bobClient.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: selfAuth(A.bob.address)})
+    const hash = await bobClient.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: keyedAuth(fixtureA, A.bob.address)})
     await bobClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed, got ${LockState[lockState]}`)
@@ -421,7 +429,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
     await warpBoth(s.atProposerCommit)
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only leg should need no approvals')
-    const hash = await aliceOnA.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: selfAuth(A.alice.address)})
+    const hash = await aliceOnA.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: keyedAuth(fixtureA, A.alice.address)})
     await aliceOnA.waitForReceipt(hash)
     const lockState = await aliceOnA.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on A, got ${LockState[lockState]}`)
@@ -447,7 +455,7 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
       publicClient: B.publicClient,
       walletClient: B.bob.walletClient,
     })
-    const hash = await bobOnB.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: selfAuth(B.bob.address)})
+    const hash = await bobOnB.commit({lock, party: bobTerms, counterparty: aliceTerms, auth: keyedAuth(fixtureB, B.bob.address)})
     await bobOnB.waitForReceipt(hash)
     const lockState = await aliceOnB.getLockState(lock)
     assert(lockState === LockState.Committed, `expected Committed on B, got ${LockState[lockState]}`)

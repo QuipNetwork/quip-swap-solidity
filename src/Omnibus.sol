@@ -4,10 +4,8 @@ pragma solidity 0.8.33;
 import {Terms, TermsLib} from './TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
-import {IERC1271} from '@openzeppelin-contracts-5.6.0-rc.1/interfaces/IERC1271.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
-import {ECDSA} from '@openzeppelin-contracts-5.6.0-rc.1/utils/cryptography/ECDSA.sol';
 import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IERC165.sol';
 import {
   IERC7913SignatureVerifier
@@ -21,7 +19,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   using TermsLib for Terms;
 
   /// @notice the version of this omnibus implementation
-  uint256 public constant VERSION = 2;
+  uint256 public constant VERSION = 0;
 
   /// @inheritdoc IOmnibus
   uint256 public constant MAX_FEE = 0.01 ether;
@@ -45,18 +43,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   mapping(bytes32 lock => mapping(bytes32 termsDigest => bool isPosted)) public posted;
 
   /// @inheritdoc IOmnibus
-  mapping(address verifier => bool trusted) public trustedVerifiers;
+  mapping(address verifier => bool active) public verifierActive;
 
-  /// @notice initializes the contract with an owner and the initially trusted verifiers
+  /// @notice initializes the contract with an owner; verifiers are activated
+  /// post-deploy via setVerifierActivity
   /// @param initialOwner the address that will own the contract
-  /// @param initialVerifiers ERC-7913 verifiers trusted from genesis (each non-zero)
-  constructor(address initialOwner, address[] memory initialVerifiers) Ownable(initialOwner) {
-    for (uint256 i; i < initialVerifiers.length; ++i) {
-      if (initialVerifiers[i] == address(0)) revert ZeroVerifier();
-      trustedVerifiers[initialVerifiers[i]] = true;
-      emit VerifierTrustUpdated(initialVerifiers[i], true);
-    }
-  }
+  constructor(address initialOwner) Ownable(initialOwner) {}
 
   /// @notice allows this contract to receive native currency
   receive() external payable {}
@@ -280,10 +272,10 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   }
 
   /// @inheritdoc IOmnibus
-  function setVerifierTrust(address verifier, bool trusted) external onlyOwner {
+  function setVerifierActivity(address verifier, bool active) external onlyOwner {
     if (verifier == address(0)) revert ZeroVerifier();
-    trustedVerifiers[verifier] = trusted;
-    emit VerifierTrustUpdated(verifier, trusted);
+    verifierActive[verifier] = active;
+    emit VerifierActivityUpdated(verifier, active);
   }
 
   /// @inheritdoc IOmnibus
@@ -325,42 +317,22 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     );
   }
 
-  /// @notice routes the declared identity to its verification machine and enforces validity
-  /// @dev view-only; every route resolves to STATICCALL / precompile — no reentrancy
-  /// surface. There is no membership check: identities attribute, they don't gate; the
-  /// declared blob is bound into the digest (signerHash ingredient) and into
-  /// verification itself. Routing:
-  /// - length < 20: MalformedSigner
-  /// - length == 20: an address — msg.sender itself (self-auth, no signature), an EOA
-  ///   (ecrecover), or a contract (ERC-1271 isValidSignature; strict code branch — any
-  ///   code, including an EIP-7702 delegation designator, routes to 1271, never raw
-  ///   ecrecover; raw-key support for delegated EOAs is deferred)
-  /// - length > 20: verifier(20 bytes) ‖ key — verifier must be owner-allowlisted, then
-  ///   ERC-7913 verify(key, digest, sig) must return its selector
-  /// @param signer the committing side's identity blob
+  /// @notice enforces the declared ERC-7913 keyed identity endorsed the digest
+  /// @dev view-only; resolves to a STATICCALL — no reentrancy surface. There is no
+  /// membership check: identities attribute, they don't gate; the declared blob is
+  /// bound into the digest (signerHash ingredient) and into verification itself.
+  /// The ONLY accepted identity shape is ERC-7913 keyed: verifier(20 bytes) ‖ key —
+  /// the verifier must be owner-activated, then verify(key, digest, sig) must
+  /// return its selector. Anything 20 bytes or shorter (including a bare address)
+  /// is MalformedSigner
+  /// @param signer the committing side's identity blob: verifier(20 bytes) ‖ key
   /// @param digest the commit digest the signature must cover
-  /// @param signature the signature bytes ('0x' for self-auth)
+  /// @param signature the signature bytes
   function _enforceCommitAuthorized(bytes calldata signer, bytes32 digest, bytes calldata signature) internal view {
-    if (signer.length < 20) revert MalformedSigner();
-    if (signer.length == 20) {
-      address account = address(bytes20(signer[:20]));
-      // SELF-AUTH: checked BEFORE code inspection, so it works for delegated EOAs too
-      if (msg.sender == account) return;
-      if (account.code.length == 0) {
-        // EOA: raw-digest ECDSA
-        (address rec, ECDSA.RecoverError e,) = ECDSA.tryRecover(digest, signature);
-        if (e != ECDSA.RecoverError.NoError || rec != account) revert InvalidCommitSignature();
-        return;
-      }
-      // ERC-1271: unconditional has-code fallback (staticcall via view interface)
-      if (IERC1271(account).isValidSignature(digest, signature) != IERC1271.isValidSignature.selector) {
-        revert InvalidCommitSignature();
-      }
-      return;
-    }
+    if (signer.length <= 20) revert MalformedSigner();
     // ERC-7913 keyed: verifier(20) ‖ key
     address verifier = address(bytes20(signer[:20]));
-    if (!trustedVerifiers[verifier]) revert UntrustedVerifier();
+    if (!verifierActive[verifier]) revert VerifierNotActive();
     if (
       IERC7913SignatureVerifier(verifier).verify(signer[20:], digest, signature)
         != IERC7913SignatureVerifier.verify.selector

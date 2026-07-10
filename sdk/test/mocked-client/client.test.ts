@@ -20,7 +20,8 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {selfAuth} from '../../src/index.js'
+import {buildKeyedSigner} from '../../src/index.js'
+import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
@@ -50,8 +51,8 @@ const BUFFERED_GAS = 120_000n // estimate * default 1.2 multiplier
 
 const alice = aliceTerms(CHAIN_A) // proposer (local on chain A)
 const bob = bobTerms(CHAIN_A) // taker, same chain
-/** Self-auth for the mocked wallet's sending account. */
-const AUTH = selfAuth(SENDER)
+/** Keyed ERC-7913 auth for the mocked wallet's sending account. */
+const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'}
 
 /** A recorded call log shared by the mock public and wallet clients. */
 interface CallLog {
@@ -74,7 +75,7 @@ function setup(
     chainId?: bigint
     timestamp?: bigint
     fee?: bigint
-    verifierTrusted?: boolean
+    verifierIsActive?: boolean
     termsHash?: `0x${string}`
     posted?: boolean
     lockState?: LockState
@@ -88,7 +89,7 @@ function setup(
     chainId = CHAIN_A,
     timestamp = AT_PROPOSER_COMMIT,
     fee = 25n,
-    verifierTrusted = true,
+    verifierIsActive = true,
     posted = true,
     lockState = LockState.Committed,
     balance = 10n ** 24n,
@@ -111,8 +112,8 @@ function setup(
     readContract: async (args: {address: Address; functionName: string}) => {
       log.sequence.push(`read:${args.functionName}`)
       switch (args.functionName) {
-        case 'trustedVerifiers':
-          return verifierTrusted
+        case 'verifierActive':
+          return verifierIsActive
         case 'commitDigest':
           return COMMIT_DIGEST
         case 'commitmentFee':
@@ -201,7 +202,7 @@ describe('commit orchestration', () => {
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
     // the CommitAuth struct rides along as the fourth argument
-    expect(est.args[3]).toEqual({signer: SENDER, signature: '0x'})
+    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
     // the write carries the same function/args/value
@@ -617,13 +618,13 @@ describe('gas estimation and balance preflight', () => {
 })
 
 describe('reads', () => {
-  it('isVerifierTrusted reads trustedVerifiers and returns its value', async () => {
-    const trusted = setup({verifierTrusted: true})
-    await expect(trusted.client.isVerifierTrusted(VERIFIER)).resolves.toBe(true)
-    expect(trusted.log.sequence).toEqual(['read:trustedVerifiers'])
+  it('isVerifierActive reads verifierActive and returns its value', async () => {
+    const active = setup({verifierIsActive: true})
+    await expect(active.client.isVerifierActive(VERIFIER)).resolves.toBe(true)
+    expect(active.log.sequence).toEqual(['read:verifierActive'])
 
-    const untrusted = setup({verifierTrusted: false})
-    await expect(untrusted.client.isVerifierTrusted(VERIFIER)).resolves.toBe(false)
+    const inactive = setup({verifierIsActive: false})
+    await expect(inactive.client.isVerifierActive(VERIFIER)).resolves.toBe(false)
   })
 
   it('getCommitDigest reads the commitDigest view with the 7-field tuples and signerHash', async () => {
@@ -647,25 +648,25 @@ describe('reads', () => {
   })
 })
 
-describe('admin.setVerifierTrust orchestration', () => {
-  it('selects setVerifierTrust with (verifier, trusted) and no value, estimating before writing', async () => {
+describe('admin.setVerifierActivity orchestration', () => {
+  it('selects setVerifierActivity with (verifier, active) and no value, estimating before writing', async () => {
     const mocks = setup()
-    await expect(mocks.client.admin.setVerifierTrust(VERIFIER, true)).resolves.toBe(TX_HASH)
+    await expect(mocks.client.admin.setVerifierActivity(VERIFIER, true)).resolves.toBe(TX_HASH)
     const est = mocks.log.estimations[0] as {functionName: string; args: [unknown, unknown]; value?: bigint}
-    expect(est.functionName).toBe('setVerifierTrust')
+    expect(est.functionName).toBe('setVerifierActivity')
     expect(est.args).toEqual([VERIFIER, true])
     expect(est.value).toBeUndefined() // not payable
     const seq = mocks.log.sequence
-    expect(seq.indexOf('estimate:setVerifierTrust')).toBeLessThan(seq.indexOf('write'))
+    expect(seq.indexOf('estimate:setVerifierActivity')).toBeLessThan(seq.indexOf('write'))
     const write = mocks.log.writes[0] as {functionName: string; args: [unknown, unknown]; gas: bigint}
-    expect(write.functionName).toBe('setVerifierTrust')
+    expect(write.functionName).toBe('setVerifierActivity')
     expect(write.args).toEqual([VERIFIER, true])
     expect(write.gas).toBe(BUFFERED_GAS)
   })
 
   it('rejects without a wallet client, before any RPC interaction', async () => {
     const readOnly = setup({withWallet: false})
-    expect(await codeOf(readOnly.client.admin.setVerifierTrust(VERIFIER, false))).toBe('MISSING_WALLET_CLIENT')
+    expect(await codeOf(readOnly.client.admin.setVerifierActivity(VERIFIER, false))).toBe('MISSING_WALLET_CLIENT')
     expect(readOnly.log.writes).toHaveLength(0)
   })
 })

@@ -6,6 +6,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 import {Terms} from '../../src/TermsLib.sol';
 import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
+import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
@@ -60,13 +61,17 @@ contract Omnibus_Reentrancy is Test {
 
   OmnibusHarness public omnibus;
   ReentrantRecipient public attacker;
+  VerifierMock public verifier;
 
   bytes32 public constant SECRET = keccak256('secret');
   bytes32 public lock;
 
   function setUp() public {
-    // commit is permissionless; each caller self-authorizes with its own identity
-    omnibus = new OmnibusHarness(address(this), new address[](0));
+    // commit is permissionless; each caller authenticates with its own keyed
+    // ERC-7913 identity through an AcceptAll mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
     attacker = new ReentrantRecipient();
     lock = omnibus.exposed_generateLock(SECRET);
 
@@ -74,9 +79,9 @@ contract Omnibus_Reentrancy is Test {
     vm.deal(BOB, 100 ether);
   }
 
-  /// @notice minimal self-auth blob: succeeds when `sender` is the actual msg.sender
-  function _selfAuth(address sender) private pure returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(sender), signature: ''});
+  /// @notice keyed ERC-7913 identity for `sender` via the AcceptAll mock verifier
+  function _keyedAuth(address sender) private view returns (CommitAuth memory) {
+    return CommitAuth({signer: abi.encodePacked(address(verifier), sender), signature: ''});
   }
 
   /// @notice proposer terms; `recipient` and `reclaimRecipient` are parameterized so each
@@ -102,11 +107,11 @@ contract Omnibus_Reentrancy is Test {
   function _commitBoth(Terms memory alice, Terms memory bob) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob, _selfAuth(ALICE));
+    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob, _keyedAuth(ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice, _selfAuth(BOB));
+    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice, _keyedAuth(BOB));
   }
 
   /// @notice a claim recipient that re-enters claim mid-payout fails on the spent lock and

@@ -4,7 +4,6 @@ pragma solidity 0.8.33;
 import {Asset, AssetType, Terms} from '../../src/TermsLib.sol';
 import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {Erc1271Mock} from '../mocks/Erc1271Mock.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
@@ -56,16 +55,12 @@ contract OmnibusTest is TestBase {
   OmnibusHarness public omnibus;
   VerifierMock public verifierA;
   VerifierMock public verifierB;
-  Erc1271Mock public erc1271;
 
-  // ============ Identities (default actors span the commit-auth routes) ============
-
-  /// @dev Bob is a REAL keypair so the EOA detached-signature route is exercised
-  uint256 public constant BOB_PK = uint256(keccak256('bob-private-key'));
+  // ============ Identities (ERC-7913 keyed — the only commit-auth route) ============
 
   /// @notice Alice's keyed ERC-7913 identity: verifierA(20 bytes) ‖ key
   bytes public aliceSigner;
-  /// @notice Bob's EOA identity: just his address (20 bytes)
+  /// @notice Bob's keyed ERC-7913 identity: verifierA(20 bytes) ‖ key
   bytes public bobSigner;
 
   // ============ Test Data ============
@@ -76,24 +71,20 @@ contract OmnibusTest is TestBase {
   // ============ Setup ============
 
   function setUp() public virtual override {
-    // Bob must be a known-key EOA BEFORE TestBase funds/mints to him
-    BOB = vm.addr(BOB_PK);
-    vm.label(BOB, 'bob');
-
     super.setUp();
 
-    // Deploy verification doubles: two ERC-7913 verifier instances (trust
-    // independence) and one ERC-1271 signer contract
+    // Deploy verification doubles: two ERC-7913 verifier instances (activity
+    // independence)
     verifierA = new VerifierMock();
     verifierB = new VerifierMock();
-    erc1271 = new Erc1271Mock();
 
-    // Deploy Omnibus harness trusting verifierA only
-    omnibus = new OmnibusHarness(address(this), _verifiers(address(verifierA)));
+    // Deploy Omnibus harness; activate verifierA only (post-deploy owner action)
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifierA), true);
 
-    // Default identities: Alice keyed (via trusted verifierA), Bob EOA
+    // Default identities: both keyed via the active verifierA
     aliceSigner = abi.encodePacked(address(verifierA), bytes('alice-key'));
-    bobSigner = abi.encodePacked(BOB);
+    bobSigner = abi.encodePacked(address(verifierA), bytes('bob-key'));
 
     // Generate lock from secret
     lock = omnibus.exposed_generateLock(SECRET);
@@ -115,10 +106,9 @@ contract OmnibusTest is TestBase {
     assertNotEq(address(mockERC20), address(0));
     assertNotEq(address(mockERC721), address(0));
     assertNotEq(address(mockERC1155), address(0));
-    assertEq(omnibus.VERSION(), 2);
-    assertTrue(omnibus.trustedVerifiers(address(verifierA)));
-    assertFalse(omnibus.trustedVerifiers(address(verifierB)));
-    assertEq(BOB, vm.addr(BOB_PK));
+    assertEq(omnibus.VERSION(), 0);
+    assertTrue(omnibus.verifierActive(address(verifierA)));
+    assertFalse(omnibus.verifierActive(address(verifierB)));
   }
 
   // ============ Internal Helpers ============
@@ -128,47 +118,27 @@ contract OmnibusTest is TestBase {
     _approveAllFor(owner, address(omnibus));
   }
 
-  /// @notice single-element verifier array for constructor calls
-  function _verifiers(address verifier) internal pure returns (address[] memory arr) {
-    arr = new address[](1);
-    arr[0] = verifier;
-  }
-
   // ============ CommitAuth Builders ============
-
-  /// @notice self-auth: identity IS the sender; no signature
-  function _selfAuth(address account) internal pure returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(account), signature: ''});
-  }
 
   /// @notice keyed auth via an AcceptAll-mode verifier mock (signature content irrelevant)
   function _keyedAuth(bytes memory signer) internal pure returns (CommitAuth memory) {
     return CommitAuth({signer: signer, signature: ''});
   }
 
-  /// @notice EOA detached auth: raw-digest ECDSA over the commit digest
-  function _eoaAuth(
-    uint256 pk,
-    bytes32 _lock,
-    Terms memory party,
-    Terms memory counterparty
-  ) internal view returns (CommitAuth memory) {
-    bytes memory signer = abi.encodePacked(vm.addr(pk));
-    bytes32 digest = omnibus.commitDigest(_lock, party, counterparty, keccak256(signer));
-    (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
-    return CommitAuth({signer: signer, signature: abi.encodePacked(r, s, v)});
+  /// @notice keyed auth for an arbitrary account: verifierA(20 bytes) ‖ account bytes as key
+  function _keyedAuth(address account) internal view returns (CommitAuth memory) {
+    return _keyedAuth(abi.encodePacked(address(verifierA), account));
   }
 
-  /// @notice default route per actor: Alice KEYED, Bob EOA-detached, others self-auth
-  function _authFor(
-    address committer,
-    bytes32 _lock,
-    Terms memory party,
-    Terms memory counterparty
-  ) internal view returns (CommitAuth memory) {
+  /// @notice default keyed identity per actor (all via the active verifierA)
+  function _authFor(address committer, bytes32, Terms memory, Terms memory)
+    internal
+    view
+    returns (CommitAuth memory)
+  {
     if (committer == ALICE) return _keyedAuth(aliceSigner);
-    if (committer == BOB) return _eoaAuth(BOB_PK, _lock, party, counterparty);
-    return _selfAuth(committer);
+    if (committer == BOB) return _keyedAuth(bobSigner);
+    return _keyedAuth(committer);
   }
 
   /// @notice field-for-field raw mirror of Omnibus._commitDigest (drift alarm: this
@@ -288,7 +258,7 @@ contract OmnibusTest is TestBase {
   /// @notice Commit `party` against `counterparty`, auto-warping into the party's commit
   ///         window (proposer commits before its deadline; taker commits after the proposer's
   ///         deadline) and forwarding the required native value plus the current fee.
-  ///         Auth spans the routes by default: Alice KEYED, Bob EOA-detached, others self-auth
+  ///         Every committer authenticates with a KEYED ERC-7913 identity via verifierA
   function _commitFor(address committer, bytes32 _lock, Terms memory party, Terms memory counterparty) internal {
     vm.warp(_isProposer(party, counterparty) ? AT_PROPOSER_COMMIT : AT_TAKER_COMMIT);
     uint256 value = _totalNativeForCommit(party) + omnibus.commitmentFee();

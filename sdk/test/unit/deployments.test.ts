@@ -32,7 +32,7 @@ function codeOf(fn: () => unknown): string {
 }
 
 // The canonical Omnibus address + verified chains shipped in src/address.json.
-const SHIPPED_OMNIBUS: Address = '0x07b74fb3805f75E669488F64E9a27E74E08fC9e0'
+const SHIPPED_OMNIBUS: Address = '0xD113aaA0F40945136A11a832087E23A72b38CE00'
 const BASE_SEPOLIA = 84532n
 const OP_SEPOLIA = 11_155_420n
 
