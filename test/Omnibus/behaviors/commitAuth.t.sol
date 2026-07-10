@@ -3,8 +3,11 @@ pragma solidity 0.8.33;
 
 import {Terms} from '../../../src/TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
-import {VerifierMock} from '../../mocks/VerifierMock.sol';
+import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
+import {
+  IERC7913SignatureVerifier
+} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 
 /// @title Omnibus commit authorization Tests
 /// @dev Signer-shape enforcement, verifier-activity gating, verifier result
@@ -37,6 +40,28 @@ contract Omnibus_commitAuth is OmnibusTest {
 
   function _aliceDigestFor(bytes memory signer) internal view returns (bytes32) {
     return omnibus.commitDigest(lock, _aliceTerms(), _bobTerms(), keccak256(signer));
+  }
+
+  /// @dev baseline: verifierA rejects every verify call (returns wrong magic).
+  /// Selector-prefix mock — matches ANY verify calldata
+  function _mockVerifierRejectsAll() internal {
+    vm.mockCall(
+      address(verifierA),
+      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
+      abi.encode(bytes4(0xffffffff))
+    );
+  }
+
+  /// @dev verifierA accepts EXACTLY (key, digest, signature) and rejects all
+  /// else: a reject-all prefix mock underneath, an exact-calldata accept on
+  /// top (specific mocks take precedence; registered second wins either way)
+  function _mockVerifierAcceptsOnly(bytes memory key, bytes32 digest, bytes memory signature) internal {
+    _mockVerifierRejectsAll();
+    vm.mockCall(
+      address(verifierA),
+      abi.encodeCall(IERC7913SignatureVerifier.verify, (key, digest, signature)),
+      abi.encode(IERC7913SignatureVerifier.verify.selector)
+    );
   }
 
   // ============ Malformed blobs (no address routes remain) ============
@@ -88,27 +113,25 @@ contract Omnibus_commitAuth is OmnibusTest {
     );
   }
 
-  function test_commitAuth_keyed_acceptAll_succeeds() public {
-    verifierA.setMode(VerifierMock.Mode.AcceptAll);
-    _commitAliceSideAs(ALICE, _keyedAuth(aliceSigner));
+  function test_commitAuth_keyed_succeeds() public {
+    // no mock needed: the one-function VerifierMock accepts everything
+    _commitAliceSideAs(ALICE, AuthHelper.auth(aliceSigner));
     _assertLockState(lock, LockState.Free);
   }
 
-  function test_commitAuth_keyed_acceptMatching_succeedsOnExactInputs() public {
-    // digest exactness: prime the mock from the RAW MIRROR (spec re-derivation);
-    // the commit only passes if the enforced digest equals the mirror
-    verifierA.setMode(VerifierMock.Mode.AcceptMatching);
+  function test_commitAuth_keyed_succeedsOnExactDigest() public {
+    // digest exactness: accept ONLY the raw-mirror digest (spec re-derivation);
+    // the commit passes iff the enforced digest equals the mirror
     bytes32 mirror = _mirrorCommitDigest(lock, _aliceTerms(), _bobTerms(), aliceSigner);
     assertEq(mirror, _aliceDigestFor(aliceSigner), 'mirror must equal the commitDigest view');
-    verifierA.prime(bytes('alice-key'), mirror, bytes('envelope'));
+    _mockVerifierAcceptsOnly(bytes('alice-key'), mirror, bytes('envelope'));
 
     _commitAliceSideAs(ALICE, CommitAuth({signer: aliceSigner, signature: bytes('envelope')}));
     _assertLockState(lock, LockState.Free);
   }
 
-  function test_commitAuth_keyed_acceptMatching_revertsOnUnprimedInputs() public {
-    verifierA.setMode(VerifierMock.Mode.AcceptMatching);
-    verifierA.prime(bytes('alice-key'), keccak256('some other digest'), bytes('envelope'));
+  function test_commitAuth_keyed_revertsWhen_digestNotAccepted() public {
+    _mockVerifierAcceptsOnly(bytes('alice-key'), keccak256('some other digest'), bytes('envelope'));
 
     _expectCommitAliceSideRevert(
       ALICE,
@@ -117,77 +140,93 @@ contract Omnibus_commitAuth is OmnibusTest {
     );
   }
 
-  function test_commitAuth_keyed_rejectAll_reverts() public {
-    verifierA.setMode(VerifierMock.Mode.RejectAll);
+  function test_commitAuth_keyed_revertsWhen_verifierRejects() public {
+    _mockVerifierRejectsAll();
     _expectCommitAliceSideRevert(
-      ALICE, _keyedAuth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
+      ALICE, AuthHelper.auth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
   }
 
-  function test_commitAuth_keyed_revertAll_bubbles() public {
-    verifierA.setMode(VerifierMock.Mode.RevertAll);
+  function test_commitAuth_keyed_revertsWhen_verifierReverts_bubbles() public {
+    vm.mockCallRevert(
+      address(verifierA),
+      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
+      abi.encodeWithSignature('Error(string)', 'verifier reverted')
+    );
     _expectCommitAliceSideRevert(
-      ALICE, _keyedAuth(aliceSigner), abi.encodeWithSignature('Error(string)', 'VerifierMock: revert mode')
+      ALICE, AuthHelper.auth(aliceSigner), abi.encodeWithSignature('Error(string)', 'verifier reverted')
     );
   }
 
-  function test_commitAuth_keyed_wrongMagic_reverts() public {
-    verifierA.setMode(VerifierMock.Mode.WrongMagic);
+  function test_commitAuth_keyed_revertsWhen_wrongMagicReturned() public {
+    // a plausible-but-wrong selector must NOT be treated as valid
+    vm.mockCall(
+      address(verifierA),
+      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
+      abi.encode(bytes4(0x12345678))
+    );
     _expectCommitAliceSideRevert(
-      ALICE, _keyedAuth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
+      ALICE, AuthHelper.auth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
   }
 
   function test_commitAuth_keyed_relayedByAnySender() public {
     // Alice's keyed identity endorses; CHARLIE submits and FUNDS (sender pays,
     // identity authorizes)
-    _commitAliceSideAs(CHARLIE, _keyedAuth(aliceSigner));
+    _commitAliceSideAs(CHARLIE, AuthHelper.auth(aliceSigner));
     _assertLockState(lock, LockState.Free);
   }
 
-  // ============ Digest exactness: tampered-context perturbations ============
+  // ============ Digest exactness: tampered context is rejected ============
 
-  /// @dev primes verifierA (AcceptMatching) to accept EXACTLY the digest for
-  /// (lock, party, counterparty, aliceSigner); any on-chain perturbation of that
-  /// context recomputes a different digest and must fail verification
-  function _primedAliceAuth(bytes32 _lock, Terms memory party, Terms memory cp) internal returns (CommitAuth memory) {
-    verifierA.setMode(VerifierMock.Mode.AcceptMatching);
-    verifierA.prime(bytes('alice-key'), _mirrorCommitDigest(_lock, party, cp, aliceSigner), bytes('envelope'));
+  /// @dev verifierA accepts EXACTLY the digest for (lock, party, counterparty,
+  /// aliceSigner); any on-chain tampering with that context recomputes a
+  /// different digest, falls through to the reject baseline, and fails
+  function _authAcceptedOnlyFor(
+    bytes32 _lock,
+    Terms memory party,
+    Terms memory cp
+  ) internal returns (CommitAuth memory) {
+    _mockVerifierAcceptsOnly(bytes('alice-key'), _mirrorCommitDigest(_lock, party, cp, aliceSigner), bytes('envelope'));
     return CommitAuth({signer: aliceSigner, signature: bytes('envelope')});
   }
 
-  function _commitPerturbedWith(CommitAuth memory auth, bytes32 _lock, Terms memory party, Terms memory cp) internal {
+  function _expectTamperedCommitRejected(
+    CommitAuth memory auth,
+    bytes32 _lock,
+    Terms memory party,
+    Terms memory cp
+  ) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.InvalidCommitSignature.selector);
     vm.prank(CHARLIE);
     omnibus.commit{value: _totalNativeForCommit(party)}(_lock, party, cp, auth);
   }
 
-  function test_commitAuth_digest_revertsWhen_lockPerturbed() public {
-    CommitAuth memory auth = _primedAliceAuth(lock, _aliceTerms(), _bobTerms());
+  function test_commitAuth_digest_revertsWhen_lockTampered() public {
+    CommitAuth memory auth = _authAcceptedOnlyFor(lock, _aliceTerms(), _bobTerms());
     bytes32 otherLock = omnibus.exposed_generateLock(keccak256('other-secret'));
-    _commitPerturbedWith(auth, otherLock, _aliceTerms(), _bobTerms());
+    _expectTamperedCommitRejected(auth, otherLock, _aliceTerms(), _bobTerms());
   }
 
-  function test_commitAuth_digest_revertsWhen_partyTermsPerturbed() public {
-    CommitAuth memory auth = _primedAliceAuth(lock, _aliceTerms(), _bobTerms());
-    Terms memory perturbed = _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT + 1));
-    _commitPerturbedWith(auth, lock, perturbed, _bobTerms());
+  function test_commitAuth_digest_revertsWhen_partyTermsTampered() public {
+    CommitAuth memory auth = _authAcceptedOnlyFor(lock, _aliceTerms(), _bobTerms());
+    Terms memory tampered = _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT + 1));
+    _expectTamperedCommitRejected(auth, lock, tampered, _bobTerms());
   }
 
-  function test_commitAuth_digest_revertsWhen_counterpartyTermsPerturbed() public {
-    CommitAuth memory auth = _primedAliceAuth(lock, _aliceTerms(), _bobTerms());
-    Terms memory perturbed = _bobTermsOn(block.chainid, _makeERC20Assets(DEFAULT_AMOUNT + 1));
-    _commitPerturbedWith(auth, lock, _aliceTerms(), perturbed);
+  function test_commitAuth_digest_revertsWhen_counterpartyTermsTampered() public {
+    CommitAuth memory auth = _authAcceptedOnlyFor(lock, _aliceTerms(), _bobTerms());
+    Terms memory tampered = _bobTermsOn(block.chainid, _makeERC20Assets(DEFAULT_AMOUNT + 1));
+    _expectTamperedCommitRejected(auth, lock, _aliceTerms(), tampered);
   }
 
-  function test_commitAuth_digest_revertsWhen_signerHashPerturbed() public {
+  function test_commitAuth_digest_revertsWhen_signerHashTampered() public {
     // envelope valid for the digest bound to ALICE's blob, but the declared blob
     // is swapped to another keyed identity: signerHash binding must reject the
     // transplant (the on-chain digest is recomputed from the DECLARED blob)
     bytes memory swappedSigner = abi.encodePacked(address(verifierA), bytes('other-key'));
-    verifierA.setMode(VerifierMock.Mode.AcceptMatching);
-    verifierA.prime(bytes('other-key'), _aliceDigestFor(aliceSigner), bytes('envelope'));
+    _mockVerifierAcceptsOnly(bytes('other-key'), _aliceDigestFor(aliceSigner), bytes('envelope'));
 
     _expectCommitAliceSideRevert(
       CHARLIE,
@@ -196,19 +235,20 @@ contract Omnibus_commitAuth is OmnibusTest {
     );
   }
 
-  function test_commitAuth_digest_revertsWhen_chainIdPerturbed() public {
-    // an envelope endorsed for THIS chain's digest must not validate on another
-    // chain (block.chainid is a digest ingredient). Terms must move with the
-    // chain (enforceChainId), so rebuild them on the new id — the envelope was
-    // never given a chance to cover chain-999 context
-    CommitAuth memory auth = _primedAliceAuth(lock, _aliceTerms(), _bobTerms());
+  function test_commitAuth_digest_revertsWhen_chainIdTampered() public {
+    // an envelope endorsed for THIS chain's digest must not validate against
+    // chain-999 context (the replay scope is the baked DOMAIN_SEPARATOR —
+    // per-chain deployments bake different separators). Terms must move with
+    // the chain (enforceChainId), so rebuild them on the new id: their digests
+    // change and the envelope was never accepted for that context
+    CommitAuth memory auth = _authAcceptedOnlyFor(lock, _aliceTerms(), _bobTerms());
 
     uint256 newChainId = 999;
     vm.chainId(newChainId);
     Terms memory aliceOn999 = _aliceTermsOn(newChainId, _makeNativeAssets(DEFAULT_AMOUNT));
     Terms memory bobOn999 = _bobTermsOn(newChainId, _makeERC20Assets(DEFAULT_AMOUNT));
 
-    _commitPerturbedWith(auth, lock, aliceOn999, bobOn999);
+    _expectTamperedCommitRejected(auth, lock, aliceOn999, bobOn999);
   }
 
   // ============ Soft-guard semantics (a decision, not an accident) ============
@@ -229,7 +269,7 @@ contract Omnibus_commitAuth is OmnibusTest {
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(CHARLIE);
-    omnibus.commit{value: 0}(lock, bob, alice, _keyedAuth(CHARLIE));
+    omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), CHARLIE));
     _assertLockState(lock, LockState.Committed);
 
     // the SENDER funded the leg; the side's named party paid nothing
@@ -259,7 +299,7 @@ contract Omnibus_commitAuth is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(relayer);
-    omnibus.commit{value: required}(lock, alice, bob, _keyedAuth(aliceSigner));
+    omnibus.commit{value: required}(lock, alice, bob, AuthHelper.auth(aliceSigner));
 
     _assertLockState(lock, LockState.Free);
     assertEq(relayer.balance, 0); // relayer paid everything

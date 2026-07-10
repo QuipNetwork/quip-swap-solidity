@@ -8,6 +8,7 @@ import {CommitAuth, IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @title Lock Poisoning (accepted, non-exploitable grief)
@@ -51,18 +52,13 @@ contract Omnibus_LockPoisoning is Test {
 
   function setUp() public {
     // commit is permissionless; each caller authenticates with its own keyed
-    // ERC-7913 identity through an AcceptAll mock verifier
+    // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
     omnibus = new OmnibusHarness(address(this));
     omnibus.setVerifierActivity(address(verifier), true);
     lock = omnibus.exposed_generateLock(SECRET);
     vm.deal(ALICE, 100 ether);
     vm.deal(ATTACKER, 100 ether);
-  }
-
-  /// @notice keyed ERC-7913 identity for `sender` via the AcceptAll mock verifier
-  function _keyedAuth(address sender) private view returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(address(verifier), sender), signature: ''});
   }
 
   function _proposer(address reclaimRecipient, address recipient, uint256 amount) internal view returns (Terms memory) {
@@ -87,7 +83,9 @@ contract Omnibus_LockPoisoning is Test {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
-    omnibus.commit{value: 1 wei}(lock, attackerParty, attackerCounter, _keyedAuth(ATTACKER));
+    omnibus.commit{value: 1 wei}(
+      lock, attackerParty, attackerCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER)
+    );
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
 
     // the legitimate commit on the poisoned lock now reverts on the stored terms hash
@@ -96,12 +94,12 @@ contract Omnibus_LockPoisoning is Test {
 
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(lock, alice, bob, _keyedAuth(ALICE));
+    omnibus.commit{value: 1 ether}(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
 
     // victim sidesteps with a fresh secret -> fresh lock (attacker cannot predict it)
     bytes32 freshLock = omnibus.exposed_generateLock(keccak256('alice-fresh-secret'));
     vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(freshLock, alice, bob, _keyedAuth(ALICE));
+    omnibus.commit{value: 1 ether}(freshLock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
     assertEq(uint8(omnibus.lockState(freshLock)), uint8(LockState.Free));
 
     // the grief cost the attacker reclaimable capital: they recover it after their window

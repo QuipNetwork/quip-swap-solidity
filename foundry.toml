@@ -37,10 +37,11 @@ out = 'out-via-ir'
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-# TODO(QUI-781): temporary rev pin — feat/verifier-ERC7913 HEAD.
-# Re-pin to the release tag after merge; keep the branch alive (or merge with a
-# merge commit) until then — a squash-merge + branch delete orphans this rev.
-"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "7c75cc204cb6a8f8b5fb5df35daf411eb306900f" }
+# Temporary rev pin — hashsigs-solidity MR !9 HEAD (matches soldeer.lock).
+# Re-pin to the release tag after that MR merges; keep the branch alive (or
+# merge with a merge commit) until then — a squash-merge + branch delete
+# orphans this rev.
+"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "69e2996b811e77ab85b6339ebb0203bd4885aaf4" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 [rpc_endpoints]

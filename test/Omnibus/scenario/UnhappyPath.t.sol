@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 
 /// @title Omnibus Unhappy Path Scenarios
@@ -26,10 +27,10 @@ contract Omnibus_UnhappyPath is OmnibusTest {
   function _commitBoth(Terms memory aliceTerms, Terms memory bobTerms, uint256 amount) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms, _keyedAuth(ALICE));
+    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifierA), ALICE));
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, _keyedAuth(BOB));
+    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB));
   }
 
   // ============ Scenario 7: Claim Fails After Proposer Claim Window ============
@@ -99,7 +100,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     // Alice commits (proposer)
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, _keyedAuth(ALICE));
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
     // Bob commits with DIFFERENT terms (1.5 ETH instead of 1 ETH) in the taker window
     Terms memory mismatchedBobTerms = _bobNative(1.5 ether);
@@ -107,7 +108,9 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(BOB);
-    omnibus.commit{value: 1.5 ether}(lock, mismatchedBobTerms, aliceTerms, _keyedAuth(BOB));
+    omnibus.commit{value: 1.5 ether}(
+      lock, mismatchedBobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB)
+    );
 
     _assertLockState(lock, LockState.Free);
   }
@@ -129,7 +132,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, _keyedAuth(ALICE));
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifierA), ALICE));
   }
 
   // ============ Scenario 12: Reclaim Fails Before Release ============
@@ -163,13 +166,13 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     // Bob (taker) commits first on the unused lock, inside the taker window
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms, _keyedAuth(BOB));
+    omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB));
     _assertLockState(lock, LockState.Free);
 
     // the proposer can no longer commit: her window [0, ALICE_COMMIT_DEADLINE) has elapsed
     vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, _keyedAuth(ALICE));
+    omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
     // the lock is stuck in Free; claiming is impossible (never Committed)
     _warpToProposerClaim();

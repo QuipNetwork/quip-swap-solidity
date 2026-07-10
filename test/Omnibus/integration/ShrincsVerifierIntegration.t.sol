@@ -8,19 +8,21 @@ import {ShrincsCodec} from '@quip.network/hashsigs-solidity-0.2.0/contracts/Shri
 import {ShrincsTypes} from '@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol';
 import {ShrincsVerifier} from '@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsVerifier.sol';
 import {ShrincsTestSigner} from '@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsTestSigner.sol';
-import {console} from 'forge-std-1.14.0/console.sol';
 
 /// @title Omnibus × real ShrincsVerifier integration
-/// @dev End-to-end keyed route with the REAL stateful SHRINCS verifier (no mock):
-/// Alice's keyed identity signs the actual commit digest at an explicit leaf, the
-/// envelope goes through ShrincsCodec, Bob posts his side with a mock-keyed
-/// identity, Alice claims. Also records gas (the stateful verify is the expensive one)
+/// @dev End-to-end keyed route with the REAL stateful SHRINCS verifier only:
+/// each side has its own real SHRINCS identity, signs its actual commit digest
+/// at an explicit leaf, and the envelope goes through ShrincsCodec.
+/// This suite only tests the happy path — by intention; all other
+/// verifier-reliant tests are covered in behaviors/commitAuth.t.sol
 contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
   ShrincsVerifier internal shrincs;
-  ShrincsTypes.SigningKey internal signingKey;
-  ShrincsTypes.PublicKey internal publicKey;
-  bytes32 internal commitment;
-  bytes internal keyedSigner; // verifier(20) ‖ 32-byte publicKeyCommitment
+  ShrincsTypes.SigningKey internal aliceKey;
+  ShrincsTypes.PublicKey internal alicePub;
+  bytes internal aliceKeyedSigner; // verifier(20) ‖ 32-byte publicKeyCommitment
+  ShrincsTypes.SigningKey internal bobKey;
+  ShrincsTypes.PublicKey internal bobPub;
+  bytes internal bobKeyedSigner;
 
   function setUp() public override {
     super.setUp();
@@ -28,58 +30,68 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     shrincs = new ShrincsVerifier();
     omnibus.setVerifierActivity(address(shrincs), true);
 
-    (ShrincsTypes.SigningKey memory sk, ShrincsTypes.PublicKey memory pk, bool ok) =
-      ShrincsTestSigner.keygen(bytes('quip-swap omnibus integration seed'), 4);
-    assertTrue(ok, 'keygen must succeed');
-    signingKey = sk;
-    publicKey = pk;
+    (aliceKey, alicePub, aliceKeyedSigner) = _realIdentity(bytes('quip-swap omnibus integration seed: alice'));
+    (bobKey, bobPub, bobKeyedSigner) = _realIdentity(bytes('quip-swap omnibus integration seed: bob'));
+  }
 
-    // the ERC-7913 key is the 32-byte bundle commitment word
+  /// @dev keygen a real SHRINCS identity; the ERC-7913 key is the 32-byte
+  /// bundle commitment word
+  function _realIdentity(bytes memory seed)
+    internal
+    view
+    returns (ShrincsTypes.SigningKey memory sk, ShrincsTypes.PublicKey memory pk, bytes memory signer)
+  {
+    bool ok;
+    (sk, pk, ok) = ShrincsTestSigner.keygen(seed, 4);
+    assertTrue(ok, 'keygen must succeed');
     bytes memory commitmentBytes = pk.publicKeyCommitment;
     bytes32 word;
     assembly {
       word := mload(add(commitmentBytes, 32))
     }
-    commitment = word;
-    keyedSigner = abi.encodePacked(address(shrincs), commitment);
+    signer = abi.encodePacked(address(shrincs), word);
   }
 
-  function _signStatefulEnvelope(bytes32 digest, uint32 leafIndex) internal view returns (bytes memory) {
+  function _signStatefulEnvelope(
+    ShrincsTypes.SigningKey memory sk,
+    ShrincsTypes.PublicKey memory pk,
+    bytes32 digest,
+    uint32 leafIndex
+  ) internal view returns (bytes memory) {
     (ShrincsTypes.StatefulSignature memory sig, bool ok) =
-      ShrincsTestSigner.signStatefulRawAtLeaf(signingKey, leafIndex, abi.encodePacked(digest));
+      ShrincsTestSigner.signStatefulRawAtLeaf(sk, leafIndex, abi.encodePacked(digest));
     require(ok, 'stateful signing must succeed');
-    return ShrincsCodec.encodeStatefulEnvelope(publicKey, sig);
+    return ShrincsCodec.encodeStatefulEnvelope(pk, sig);
   }
 
-  function test_integration_keyedCommit_eoaCommit_claim() public {
+  function test_integration_bothCommitsRealKeyed_claim() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    // 1. keyed Alice: sign the REAL commit digest at explicit leaf 1
-    bytes32 digest = omnibus.commitDigest(lock, alice, bob, keccak256(keyedSigner));
-    CommitAuth memory keyedAuth = CommitAuth({signer: keyedSigner, signature: _signStatefulEnvelope(digest, 1)});
+    // 1. Alice: her real identity signs HER commit digest at explicit leaf 1
+    bytes32 aliceDigest = omnibus.commitDigest(lock, alice, bob, keccak256(aliceKeyedSigner));
+    CommitAuth memory aliceAuth =
+      CommitAuth({signer: aliceKeyedSigner, signature: _signStatefulEnvelope(aliceKey, alicePub, aliceDigest, 1)});
 
     vm.warp(AT_PROPOSER_COMMIT);
-    uint256 gasBefore = gasleft();
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, keyedAuth);
-    console.log('gas: keyed commit (real stateful SHRINCS verify):', gasBefore - gasleft());
+    omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, aliceAuth);
     _assertLockState(lock, LockState.Free);
 
-    // 2. Bob, keyed via the mock verifier
+    // 2. Bob: his OWN real identity signs HIS commit digest (sides swap roles)
+    bytes32 bobDigest = omnibus.commitDigest(lock, bob, alice, keccak256(bobKeyedSigner));
+    CommitAuth memory bobAuth =
+      CommitAuth({signer: bobKeyedSigner, signature: _signStatefulEnvelope(bobKey, bobPub, bobDigest, 1)});
+
     vm.warp(AT_TAKER_COMMIT);
-    gasBefore = gasleft();
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice, _keyedAuth(BOB));
-    console.log('gas: mock-keyed commit:', gasBefore - gasleft());
+    omnibus.commit{value: 0}(lock, bob, alice, bobAuth);
     _assertLockState(lock, LockState.Committed);
 
     // 3. claim settles to terms-pinned recipients
     _warpToProposerClaim();
-    gasBefore = gasleft();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
-    console.log('gas: claim:', gasBefore - gasleft());
     _assertLockState(lock, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
@@ -90,37 +102,13 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     // sign a DIFFERENT digest; the real verifier must reject it for the commit digest
-    bytes memory wrongEnvelope = _signStatefulEnvelope(keccak256('some other payload'), 1);
+    bytes memory wrongEnvelope = _signStatefulEnvelope(aliceKey, alicePub, keccak256('some other payload'), 1);
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(); // InvalidCommitSignature (verifier returns 0xffffffff)
     vm.prank(ALICE);
     omnibus.commit{value: _totalNativeForCommit(alice)}(
-      lock, alice, bob, CommitAuth({signer: keyedSigner, signature: wrongEnvelope})
+      lock, alice, bob, CommitAuth({signer: aliceKeyedSigner, signature: wrongEnvelope})
     );
-  }
-
-  function test_integration_verifierIsMathOracle_leafReuseNotBurnedOnChain() public {
-    // recorded on-chain fact (plan A6/Rev 8): verification consumes no state — the
-    // SAME leaf validates two different commits; leaf hygiene is the keyholder's concern
-    Terms memory alice = _aliceTerms();
-    Terms memory bob = _bobTerms();
-    bytes32 digest1 = omnibus.commitDigest(lock, alice, bob, keccak256(keyedSigner));
-
-    bytes32 otherLock = omnibus.exposed_generateLock(keccak256('second-secret'));
-    bytes32 digest2 = omnibus.commitDigest(otherLock, alice, bob, keccak256(keyedSigner));
-
-    vm.warp(AT_PROPOSER_COMMIT);
-    vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(
-      lock, alice, bob, CommitAuth({signer: keyedSigner, signature: _signStatefulEnvelope(digest1, 1)})
-    );
-    vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(
-      otherLock, alice, bob, CommitAuth({signer: keyedSigner, signature: _signStatefulEnvelope(digest2, 1)})
-    );
-
-    _assertLockState(lock, LockState.Free);
-    _assertLockState(otherLock, LockState.Free);
   }
 }

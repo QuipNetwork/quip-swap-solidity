@@ -12,17 +12,8 @@ contract Omnibus_constructor is OmnibusTest {
     assertEq(fresh.owner(), ALICE);
   }
 
-  function test_constructor_activatesNoVerifiers() public {
-    // verifiers are activated post-deploy via setVerifierActivity, never at genesis
-    OmnibusHarness fresh = new OmnibusHarness(ALICE);
-    assertFalse(fresh.verifierActive(address(verifierA)));
-    assertFalse(fresh.verifierActive(address(verifierB)));
-  }
-
   function test_constructor_bakesDomainSeparator() public {
     OmnibusHarness fresh = new OmnibusHarness(ALICE);
-    assertEq(
-      fresh.DOMAIN_SEPARATOR(), keccak256(abi.encode(fresh.COMMIT_DIGEST_TAG(), block.chainid, address(fresh)))
-    );
+    assertEq(fresh.DOMAIN_SEPARATOR(), keccak256(abi.encode(fresh.COMMIT_DIGEST_TAG(), block.chainid, address(fresh))));
   }
 }

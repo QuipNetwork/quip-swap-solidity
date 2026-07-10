@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {Terms} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
+import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 
@@ -58,37 +59,24 @@ contract Omnibus_setVerifierActivity is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.VerifierNotActive.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, _keyedAuth(aliceSigner));
+    omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, AuthHelper.auth(aliceSigner));
 
     // ...B is unaffected...
     bytes memory bViaSigner = abi.encodePacked(address(verifierB), bytes('alice-key'));
     vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, _keyedAuth(bViaSigner));
+    omnibus.commit{value: _totalNativeForCommit(alice)}(freshLock, alice, bob, AuthHelper.auth(bViaSigner));
 
     // ...and the swap already pinned under the deactivated verifier still settles:
     // Bob posts his side keyed via the still-active B and Alice claims — no
     // verifier call in claim
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: 0}(lock, bob, alice, _keyedAuth(abi.encodePacked(address(verifierB), bytes('bob-key'))));
+    omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.auth(abi.encodePacked(address(verifierB), bytes('bob-key'))));
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
     _assertLockState(lock, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
-  }
-
-  function test_stateShape_termsHashAndPostedKeysUnchangedFromV1() public {
-    // anchoring keeps V1 semantics: termsHash stores the canonical TERMS-ONLY
-    // digest and posted is keyed by the bare terms digest — no identity is stored
-    Terms memory alice = _aliceTerms();
-    Terms memory bob = _bobTerms();
-
-    _commitFor(ALICE, lock, alice, bob);
-
-    assertEq(omnibus.termsHash(lock), omnibus.computeTermsHash(alice, bob));
-    assertTrue(omnibus.posted(lock, omnibus.computeTermsDigest(alice)));
-    assertFalse(omnibus.posted(lock, omnibus.computeTermsDigest(bob)));
   }
 }

@@ -9,6 +9,7 @@ import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @title Cross-chain settlement buffer
@@ -62,7 +63,7 @@ contract Omnibus_CrossChainFreeOption is Test {
 
   function setUp() public {
     // commit is permissionless; each caller authenticates with its own keyed
-    // ERC-7913 identity through an AcceptAll mock verifier
+    // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
     omnibusA = new OmnibusHarness(address(this));
     omnibusA.setVerifierActivity(address(verifier), true);
@@ -78,11 +79,6 @@ contract Omnibus_CrossChainFreeOption is Test {
   }
 
   // ============ Helpers ============
-
-  /// @notice keyed ERC-7913 identity for `sender` via the AcceptAll mock verifier
-  function _keyedAuth(address sender) private view returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(address(verifier), sender), signature: ''});
-  }
 
   function _aliceTerms() internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
@@ -114,14 +110,14 @@ contract Omnibus_CrossChainFreeOption is Test {
     vm.warp(500); // proposer commit window [0, A_COMMIT)
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), AMOUNT_A);
-    omnibusA.commit(lock, alice, bob, _keyedAuth(ALICE));
+    omnibusA.commit(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
     vm.stopPrank();
 
     vm.chainId(CHAIN_B);
     vm.warp(1500); // taker commit window [A_COMMIT, B_COMMIT)
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), AMOUNT_B);
-    omnibusB.commit(lock, bob, alice, _keyedAuth(BOB));
+    omnibusB.commit(lock, bob, alice, AuthHelper.keyedAuth(address(verifier), BOB));
     vm.stopPrank();
   }
 
@@ -210,7 +206,7 @@ contract Omnibus_CrossChainFreeOption is Test {
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), AMOUNT_A);
     vm.expectRevert(TermsLib.DisordedDeadlines.selector);
-    omnibusA.commit(lock, alice, bob, _keyedAuth(ALICE));
+    omnibusA.commit(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
     vm.stopPrank();
   }
 }

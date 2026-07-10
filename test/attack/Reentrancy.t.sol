@@ -8,6 +8,7 @@ import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @notice recipient that re-enters the omnibus once when it receives native, recording
@@ -68,7 +69,7 @@ contract Omnibus_Reentrancy is Test {
 
   function setUp() public {
     // commit is permissionless; each caller authenticates with its own keyed
-    // ERC-7913 identity through an AcceptAll mock verifier
+    // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
     omnibus = new OmnibusHarness(address(this));
     omnibus.setVerifierActivity(address(verifier), true);
@@ -77,11 +78,6 @@ contract Omnibus_Reentrancy is Test {
 
     vm.deal(ALICE, 100 ether);
     vm.deal(BOB, 100 ether);
-  }
-
-  /// @notice keyed ERC-7913 identity for `sender` via the AcceptAll mock verifier
-  function _keyedAuth(address sender) private view returns (CommitAuth memory) {
-    return CommitAuth({signer: abi.encodePacked(address(verifier), sender), signature: ''});
   }
 
   /// @notice proposer terms; `recipient` and `reclaimRecipient` are parameterized so each
@@ -107,11 +103,11 @@ contract Omnibus_Reentrancy is Test {
   function _commitBoth(Terms memory alice, Terms memory bob) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob, _keyedAuth(ALICE));
+    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice, _keyedAuth(BOB));
+    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice, AuthHelper.keyedAuth(address(verifier), BOB));
   }
 
   /// @notice a claim recipient that re-enters claim mid-payout fails on the spent lock and

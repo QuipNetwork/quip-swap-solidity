@@ -6,6 +6,7 @@ import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
@@ -120,25 +121,11 @@ contract OmnibusTest is TestBase {
 
   // ============ CommitAuth Builders ============
 
-  /// @notice keyed auth via an AcceptAll-mode verifier mock (signature content irrelevant)
-  function _keyedAuth(bytes memory signer) internal pure returns (CommitAuth memory) {
-    return CommitAuth({signer: signer, signature: ''});
-  }
-
-  /// @notice keyed auth for an arbitrary account: verifierA(20 bytes) ‖ account bytes as key
-  function _keyedAuth(address account) internal view returns (CommitAuth memory) {
-    return _keyedAuth(abi.encodePacked(address(verifierA), account));
-  }
-
   /// @notice default keyed identity per actor (all via the active verifierA)
-  function _authFor(address committer, bytes32, Terms memory, Terms memory)
-    internal
-    view
-    returns (CommitAuth memory)
-  {
-    if (committer == ALICE) return _keyedAuth(aliceSigner);
-    if (committer == BOB) return _keyedAuth(bobSigner);
-    return _keyedAuth(committer);
+  function _authFor(address committer, bytes32, Terms memory, Terms memory) internal view returns (CommitAuth memory) {
+    if (committer == ALICE) return AuthHelper.auth(aliceSigner);
+    if (committer == BOB) return AuthHelper.auth(bobSigner);
+    return AuthHelper.keyedAuth(address(verifierA), committer);
   }
 
   /// @notice field-for-field raw mirror of Omnibus._commitDigest (drift alarm: this
@@ -153,11 +140,7 @@ contract OmnibusTest is TestBase {
     bytes32 domain = keccak256(abi.encode(keccak256('QUIP:Omnibus:commit'), block.chainid, address(omnibus)));
     return keccak256(
       abi.encode(
-        domain,
-        _lock,
-        omnibus.computeTermsDigest(party),
-        omnibus.computeTermsDigest(counterparty),
-        keccak256(signer)
+        domain, _lock, omnibus.computeTermsDigest(party), omnibus.computeTermsDigest(counterparty), keccak256(signer)
       )
     );
   }

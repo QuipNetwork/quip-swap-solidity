@@ -49,7 +49,6 @@ contract DeployOmnibus is Script {
     }
 
     bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner));
-    console.log('Bytecode size:', bytecode.length, 'bytes');
 
     vm.startBroadcast(privateKey);
     address deployed = IDeployer(deployerAddr).deploy(bytecode, SALT);
