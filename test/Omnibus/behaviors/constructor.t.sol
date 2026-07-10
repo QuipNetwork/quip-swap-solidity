@@ -18,4 +18,11 @@ contract Omnibus_constructor is OmnibusTest {
     assertFalse(fresh.verifierActive(address(verifierA)));
     assertFalse(fresh.verifierActive(address(verifierB)));
   }
+
+  function test_constructor_bakesDomainSeparator() public {
+    OmnibusHarness fresh = new OmnibusHarness(ALICE);
+    assertEq(
+      fresh.DOMAIN_SEPARATOR(), keccak256(abi.encode(fresh.COMMIT_DIGEST_TAG(), block.chainid, address(fresh)))
+    );
+  }
 }

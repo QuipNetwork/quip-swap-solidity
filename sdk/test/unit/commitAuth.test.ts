@@ -11,6 +11,7 @@ import {
   assertSignerBlob,
   buildKeyedSigner,
   computeCommitDigest,
+  computeDomainSeparator,
   digestTerms,
 } from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
@@ -36,8 +37,24 @@ function expectCode(fn: () => unknown, code: string): void {
 }
 
 describe('COMMIT_DIGEST_TAG', () => {
-  it('is keccak256 of the v1 domain string', () => {
-    expect(COMMIT_DIGEST_TAG).toBe(keccak256(toBytes('QUIP:Omnibus:commit:v1')))
+  it('is keccak256 of the protocol tag (no version suffix)', () => {
+    expect(COMMIT_DIGEST_TAG).toBe(keccak256(toBytes('QUIP:Omnibus:commit')))
+  })
+})
+
+describe('computeDomainSeparator', () => {
+  it('binds tag, chainId, and address', () => {
+    const sep = computeDomainSeparator(84532n, ACCOUNT)
+    expect(sep).toBe(
+      keccak256(
+        encodeAbiParameters(
+          [{type: 'bytes32'}, {type: 'uint256'}, {type: 'address'}],
+          [COMMIT_DIGEST_TAG, 84532n, ACCOUNT],
+        ),
+      ),
+    )
+    expect(computeDomainSeparator(1n, ACCOUNT)).not.toBe(sep)
+    expect(computeDomainSeparator(84532n, VERIFIER)).not.toBe(sep)
   })
 })
 
@@ -77,26 +94,18 @@ describe('computeCommitDigest', () => {
     const signer = buildKeyedSigner(VERIFIER, KEY32)
     const digest = computeCommitDigest({lock: LOCK, party, counterparty, signer, omnibusAddress: ACCOUNT})
 
+    // the domain is re-derived here INDEPENDENTLY of computeDomainSeparator
+    // so this test still catches drift in either helper
+    const domain = keccak256(
+      encodeAbiParameters(
+        [{type: 'bytes32'}, {type: 'uint256'}, {type: 'address'}],
+        [COMMIT_DIGEST_TAG, party.chainId, ACCOUNT],
+      ),
+    )
     const expected = keccak256(
       encodeAbiParameters(
-        [
-          {type: 'bytes32'},
-          {type: 'uint256'},
-          {type: 'address'},
-          {type: 'bytes32'},
-          {type: 'bytes32'},
-          {type: 'bytes32'},
-          {type: 'bytes32'},
-        ],
-        [
-          COMMIT_DIGEST_TAG,
-          party.chainId,
-          ACCOUNT,
-          LOCK,
-          digestTerms(party),
-          digestTerms(counterparty),
-          keccak256(signer),
-        ],
+        [{type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}],
+        [domain, LOCK, digestTerms(party), digestTerms(counterparty), keccak256(signer)],
       ),
     )
     expect(digest).toBe(expected)

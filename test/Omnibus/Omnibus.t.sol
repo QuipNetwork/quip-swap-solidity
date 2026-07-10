@@ -150,11 +150,10 @@ contract OmnibusTest is TestBase {
     Terms memory counterparty,
     bytes memory signer
   ) internal view returns (bytes32) {
+    bytes32 domain = keccak256(abi.encode(keccak256('QUIP:Omnibus:commit'), block.chainid, address(omnibus)));
     return keccak256(
       abi.encode(
-        keccak256('QUIP:Omnibus:commit:v1'),
-        block.chainid,
-        address(omnibus),
+        domain,
         _lock,
         omnibus.computeTermsDigest(party),
         omnibus.computeTermsDigest(counterparty),

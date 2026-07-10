@@ -123,9 +123,14 @@ interface IOmnibus {
   /// @param active the new activity status
   function setVerifierActivity(address verifier, bool active) external;
 
-  /// @notice the domain tag bound into every commit digest
-  /// @return tag keccak256('QUIP:Omnibus:commit:v1')
+  /// @notice the protocol tag bound into the commit-digest domain separator
+  /// @return tag keccak256('QUIP:Omnibus:commit')
   function COMMIT_DIGEST_TAG() external view returns (bytes32 tag);
+
+  /// @notice the commit-digest domain separator, baked at construction:
+  /// keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)))
+  /// @return separator the domain separator
+  function DOMAIN_SEPARATOR() external view returns (bytes32 separator);
 
   /// @notice computes the digest a committer's identity must sign
   /// @dev pure function of caller-known data; the SDK computes it locally and

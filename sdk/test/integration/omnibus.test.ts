@@ -21,7 +21,7 @@ import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {COMMIT_DIGEST_TAG, buildKeyedSigner, computeCommitDigest} from '../../src/commitAuth.js'
+import {COMMIT_DIGEST_TAG, buildKeyedSigner, computeCommitDigest, computeDomainSeparator} from '../../src/commitAuth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -681,6 +681,15 @@ describe('keyed ERC-7913 commit authorization', () => {
       functionName: 'COMMIT_DIGEST_TAG',
     })
     expect(onChainTag).toBe(COMMIT_DIGEST_TAG)
+  })
+
+  it("the contract's DOMAIN_SEPARATOR equals the SDK computation", async () => {
+    const onChainSeparator = await ctx.publicClient.readContract({
+      address: fixture.omnibus,
+      abi: omnibusAbi,
+      functionName: 'DOMAIN_SEPARATOR',
+    })
+    expect(onChainSeparator).toBe(computeDomainSeparator(BigInt(CHAIN_ID), fixture.omnibus))
   })
 
   it('keyed commit by a third-party sender + keyed counterpart + claim settles both legs', async () => {

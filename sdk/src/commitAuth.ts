@@ -39,12 +39,25 @@ export interface CommitAuth {
 }
 
 /**
- * The domain tag bound into every commit digest —
- * `keccak256('QUIP:Omnibus:commit:v1')`, mirroring
+ * The protocol tag bound into the commit-digest domain separator —
+ * `keccak256('QUIP:Omnibus:commit')`, mirroring
  * `Omnibus.COMMIT_DIGEST_TAG` exactly (asserted against the contract's
  * `COMMIT_DIGEST_TAG()` in the integration suite).
  */
-export const COMMIT_DIGEST_TAG: Hex32 = keccak256(toBytes('QUIP:Omnibus:commit:v1'))
+export const COMMIT_DIGEST_TAG: Hex32 = keccak256(toBytes('QUIP:Omnibus:commit'))
+
+/**
+ * Mirrors `Omnibus.DOMAIN_SEPARATOR` (baked at construction on-chain):
+ * `keccak256(abi.encode(COMMIT_DIGEST_TAG, chainId, omnibusAddress))`.
+ */
+export function computeDomainSeparator(chainId: bigint, omnibusAddress: Address): Hex32 {
+  return keccak256(
+    encodeAbiParameters(
+      [{type: 'bytes32'}, {type: 'uint256'}, {type: 'address'}],
+      [COMMIT_DIGEST_TAG, chainId, omnibusAddress],
+    ),
+  )
+}
 
 /**
  * Builds a keyed ERC-7913 signer blob: `verifier(20 bytes) ‖ key`.
@@ -110,7 +123,7 @@ export interface ComputeCommitDigestArgs {
  *
  * ```solidity
  * keccak256(abi.encode(
- *   COMMIT_DIGEST_TAG, block.chainid, address(this),
+ *   DOMAIN_SEPARATOR, // = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)))
  *   lock, digestTerms(party), digestTerms(counterparty), keccak256(signer)))
  * ```
  *
@@ -130,19 +143,9 @@ export function computeCommitDigest(args: ComputeCommitDigestArgs): Hex32 {
   assertSignerBlob(args.signer)
   return keccak256(
     encodeAbiParameters(
+      [{type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}],
       [
-        {type: 'bytes32'},
-        {type: 'uint256'},
-        {type: 'address'},
-        {type: 'bytes32'},
-        {type: 'bytes32'},
-        {type: 'bytes32'},
-        {type: 'bytes32'},
-      ],
-      [
-        COMMIT_DIGEST_TAG,
-        args.party.chainId,
-        args.omnibusAddress,
+        computeDomainSeparator(args.party.chainId, args.omnibusAddress),
         args.lock,
         digestTerms(args.party),
         digestTerms(args.counterparty),

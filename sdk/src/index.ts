@@ -63,6 +63,7 @@ export {
   COMMIT_DIGEST_TAG,
   buildKeyedSigner,
   assertSignerBlob,
+  computeDomainSeparator,
   computeCommitDigest,
 } from './commitAuth.js'
 export type {CommitAuth, ComputeCommitDigestArgs} from './commitAuth.js'

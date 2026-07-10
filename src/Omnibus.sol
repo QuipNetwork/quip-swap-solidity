@@ -25,7 +25,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   uint256 public constant MAX_FEE = 0.01 ether;
 
   /// @inheritdoc IOmnibus
-  bytes32 public constant COMMIT_DIGEST_TAG = keccak256('QUIP:Omnibus:commit:v1');
+  /// @dev no version suffix: version scoping comes from address(this) in the
+  /// domain — each Omnibus version deploys at a distinct CREATE3 address
+  bytes32 public constant COMMIT_DIGEST_TAG = keccak256('QUIP:Omnibus:commit');
+
+  /// @inheritdoc IOmnibus
+  /// @dev baked once at construction from the deploy-time chainid + address
+  bytes32 public immutable DOMAIN_SEPARATOR;
 
   /// @inheritdoc IOmnibus
   uint256 public commitmentFee;
@@ -48,7 +54,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @notice initializes the contract with an owner; verifiers are activated
   /// post-deploy via setVerifierActivity
   /// @param initialOwner the address that will own the contract
-  constructor(address initialOwner) Ownable(initialOwner) {}
+  constructor(address initialOwner) Ownable(initialOwner) {
+    DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
+  }
 
   /// @notice allows this contract to receive native currency
   receive() external payable {}
@@ -299,8 +307,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @dev raw tagged keccak (no EIP-712): every honest signer in this stack signs raw
   /// 32-byte digests. Binds the FULL context: which swap instance (lock), which side is
   /// being posted (partyTerms), the whole negotiated pairing (counterpartyTerms), the
-  /// declared identity (signerHash), and the replay scope (block.chainid +
-  /// address(this) — do NOT remove; bind less and signatures become liftable)
+  /// declared identity (signerHash), and the replay scope (DOMAIN_SEPARATOR —
+  /// binds tag + chainid + address(this); do NOT remove; bind less and
+  /// signatures become liftable)
   /// @param lock the hashlock identifier
   /// @param partyTerms the committing side's terms digest
   /// @param counterpartyTerms the other side's terms digest
@@ -312,9 +321,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     bytes32 counterpartyTerms,
     bytes32 signerHash
   ) internal view returns (bytes32) {
-    return keccak256(
-      abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this), lock, partyTerms, counterpartyTerms, signerHash)
-    );
+    return keccak256(abi.encode(DOMAIN_SEPARATOR, lock, partyTerms, counterpartyTerms, signerHash));
   }
 
   /// @notice enforces the declared ERC-7913 keyed identity endorsed the digest
