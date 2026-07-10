@@ -4,8 +4,7 @@
  *
  * Design rules:
  * - Accepts EXISTING Viem clients — browser wallets, local private-key
- *   accounts, backends, hardware-wallet transports, and (in production)
- *   clients whose sender is a QuipWallet contract. The SDK never takes
+ *   accounts, backends, and hardware-wallet transports. The SDK never takes
  *   custody of private keys, raw RPC URLs, or a specific wallet impl.
  * - Every write runs the protocol preflights first, then `prepareTx`
  *   (a balance preflight on the bare call value, then node-side gas

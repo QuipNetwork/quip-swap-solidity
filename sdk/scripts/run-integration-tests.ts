@@ -9,8 +9,8 @@
  *    and wait for RPC readiness (see test/helpers/anvil.ts).
  * 3. Run `vitest run test/integration` with the node's RPC URL and chain id
  *    exported via QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID. Each test file
- *    deploys its own fixture (Omnibus with the two-argument constructor,
- *    mocks, harnesses) and
+ *    deploys its own fixture (Omnibus with the one-argument constructor
+ *    (owner), an activated VerifierMock, mocks, harnesses) and
  *    drives block timestamps with evm_setNextBlockTimestamp + mining.
  *    Extra CLI args after `--` are forwarded to vitest (e.g.
  *    `bun run test:integration -- --reporter=verbose`).

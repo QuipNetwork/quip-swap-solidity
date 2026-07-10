@@ -68,7 +68,7 @@ export interface QuipSwapErrorDetails {
   /** Human-readable explanation with remediation guidance. */
   readonly message: string
   /**
-   * The decoded Solidity custom-error name (e.g. `CallerNotQuipWallet`,
+   * The decoded Solidity custom-error name (e.g. `VerifierNotActive`,
    * `WindowViolated`) when the error wraps an on-chain revert and the error
    * was decodable from the Omnibus ABI.
    */
@@ -89,7 +89,7 @@ export interface QuipSwapErrorDetails {
  * } catch (err) {
  *   if (err instanceof QuipSwapError && err.code === 'CONTRACT_REVERT') {
  *     // a contract revert; err.contractErrorName names the Solidity error
- *     // (e.g. 'IncorrectNativeAmountReceived', 'CallerNotQuipWallet')
+ *     // (e.g. 'IncorrectNativeAmountReceived', 'VerifierNotActive')
  *   }
  * }
  * ```
@@ -116,7 +116,7 @@ export class QuipSwapError extends Error implements QuipSwapErrorDetails {
  * Viem decodes custom errors against the contract ABI during
  * `simulateContract` / `readContract`; this helper walks the error chain
  * (structured decoding — no parsing of human-readable strings) and returns
- * e.g. `"CallerNotQuipWallet"` or `"WindowViolated"`.
+ * e.g. `"VerifierNotActive"` or `"WindowViolated"`.
  *
  * @param error - Any error thrown by a Viem contract action.
  * @returns The custom error name, or `undefined` when the revert could not
