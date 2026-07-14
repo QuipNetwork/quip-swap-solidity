@@ -88,6 +88,7 @@ function toAssetType(value: number): AssetType {
 /** Shape of the Terms tuple as viem decodes it from the ABI. */
 interface DecodedTermsTuple {
   readonly chainId: bigint
+  readonly sender: Address
   readonly reclaimRecipient: Address
   readonly recipient: Address
   readonly commitmentDeadline: bigint
@@ -105,6 +106,7 @@ interface DecodedTermsTuple {
 function toTerms(decoded: DecodedTermsTuple): Terms {
   return Object.freeze({
     chainId: decoded.chainId,
+    sender: decoded.sender,
     reclaimRecipient: decoded.reclaimRecipient,
     recipient: decoded.recipient,
     commitmentDeadline: decoded.commitmentDeadline,

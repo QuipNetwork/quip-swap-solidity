@@ -45,6 +45,10 @@ describe('validateTerms', () => {
     )
   })
 
+  it('rejects zero sender (contract: ZeroAddressSender)', () => {
+    expect(codeOf(() => validateTerms(withOverrides(valid, {sender: zeroAddress})))).toBe('ZERO_ADDRESS_SENDER')
+  })
+
   it('rejects zero recipient (contract: ZeroAddressRecipient)', () => {
     expect(codeOf(() => validateTerms(withOverrides(valid, {recipient: zeroAddress})))).toBe('ZERO_ADDRESS_RECIPIENT')
   })
@@ -99,6 +103,7 @@ describe('createTerms', () => {
     const assets = [nativeAsset(1n)]
     const terms = createTerms({
       chainId: CHAIN_A,
+      sender: ALICE,
       reclaimRecipient: ALICE,
       recipient: BOB,
       commitmentDeadline: 100n,
@@ -118,6 +123,7 @@ describe('createTerms', () => {
       codeOf(() =>
         createTerms({
           chainId: 0n,
+          sender: ALICE,
           reclaimRecipient: ALICE,
           recipient: BOB,
           commitmentDeadline: 100n,

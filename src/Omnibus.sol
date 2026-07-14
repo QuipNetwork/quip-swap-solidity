@@ -88,12 +88,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     Terms calldata counterparty,
     CommitAuth calldata auth
   ) external payable {
-    // commit is PERMISSIONLESS: the identity in `auth` authenticates the payload,
-    // msg.sender funds the party's leg + fee (the sender FUNDS, the identity AUTHORIZES)
+    // commit is sender-bound: party.sender must be the transaction sender, and
+    // the identity in `auth` authenticates the payload
     // validate both terms (only party.chainId must match current chain)
     party.enforceChainId(block.chainid);
     party.validateTerms();
     counterparty.validateTerms();
+    if (msg.sender != party.sender) revert InvalidCommitSender();
     // term pairing validity ensures deadline ordering
     TermsLib.validateTermPairing(party, counterparty);
 

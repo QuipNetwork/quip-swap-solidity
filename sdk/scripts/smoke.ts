@@ -61,13 +61,14 @@ const repoRoot = join(sdkRoot, '..')
 
 const CHAIN_A_ID = 31_337
 const CHAIN_B_ID = 31_338
+const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as Hex
 
 /**
  * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
  * (the address doubles as the key; the mock ignores signatures, so '0x').
  */
 function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
+  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x', walletBinding: ZERO_BYTES32}
 }
 
 // distinct, checksummed recipients per flow/role so balance deltas are
@@ -214,9 +215,17 @@ function buildSchedule(base: bigint): Schedule {
   }
 }
 
-function makeAliceTerms(chainId: number, s: Schedule, recipient: Address, reclaim: Address, assets: Terms['assets']): Terms {
+function makeAliceTerms(
+  chainId: number,
+  sender: Address,
+  s: Schedule,
+  recipient: Address,
+  reclaim: Address,
+  assets: Terms['assets'],
+): Terms {
   return {
     chainId: BigInt(chainId),
+    sender,
     reclaimRecipient: reclaim,
     recipient,
     commitmentDeadline: s.aliceCommit,
@@ -226,9 +235,17 @@ function makeAliceTerms(chainId: number, s: Schedule, recipient: Address, reclai
   }
 }
 
-function makeBobTerms(chainId: number, s: Schedule, recipient: Address, reclaim: Address, assets: Terms['assets']): Terms {
+function makeBobTerms(
+  chainId: number,
+  sender: Address,
+  s: Schedule,
+  recipient: Address,
+  reclaim: Address,
+  assets: Terms['assets'],
+): Terms {
   return {
     chainId: BigInt(chainId),
+    sender,
     reclaimRecipient: reclaim,
     recipient,
     commitmentDeadline: s.bobCommit,
@@ -259,8 +276,22 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
   const s = buildSchedule(base)
   const NATIVE = ONE_ETH
   const TOKENS = TOKEN(500n)
-  const aliceTerms = makeAliceTerms(CHAIN_A_ID, s, SC_ALICE_RECIPIENT, SC_ALICE_RECLAIM, [nativeAsset(NATIVE)])
-  const bobTerms = makeBobTerms(CHAIN_A_ID, s, SC_BOB_RECIPIENT, SC_BOB_RECLAIM, [erc20Asset(fixtureA.erc20, TOKENS)])
+  const aliceTerms = makeAliceTerms(
+    CHAIN_A_ID,
+    A.alice.address,
+    s,
+    SC_ALICE_RECIPIENT,
+    SC_ALICE_RECLAIM,
+    [nativeAsset(NATIVE)],
+  )
+  const bobTerms = makeBobTerms(
+    CHAIN_A_ID,
+    A.bob.address,
+    s,
+    SC_BOB_RECIPIENT,
+    SC_BOB_RECLAIM,
+    [erc20Asset(fixtureA.erc20, TOKENS)],
+  )
 
   const {secret, lock} = generateSecret()
 
@@ -388,8 +419,22 @@ async function runCrossChain(A: ChainContext, fixtureA: Fixture, B: ChainContext
   const s = buildSchedule(base)
   const NATIVE = ONE_ETH
   const TOKENS = TOKEN(750n)
-  const aliceTerms = makeAliceTerms(CHAIN_A_ID, s, XC_ALICE_RECIPIENT, XC_ALICE_RECLAIM, [nativeAsset(NATIVE)])
-  const bobTerms = makeBobTerms(CHAIN_B_ID, s, XC_BOB_RECIPIENT, XC_BOB_RECLAIM, [erc20Asset(fixtureB.erc20, TOKENS)])
+  const aliceTerms = makeAliceTerms(
+    CHAIN_A_ID,
+    A.alice.address,
+    s,
+    XC_ALICE_RECIPIENT,
+    XC_ALICE_RECLAIM,
+    [nativeAsset(NATIVE)],
+  )
+  const bobTerms = makeBobTerms(
+    CHAIN_B_ID,
+    B.bob.address,
+    s,
+    XC_BOB_RECIPIENT,
+    XC_BOB_RECLAIM,
+    [erc20Asset(fixtureB.erc20, TOKENS)],
+  )
 
   const {secret, lock} = generateSecret()
 

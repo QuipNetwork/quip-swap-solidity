@@ -79,7 +79,7 @@ export interface ChainContext {
   readonly alice: TestActor
   /** Actor 2 — the standard taker. */
   readonly bob: TestActor
-  /** Actor 3 — a third-party actor (permissionless-path tests). */
+  /** Actor 3 — a third-party actor used for outsider-path tests. */
   readonly charlie: TestActor
   /** Deploys a contract and returns its address. */
   deploy(artifact: FoundryArtifact, args?: readonly unknown[]): Promise<Address>
@@ -168,8 +168,9 @@ export interface Fixture {
 }
 
 /**
- * Deploys the standard fixture onto a chain. Commit is permissionless, so
- * no wallet registry exists — any funded account may commit.
+ * Deploys the standard fixture onto a chain. Commit is sender-bound, so
+ * any funded account may commit only for terms that explicitly name it as
+ * `sender`.
  *
  * @param ctx - The chain context from {@link connectChain}.
  * @returns The deployed addresses.

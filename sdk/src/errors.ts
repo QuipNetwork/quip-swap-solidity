@@ -85,7 +85,7 @@ export interface QuipSwapErrorDetails {
  * @example
  * ```ts
  * try {
- *   await client.commit({lock, party, counterparty})
+ *   await client.commit({lock, party, counterparty, auth})
  * } catch (err) {
  *   if (err instanceof QuipSwapError && err.code === 'CONTRACT_REVERT') {
  *     // a contract revert; err.contractErrorName names the Solidity error

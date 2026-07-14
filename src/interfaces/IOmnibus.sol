@@ -84,6 +84,9 @@ interface IOmnibus {
   /// transaction-scoped attestation for (msg.sender, keyHash, envelopeHash)
   error AttestationNotFound();
 
+  /// @notice thrown when msg.sender does not match the committing side's declared sender
+  error InvalidCommitSender();
+
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
   /// @param newFee the new fee
@@ -178,12 +181,13 @@ interface IOmnibus {
   ) external view returns (bytes32 digest);
 
   /// @notice commits assets and collateral to a swap
-  /// @dev permissionless: any sender may commit; the ERC-7913 keyed identity in
-  /// `auth` AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. With
-  /// a non-empty auth.signature it is verified over commitDigest by the declared
-  /// verifier; with an empty auth.signature the declared verifier must hold a
-  /// same-transaction attestation for the composite envelope (see CommitAuth —
-  /// on that route msg.sender must be the attesting wallet)
+  /// @dev sender-bound: msg.sender must equal party.sender. The ERC-7913 keyed
+  /// identity in `auth` AUTHENTICATES the payload while msg.sender submits and
+  /// funds the leg + fee. With a non-empty auth.signature it is verified over
+  /// commitDigest by the declared verifier; with an empty auth.signature the
+  /// declared verifier must hold a same-transaction attestation for the
+  /// composite envelope (see CommitAuth — on that route msg.sender must also be
+  /// the attesting wallet)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

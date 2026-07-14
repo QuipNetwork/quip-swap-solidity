@@ -68,7 +68,7 @@ contract Omnibus_Reentrancy is Test {
   bytes32 public lock;
 
   function setUp() public {
-    // commit is permissionless; each caller authenticates with its own keyed
+    // commit is sender-bound; each caller authenticates with its own keyed
     // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
     omnibus = new OmnibusHarness(address(this));
@@ -85,6 +85,7 @@ contract Omnibus_Reentrancy is Test {
   function _aliceTerms(address reclaimRecipient, address recipient) internal view returns (Terms memory) {
     return TermsHelper.makeTerms(
       block.chainid,
+      ALICE,
       reclaimRecipient,
       recipient,
       A_COMMIT,

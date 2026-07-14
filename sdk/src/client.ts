@@ -35,6 +35,8 @@ import {LockState} from './types.js'
 import type {Hex32, Terms} from './types.js'
 import {validateClaimWindow, validateCommitWindow, validateReclaimWindow} from './windows.js'
 
+const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as Hex32
+
 /** Arguments for {@link createOmnibusClient}. */
 export interface CreateOmnibusClientArgs {
   /** The deployed Omnibus contract address (see {@link resolveDeployment}). */
@@ -43,10 +45,10 @@ export interface CreateOmnibusClientArgs {
   readonly publicClient: PublicClient
   /**
    * A Viem wallet client for writes. Optional: a read-only client works
-   * without one, and writes then fail with `MISSING_WALLET_CLIENT`. All
-   * writes are permissionless — but note the FUNDING MODEL: the commit
-   * SENDER funds the party's leg + fee; the identity in `auth` only
-   * authorizes.
+   * without one, and writes then fail with `MISSING_WALLET_CLIENT`.
+   * `claim`/`reclaim` are permissionless, but `commit` is sender-bound:
+   * the wallet account must match `party.sender`, and that sender funds
+   * the party's leg + fee while the identity in `auth` only authorizes.
    */
   readonly walletClient?: WalletClient
 }
@@ -240,35 +242,38 @@ export interface OmnibusClient {
   // ---- writes (preflight → estimate+buffer → write; hash returned, NOT finality) ----
 
   /**
-   * Commits a side of a swap. PERMISSIONLESS and payable — the contract
-   * authenticates the PAYLOAD (`args.auth`), not the caller.
+   * Commits a side of a swap. Sender-bound and payable — the contract
+   * authenticates the PAYLOAD (`args.auth`) and also requires
+   * `msg.sender == party.sender`.
    *
    * FUNDING MODEL: the SENDER (the wallet client's account) funds the
    * party's leg + fee — assets are pulled from `msg.sender` and `msg.value`
-   * must cover `totalNative(party) + commitmentFee`. The identity in
-   * Funding is independent of authorization: the identity in `auth.signer`
-   * only endorses the payload, it never pays.
+   * must cover `totalNative(party) + commitmentFee`, and the connected
+   * wallet must match `party.sender`. Funding is independent of
+   * authorization: the identity in `auth.signer` only endorses the payload,
+   * it never pays.
    *
    * Preflight (in order, all before any transaction exists):
    * 1. Both terms structurally valid; 2. pairing strictly interleaves;
    * 3. `party.chainId` matches the connected chain (`counterparty.chainId`
-   *    may differ — cross-chain); 4. `auth.signer` is a well-formed blob
+   *    may differ — cross-chain); 4. the connected wallet equals
+   *    `party.sender`; 5. `auth.signer` is a well-formed blob
    *    (more than 20 bytes — the contract reverts `MalformedSigner` at 20
    *    or fewer; signature VALIDITY is left to the contract's verifier call);
-   *    5. the chain's current timestamp is inside the committing side's
+   *    6. the chain's current timestamp is inside the committing side's
    *    commit window — proposer `[0, party.commitmentDeadline)`,
    *    taker `[counterparty.commitmentDeadline, party.commitmentDeadline)`
    *    (the taker's window OPENS only when the proposer's deadline
-   *    elapses); 6. unless `verifyOnChainState` is disabled, the lock's
+   *    elapses); 7. unless `verifyOnChainState` is disabled, the lock's
    *    on-chain state permits this commit (see
-   *    {@link CommitArgs.verifyOnChainState}); 7. the fee is re-read;
-   *    8. `msg.value` is computed as exactly
+   *    {@link CommitArgs.verifyOnChainState}); 8. the fee is re-read;
+   *    9. `msg.value` is computed as exactly
    *    `totalNative(party) + commitmentFee` — the contract checks strict
    *    equality (`IncorrectNativeAmountReceived`), so over- and
-   *    underpayment both revert; 9. the balance preflight runs (bare
-   *    `msg.value` only — gas funding is not preflighted); 10. gas is
+   *    underpayment both revert; 10. the balance preflight runs (bare
+   *    `msg.value` only — gas funding is not preflighted); 11. gas is
    *    estimated node-side (a would-be revert surfaces here, decoded) and
-   *    buffered by the safety multiplier; 11. submit.
+   *    buffered by the safety multiplier; 12. submit.
    *
    * Unused gas is refunded, so the default 1.2x buffer costs nothing at
    * execution; it exists to prevent out-of-gas failures from state drift
@@ -307,7 +312,12 @@ export interface OmnibusClient {
    * ```ts
    * // ERC-7913 keyed: the identity signed computeCommitDigest(...) off-band
    * const signer = buildKeyedSigner(verifierAddress, key)
-   * const hash = await client.commit({lock, party, counterparty, auth: {signer, signature}})
+   * const hash = await client.commit({
+   *   lock,
+   *   party,
+   *   counterparty,
+   *   auth: {signer, signature, walletBinding: `0x${'00'.repeat(32)}`},
+   * })
    * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
@@ -385,7 +395,7 @@ export interface OmnibusClient {
    * @see waitForOmnibusReceipt
    * @example
    * ```ts
-   * const hash = await client.commit({lock, party, counterparty})
+   * const hash = await client.commit({lock, party, counterparty, auth})
    * const {commitments} = await client.waitForReceipt(hash, {confirmations: 3})
    * ```
    */
@@ -399,6 +409,7 @@ export interface OmnibusClient {
 function toAbiTerms(terms: Terms) {
   return {
     chainId: terms.chainId,
+    sender: terms.sender,
     reclaimRecipient: terms.reclaimRecipient,
     recipient: terms.recipient,
     commitmentDeadline: terms.commitmentDeadline,
@@ -771,15 +782,26 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         })
       }
 
-      // 4. signer-blob shape preflight — the contract reverts MalformedSigner
+      // 4. sender binding
+      if (party.sender.toLowerCase() !== sender.toLowerCase()) {
+        throw new QuipSwapError({
+          code: 'INVALID_COMMIT_SENDER',
+          message:
+            `Connected wallet ${sender} does not match party.sender ${party.sender}; commit requires the ` +
+            "submitting account to equal the terms' declared sender (contract: InvalidCommitSender)",
+          details: {walletSender: sender, partySender: party.sender},
+        })
+      }
+
+      // 5. signer-blob shape preflight — the contract reverts MalformedSigner
       // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
       // ERC-7913 verifier call: the
       // SDK cannot know the route's semantics off-chain, and gas estimation
       // surfaces a would-be InvalidCommitSignature as a decoded revert.
-      // NOTE the funding model: `sender` (not auth.signer) funds the leg + fee.
+      // NOTE the funding model: `sender` must equal party.sender and funds the leg + fee.
       assertSignerBlob(auth.signer)
 
-      // 5. role-aware commit window; surfaces "taker too early" clearly
+      // 6. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()
       try {
         validateCommitWindow(party, counterparty, timestamp)
@@ -803,25 +825,30 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         throw error
       }
 
-      // 6. lock-state preflight (Spent/Committed cannot accept a commit;
+      // 7. lock-state preflight (Spent/Committed cannot accept a commit;
       // Free requires matching termsHash and an un-posted party side)
       if (verifyOnChainState) {
         await verifyCommitState(lock, party, counterparty)
       }
 
-      // 7-8. SECURITY: re-read the fee immediately before estimating — the
+      // 8-9. SECURITY: re-read the fee immediately before estimating — the
       // owner can change it, and the contract checks msg.value for EXACT
       // equality (IncorrectNativeAmountReceived); a stale fee bricks the tx
       // in either direction (under- AND overpayment revert)
       const fee = await read<bigint>('commitmentFee')
       const value = totalNative(party) + fee
 
-      // 9-11. balance preflight + estimate (revert check) + buffer + submit
+      // 10-12. balance preflight + estimate (revert check) + buffer + submit
       return submitWrite({
         wallet,
         sender,
         functionName: 'commit',
-        args: [lock, toAbiTerms(party), toAbiTerms(counterparty), {signer: auth.signer, signature: auth.signature}],
+        args: [
+          lock,
+          toAbiTerms(party),
+          toAbiTerms(counterparty),
+          {signer: auth.signer, signature: auth.signature, walletBinding: auth.walletBinding ?? ZERO_BYTES32},
+        ],
         value,
         opts,
         context: 'commit',

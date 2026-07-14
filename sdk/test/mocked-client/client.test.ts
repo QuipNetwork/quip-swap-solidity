@@ -49,10 +49,11 @@ const COMMIT_DIGEST = `0x${'d1'.repeat(32)}` as const
 const GAS_ESTIMATE = 100_000n
 const BUFFERED_GAS = 120_000n // estimate * default 1.2 multiplier
 
-const alice = aliceTerms(CHAIN_A) // proposer (local on chain A)
-const bob = bobTerms(CHAIN_A) // taker, same chain
+const alice = {...aliceTerms(CHAIN_A), sender: SENDER} // proposer (local on chain A)
+const bob = {...bobTerms(CHAIN_A), sender: SENDER} // taker, same chain
 /** Keyed ERC-7913 auth for the mocked wallet's sending account. */
-const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'}
+const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as const
+const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x', walletBinding: ZERO_BYTES32}
 
 /** A recorded call log shared by the mock public and wallet clients. */
 interface CallLog {
@@ -168,6 +169,7 @@ async function codeOf(promise: Promise<unknown>): Promise<string> {
 function expectAbiTerms(actual: unknown, expected: typeof alice): void {
   expect(actual).toEqual({
     chainId: expected.chainId,
+    sender: expected.sender,
     reclaimRecipient: expected.reclaimRecipient,
     recipient: expected.recipient,
     commitmentDeadline: expected.commitmentDeadline,
@@ -202,7 +204,7 @@ describe('commit orchestration', () => {
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
     // the CommitAuth struct rides along as the fourth argument
-    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
+    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x', walletBinding: ZERO_BYTES32})
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
     // the write carries the same function/args/value

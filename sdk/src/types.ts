@@ -104,6 +104,12 @@ export interface Terms {
    */
   readonly chainId: bigint
   /**
+   * The address allowed to submit and fund THIS side's commit. `commit`
+   * enforces `msg.sender == sender`, so this field is part of both the
+   * terms digest and the runtime authorization boundary. Must be non-zero.
+   */
+  readonly sender: Address
+  /**
    * The address that receives this side's own assets back if the swap is
    * reclaimed instead of claimed. Must be non-zero.
    */

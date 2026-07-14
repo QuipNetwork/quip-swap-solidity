@@ -29,6 +29,7 @@ contract Omnibus_commit is OmnibusTest {
     return _makeTerms(
       block.chainid,
       reclaimRecipient,
+      reclaimRecipient,
       recipient,
       ALICE_COMMIT_DEADLINE,
       ALICE_CLAIM_DEADLINE,
@@ -199,8 +200,9 @@ contract Omnibus_commit is OmnibusTest {
     assertTrue(omnibus.posted(lock, bobDigest));
   }
 
-  function test_commit_anyoneCanCommitOwnSide() public {
-    // commit is permissionless: any caller can post a side; assets are pulled from the caller
+  function test_commit_anyActorCanCommitItsOwnDeclaredSide() public {
+    // sender binding still permits any actor to use the contract, as long as the
+    // terms declare that same actor as the commit sender
     Terms memory charlie = _proposerSide(CHARLIE, CHARLIE, _makeNativeAssets(DEFAULT_AMOUNT));
     Terms memory bob = _bobTerms();
 
@@ -242,8 +244,7 @@ contract Omnibus_commit is OmnibusTest {
 
   // ============ Access Control ============
 
-  function test_commit_permissionless_anySenderCanCommit() public {
-    // commit is permissionless: any funded sender may post a side with its own keyed identity
+  function test_commit_revertsWhen_senderDoesNotMatchDeclaredSender() public {
     address anySender = makeAddr('anySender');
     vm.deal(anySender, DEFAULT_AMOUNT);
 
@@ -251,36 +252,39 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.InvalidCommitSender.selector);
     vm.prank(anySender);
     omnibus.commit{value: _totalNativeForCommit(alice)}(
       lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), anySender)
     );
-
-    _assertLockState(lock, LockState.Free);
   }
 
   // ============ Revert Cases ============
 
-  function test_commit_pullsFromCaller_notNamedParty() public {
-    // commit pulls assets from msg.sender, NOT from the side's named reclaimRecipient.
-    // Any caller (Charlie) naming a victim (Alice) on an ERC20 side cannot
-    // drain Alice's standing approval: the pull debits Charlie, leaving Alice untouched.
+  function test_commit_revertsWhen_senderAttemptsToPostAnotherPartysTerms() public {
+    // sender binding blocks "I will post Alice's side using my funds" traces
+    // before any asset pull occurs.
     Terms memory victim = _proposerSide(ALICE, ALICE_RECIPIENT, _makeERC20Assets(DEFAULT_AMOUNT));
     Terms memory attacker = _bobTermsOn(OTHER_CHAIN_ID, _makeERC20Assets(DEFAULT_AMOUNT));
 
     uint256 aliceBefore = mockERC20.balanceOf(ALICE);
     uint256 charlieBefore = mockERC20.balanceOf(CHARLIE);
 
-    _commitFor(CHARLIE, lock, victim, attacker);
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.InvalidCommitSender.selector);
+    vm.prank(CHARLIE);
+    omnibus.commit{value: _totalNativeForCommit(victim)}(
+      lock, victim, attacker, AuthHelper.keyedAuth(address(verifierA), CHARLIE)
+    );
 
-    // Alice's approval was untouched; Charlie funded the escrow
     assertEq(mockERC20.balanceOf(ALICE), aliceBefore);
-    assertEq(charlieBefore - mockERC20.balanceOf(CHARLIE), DEFAULT_AMOUNT);
+    assertEq(mockERC20.balanceOf(CHARLIE), charlieBefore);
   }
 
   function test_commit_revertsWhen_partyChainIdMismatch() public {
     Terms memory alice = _makeTerms(
       OTHER_CHAIN_ID, // Wrong chain
+      ALICE,
       ALICE,
       ALICE_RECIPIENT,
       ALICE_COMMIT_DEADLINE,
@@ -722,7 +726,7 @@ contract Omnibus_commit is OmnibusTest {
   // ============ Commit authorization: wiring + digest binding ============
   // The auth guard's own verdicts are unit-tested in _enforceCommitAuth.t.sol;
   // these prove commit WIRES the guard in, binds the digest to calldata, and
-  // implements the permissionless funding model.
+  // still enforces sender binding around both auth routes.
 
   /// @dev commit alice's (native-asset) side as `sender` with explicit auth, inside
   /// the proposer window with the exact required value
@@ -823,7 +827,7 @@ contract Omnibus_commit is OmnibusTest {
     // has-code changes nothing (ERC-1271 removed): a contract's bare
     // 20-byte address is malformed like any other
     _expectCommitAliceSideRevert(
-      CHARLIE,
+      ALICE,
       CommitAuth({signer: abi.encodePacked(address(verifierA)), signature: 'sig', walletBinding: bytes32(0)}),
       abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
@@ -899,11 +903,10 @@ contract Omnibus_commit is OmnibusTest {
     );
   }
 
-  function test_commit_keyed_relayedByAnySender() public {
-    // Alice's keyed identity endorses; CHARLIE submits and FUNDS (sender pays,
-    // identity authorizes)
-    _commitAliceSideAs(CHARLIE, AuthHelper.auth(aliceSigner));
-    _assertLockState(lock, LockState.Free);
+  function test_commit_keyed_revertsWhen_senderDiffersFromTermsSender() public {
+    _expectCommitAliceSideRevert(
+      CHARLIE, AuthHelper.auth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSender.selector)
+    );
   }
 
   // ============ Digest exactness: tampered context is rejected ============
@@ -928,7 +931,7 @@ contract Omnibus_commit is OmnibusTest {
   ) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.InvalidCommitSignature.selector);
-    vm.prank(CHARLIE);
+    vm.prank(party.sender);
     omnibus.commit{value: _totalNativeForCommit(party)}(_lock, party, cp, auth);
   }
 
@@ -958,7 +961,7 @@ contract Omnibus_commit is OmnibusTest {
     _mockVerifierAcceptsOnly(bytes('other-key'), _aliceDigestFor(aliceSigner), bytes('envelope'));
 
     _expectCommitAliceSideRevert(
-      CHARLIE,
+      ALICE,
       CommitAuth({signer: swappedSigner, signature: bytes('envelope'), walletBinding: bytes32(0)}),
       abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
@@ -1032,11 +1035,10 @@ contract Omnibus_commit is OmnibusTest {
   }
 
   function test_commit_attested_revertsWhen_senderIsNotAttestingAccount() public {
-    // the attestation names ALICE as account: CHARLIE cannot spend it even with
-    // the identical auth — on this route the permissionless-sender model
-    // deliberately collapses to sender == attesting wallet
+    // the attestation names ALICE as account, and the terms also bind sender to
+    // ALICE, so CHARLIE is rejected before auth lookup.
     CommitAuth memory auth = _attestAliceSide();
-    _expectCommitAliceSideRevert(CHARLIE, auth, abi.encodePacked(IOmnibus.AttestationNotFound.selector));
+    _expectCommitAliceSideRevert(CHARLIE, auth, abi.encodePacked(IOmnibus.InvalidCommitSender.selector));
   }
 
   function test_commit_attested_revertsWhen_payloadTampered() public {
@@ -1079,44 +1081,21 @@ contract Omnibus_commit is OmnibusTest {
     _assertEventEmitted(logs, IOmnibus.Commitment.selector, lock);
   }
 
-  // ============ Soft-guard semantics (a decision, not an accident) ============
+  // ============ Sender-bound semantics ============
 
-  function test_commit_softGuard_thirdPartyPostsOtherSideWithOwnIdentityAndFunds() public {
-    // Alice posts her side (keyed). A THIRD PARTY (Charlie) then posts BOB's side
-    // with his OWN keyed identity and OWN funds: the contract never enforces WHICH
-    // identity posts a side — economically a donation, since recipients are
-    // terms-pinned and claim stays secret-gated
+  function test_commit_senderBinding_blocksThirdPartyPostingOtherSide() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
     _commitFor(ALICE, lock, alice, bob);
     _assertLockState(lock, LockState.Free);
 
-    uint256 charlieErc20Before = mockERC20.balanceOf(CHARLIE);
-    uint256 bobErc20Before = mockERC20.balanceOf(BOB);
-    uint256 omnibusErc20Before = mockERC20.balanceOf(address(omnibus));
-
     vm.warp(AT_TAKER_COMMIT);
+    vm.expectRevert(IOmnibus.InvalidCommitSender.selector);
     vm.prank(CHARLIE);
     omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), CHARLIE));
-    _assertLockState(lock, LockState.Committed);
-
-    // the SENDER funded the leg; the side's named party paid nothing
-    assertEq(charlieErc20Before - mockERC20.balanceOf(CHARLIE), DEFAULT_AMOUNT);
-    assertEq(mockERC20.balanceOf(BOB), bobErc20Before);
-    assertEq(mockERC20.balanceOf(address(omnibus)) - omnibusErc20Before, DEFAULT_AMOUNT);
-
-    // the swap still settles to the TERMS-pinned recipients
-    _warpToProposerClaim();
-    vm.prank(ALICE);
-    omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
-    assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
-    assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
   }
 
-  function test_commit_fundingModel_arbitrarySenderFundsKeyedIdentityLeg() public {
-    // an arbitrary unrelated EOA sender submits a commit carrying Alice's KEYED
-    // identity: succeeds, and the SENDER (not the identity) funds the leg + fee
+  function test_commit_senderBinding_blocksArbitraryRelayerFundingAnotherSendersLeg() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
     address relayer = makeAddr('relayer');
@@ -1126,11 +1105,8 @@ contract Omnibus_commit is OmnibusTest {
     vm.deal(relayer, required);
 
     vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(IOmnibus.InvalidCommitSender.selector);
     vm.prank(relayer);
     omnibus.commit{value: required}(lock, alice, bob, AuthHelper.auth(aliceSigner));
-
-    _assertLockState(lock, LockState.Free);
-    assertEq(relayer.balance, 0); // relayer paid everything
-    assertEq(omnibus.accruedFees(), fee);
   }
 }

@@ -27,6 +27,7 @@ describe('digestTerms', () => {
   it('every one of the seven Terms fields affects the digest', () => {
     const variants: Partial<Terms>[] = [
       {chainId: base.chainId + 1n},
+      {sender: BOB},
       {reclaimRecipient: BOB},
       {recipient: BOB},
       {commitmentDeadline: base.commitmentDeadline + 1n},

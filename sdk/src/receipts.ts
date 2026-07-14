@@ -83,7 +83,7 @@ export interface OmnibusReceipt {
  * @example
  * ```ts
  * // prefer client.waitForReceipt; standalone form must pass the address:
- * const hash = await client.commit({lock, party, counterparty})
+ * const hash = await client.commit({lock, party, counterparty, auth})
  * const {commitments} = await waitForOmnibusReceipt(publicClient, hash, {
  *   address: omnibusAddress,
  *   confirmations: 3,

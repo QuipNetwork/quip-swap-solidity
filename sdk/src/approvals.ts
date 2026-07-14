@@ -2,9 +2,9 @@
  * Approval inspection and planning for non-native assets.
  *
  * The committer is `msg.sender` of the commit transaction — commit is
- * PERMISSIONLESS, so this is any account (the sender FUNDS the leg; the
- * identity in CommitAuth only authorizes). Assets must belong to that sender
- * and approvals must be issued BY that sender, so every check here asks:
+ * sender-bound, so this must equal `party.sender` (the sender FUNDS the leg;
+ * the identity in CommitAuth only authorizes). Assets must belong to that
+ * sender and approvals must be issued BY that sender, so every check here asks:
  * "can the Omnibus contract pull this asset from the committing account?"
  *
  * Fee-on-transfer caveat: `Omnibus.commit` reconciles received balances

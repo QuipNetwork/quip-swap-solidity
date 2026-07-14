@@ -30,6 +30,8 @@ struct Asset {
 struct Terms {
   /// @notice the chain where the assets of these terms are held
   uint256 chainId;
+  /// @notice the address allowed to submit and fund this side's commit
+  address sender;
   /// @notice address which will receive committed assets upon reclaim
   address reclaimRecipient;
   /// @notice the address that receives the counterparty's assets
@@ -87,6 +89,9 @@ library TermsLib {
   /// @notice thrown when either recipient or reclaimRecipient is the zero address
   error ZeroAddressRecipient();
 
+  /// @notice thrown when the commit sender is the zero address
+  error ZeroAddressSender();
+
   /// @notice thrown when a window's bounds are degenerate (lower >= upper)
   error InvalidRange();
 
@@ -99,6 +104,7 @@ library TermsLib {
     digest = EfficientHashLib.hash(
       abi.encode(
         terms.chainId,
+        terms.sender,
         terms.reclaimRecipient,
         terms.recipient,
         terms.commitmentDeadline,
@@ -166,6 +172,7 @@ library TermsLib {
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal pure {
     if (terms.assets.length == 0) revert EmptyAssets();
+    if (terms.sender == address(0)) revert ZeroAddressSender();
     if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
       revert ZeroAddressRecipient();
     }
@@ -342,4 +349,3 @@ library TermsLib {
     partyProposed = party.commitmentDeadline < counterparty.commitmentDeadline;
   }
 }
-

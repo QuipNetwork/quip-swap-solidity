@@ -214,7 +214,7 @@ export interface RemoteCommitmentStatus {
  * @example
  * ```ts
  * const status = await verifyRemoteCommitment(chainAClient, lock, aliceTerms, bobTerms)
- * if (status.committed) await chainBClient.commit({lock, party: bobTerms, counterparty: aliceTerms})
+ * if (status.committed) await chainBClient.commit({lock, party: bobTerms, counterparty: aliceTerms, auth})
  * ```
  */
 export async function verifyRemoteCommitment(

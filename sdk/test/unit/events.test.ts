@@ -36,6 +36,7 @@ describe('decodeCommitmentEvents (new event shape)', () => {
   function checksummedTerms(party: ReturnType<typeof aliceTerms>) {
     return {
       ...party,
+      sender: getAddress(party.sender),
       reclaimRecipient: getAddress(party.reclaimRecipient),
       recipient: getAddress(party.recipient),
       assets: party.assets.map(a => ({...a, target: getAddress(a.target)})),

@@ -68,7 +68,7 @@ contract Omnibus_AttackScenarios is Test {
   // ============ Setup ============
 
   function setUp() public virtual {
-    // commit is permissionless; each committer authenticates with its own keyed
+    // commit is sender-bound; each committer authenticates with its own keyed
     // ERC-7913 identity through a shared accept-all mock verifier
     verifier = new VerifierMock();
     omnibus = new OmnibusHarness(address(this));

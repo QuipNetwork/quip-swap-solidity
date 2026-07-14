@@ -157,13 +157,13 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 
 ### Commit authorization (`auth`) and the funding model
 
-`commit` is **permissionless** — the contract authenticates the PAYLOAD, not the caller. Every commit carries a `CommitAuth {signer, signature}`:
+`commit` is **sender-bound** — the contract authenticates the payload and also requires the caller to match `party.sender`. Every commit carries a `CommitAuth {signer, signature}`:
 
 - **ERC-7913 keyed**: `auth.signer = buildKeyedSigner(verifierAddress, key)`; the verifier must be active on the contract (`isVerifierActive`). The identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})`; the `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**. Blobs of 20 bytes or fewer (including bare addresses) revert `MalformedSigner`.
 
-The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a relayer cannot tamper with terms in flight. It does NOT gate which identity may post a side — a client that requires the counterparty's agreed identity checks the `signer` field of the `Commitment` event off-chain before revealing the secret / committing the second leg.
+The signature is a **payload-authentication guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a third party cannot tamper with terms in flight. Posting authority is separate: `msg.sender` must equal `party.sender`, and a client that requires a specific counterparty identity should still check the `signer` field of the `Commitment` event off-chain before revealing the secret or committing the second leg.
 
-> **FUNDING MODEL — read this twice.** The transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. "Relayed" therefore means "the sender pays the party's leg" — a relayer submitting someone else's signed commit is donating the escrow unless it is compensated out-of-band.
+> **FUNDING MODEL — read this twice.** The transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. A commit is therefore not a generic relayed action: the connected wallet must be the exact `party.sender` named in the terms.
 
 (`claim`/`reclaim` are unchanged and identity-free.)
 

@@ -164,6 +164,7 @@ contract OmnibusTest is TestBase {
   /// @notice Creates terms with explicit lifecycle deadlines
   function _makeTerms(
     uint256 chainId,
+    address sender,
     address reclaimRecipient,
     address recipient,
     uint256 commitmentDeadline,
@@ -172,20 +173,20 @@ contract OmnibusTest is TestBase {
     Asset[] memory assets
   ) internal pure returns (Terms memory) {
     return TermsHelper.makeTerms(
-      chainId, reclaimRecipient, recipient, commitmentDeadline, claimDeadline, reclaimRelease, assets
+      chainId, sender, reclaimRecipient, recipient, commitmentDeadline, claimDeadline, reclaimRelease, assets
     );
   }
 
   /// @notice Proposer (Alice) terms on a given chain with the proposer deadline schedule
   function _aliceTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
     return _makeTerms(
-      chainId, ALICE, ALICE_RECIPIENT, ALICE_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE, assets
+      chainId, ALICE, ALICE, ALICE_RECIPIENT, ALICE_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE, assets
     );
   }
 
   /// @notice Taker (Bob) terms on a given chain with the taker deadline schedule
   function _bobTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
-    return _makeTerms(chainId, BOB, BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, assets);
+    return _makeTerms(chainId, BOB, BOB, BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, assets);
   }
 
   /// @notice Default same-chain proposer terms for Alice (native)

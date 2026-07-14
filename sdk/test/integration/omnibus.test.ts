@@ -47,6 +47,7 @@ const ALICE_RECIPIENT: Address = getAddress('0x000000000000000000000000000000000
 const BOB_RECIPIENT: Address = getAddress('0x00000000000000000000000000000000000b0002')
 const ALICE_RECLAIM: Address = getAddress('0x00000000000000000000000000000000000a0003')
 const BOB_RECLAIM: Address = getAddress('0x00000000000000000000000000000000000b0004')
+const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as const
 
 let ctx: ChainContext
 let fixture: Fixture
@@ -95,6 +96,7 @@ async function freshSchedule(): Promise<Schedule> {
     anchors,
     aliceTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
       chainId,
+      sender: ctx.alice.address,
       reclaimRecipient: ALICE_RECLAIM,
       recipient: ALICE_RECIPIENT,
       commitmentDeadline: base + 1000n,
@@ -104,6 +106,7 @@ async function freshSchedule(): Promise<Schedule> {
     }),
     bobTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
       chainId,
+      sender: ctx.bob.address,
       reclaimRecipient: BOB_RECLAIM,
       recipient: BOB_RECIPIENT,
       commitmentDeadline: base + 2000n,
@@ -152,6 +155,7 @@ async function rawCommit(
 function toTuple(terms: Terms) {
   return {
     chainId: terms.chainId,
+    sender: terms.sender,
     reclaimRecipient: terms.reclaimRecipient,
     recipient: terms.recipient,
     commitmentDeadline: terms.commitmentDeadline,
@@ -179,7 +183,11 @@ function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
  * the verifier and the actor's 20-byte address doubles as the key (40-byte
  * blob). The mock ignores signatures, so '0x' is fine.
  */
-const keyedAuth = (addr: Address): CommitAuth => ({signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'})
+const keyedAuth = (addr: Address): CommitAuth => ({
+  signer: buildKeyedSigner(fixture.verifier, addr),
+  signature: '0x',
+  walletBinding: ZERO_BYTES32,
+})
 
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
@@ -1164,7 +1172,8 @@ describe('fee-on-transfer token', () => {
 describe('gas and balance preflight', () => {
   it('a commit sender underfunded for the VALUE is rejected BALANCE_TOO_LOW before any transaction exists', async () => {
     // a fixed key that is NOT one of anvil's funded dev accounts → 0 balance;
-    // commit is permissionless, so the balance preflight is the failing check
+    // commit is sender-bound, so this case exercises a correctly bound but
+    // underfunded sender
     const pauper = privateKeyToAccount(`0x${'77'.repeat(32)}`)
     expect(await ctx.publicClient.getBalance({address: pauper.address})).toBe(0n)
     const pauperClient = createOmnibusClient({

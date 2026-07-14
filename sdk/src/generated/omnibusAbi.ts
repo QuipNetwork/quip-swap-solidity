@@ -51,6 +51,19 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "ENVELOPE_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_FEE",
     "inputs": [],
     "outputs": [
@@ -115,6 +128,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "reclaimRecipient",
             "type": "address",
             "internalType": "address"
@@ -177,6 +195,11 @@ export const omnibusAbi = [
             "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "reclaimRecipient",
@@ -256,6 +279,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "reclaimRecipient",
             "type": "address",
             "internalType": "address"
@@ -318,6 +346,11 @@ export const omnibusAbi = [
             "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "reclaimRecipient",
@@ -387,6 +420,11 @@ export const omnibusAbi = [
             "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
+          },
+          {
+            "name": "walletBinding",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -412,6 +450,11 @@ export const omnibusAbi = [
             "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "reclaimRecipient",
@@ -476,6 +519,11 @@ export const omnibusAbi = [
             "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "reclaimRecipient",
@@ -760,6 +808,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "reclaimRecipient",
             "type": "address",
             "internalType": "address"
@@ -822,6 +875,11 @@ export const omnibusAbi = [
             "name": "chainId",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "reclaimRecipient",
@@ -1049,6 +1107,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "sender",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "reclaimRecipient",
             "type": "address",
             "internalType": "address"
@@ -1239,6 +1302,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "AttestationNotFound",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },
@@ -1260,6 +1328,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "IncorrectNativeAmountReceived",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidCommitSender",
     "inputs": []
   },
   {
@@ -1362,6 +1435,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroAddressRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddressSender",
     "inputs": []
   },
   {

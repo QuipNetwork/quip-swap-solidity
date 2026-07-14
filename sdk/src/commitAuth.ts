@@ -1,18 +1,13 @@
 /**
  * Commit authorization: signer blobs and the commit digest.
  *
- * `Omnibus.commit` is PERMISSIONLESS — it authenticates the PAYLOAD, not the
- * caller. Every commit carries a {@link CommitAuth}: an identity blob
- * (`signer`) plus a signature over the commit digest. The signature is a
- * SOFT GUARD: it proves this exact payload (lock + both terms, on this
- * chain, for this contract) was endorsed by the declared identity; it does
- * NOT gate which identity may post a side. Where a client cares WHO posted
- * the counterpart side, it verifies the blob from the `Commitment` event
- * off-chain before revealing the secret / committing the second leg.
+ * `Omnibus.commit` authenticates the PAYLOAD with an identity blob and
+ * separately enforces `msg.sender == party.sender`. Every commit carries a
+ * {@link CommitAuth}: an identity blob (`signer`) plus either a keyed-route
+ * signature or an attested-route wallet binding.
  *
  * FUNDING MODEL: the transaction SENDER funds the committed leg + fee
- * (`msg.sender` pays). Funding is independent of authorization —
- * `auth.signer` only endorses the payload, it never pays.
+ * (`msg.sender` pays), and the terms must declare that same sender.
  *
  * The accepted signer shape is an ERC-7913 keyed identity:
  * `verifier(20) ‖ key`; the verifier must be active on the contract.
@@ -36,6 +31,8 @@ export interface CommitAuth {
   readonly signer: Hex
   /** Signature over {@link computeCommitDigest}, checked by the declared verifier. */
   readonly signature: Hex
+  /** Attested-route witness; keyed route may omit it and defaults to the zero bytes32 value. */
+  readonly walletBinding?: Hex32
 }
 
 /**

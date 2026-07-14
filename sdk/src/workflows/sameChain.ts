@@ -112,7 +112,7 @@ export interface SameChainSwapPlan {
  * ```ts
  * const plan = planSameChainSwap(aliceTerms, bobTerms) // default buffer
  * // proposer commits first:
- * await client.commit({lock, party: plan.proposerTerms, counterparty: plan.takerTerms})
+ * await client.commit({lock, party: plan.proposerTerms, counterparty: plan.takerTerms, auth})
  * ```
  */
 export function planSameChainSwap(

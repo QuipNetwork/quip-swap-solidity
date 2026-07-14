@@ -78,6 +78,11 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
   // must have cleared it by the time a test runs
   bytes32 internal setUpEnvelopeHash;
 
+  function _aliceWalletTerms() internal view returns (Terms memory terms) {
+    terms = _aliceTerms();
+    terms.sender = address(wallet);
+  }
+
   function setUp() public override {
     super.setUp();
 
@@ -93,8 +98,9 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
 
     // attest alice's real envelope NOW (leaf 2; leaf 1 stays for in-test
     // signatures) so the tx-boundary test can prove the attestation is gone
+    Terms memory aliceWalletTerms = _aliceWalletTerms();
     setUpEnvelopeHash = _envelopeHash(
-      WALLET_BINDING, omnibus.commitDigest(lock, _aliceTerms(), _bobTerms(), keccak256(aliceKeyedSigner))
+      WALLET_BINDING, omnibus.commitDigest(lock, aliceWalletTerms, _bobTerms(), keccak256(aliceKeyedSigner))
     );
     wallet.attest(
       shrincs, aliceKey32, setUpEnvelopeHash, _signStatefulEnvelope(aliceKey, alicePub, setUpEnvelopeHash, 2)
@@ -195,7 +201,7 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
   // ============ Attested route (one leaf covers wallet execution + commit) ============
 
   function test_integration_attestedCommit_singleLeaf_claim() public {
-    Terms memory alice = _aliceTerms();
+    Terms memory alice = _aliceWalletTerms();
     Terms memory bob = _bobTerms();
 
     // Alice's identity signs the ONE composite envelope: the wallet's own
@@ -255,7 +261,7 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
       'transient attestation must not survive the transaction boundary'
     );
 
-    Terms memory alice = _aliceTerms();
+    Terms memory alice = _aliceWalletTerms();
     Terms memory bob = _bobTerms();
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(IOmnibus.AttestationNotFound.selector);

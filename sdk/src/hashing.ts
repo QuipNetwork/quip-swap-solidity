@@ -48,6 +48,7 @@ export const termsAbiParameter = {
   type: 'tuple',
   components: [
     {name: 'chainId', type: 'uint256'},
+    {name: 'sender', type: 'address'},
     {name: 'reclaimRecipient', type: 'address'},
     {name: 'recipient', type: 'address'},
     {name: 'commitmentDeadline', type: 'uint256'},
@@ -63,6 +64,7 @@ export const termsAbiParameter = {
  */
 const termsDigestAbiParameters = [
   {name: 'chainId', type: 'uint256'},
+  {name: 'sender', type: 'address'},
   {name: 'reclaimRecipient', type: 'address'},
   {name: 'recipient', type: 'address'},
   {name: 'commitmentDeadline', type: 'uint256'},
@@ -79,7 +81,7 @@ const termsDigestAbiParameters = [
  * ```solidity
  * digest = EfficientHashLib.hash(            // keccak256(bytes)
  *   abi.encode(
- *     terms.chainId, terms.reclaimRecipient, terms.recipient,
+ *     terms.chainId, terms.sender, terms.reclaimRecipient, terms.recipient,
  *     terms.commitmentDeadline, terms.claimDeadline, terms.reclaimRelease,
  *     terms.assets
  *   )
@@ -103,6 +105,7 @@ export function digestTerms(terms: Terms): Hex32 {
   return keccak256(
     encodeAbiParameters(termsDigestAbiParameters, [
       terms.chainId,
+      terms.sender,
       terms.reclaimRecipient,
       terms.recipient,
       terms.commitmentDeadline,

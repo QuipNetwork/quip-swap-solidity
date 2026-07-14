@@ -64,6 +64,7 @@ async function callHarness<T>(address: Address, abi: Abi, functionName: string, 
 function abiTerms(terms: Terms) {
   return {
     chainId: terms.chainId,
+    sender: terms.sender,
     reclaimRecipient: terms.reclaimRecipient,
     recipient: terms.recipient,
     commitmentDeadline: terms.commitmentDeadline,
@@ -125,6 +126,7 @@ function rndTerms(rng: () => bigint): Terms {
   const assetCount = Number(rng() % 3n) + 1
   return {
     chainId: rndIn(rng, 10n ** 6n),
+    sender: rndAddress(rng),
     reclaimRecipient: rndAddress(rng),
     recipient: rndAddress(rng),
     commitmentDeadline: commitment,

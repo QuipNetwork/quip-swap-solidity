@@ -14,6 +14,8 @@ import type {Asset, Terms} from './types.js'
 export interface CreateTermsArgs {
   /** Chain id where this side's assets live; must be `> 0n`. */
   readonly chainId: bigint
+  /** Address allowed to submit and fund this side's commit; non-zero. */
+  readonly sender: Address
   /** Receives this side's own assets on reclaim; non-zero. */
   readonly reclaimRecipient: Address
   /** Receives the COUNTERPARTY's assets on claim; non-zero. */
@@ -44,6 +46,7 @@ export interface CreateTermsArgs {
  * ```ts
  * const terms = createTerms({
  *   chainId: 8453n,
+ *   sender: wallet,
  *   reclaimRecipient: wallet,
  *   recipient: wallet,
  *   commitmentDeadline: now + 600n,
@@ -57,6 +60,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
   // defensive copy: never mutate or alias the caller's array
   const terms: Terms = Object.freeze({
     chainId: args.chainId,
+    sender: args.sender,
     reclaimRecipient: args.reclaimRecipient,
     recipient: args.recipient,
     commitmentDeadline: args.commitmentDeadline,
@@ -75,6 +79,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  *
  * ```solidity
  * if (terms.assets.length == 0) revert EmptyAssets();
+ * if (sender == 0) revert ZeroAddressSender();
  * if (reclaimRecipient == 0 || recipient == 0) revert ZeroAddressRecipient();
  * if (terms.commitmentDeadline == 0) revert ZeroDeadline();
  * if (!(commitmentDeadline < claimDeadline && claimDeadline < reclaimRelease))
@@ -90,7 +95,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  * reject the proposer's already-elapsed deadline during the taker's commit.
  *
  * @param terms - The terms to validate (e.g. parsed from JSON or an API).
- * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_ADDRESS_RECIPIENT` |
+ * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_ADDRESS_SENDER` | `ZERO_ADDRESS_RECIPIENT` |
  *   `ZERO_DEADLINE` | `DISORDERED_DEADLINES` | `ZERO_CHAIN_ID`, plus every
  *   asset-level code from {@link validateAsset}.
  * @see TermsLib.validateTerms
@@ -104,6 +109,13 @@ export function validateTerms(terms: Terms): void {
     throw new QuipSwapError({
       code: 'EMPTY_ASSETS',
       message: 'Terms must contain at least one asset (contract: EmptyAssets)',
+    })
+  }
+  if (!isRecipientAddress(terms.sender)) {
+    throw new QuipSwapError({
+      code: 'ZERO_ADDRESS_SENDER',
+      message: 'sender must be a valid non-zero address (contract: ZeroAddressSender)',
+      details: {sender: terms.sender},
     })
   }
   if (!isRecipientAddress(terms.reclaimRecipient) || !isRecipientAddress(terms.recipient)) {

@@ -47,6 +47,7 @@ const ALICE_RECIPIENT: Address = getAddress('0x000000000000000000000000000000000
 const BOB_RECIPIENT: Address = getAddress('0x00000000000000000000000000000000000b0002')
 const ALICE_RECLAIM: Address = getAddress('0x00000000000000000000000000000000000a0003')
 const BOB_RECLAIM: Address = getAddress('0x00000000000000000000000000000000000b0004')
+const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as const
 
 let chainA: ChainContext
 let chainB: ChainContext
@@ -61,6 +62,7 @@ let fixtureB: Fixture
 const keyedAuth = (fixture: Fixture, addr: Address): CommitAuth => ({
   signer: buildKeyedSigner(fixture.verifier, addr),
   signature: '0x',
+  walletBinding: ZERO_BYTES32,
 })
 /** Alice (proposer, secret holder) acts on chain A for commits; on B for her claim. */
 let aliceOnA: OmnibusClient
@@ -104,6 +106,7 @@ async function sharedSchedule(): Promise<SharedSchedule> {
     },
     aliceTerms: assets => ({
       chainId: BigInt(CHAIN_A_ID), // alice's leg lives on chain A
+      sender: chainA.alice.address,
       reclaimRecipient: ALICE_RECLAIM,
       recipient: ALICE_RECIPIENT,
       commitmentDeadline: base + 1000n,
@@ -113,6 +116,7 @@ async function sharedSchedule(): Promise<SharedSchedule> {
     }),
     bobTerms: assets => ({
       chainId: BigInt(CHAIN_B_ID), // bob's leg lives on chain B
+      sender: chainB.bob.address,
       reclaimRecipient: BOB_RECLAIM,
       recipient: BOB_RECIPIENT,
       commitmentDeadline: base + 2000n,

@@ -37,6 +37,7 @@ function baseLog(address: Address, topics: readonly (Hex | Hex[] | null)[], data
 function toTuple(terms: Terms) {
   return {
     chainId: terms.chainId,
+    sender: terms.sender,
     reclaimRecipient: terms.reclaimRecipient,
     recipient: terms.recipient,
     commitmentDeadline: terms.commitmentDeadline,

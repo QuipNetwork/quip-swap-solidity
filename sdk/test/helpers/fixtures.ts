@@ -59,6 +59,7 @@ export const BOB_DEFAULT_ASSETS = [nativeAsset(2n * 10n ** 18n)] as const
 export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEFAULT_ASSETS): Terms {
   return {
     chainId,
+    sender: ALICE,
     reclaimRecipient: ALICE,
     recipient: ALICE_RECIPIENT,
     commitmentDeadline: ALICE_COMMIT_DEADLINE,
@@ -72,6 +73,7 @@ export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEF
 export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT_ASSETS): Terms {
   return {
     chainId,
+    sender: BOB,
     reclaimRecipient: BOB,
     recipient: BOB_RECIPIENT,
     commitmentDeadline: BOB_COMMIT_DEADLINE,

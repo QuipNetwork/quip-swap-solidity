@@ -94,6 +94,7 @@ contract TermsLib_validateTerms is TermsLibTest {
   function test_validateTerms_revertsWhen_zeroReclaimRecipient() public {
     Terms memory terms = TermsHelper.makeTerms(
       block.chainid,
+      ALICE,
       address(0), // zero reclaimRecipient - invalid
       ALICE_RECIPIENT,
       DEFAULT_COMMITMENT_DEADLINE,
@@ -103,6 +104,22 @@ contract TermsLib_validateTerms is TermsLibTest {
     );
 
     vm.expectRevert(TermsLib.ZeroAddressRecipient.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  function test_validateTerms_revertsWhen_zeroSender() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      address(0),
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.ZeroAddressSender.selector);
     harness.exposed_validateTerms(terms);
   }
 

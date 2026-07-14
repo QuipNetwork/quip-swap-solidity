@@ -52,7 +52,7 @@ contract Omnibus_MingledFundDrainage is Test {
   // ============ Setup ============
 
   function setUp() public {
-    // commit is permissionless; each caller authenticates with its own keyed
+    // commit is sender-bound; each caller authenticates with its own keyed
     // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
     omnibus = new OmnibusHarness(address(this));
