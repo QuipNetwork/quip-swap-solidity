@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {Terms} from '../../../src/TermsLib.sol';
 import {IOmnibus} from '../../../src/interfaces/IOmnibus.sol';
+import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
@@ -31,7 +32,7 @@ contract Omnibus_withdrawFees is OmnibusTest {
     fee = omnibus.commitmentFee();
     uint256 nativeAmount = _totalNativeForCommit(alice) + fee;
     vm.prank(ALICE);
-    omnibus.commit{value: nativeAmount}(_lock, alice, bob);
+    omnibus.commit{value: nativeAmount}(_lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
   }
 
   // ============ Fee Accrual ============
@@ -71,7 +72,7 @@ contract Omnibus_withdrawFees is OmnibusTest {
     uint256 fee = omnibus.commitmentFee();
 
     vm.prank(ALICE);
-    omnibus.commit{value: escrow + fee}(lock, alice, bob);
+    omnibus.commit{value: escrow + fee}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
     // owner withdraws fees: only the fee leaves, the escrow remains
     uint256 omnibusBefore = address(omnibus).balance;

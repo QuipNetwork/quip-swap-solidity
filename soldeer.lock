@@ -7,9 +7,9 @@ integrity = "964d6bbaf7ea075943d73945a3263e4d098ca7597978a296be48cbe1a792eb85"
 
 [[dependencies]]
 name = "@quip.network/hashsigs-solidity"
-version = "0.1.0"
-git = "https://gitlab.com/piqued/hashsigs-solidity.git"
-rev = "e54234702253fcafdeff110b78d4b5b6981aad58"
+version = "0.2.0"
+git = "git@gitlab.com:quip.network/hashsigs-solidity.git"
+rev = "69e2996b811e77ab85b6339ebb0203bd4885aaf4"
 
 [[dependencies]]
 name = "forge-std"

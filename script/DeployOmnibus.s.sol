@@ -12,8 +12,11 @@ import {CREATE3} from 'solady-0.1.26/utils/CREATE3.sol';
  * @dev Deploys the Omnibus singleton via the Deployer contract using CREATE3
  *      (solady's `CREATE3.deployDeterministic`). Omnibus address depends only
  *      on (Deployer address, salt) — same on every chain, independent of the
- *      broadcasting EOA and of constructor args. Owner / quipFactory differ per
- *      chain but the address doesn't.
+ *      broadcasting EOA and of constructor args. Owner differs per chain but
+ *      the address doesn't.
+ *
+ *      Per-chain deploy order: Deployer → Omnibus (this script). Verifier
+ *      activation is a separate, post-deploy owner action (setVerifierActivity).
  *
  * Usage:
  *   forge script script/DeployOmnibus.s.sol \
@@ -23,7 +26,6 @@ import {CREATE3} from 'solady-0.1.26/utils/CREATE3.sol';
  *   DEPLOYER_PK      - Operations wallet private key (broadcasting EOA)
  *   DEPLOYER_ADDRESS - Deployer contract address (bootstrapped via DeployDeployer)
  *   OMNIBUS_OWNER    - Initial owner of the Omnibus (Ownable2Step)
- *   QUIP_FACTORY     - QuipFactory whose wallet registry gates commit (non-zero)
  */
 contract DeployOmnibus is Script {
   bytes32 internal constant SALT = Constants.OMNIBUS_SALT;
@@ -32,16 +34,13 @@ contract DeployOmnibus is Script {
     address deployerAddr = vm.envAddress('DEPLOYER_ADDRESS');
     uint256 privateKey = vm.envUint('DEPLOYER_PK');
     address omnibusOwner = vm.envAddress('OMNIBUS_OWNER');
-    address quipFactory = vm.envAddress('QUIP_FACTORY');
 
     require(deployerAddr.code.length > 0, 'Deployer not deployed. Run DeployDeployer first.');
     require(omnibusOwner != address(0), 'OMNIBUS_OWNER must be non-zero');
-    require(quipFactory != address(0), 'QUIP_FACTORY must be non-zero (Omnibus reverts ZeroQuipFactory)');
 
     address expectedAddr = CREATE3.predictDeterministicAddress(SALT, deployerAddr);
     console.log('Deployer:          ', deployerAddr);
     console.log('Omnibus owner:     ', omnibusOwner);
-    console.log('Quip factory:      ', quipFactory);
     console.log('Expected Omnibus:  ', expectedAddr);
 
     if (expectedAddr.code.length > 0) {
@@ -49,8 +48,7 @@ contract DeployOmnibus is Script {
       return;
     }
 
-    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner, quipFactory));
-    console.log('Bytecode size:', bytecode.length, 'bytes');
+    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner));
 
     vm.startBroadcast(privateKey);
     address deployed = IDeployer(deployerAddr).deploy(bytecode, SALT);

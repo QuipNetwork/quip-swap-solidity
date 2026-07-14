@@ -1,11 +1,11 @@
 /**
  * Approval inspection and planning for non-native assets.
  *
- * The committer is `msg.sender` of the commit transaction — in production a
- * QuipWallet CONTRACT (never its owner's EOA; see the QuipWallet gate on
- * `Omnibus.commit`). Assets must belong to that wallet and approvals must
- * be issued BY that wallet, so every check here asks: "can the Omnibus
- * contract pull this asset from the committing wallet?"
+ * The committer is `msg.sender` of the commit transaction — commit is
+ * PERMISSIONLESS, so this is any account (the sender FUNDS the leg; the
+ * identity in CommitAuth only authorizes). Assets must belong to that sender
+ * and approvals must be issued BY that sender, so every check here asks:
+ * "can the Omnibus contract pull this asset from the committing account?"
  *
  * Fee-on-transfer caveat: `Omnibus.commit` reconciles received balances
  * (`TermsLib.transferAssetsNoNative`). If an ERC-20/ERC-1155 delivers less
@@ -164,8 +164,8 @@ export interface PlanApprovalsArgs {
   /** The deployed Omnibus address (the spender/operator to check for). */
   readonly omnibusAddress: Address
   /**
-   * The committing wallet — the QuipWallet CONTRACT address that will send
-   * the commit transaction, NOT its owner's EOA.
+   * The committing account — the address that will SEND (and fund) the
+   * commit transaction.
    */
   readonly committer: Address
   /** The side's terms whose assets will be escrowed. */
@@ -198,7 +198,7 @@ export interface PlanApprovalsArgs {
  * @see TermsLib.transferAssetsNoNative
  * @example
  * ```ts
- * const plan = await planApprovals({publicClient, omnibusAddress, committer: quipWallet, terms})
+ * const plan = await planApprovals({publicClient, omnibusAddress, committer: sender, terms})
  * for (const item of plan.items.filter(i => !i.satisfied)) {
  *   const hash = await submitApproval({publicClient, walletClient, omnibusAddress, item, erc20Mode: 'exact'})
  * }

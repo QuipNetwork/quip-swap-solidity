@@ -20,8 +20,8 @@
  * Derivation is deterministic, but the SDK ships a VERIFIED constant rather
  * than deriving the address at runtime: a CREATE3 address ignores init code,
  * so the contract actually sitting at the computed address must be confirmed
- * to be the correct two-argument-constructor Omnibus
- * (`constructor(address initialOwner, address quipFactory)`) before it is
+ * to be the correct one-argument-constructor Omnibus
+ * (`constructor(address initialOwner)`) before it is
  * trusted. A derived-but-unverified address is never returned.
  *
  * Until the canonical address is filled in and chains are enabled, the
@@ -50,22 +50,20 @@ export interface OmnibusDeployment {
  * deployed via `script/DeployOmnibus.s.sol` has the SAME address on every
  * chain.
  *
- * ⚠️ Currently the zero PLACEHOLDER (`address.json`). To activate: set
- * `omnibusAddress` in `address.json` to the real deployed address, run
- * `make verify-omnibus` (offline: confirms it matches the predicted
- * (Deployer, salt) address), confirm on-chain that the correct Omnibus sits
- * there for each target chain (CREATE3 addresses ignore init code, so
- * semantic verification is mandatory), and add those chain ids to `chains`.
+ * Sourced from `address.json`, gated to that file's verified `chains`. To
+ * enable a NEW chain: run `make verify-omnibus` (offline: confirms the
+ * address matches the predicted (Deployer, salt) address), confirm on-chain
+ * that the correct Omnibus sits there (CREATE3 addresses ignore init code,
+ * so semantic verification is mandatory), then add the chain id to `chains`.
  * No code change required.
  */
 export const OMNIBUS_CREATE3_ADDRESS = addressData.omnibusAddress as Address
 
 /**
  * Chain ids on which {@link OMNIBUS_CREATE3_ADDRESS} is verified-deployed,
- * sourced from `address.json`'s `chains` array. EMPTY until deployments are
- * confirmed — while empty, {@link resolveDeployment} behaves exactly as the
- * old empty-registry version (throws for every chain without an override).
- * A chain id is added ONLY after `make verify-omnibus` passes on it.
+ * sourced from `address.json`'s `chains` array. A chain id is added ONLY
+ * after `make verify-omnibus` passes on it; on any chain not listed here,
+ * {@link resolveDeployment} throws unless an override is supplied.
  */
 const VERIFIED_DEPLOYMENT_CHAINS: ReadonlySet<bigint> = new Set<bigint>(
   addressData.chains.map(chainId => BigInt(chainId)),
@@ -74,9 +72,7 @@ const VERIFIED_DEPLOYMENT_CHAINS: ReadonlySet<bigint> = new Set<bigint>(
 /**
  * Built-in verified deployments, keyed by chain id. Derived from
  * {@link OMNIBUS_CREATE3_ADDRESS} + {@link VERIFIED_DEPLOYMENT_CHAINS} so
- * there is a single source of truth. EMPTY until the placeholder address is
- * replaced and chains are enabled (identical behavior to the prior empty
- * registry while empty).
+ * there is a single source of truth.
  */
 export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
   [...VERIFIED_DEPLOYMENT_CHAINS].map(chainId => [chainId, {chainId, omnibusAddress: OMNIBUS_CREATE3_ADDRESS}]),

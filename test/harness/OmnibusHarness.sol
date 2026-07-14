@@ -8,10 +8,18 @@ import {LockState} from '../../src/interfaces/IOmnibus.sol';
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
 contract OmnibusHarness is Omnibus {
-  /// @notice initializes the harness with an owner and the quip factory
+  /// @notice initializes the harness with an owner
   /// @param initialOwner the address that will own the contract
-  /// @param quipFactory the QuipFactory whose wallet registry gates commit
-  constructor(address initialOwner, address quipFactory) Omnibus(initialOwner, quipFactory) {}
+  constructor(address initialOwner) Omnibus(initialOwner) {}
+
+  /// @notice exposes _enforceCommitAuthorized (the identity router)
+  function exposed_enforceCommitAuthorized(
+    bytes calldata signer,
+    bytes32 digest,
+    bytes calldata signature
+  ) external view {
+    _enforceCommitAuthorized(signer, digest, signature);
+  }
 
   /// @notice exposes _advanceLockTo
   function exposed_advanceLockTo(bytes32 lock, LockState current, LockState to) external {

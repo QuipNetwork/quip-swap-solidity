@@ -11,5 +11,8 @@ library Constants {
   /// @notice CREATE3 salt for the Omnibus singleton. The deployed address is a
   ///         function of (Deployer, salt), so this value is what pins the
   ///         cross-chain Omnibus address. Bump only for an intentional redeploy.
-  bytes32 internal constant OMNIBUS_SALT = keccak256('QUIP:Omnibus:V1.0');
+  ///         Semver convention: prerelease salts (-alpha.N/-beta.N/-rc.N) are
+  ///         testnet deploys; the bare release (v1.0.0) is reserved for mainnet.
+  ///         Each salt maps to a distinct, permanently-consumed address.
+  bytes32 internal constant OMNIBUS_SALT = keccak256('QUIP:Omnibus:v1.0.0-alpha.1');
 }

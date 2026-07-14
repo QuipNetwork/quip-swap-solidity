@@ -4,11 +4,12 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Terms} from '../../src/TermsLib.sol';
-import {IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
-import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
+import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @title Mingled Fund Drainage
@@ -46,18 +47,16 @@ contract Omnibus_MingledFundDrainage is Test {
 
   OmnibusHarness public omnibus;
   ERC20Mock public usdc;
-  QuipFactoryMock public quipFactory;
+  VerifierMock public verifier;
 
   // ============ Setup ============
 
   function setUp() public {
-    // commit is gated to factory-deployed quip wallets; the attacker is registered too
-    // since the drain protections must hold even against quip wallets
-    quipFactory = new QuipFactoryMock();
-    quipFactory.registerWallet(VICTIM, bytes32(uint256(uint160(VICTIM))), VICTIM);
-    quipFactory.registerWallet(ATTACKER, bytes32(uint256(uint160(ATTACKER))), ATTACKER);
-
-    omnibus = new OmnibusHarness(address(this), address(quipFactory));
+    // commit is permissionless; each caller authenticates with its own keyed
+    // ERC-7913 identity through an accept-all mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
     usdc = new ERC20Mock('USD Coin', 'USDC', 6);
 
     vm.deal(ATTACKER, 100 ether);
@@ -87,7 +86,12 @@ contract Omnibus_MingledFundDrainage is Test {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.startPrank(VICTIM);
     usdc.approve(address(omnibus), type(uint256).max);
-    omnibus.commit(omnibus.exposed_generateLock(keccak256('victim-secret')), victimTerms, counterpartyTerms);
+    omnibus.commit(
+      omnibus.exposed_generateLock(keccak256('victim-secret')),
+      victimTerms,
+      counterpartyTerms,
+      AuthHelper.keyedAuth(address(verifier), VICTIM)
+    );
     vm.stopPrank();
 
     assertEq(usdc.balanceOf(address(omnibus)), POOLED_USDC);
@@ -124,7 +128,7 @@ contract Omnibus_MingledFundDrainage is Test {
     // attacker posts only the cheap side -> lock reaches Free with 1 wei escrowed
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
-    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive);
+    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
 
     // after the expensive side's reclaim release, reclaim with roles flipped: the never-posted
@@ -151,14 +155,14 @@ contract Omnibus_MingledFundDrainage is Test {
     // first commit posts the cheap side -> Free
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
-    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive);
+    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
 
     // re-posting the SAME cheap side would drive Free -> Committed, which claim treats as
     // "both sides posted"; the guard rejects the second post
     vm.expectRevert(IOmnibus.TermsAlreadyPosted.selector);
     vm.prank(ATTACKER);
-    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive);
+    omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
 
     // never reached the drainable Committed state; pool intact
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));

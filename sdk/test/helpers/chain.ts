@@ -2,14 +2,13 @@
  * Per-chain test context: Viem clients, Foundry-artifact deployment, time
  * control, and the standard contract fixture used by integration tests.
  *
- * Deployment order in {@link deployFixture} mirrors the runner contract:
- * 1. QuipFactoryMock (commit is gated on its registry)
- * 2. register every committing test account via `registerWallet` — plain
- *    EOAs pass the gate this way; a TEST CONVENIENCE, not a production
- *    pattern (production committers are QuipWallet contracts)
- * 3. Omnibus with the ACTIVE two-argument constructor (owner, factory)
- * 4. mock tokens (ERC20 / ERC721 / ERC1155 / fee-on-transfer ERC20)
- * 5. harnesses (TermsLibHarness, OmnibusHarness) for differential tests
+ * Deployment order in {@link deployFixture}:
+ * 1. Omnibus with the one-argument constructor (owner) — commit is
+ *    PERMISSIONLESS, so no registry mock is needed; an AcceptAll ERC-7913
+ *    VerifierMock is deployed and activated post-deploy via
+ *    setVerifierActivity (owner action)
+ * 2. mock tokens (ERC20 / ERC721 / ERC1155 / fee-on-transfer ERC20)
+ * 3. harnesses (TermsLibHarness, OmnibusHarness) for differential tests
  *
  * Timestamp control: the protocol's windows are judged against
  * block.timestamp, so tests use `evm_setNextBlockTimestamp` + mining
@@ -25,7 +24,6 @@ import {createPublicClient, createTestClient, createWalletClient, defineChain, g
 import type {Abi, Address, Hex, PublicClient, TestClient, WalletClient} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import type {PrivateKeyAccount} from 'viem/accounts'
-import {quipFactoryMockAbi} from './mockAbis.js'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
@@ -38,7 +36,7 @@ export const ANVIL_KEYS = [
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80', // deployer / owner
   '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d', // alice
   '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a', // bob
-  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6', // charlie (never registered)
+  '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6', // charlie (third-party actor)
 ] as const
 
 /** A Foundry artifact's ABI and deployable bytecode. */
@@ -77,11 +75,11 @@ export interface ChainContext {
   readonly testClient: TestClient
   /** Actor 0 — contract deployer and Omnibus owner. */
   readonly deployer: TestActor
-  /** Actor 1 — registered as a quip wallet in the fixture. */
+  /** Actor 1 — the standard proposer. */
   readonly alice: TestActor
-  /** Actor 2 — registered as a quip wallet in the fixture. */
+  /** Actor 2 — the standard taker. */
   readonly bob: TestActor
-  /** Actor 3 — deliberately NEVER registered (negative gate tests). */
+  /** Actor 3 — a third-party actor (permissionless-path tests). */
   readonly charlie: TestActor
   /** Deploys a contract and returns its address. */
   deploy(artifact: FoundryArtifact, args?: readonly unknown[]): Promise<Address>
@@ -158,8 +156,9 @@ export function connectChain(rpcUrl: string, chainId: number): ChainContext {
 
 /** Addresses of the standard per-chain contract fixture. */
 export interface Fixture {
-  readonly quipFactory: Address
   readonly omnibus: Address
+  /** AcceptAll ERC-7913 VerifierMock, activated on omnibus AND omnibusHarness. */
+  readonly verifier: Address
   readonly erc20: Address
   readonly erc721: Address
   readonly erc1155: Address
@@ -169,35 +168,35 @@ export interface Fixture {
 }
 
 /**
- * Deploys the standard fixture onto a chain and registers alice + bob (but
- * NOT charlie) as quip wallets.
+ * Deploys the standard fixture onto a chain. Commit is permissionless, so
+ * no wallet registry exists — any funded account may commit.
  *
  * @param ctx - The chain context from {@link connectChain}.
  * @returns The deployed addresses.
  */
 export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
-  // 1. the factory mock first — Omnibus's constructor needs its address
-  const quipFactory = await ctx.deploy(loadArtifact('QuipFactoryMock.sol', 'QuipFactoryMock'))
+  // 1. the one-argument constructor: (initialOwner); verifiers are activated
+  // post-deploy via setVerifierActivity (owner action)
+  const omnibusArtifact = loadArtifact('Omnibus.sol', 'Omnibus')
+  const omnibus = await ctx.deploy(omnibusArtifact, [ctx.deployer.address])
 
-  // 2. register the committing accounts (alice, bob). charlie stays
-  // unregistered on purpose for CallerNotQuipWallet tests
-  for (const actor of [ctx.alice, ctx.bob]) {
-    const hash = await actor.walletClient.writeContract({
-      address: quipFactory,
-      abi: quipFactoryMockAbi,
-      functionName: 'registerWallet',
-      // vaultId mirrors the Foundry fixture: bytes32(uint256(uint160(wallet)))
-      args: [actor.address, `0x${actor.address.slice(2).padStart(64, '0')}` as Hex, actor.address],
-      chain: ctx.publicClient.chain ?? null,
-      account: actor.account,
+  // an AcceptAll ERC-7913 verifier mock backs the keyed commit route
+  const verifier = await ctx.deploy(loadArtifact('VerifierMock.sol', 'VerifierMock'))
+
+  const activateVerifier = async (target: Address): Promise<void> => {
+    const hash = await ctx.deployer.walletClient.writeContract({
+      address: target,
+      abi: omnibusArtifact.abi,
+      functionName: 'setVerifierActivity',
+      args: [verifier, true],
+      chain: null,
+      account: ctx.deployer.account,
     })
     await ctx.publicClient.waitForTransactionReceipt({hash})
   }
+  await activateVerifier(omnibus)
 
-  // 3. the ACTIVE constructor: (initialOwner, quipFactory) — two arguments.
-  const omnibus = await ctx.deploy(loadArtifact('Omnibus.sol', 'Omnibus'), [ctx.deployer.address, quipFactory])
-
-  // 4. mock assets
+  // 2. mock assets
   const erc20 = await ctx.deploy(loadArtifact('ERC20Mock.sol', 'ERC20Mock'), ['MockToken', 'MTK', 18])
   const erc721 = await ctx.deploy(loadArtifact('ERC721Mock.sol', 'ERC721Mock'), ['MockNFT', 'MNFT'])
   const erc1155 = await ctx.deploy(loadArtifact('ERC1155Mock.sol', 'ERC1155Mock'), [
@@ -209,12 +208,12 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
     100n, // 1% skim per transfer
   ])
 
-  // 5. harnesses for differential tests (harness constructor matches Omnibus)
+  // 3. harnesses for differential tests (harness constructor matches Omnibus)
   const termsLibHarness = await ctx.deploy(loadArtifact('TermsLibHarness.sol', 'TermsLibHarness'))
   const omnibusHarness = await ctx.deploy(loadArtifact('OmnibusHarness.sol', 'OmnibusHarness'), [
     ctx.deployer.address,
-    quipFactory,
   ])
+  await activateVerifier(omnibusHarness)
 
-  return {quipFactory, omnibus, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
+  return {omnibus, verifier, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
 }

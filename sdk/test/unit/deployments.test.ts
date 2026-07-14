@@ -32,14 +32,16 @@ function codeOf(fn: () => unknown): string {
 }
 
 // The canonical Omnibus address + verified chains shipped in src/address.json.
-const SHIPPED_OMNIBUS: Address = '0x07b74fb3805f75E669488F64E9a27E74E08fC9e0'
+const SHIPPED_OMNIBUS: Address = '0xD113aaA0F40945136A11a832087E23A72b38CE00'
 const BASE_SEPOLIA = 84532n
+const OP_SEPOLIA = 11_155_420n
 
-describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
-  it('ships the canonical address with Base Sepolia in the verified registry', () => {
+describe('resolveDeployment — shipped state (Base Sepolia + OP Sepolia verified)', () => {
+  it('ships the canonical address with Base Sepolia and OP Sepolia in the verified registry', () => {
     expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
-    expect(knownDeployments.size).toBe(1)
+    expect(knownDeployments.size).toBe(2)
     expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
+    expect(resolveDeployment(OP_SEPOLIA)).toEqual({chainId: OP_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
   })
 
   it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {

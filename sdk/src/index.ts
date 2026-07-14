@@ -58,6 +58,16 @@ export {
 // secrets
 export {generateSecret, secretToPair} from './secrets.js'
 
+// commit authorization (signer blobs + digest; the SDK never signs)
+export {
+  COMMIT_DIGEST_TAG,
+  buildKeyedSigner,
+  assertSignerBlob,
+  computeDomainSeparator,
+  computeCommitDigest,
+} from './commitAuth.js'
+export type {CommitAuth, ComputeCommitDigestArgs} from './commitAuth.js'
+
 // deployments
 export {knownDeployments, resolveDeployment, OMNIBUS_CREATE3_ADDRESS} from './deployments.js'
 export type {OmnibusDeployment} from './deployments.js'
@@ -76,7 +86,7 @@ export {
 export type {TxOptions, FeeOverrides, PrepareTxArgs, PrepareTxContractParams, PreparedTx} from './gas.js'
 
 // client
-export {createOmnibusClient, quipFactoryAbi} from './client.js'
+export {createOmnibusClient} from './client.js'
 export type {
   CreateOmnibusClientArgs,
   OmnibusClient,

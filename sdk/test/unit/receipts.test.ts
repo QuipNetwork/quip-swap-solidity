@@ -17,7 +17,7 @@ import {claimLog, commitmentLog, reclaimedLog} from '../helpers/logs.js'
 
 const OMNIBUS: Address = getAddress('0x0000000000000000000000000000000000000999')
 const IMPOSTOR: Address = getAddress('0x0000000000000000000000000000000000000bad')
-const COMMITTER: Address = getAddress('0x00000000000000000000000000000000000a11ce')
+const SENDER: Address = getAddress('0x00000000000000000000000000000000000a11ce')
 const RECIPIENT: Address = getAddress('0x00000000000000000000000000000000000a0001')
 const HASH = `0x${'ab'.repeat(32)}` as Hash
 
@@ -25,9 +25,9 @@ const HASH = `0x${'ab'.repeat(32)}` as Hash
 function bothAddressesLogs(): Log[] {
   const party = aliceTerms(CHAIN_A)
   const mk = (address: Address, base: number): Log[] => [
-    commitmentLog({address, lock: FOUNDRY_LOCK, committer: COMMITTER, party, logIndex: base}),
+    commitmentLog({address, lock: FOUNDRY_LOCK, sender: SENDER, party, logIndex: base}),
     claimLog({address, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT, logIndex: base + 1}),
-    reclaimedLog({address, lock: FOUNDRY_LOCK, caller: COMMITTER, recipient: RECIPIENT, logIndex: base + 2}),
+    reclaimedLog({address, lock: FOUNDRY_LOCK, caller: SENDER, recipient: RECIPIENT, logIndex: base + 2}),
   ]
   return [...mk(OMNIBUS, 0), ...mk(IMPOSTOR, 3)]
 }

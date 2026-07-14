@@ -46,20 +46,26 @@ function toTuple(terms: Terms) {
   }
 }
 
-/** Builds a `Commitment(bytes32 indexed lock, Terms party, address indexed committer)` log. */
+/** Builds a `Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender)` log. */
 export function commitmentLog(args: {
   address: Address
   lock: Hex32
-  committer: Address
+  sender: Address
+  /** The committing identity blob (defaults to the bare sender address). */
+  signer?: Hex
   party: Terms
   logIndex?: number
 }): Log {
   const topics = encodeEventTopics({
     abi: omnibusAbi,
     eventName: 'Commitment',
-    args: {lock: args.lock, committer: args.committer},
+    args: {lock: args.lock, sender: args.sender},
   })
-  const data = encodeAbiParameters([termsAbiParameter], [toTuple(args.party)])
+  // non-indexed data: (Terms party, bytes signer)
+  const data = encodeAbiParameters(
+    [termsAbiParameter, {name: 'signer', type: 'bytes'}],
+    [toTuple(args.party), args.signer ?? args.sender],
+  )
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }
 

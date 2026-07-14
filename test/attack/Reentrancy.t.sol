@@ -4,10 +4,11 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Terms} from '../../src/TermsLib.sol';
-import {LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
+import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @notice recipient that re-enters the omnibus once when it receives native, recording
@@ -60,20 +61,18 @@ contract Omnibus_Reentrancy is Test {
   address public BOB_RECIPIENT = makeAddr('bobRecipient');
 
   OmnibusHarness public omnibus;
-  QuipFactoryMock public quipFactory;
   ReentrantRecipient public attacker;
+  VerifierMock public verifier;
 
   bytes32 public constant SECRET = keccak256('secret');
   bytes32 public lock;
 
   function setUp() public {
-    // commit is gated to factory-deployed quip wallets; the reentrant attacker sits on
-    // the payout legs (claim/reclaim), which stay permissionless, so it needs no registration
-    quipFactory = new QuipFactoryMock();
-    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
-    quipFactory.registerWallet(BOB, bytes32(uint256(uint160(BOB))), BOB);
-
-    omnibus = new OmnibusHarness(address(this), address(quipFactory));
+    // commit is permissionless; each caller authenticates with its own keyed
+    // ERC-7913 identity through an accept-all mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
     attacker = new ReentrantRecipient();
     lock = omnibus.exposed_generateLock(SECRET);
 
@@ -104,11 +103,11 @@ contract Omnibus_Reentrancy is Test {
   function _commitBoth(Terms memory alice, Terms memory bob) internal {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob);
+    omnibus.commit{value: ALICE_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice);
+    omnibus.commit{value: BOB_AMOUNT}(lock, bob, alice, AuthHelper.keyedAuth(address(verifier), BOB));
   }
 
   /// @notice a claim recipient that re-enters claim mid-payout fails on the spent lock and

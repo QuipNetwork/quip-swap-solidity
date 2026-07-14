@@ -4,11 +4,12 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Asset, Terms} from '../../../src/TermsLib.sol';
-import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
-import {QuipFactoryMock} from '../../mocks/QuipFactoryMock.sol';
+import {VerifierMock} from '../../mocks/VerifierMock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 
 /// @title Omnibus Attack Scenarios
@@ -57,7 +58,7 @@ contract Omnibus_AttackScenarios is Test {
   OmnibusHarness public omnibusB;
   ERC20Mock public tokenA;
   ERC20Mock public tokenB;
-  QuipFactoryMock public quipFactory;
+  VerifierMock public verifier;
 
   // ============ Test Data ============
 
@@ -67,16 +68,15 @@ contract Omnibus_AttackScenarios is Test {
   // ============ Setup ============
 
   function setUp() public virtual {
-    // commit is gated to factory-deployed quip wallets; the attacker is registered too
-    // since these scenarios pin protections that hold even against quip wallets
-    quipFactory = new QuipFactoryMock();
-    _registerQuipWallet(ALICE);
-    _registerQuipWallet(BOB);
-    _registerQuipWallet(ATTACKER);
-
-    omnibus = new OmnibusHarness(address(this), address(quipFactory));
-    omnibusA = new OmnibusHarness(address(this), address(quipFactory));
-    omnibusB = new OmnibusHarness(address(this), address(quipFactory));
+    // commit is permissionless; each committer authenticates with its own keyed
+    // ERC-7913 identity through a shared accept-all mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
+    omnibusA = new OmnibusHarness(address(this));
+    omnibusA.setVerifierActivity(address(verifier), true);
+    omnibusB = new OmnibusHarness(address(this));
+    omnibusB.setVerifierActivity(address(verifier), true);
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
 
@@ -86,11 +86,6 @@ contract Omnibus_AttackScenarios is Test {
     vm.deal(BOB, 100 ether);
     vm.deal(CHARLIE, 100 ether);
     vm.deal(ATTACKER, 100 ether);
-  }
-
-  /// @notice register `wallet` in the factory mock so it passes the onlyQuipWallet gate
-  function _registerQuipWallet(address wallet) internal {
-    quipFactory.registerWallet(wallet, bytes32(uint256(uint160(wallet))), wallet);
   }
 
   // ============ Terms Builders ============
@@ -112,11 +107,11 @@ contract Omnibus_AttackScenarios is Test {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
-    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms);
+    omnibus.commit{value: amount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifier), ALICE));
 
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
-    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms);
+    omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifier), BOB));
 
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
   }
@@ -159,7 +154,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.startPrank(ALICE);
     tokenA.approve(address(omnibusA), tokenAAmount);
-    omnibusA.commit(crossLock, aliceTerms, bobTerms);
+    omnibusA.commit(crossLock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifier), ALICE));
     vm.stopPrank();
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Unused)); // independent
@@ -168,7 +163,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(AT_TAKER_COMMIT);
     vm.startPrank(BOB);
     tokenB.approve(address(omnibusB), tokenBAmount);
-    omnibusB.commit(crossLock, bobTerms, aliceTerms);
+    omnibusB.commit(crossLock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifier), BOB));
     vm.stopPrank();
     assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Committed));
     assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed)); // unchanged
@@ -274,7 +269,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(9000); // inside the replay party's commit window [0, 10_000)
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ATTACKER);
-    omnibus.commit{value: 1 ether}(lock, replayParty, replayCounter);
+    omnibus.commit{value: 1 ether}(lock, replayParty, replayCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER));
 
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
   }

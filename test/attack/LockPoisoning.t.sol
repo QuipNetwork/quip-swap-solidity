@@ -4,10 +4,11 @@ pragma solidity 0.8.33;
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {Terms} from '../../src/TermsLib.sol';
-import {IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
+import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
 /// @title Lock Poisoning (accepted, non-exploitable grief)
@@ -19,6 +20,8 @@ import {TermsHelper} from '../utils/TermsHelper.sol';
 ///   2. payouts always target addresses fixed in the (attacker's own) terms;
 ///   3. the victim simply retries with a fresh secret -> fresh lock, which the attacker cannot
 ///      predict ahead of time.
+/// The poisoning economics are UNCHANGED by commit authorization: a poisoner simply signs
+/// with its own keyed identity, so the commit signature adds attribution, not a gate.
 /// These tests pin that behavior so a future change that turns this into something worse is
 /// caught.
 contract Omnibus_LockPoisoning is Test {
@@ -42,19 +45,17 @@ contract Omnibus_LockPoisoning is Test {
   address public BOB_RECIPIENT = makeAddr('bobRecipient');
 
   OmnibusHarness public omnibus;
-  QuipFactoryMock public quipFactory;
+  VerifierMock public verifier;
 
   bytes32 public constant SECRET = keccak256('secret');
   bytes32 public lock;
 
   function setUp() public {
-    // commit is gated to factory-deployed quip wallets; the attacker is registered too
-    // since lock poisoning remains expressible by a malicious quip wallet
-    quipFactory = new QuipFactoryMock();
-    quipFactory.registerWallet(ALICE, bytes32(uint256(uint160(ALICE))), ALICE);
-    quipFactory.registerWallet(ATTACKER, bytes32(uint256(uint160(ATTACKER))), ATTACKER);
-
-    omnibus = new OmnibusHarness(address(this), address(quipFactory));
+    // commit is permissionless; each caller authenticates with its own keyed
+    // ERC-7913 identity through an accept-all mock verifier
+    verifier = new VerifierMock();
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifier), true);
     lock = omnibus.exposed_generateLock(SECRET);
     vm.deal(ALICE, 100 ether);
     vm.deal(ATTACKER, 100 ether);
@@ -82,7 +83,9 @@ contract Omnibus_LockPoisoning is Test {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
-    omnibus.commit{value: 1 wei}(lock, attackerParty, attackerCounter);
+    omnibus.commit{value: 1 wei}(
+      lock, attackerParty, attackerCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER)
+    );
     assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
 
     // the legitimate commit on the poisoned lock now reverts on the stored terms hash
@@ -91,12 +94,12 @@ contract Omnibus_LockPoisoning is Test {
 
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(lock, alice, bob);
+    omnibus.commit{value: 1 ether}(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
 
     // victim sidesteps with a fresh secret -> fresh lock (attacker cannot predict it)
     bytes32 freshLock = omnibus.exposed_generateLock(keccak256('alice-fresh-secret'));
     vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(freshLock, alice, bob);
+    omnibus.commit{value: 1 ether}(freshLock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
     assertEq(uint8(omnibus.lockState(freshLock)), uint8(LockState.Free));
 
     // the grief cost the attacker reclaimable capital: they recover it after their window

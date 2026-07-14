@@ -3,9 +3,9 @@
  *
  * These tests verify the SDK client's ORCHESTRATION only: which contract
  * function is selected, the exact arguments and msg.value, the read-before-
- * write ordering (fee, vaultIdOf, lock state), estimate-before-write with
- * the buffered gas limit, and that every preflight rejection happens BEFORE
- * any transaction is submitted.
+ * write ordering (fee, lock state), estimate-before-write with the buffered
+ * gas limit, and that every preflight rejection happens BEFORE any
+ * transaction is submitted.
  *
  * They deliberately do NOT prove ABI-encoding equivalence with Solidity —
  * `test/integration/differential.test.ts` does that against the deployed
@@ -20,6 +20,8 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
+import {buildKeyedSigner} from '../../src/index.js'
+import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
@@ -40,14 +42,17 @@ import {
 
 const OMNIBUS: Address = '0x9990000000000000000000000000000000000999'
 const IMPOSTOR: Address = '0x0000000000000000000000000000000000000bad'
-const FACTORY: Address = '0x8880000000000000000000000000000000000888'
+const VERIFIER: Address = '0x8880000000000000000000000000000000000888'
 const SENDER: Address = '0x7770000000000000000000000000000000000777'
 const TX_HASH = `0x${'ab'.repeat(32)}` as const
+const COMMIT_DIGEST = `0x${'d1'.repeat(32)}` as const
 const GAS_ESTIMATE = 100_000n
 const BUFFERED_GAS = 120_000n // estimate * default 1.2 multiplier
 
 const alice = aliceTerms(CHAIN_A) // proposer (local on chain A)
 const bob = bobTerms(CHAIN_A) // taker, same chain
+/** Keyed ERC-7913 auth for the mocked wallet's sending account. */
+const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'}
 
 /** A recorded call log shared by the mock public and wallet clients. */
 interface CallLog {
@@ -70,7 +75,7 @@ function setup(
     chainId?: bigint
     timestamp?: bigint
     fee?: bigint
-    vaultId?: `0x${string}`
+    verifierIsActive?: boolean
     termsHash?: `0x${string}`
     posted?: boolean
     lockState?: LockState
@@ -84,7 +89,7 @@ function setup(
     chainId = CHAIN_A,
     timestamp = AT_PROPOSER_COMMIT,
     fee = 25n,
-    vaultId = `0x${'11'.repeat(32)}` as const,
+    verifierIsActive = true,
     posted = true,
     lockState = LockState.Committed,
     balance = 10n ** 24n,
@@ -107,10 +112,10 @@ function setup(
     readContract: async (args: {address: Address; functionName: string}) => {
       log.sequence.push(`read:${args.functionName}`)
       switch (args.functionName) {
-        case 'QUIP_FACTORY':
-          return FACTORY
-        case 'vaultIdOf':
-          return vaultId
+        case 'verifierActive':
+          return verifierIsActive
+        case 'commitDigest':
+          return COMMIT_DIGEST
         case 'commitmentFee':
           return fee
         case 'lockState':
@@ -181,12 +186,12 @@ describe('commit orchestration', () => {
   })
 
   it('selects the commit function with 7-field Terms tuples and exact msg.value', async () => {
-    const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     expect(hash).toBe(TX_HASH)
 
     const est = mocks.log.estimations[0] as {
       functionName: string
-      args: [unknown, unknown, unknown]
+      args: [unknown, unknown, unknown, unknown]
       value: bigint
       address: Address
       account: Address
@@ -196,6 +201,8 @@ describe('commit orchestration', () => {
     expect(est.args[0]).toBe(FOUNDRY_LOCK)
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
+    // the CommitAuth struct rides along as the fourth argument
+    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
     // the write carries the same function/args/value
@@ -204,33 +211,39 @@ describe('commit orchestration', () => {
     expect(write.value).toBe(10n ** 18n + 25n)
   })
 
-  it('reads commitmentFee, vaultIdOf, and lock state BEFORE estimating, and estimates BEFORE writing', async () => {
-    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+  it('reads commitmentFee and lock state BEFORE estimating, and estimates BEFORE writing', async () => {
+    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     const seq = mocks.log.sequence
-    expect(seq.indexOf('read:vaultIdOf')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('read:lockState')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('read:commitmentFee')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('estimate:commit')).toBeLessThan(seq.indexOf('write'))
   })
 
-  it('rejects a non-QuipWallet sender with NOT_QUIP_WALLET BEFORE submission', async () => {
-    // the gate is preflighted via vaultIdOf; a zero vaultId fails before
-    // any estimation round-trip
-    const gated = setup({vaultId: `0x${'00'.repeat(32)}`})
-    expect(await codeOf(gated.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
-      'NOT_QUIP_WALLET',
-    )
-    expect(gated.log.sequence).not.toContain('estimate:commit')
-    expect(gated.log.writes).toHaveLength(0)
+  it('rejects a malformed auth.signer with MALFORMED_SIGNER BEFORE any write', async () => {
+    // shorter than 20 bytes — the contract would revert MalformedSigner;
+    // the SDK preflight catches it before estimation or submission
+    const malformed = setup({lockState: LockState.Unused})
+    expect(
+      await codeOf(
+        malformed.client.commit({
+          lock: FOUNDRY_LOCK,
+          party: alice,
+          counterparty: bob,
+          auth: {signer: '0x1234', signature: '0x'},
+        }),
+      ),
+    ).toBe('MALFORMED_SIGNER')
+    expect(malformed.log.sequence).not.toContain('estimate:commit')
+    expect(malformed.log.writes).toHaveLength(0)
   })
 
   it('passes the BUFFERED gas (estimate x 1.2) into writeContract', async () => {
-    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     expect((mocks.log.writes[0] as {gas: bigint}).gas).toBe(BUFFERED_GAS)
   })
 
   it('estimateContractGas receives the exact contract params (function, args, value, account)', async () => {
-    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     const est = mocks.log.estimations[0] as Record<string, unknown>
     expect(est['functionName']).toBe('commit')
     expect(est['account']).toBe(SENDER)
@@ -240,7 +253,7 @@ describe('commit orchestration', () => {
 
   it('rejects a missing wallet client with a clear error', async () => {
     const readOnly = setup({withWallet: false})
-    expect(await codeOf(readOnly.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+    expect(await codeOf(readOnly.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}))).toBe(
       'MISSING_WALLET_CLIENT',
     )
     expect(readOnly.log.writes).toHaveLength(0)
@@ -249,7 +262,7 @@ describe('commit orchestration', () => {
   it('rejects a chain mismatch on the PARTY side before submission', async () => {
     // commit must be sent on the party's chain; connected chain is B here
     const wrongChain = setup({chainId: CHAIN_B})
-    expect(await codeOf(wrongChain.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+    expect(await codeOf(wrongChain.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}))).toBe(
       'CHAIN_ID_MISMATCH',
     )
     expect(wrongChain.log.writes).toHaveLength(0)
@@ -257,7 +270,7 @@ describe('commit orchestration', () => {
 
   it('allows a REMOTE counterparty chain (cross-chain commit)', async () => {
     const crossBob = bobTerms(CHAIN_B)
-    await expect(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: crossBob})).resolves.toBe(
+    await expect(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: crossBob, auth: AUTH})).resolves.toBe(
       TX_HASH,
     )
   })
@@ -265,7 +278,7 @@ describe('commit orchestration', () => {
   it('rejects a commit outside the sender window before submission', async () => {
     // proposer trying to commit AT its deadline (upper bound exclusive)
     const late = setup({timestamp: alice.commitmentDeadline})
-    expect(await codeOf(late.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+    expect(await codeOf(late.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}))).toBe(
       'WINDOW_VIOLATED',
     )
     expect(late.log.writes).toHaveLength(0)
@@ -274,7 +287,7 @@ describe('commit orchestration', () => {
   it('explains a taker commit attempted before the window opens', async () => {
     // taker (bob) committing during the proposer's window — too early
     try {
-      await mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice})
+      await mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice, auth: AUTH})
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
@@ -288,7 +301,7 @@ describe('commit lock-state preflight', () => {
   it('Spent and Committed locks reject with INVALID_LOCK_STATE before estimation', async () => {
     for (const state of [LockState.Spent, LockState.Committed]) {
       const mocks = setup({lockState: state})
-      expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}))).toBe(
+      expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}))).toBe(
         'INVALID_LOCK_STATE',
       )
       expect(mocks.log.sequence).not.toContain('estimate:commit')
@@ -301,7 +314,7 @@ describe('commit lock-state preflight', () => {
     // re-posting bob's own already-posted side is the contract's
     // TermsAlreadyPosted case
     const mocks = setup({lockState: LockState.Free, posted: true, timestamp: AT_TAKER_COMMIT})
-    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice}))).toBe(
+    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice, auth: AUTH}))).toBe(
       'TERMS_ALREADY_POSTED',
     )
     expect(mocks.log.writes).toHaveLength(0)
@@ -314,7 +327,7 @@ describe('commit lock-state preflight', () => {
       timestamp: AT_TAKER_COMMIT,
       termsHash: `0x${'99'.repeat(32)}`,
     })
-    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice}))).toBe(
+    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice, auth: AUTH}))).toBe(
       'TERMS_NOT_ON_CHAIN',
     )
     expect(mocks.log.writes).toHaveLength(0)
@@ -322,13 +335,13 @@ describe('commit lock-state preflight', () => {
 
   it('a Free lock with matching termsHash and an un-posted side proceeds', async () => {
     const mocks = setup({lockState: LockState.Free, posted: false, timestamp: AT_TAKER_COMMIT})
-    await expect(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice})).resolves.toBe(TX_HASH)
+    await expect(mocks.client.commit({lock: FOUNDRY_LOCK, party: bob, counterparty: alice, auth: AUTH})).resolves.toBe(TX_HASH)
   })
 
   it('verifyOnChainState: false skips the lock reads and falls through to estimation', async () => {
     const mocks = setup({lockState: LockState.Spent}) // would reject if read
     await expect(
-      mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, verifyOnChainState: false}),
+      mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH, verifyOnChainState: false}),
     ).resolves.toBe(TX_HASH)
     expect(mocks.log.sequence).not.toContain('read:lockState')
   })
@@ -501,8 +514,8 @@ describe('gas estimation and balance preflight', () => {
 
   it('a contract revert during commit estimation surfaces as CONTRACT_REVERT with the name', async () => {
     // a revert that the SDK does NOT preflight (exact-value mismatch) must
-    // still decode cleanly from the estimation path — the gate itself is
-    // caught earlier by the NOT_QUIP_WALLET preflight, so use a non-gate error
+    // still decode cleanly from the estimation path — signature VALIDITY is
+    // deliberately left to the contract, so use a non-signature error
     const revert = new ContractFunctionRevertedError({
       abi: omnibusAbi,
       functionName: 'commit',
@@ -510,7 +523,7 @@ describe('gas estimation and balance preflight', () => {
     })
     const mocks = setup({lockState: LockState.Unused, estimateError: revert})
     try {
-      await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
       expect.unreachable()
     } catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
@@ -539,7 +552,7 @@ describe('gas estimation and balance preflight', () => {
     // insufficient funds can no longer masquerade as GAS_ESTIMATION_FAILED
     const mocks = setup({lockState: LockState.Unused, balance: 0n})
     try {
-      await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
       expect.unreachable()
     } catch (error) {
       expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
@@ -573,7 +586,7 @@ describe('gas estimation and balance preflight', () => {
     // the value-underfunded commit would fail the preflight, but the option waives it
     const skipped = setup({lockState: LockState.Unused, balance: 0n})
     await expect(
-      skipped.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob}, {skipPreflightChecks: true}),
+      skipped.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}, {skipPreflightChecks: true}),
     ).resolves.toBe(TX_HASH)
     expect(skipped.log.sequence).not.toContain('read:balance')
 
@@ -605,15 +618,56 @@ describe('gas estimation and balance preflight', () => {
 })
 
 describe('reads', () => {
-  it('isQuipWallet resolves QUIP_FACTORY then vaultIdOf', async () => {
-    const mocks = setup()
-    await expect(mocks.client.isQuipWallet(SENDER)).resolves.toBe(true)
-    expect(mocks.log.sequence).toEqual(['read:QUIP_FACTORY', 'read:vaultIdOf'])
+  it('isVerifierActive reads verifierActive and returns its value', async () => {
+    const active = setup({verifierIsActive: true})
+    await expect(active.client.isVerifierActive(VERIFIER)).resolves.toBe(true)
+    expect(active.log.sequence).toEqual(['read:verifierActive'])
+
+    const inactive = setup({verifierIsActive: false})
+    await expect(inactive.client.isVerifierActive(VERIFIER)).resolves.toBe(false)
   })
 
-  it('isQuipWallet returns false for a zero vaultId', async () => {
-    const mocks = setup({vaultId: `0x${'00'.repeat(32)}`})
-    await expect(mocks.client.isQuipWallet(SENDER)).resolves.toBe(false)
+  it('getCommitDigest reads the commitDigest view with the 7-field tuples and signerHash', async () => {
+    const mocks = setup()
+    const signerHash = `0x${'5e'.repeat(32)}` as const
+    await expect(mocks.client.getCommitDigest(FOUNDRY_LOCK, alice, bob, signerHash)).resolves.toBe(COMMIT_DIGEST)
+    expect(mocks.log.sequence).toEqual(['read:commitDigest'])
+  })
+
+  it('getCommitDigest rejects a malformed signerHash before any RPC interaction', () => {
+    const mocks = setup()
+    // the guard throws synchronously, before a promise (or any read) exists
+    try {
+      mocks.client.getCommitDigest(FOUNDRY_LOCK, alice, bob, '0x12' as never)
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('INVALID_HEX32')
+    }
+    expect(mocks.log.sequence).toHaveLength(0)
+  })
+})
+
+describe('admin.setVerifierActivity orchestration', () => {
+  it('selects setVerifierActivity with (verifier, active) and no value, estimating before writing', async () => {
+    const mocks = setup()
+    await expect(mocks.client.admin.setVerifierActivity(VERIFIER, true)).resolves.toBe(TX_HASH)
+    const est = mocks.log.estimations[0] as {functionName: string; args: [unknown, unknown]; value?: bigint}
+    expect(est.functionName).toBe('setVerifierActivity')
+    expect(est.args).toEqual([VERIFIER, true])
+    expect(est.value).toBeUndefined() // not payable
+    const seq = mocks.log.sequence
+    expect(seq.indexOf('estimate:setVerifierActivity')).toBeLessThan(seq.indexOf('write'))
+    const write = mocks.log.writes[0] as {functionName: string; args: [unknown, unknown]; gas: bigint}
+    expect(write.functionName).toBe('setVerifierActivity')
+    expect(write.args).toEqual([VERIFIER, true])
+    expect(write.gas).toBe(BUFFERED_GAS)
+  })
+
+  it('rejects without a wallet client, before any RPC interaction', async () => {
+    const readOnly = setup({withWallet: false})
+    expect(await codeOf(readOnly.client.admin.setVerifierActivity(VERIFIER, false))).toBe('MISSING_WALLET_CLIENT')
+    expect(readOnly.log.writes).toHaveLength(0)
   })
 })
 

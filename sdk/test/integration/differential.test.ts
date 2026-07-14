@@ -15,13 +15,18 @@
  *                              (accept/reject parity across vectors)
  * - enforceWithin           == TermsLibHarness.exposed_enforceWithin
  *                              (boundary parity: lower, upper-1, upper)
+ * - computeCommitDigest     == Omnibus.commitDigest (the deployed contract
+ *                              itself is the oracle for the commit digest)
  *
  * Run via `bun run test:integration` (the runner starts Anvil and sets
  * QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import type {Abi, Address} from 'viem'
+import {keccak256} from 'viem'
+import type {Abi, Address, Hex} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {totalNative} from '../../src/assets.js'
+import {buildKeyedSigner, computeCommitDigest} from '../../src/commitAuth.js'
+import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {validateTermPairing} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
@@ -259,6 +264,68 @@ describe('generateLock parity (oracle: OmnibusHarness.exposed_generateLock)', ()
       ])
       expect(generateLock(secret)).toBe(onChain)
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// commit digest parity
+// ---------------------------------------------------------------------------
+
+describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
+  /** The deployed contract's digest for the given inputs. */
+  async function oracleDigest(lock: Hex32, party: Terms, counterparty: Terms, signer: Hex): Promise<Hex32> {
+    return (await ctx.publicClient.readContract({
+      address: fixture.omnibus,
+      abi: omnibusAbi,
+      functionName: 'commitDigest',
+      args: [lock, abiTerms(party), abiTerms(counterparty), keccak256(signer)],
+    })) as Hex32
+  }
+
+  it('matches across varied terms pairs with keyed (>20-byte) signer blobs', async () => {
+    const rng = seededRng(0xd16e57n)
+    // the on-chain digest binds block.chainid, so the LOCAL (party) side
+    // must carry the connected chain's id — exactly the commit invariant
+    const localize = (terms: Terms): Terms => withOverrides(terms, {chainId: BigInt(CHAIN_ID)})
+
+    // keyed ERC-7913 signer blobs (verifier ‖ key) of differing key lengths
+    // built with buildKeyedSigner — the only shape the contract accepts
+    const signers: Hex[] = [
+      buildKeyedSigner(rndAddress(rng), `0x01`), // 21-byte keyed blob (minimum valid)
+      buildKeyedSigner(rndAddress(rng), keccak256(`0x01`)), // 52-byte keyed blob
+      buildKeyedSigner(rndAddress(rng), `0xdeadbeef`), // 24-byte keyed blob
+    ]
+
+    // fixed pairs plus deterministic generated pairs (same PRNG pattern as
+    // the other differential loops)
+    const pairs: [Terms, Terms][] = [
+      [localize(aliceTerms(CHAIN_A)), bobTerms(CHAIN_A)],
+      [localize(bobTerms(CHAIN_A)), aliceTerms(CHAIN_B)], // cross-chain counterparty
+      ...Array.from({length: 8}, (): [Terms, Terms] => [localize(rndTerms(rng)), rndTerms(rng)]),
+    ]
+
+    let vector = 0
+    for (const [party, counterparty] of pairs) {
+      const signer = signers[vector % signers.length] as Hex
+      const lock = keccak256(`0x${(++vector).toString(16).padStart(64, '0')}`) as Hex32
+      const local = computeCommitDigest({lock, party, counterparty, signer, omnibusAddress: fixture.omnibus})
+      expect(local, `vector ${vector} (signer ${signer})`).toBe(await oracleDigest(lock, party, counterparty, signer))
+    }
+  })
+
+  it('keyed blobs sharing a verifier but differing in key produce DIFFERENT digests (both in parity)', async () => {
+    const party = withOverrides(aliceTerms(CHAIN_A), {chainId: BigInt(CHAIN_ID)})
+    const counterparty = bobTerms(CHAIN_A)
+    const lock = keccak256('0x51') as Hex32
+    const verifier = '0x1000000000000000000000000000000000000001' as Address
+    const keyedA = buildKeyedSigner(verifier, keccak256('0x52'))
+    const keyedB = buildKeyedSigner(verifier, keccak256('0x53'))
+
+    const localA = computeCommitDigest({lock, party, counterparty, signer: keyedA, omnibusAddress: fixture.omnibus})
+    const localB = computeCommitDigest({lock, party, counterparty, signer: keyedB, omnibusAddress: fixture.omnibus})
+    expect(localA).not.toBe(localB) // the WHOLE blob, not just the verifier, is bound
+    expect(localA).toBe(await oracleDigest(lock, party, counterparty, keyedA))
+    expect(localB).toBe(await oracleDigest(lock, party, counterparty, keyedB))
   })
 })
 

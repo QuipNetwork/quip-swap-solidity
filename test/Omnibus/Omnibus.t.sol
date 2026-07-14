@@ -2,10 +2,11 @@
 pragma solidity 0.8.33;
 
 import {Asset, AssetType, Terms} from '../../src/TermsLib.sol';
-import {LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
-import {QuipFactoryMock} from '../mocks/QuipFactoryMock.sol';
+import {VerifierMock} from '../mocks/VerifierMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
+import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
@@ -53,7 +54,15 @@ contract OmnibusTest is TestBase {
   // ============ Contracts ============
 
   OmnibusHarness public omnibus;
-  QuipFactoryMock public quipFactory;
+  VerifierMock public verifierA;
+  VerifierMock public verifierB;
+
+  // ============ Identities (ERC-7913 keyed — the only commit-auth route) ============
+
+  /// @notice Alice's keyed ERC-7913 identity: verifierA(20 bytes) ‖ key
+  bytes public aliceSigner;
+  /// @notice Bob's keyed ERC-7913 identity: verifierA(20 bytes) ‖ key
+  bytes public bobSigner;
 
   // ============ Test Data ============
 
@@ -65,15 +74,18 @@ contract OmnibusTest is TestBase {
   function setUp() public virtual override {
     super.setUp();
 
-    // Deploy QuipFactory mock and register actors as quip wallets (commit is
-    // gated to factory-deployed wallets)
-    quipFactory = new QuipFactoryMock();
-    _registerQuipWallet(ALICE);
-    _registerQuipWallet(BOB);
-    _registerQuipWallet(CHARLIE);
+    // Deploy verification doubles: two ERC-7913 verifier instances (activity
+    // independence)
+    verifierA = new VerifierMock();
+    verifierB = new VerifierMock();
 
-    // Deploy Omnibus harness
-    omnibus = new OmnibusHarness(address(this), address(quipFactory));
+    // Deploy Omnibus harness; activate verifierA only (post-deploy owner action)
+    omnibus = new OmnibusHarness(address(this));
+    omnibus.setVerifierActivity(address(verifierA), true);
+
+    // Default identities: both keyed via the active verifierA
+    aliceSigner = abi.encodePacked(address(verifierA), bytes('alice-key'));
+    bobSigner = abi.encodePacked(address(verifierA), bytes('bob-key'));
 
     // Generate lock from secret
     lock = omnibus.exposed_generateLock(SECRET);
@@ -96,10 +108,8 @@ contract OmnibusTest is TestBase {
     assertNotEq(address(mockERC721), address(0));
     assertNotEq(address(mockERC1155), address(0));
     assertEq(omnibus.VERSION(), 0);
-    assertEq(address(omnibus.QUIP_FACTORY()), address(quipFactory));
-    assertNotEq(quipFactory.vaultIdOf(ALICE), bytes32(0));
-    assertNotEq(quipFactory.vaultIdOf(BOB), bytes32(0));
-    assertNotEq(quipFactory.vaultIdOf(CHARLIE), bytes32(0));
+    assertTrue(omnibus.verifierActive(address(verifierA)));
+    assertFalse(omnibus.verifierActive(address(verifierB)));
   }
 
   // ============ Internal Helpers ============
@@ -109,9 +119,30 @@ contract OmnibusTest is TestBase {
     _approveAllFor(owner, address(omnibus));
   }
 
-  /// @notice Register `wallet` in the factory mock so it passes the onlyQuipWallet gate
-  function _registerQuipWallet(address wallet) internal {
-    quipFactory.registerWallet(wallet, bytes32(uint256(uint160(wallet))), wallet);
+  // ============ CommitAuth Builders ============
+
+  /// @notice default keyed identity per actor (all via the active verifierA)
+  function _authFor(address committer, bytes32, Terms memory, Terms memory) internal view returns (CommitAuth memory) {
+    if (committer == ALICE) return AuthHelper.auth(aliceSigner);
+    if (committer == BOB) return AuthHelper.auth(bobSigner);
+    return AuthHelper.keyedAuth(address(verifierA), committer);
+  }
+
+  /// @notice field-for-field raw mirror of Omnibus._commitDigest (drift alarm: this
+  /// re-derives the digest from the SPEC — tag, chainid, contract, lock, both terms
+  /// digests, signer hash — not by calling the enforced code path)
+  function _mirrorCommitDigest(
+    bytes32 _lock,
+    Terms memory party,
+    Terms memory counterparty,
+    bytes memory signer
+  ) internal view returns (bytes32) {
+    bytes32 domain = keccak256(abi.encode(keccak256('QUIP:Omnibus:commit'), block.chainid, address(omnibus)));
+    return keccak256(
+      abi.encode(
+        domain, _lock, omnibus.computeTermsDigest(party), omnibus.computeTermsDigest(counterparty), keccak256(signer)
+      )
+    );
   }
 
   // ============ Asset Helpers (single asset variants) ============
@@ -208,12 +239,14 @@ contract OmnibusTest is TestBase {
 
   /// @notice Commit `party` against `counterparty`, auto-warping into the party's commit
   ///         window (proposer commits before its deadline; taker commits after the proposer's
-  ///         deadline) and forwarding the required native value plus the current fee
+  ///         deadline) and forwarding the required native value plus the current fee.
+  ///         Every committer authenticates with a KEYED ERC-7913 identity via verifierA
   function _commitFor(address committer, bytes32 _lock, Terms memory party, Terms memory counterparty) internal {
     vm.warp(_isProposer(party, counterparty) ? AT_PROPOSER_COMMIT : AT_TAKER_COMMIT);
     uint256 value = _totalNativeForCommit(party) + omnibus.commitmentFee();
+    CommitAuth memory auth = _authFor(committer, _lock, party, counterparty);
     vm.prank(committer);
-    omnibus.commit{value: value}(_lock, party, counterparty);
+    omnibus.commit{value: value}(_lock, party, counterparty, auth);
   }
 
   /// @notice Helper to commit both parties for same-chain swaps (proposer then taker)

@@ -82,7 +82,7 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
     assertNotEq(hash1, hash2);
   }
 
-  /// @dev every field that feeds digestTerms must perturb the canonical digest;
+  /// @dev every field that feeds digestTerms must change the canonical digest;
   ///      one assertion per Terms field (assets covered separately below)
   function test_digestTermsCanonically_includesAllFields() public view {
     Terms memory alice = _aliceTerms();

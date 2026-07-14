@@ -4,8 +4,7 @@
  *
  * Design rules:
  * - Accepts EXISTING Viem clients — browser wallets, local private-key
- *   accounts, backends, hardware-wallet transports, and (in production)
- *   clients whose sender is a QuipWallet contract. The SDK never takes
+ *   accounts, backends, and hardware-wallet transports. The SDK never takes
  *   custody of private keys, raw RPC URLs, or a specific wallet impl.
  * - Every write runs the protocol preflights first, then `prepareTx`
  *   (a balance preflight on the bare call value, then node-side gas
@@ -22,6 +21,8 @@
 import {BaseError, InsufficientFundsError} from 'viem'
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
+import {assertSignerBlob} from './commitAuth.js'
+import type {CommitAuth} from './commitAuth.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
 import {prepareTx} from './gas.js'
 import type {TxOptions} from './gas.js'
@@ -34,22 +35,6 @@ import {LockState} from './types.js'
 import type {Hex32, Terms} from './types.js'
 import {validateClaimWindow, validateCommitWindow, validateReclaimWindow} from './windows.js'
 
-/**
- * Minimal `IQuipFactory` surface consumed by the SDK — exactly what the
- * Omnibus `onlyQuipWallet` modifier reads.
- *
- * @see IQuipFactory.vaultIdOf
- */
-export const quipFactoryAbi = [
-  {
-    type: 'function',
-    name: 'vaultIdOf',
-    stateMutability: 'view',
-    inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
-  },
-] as const
-
 /** Arguments for {@link createOmnibusClient}. */
 export interface CreateOmnibusClientArgs {
   /** The deployed Omnibus contract address (see {@link resolveDeployment}). */
@@ -58,9 +43,10 @@ export interface CreateOmnibusClientArgs {
   readonly publicClient: PublicClient
   /**
    * A Viem wallet client for writes. Optional: a read-only client works
-   * without one, and writes then fail with `MISSING_WALLET_CLIENT`. In
-   * production the COMMIT sender must be a QuipWallet contract; claim and
-   * reclaim may be sent by any account.
+   * without one, and writes then fail with `MISSING_WALLET_CLIENT`. All
+   * writes are permissionless — but note the FUNDING MODEL: the commit
+   * SENDER funds the party's leg + fee; the identity in `auth` only
+   * authorizes.
    */
   readonly walletClient?: WalletClient
 }
@@ -69,10 +55,16 @@ export interface CreateOmnibusClientArgs {
 export interface CommitArgs {
   /** The hashlock (`generateLock(secret)`); the proposer generates the secret. */
   readonly lock: Hex32
-  /** The committing side's terms — the sender acts for this side. */
+  /** The committing side's terms — the auth identity endorses this side. */
   readonly party: Terms
   /** The other side's terms. */
   readonly counterparty: Terms
+  /**
+   * The committing side's identity blob + signature over the commit digest
+   * (see {@link computeCommitDigest} / {@link buildKeyedSigner}). The SDK
+   * never signs: `signature` is opaque bytes from the keyholder's own tooling.
+   */
+  readonly auth: CommitAuth
   /**
    * When `true` (default), preflight additionally reads the lock's
    * on-chain state: a `Spent` or `Committed` lock rejects with
@@ -171,6 +163,17 @@ export interface OmnibusAdmin {
    * @see Ownable2Step.acceptOwnership
    */
   acceptOwnership(opts?: TxOptions): Promise<Hash>
+  /**
+   * Sets the activity status of an ERC-7913 verifier for the keyed commit
+   * route. Owner only; reverts `ZeroVerifier` for the zero address.
+   *
+   * @param verifier - The verifier contract address (non-zero).
+   * @param active - The new activity status.
+   * @param opts - Optional per-transaction gas/fee/nonce options.
+   * @returns The transaction hash.
+   * @see Omnibus.setVerifierActivity
+   */
+  setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash>
 }
 
 /**
@@ -195,8 +198,6 @@ export interface OmnibusClient {
   getVersion(): Promise<bigint>
   /** Reads the maximum settable commitment fee in wei. @see Omnibus.MAX_FEE */
   getMaxFee(): Promise<bigint>
-  /** Reads the QuipFactory address whose registry gates commit. @see Omnibus.QUIP_FACTORY */
-  getQuipFactory(): Promise<Address>
   /** Reads the current commitment fee in wei. @see Omnibus.commitmentFee */
   getCommitmentFee(): Promise<bigint>
   /** Reads the withdrawable accrued fees in wei. @see Omnibus.accruedFees */
@@ -212,36 +213,50 @@ export interface OmnibusClient {
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
   getPendingOwner(): Promise<Address>
   /**
-   * Checks whether `account` passes the `onlyQuipWallet` gate: reads
-   * `vaultIdOf(account)` on the contract's `QUIP_FACTORY` and reports
-   * whether it is non-zero. Only factory-deployed QuipWallets can commit;
-   * `commit` runs this as a preflight and rejects with `NOT_QUIP_WALLET`.
+   * Reads whether an ERC-7913 verifier is active on the contract — the
+   * keyed route (`signer` blob longer than 20 bytes) reverts
+   * `VerifierNotActive` unless its leading 20 bytes name an active verifier.
    *
-   * @param account - The would-be commit sender (the QuipWallet contract
-   *   address, NOT its owner's EOA).
-   * @returns `true` iff `vaultIdOf(account)` is non-zero (the account can commit).
-   * @see Omnibus.commit (onlyQuipWallet), IQuipFactory.vaultIdOf
+   * @param verifier - The ERC-7913 verifier contract address.
+   * @returns `true` iff the verifier is active.
+   * @see Omnibus.verifierActive
    */
-  isQuipWallet(account: Address): Promise<boolean>
+  isVerifierActive(verifier: Address): Promise<boolean>
+  /**
+   * Reads the contract's commit digest for the given inputs — the on-chain
+   * counterpart of {@link computeCommitDigest} (which computes the same
+   * value locally without an RPC round-trip). Useful for digest-parity
+   * assertions and debugging signature rejections.
+   *
+   * @param lock - The hashlock.
+   * @param party - The committing side's terms.
+   * @param counterparty - The other side's terms.
+   * @param signerHash - `keccak256` of the committing side's identity blob.
+   * @returns The 32-byte commit digest.
+   * @see Omnibus.commitDigest
+   */
+  getCommitDigest(lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32): Promise<Hex32>
 
   // ---- writes (preflight → estimate+buffer → write; hash returned, NOT finality) ----
 
   /**
-   * Commits the sender's side of a swap. QuipWallet-gated and payable.
+   * Commits a side of a swap. PERMISSIONLESS and payable — the contract
+   * authenticates the PAYLOAD (`args.auth`), not the caller.
    *
-   * The contract gates commit with `onlyQuipWallet`
-   * (`QUIP_FACTORY.vaultIdOf(msg.sender) != 0`), so the SDK preflights the
-   * gate via {@link OmnibusClient.isQuipWallet} and rejects a non-wallet
-   * sender with `NOT_QUIP_WALLET` BEFORE any estimation round-trip — this is
-   * the most likely integration failure. The committer must be the QuipWallet
-   * CONTRACT address, never its owner's EOA.
+   * FUNDING MODEL: the SENDER (the wallet client's account) funds the
+   * party's leg + fee — assets are pulled from `msg.sender` and `msg.value`
+   * must cover `totalNative(party) + commitmentFee`. The identity in
+   * Funding is independent of authorization: the identity in `auth.signer`
+   * only endorses the payload, it never pays.
    *
    * Preflight (in order, all before any transaction exists):
    * 1. Both terms structurally valid; 2. pairing strictly interleaves;
    * 3. `party.chainId` matches the connected chain (`counterparty.chainId`
-   *    may differ — cross-chain); 4. the sender passes the QuipWallet gate
-   *    (`vaultIdOf != 0`); 5. the chain's current timestamp is inside the
-   *    sender's commit window — proposer `[0, party.commitmentDeadline)`,
+   *    may differ — cross-chain); 4. `auth.signer` is a well-formed blob
+   *    (more than 20 bytes — the contract reverts `MalformedSigner` at 20
+   *    or fewer; signature VALIDITY is left to the contract's verifier call);
+   *    5. the chain's current timestamp is inside the committing side's
+   *    commit window — proposer `[0, party.commitmentDeadline)`,
    *    taker `[counterparty.commitmentDeadline, party.commitmentDeadline)`
    *    (the taker's window OPENS only when the proposer's deadline
    *    elapses); 6. unless `verifyOnChainState` is disabled, the lock's
@@ -284,13 +299,15 @@ export interface OmnibusClient {
    * @returns The transaction hash (not finality — wait for the receipt).
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
-   *   | `CHAIN_ID_MISMATCH` | `NOT_QUIP_WALLET` | `WINDOW_VIOLATED` |
+   *   | `CHAIN_ID_MISMATCH` | `MALFORMED_SIGNER` | `WINDOW_VIOLATED` |
    *   `INVALID_LOCK_STATE` | `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN` |
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
-   * @see Omnibus.commit (onlyQuipWallet)
+   * @see Omnibus.commit, Omnibus._enforceCommitAuthorized
    * @example
    * ```ts
-   * const hash = await client.commit({lock, party: myTerms, counterparty: theirTerms})
+   * // ERC-7913 keyed: the identity signed computeCommitDigest(...) off-band
+   * const signer = buildKeyedSigner(verifierAddress, key)
+   * const hash = await client.commit({lock, party, counterparty, auth: {signer, signature}})
    * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
@@ -417,18 +434,6 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   const {address, publicClient, walletClient} = args
   const contract = {address, abi: omnibusAbi} as const
 
-  /** Cached QUIP_FACTORY address — immutable on-chain, safe to cache per client. */
-  let quipFactoryAddress: Address | undefined
-
-  async function getQuipFactory(): Promise<Address> {
-    if (quipFactoryAddress === undefined) {
-      const factory = await read<Address>('QUIP_FACTORY')
-      quipFactoryAddress = factory
-      return factory
-    }
-    return quipFactoryAddress
-  }
-
   /** Typed read with revert wrapping. */
   async function read<T>(functionName: string, fnArgs: readonly unknown[] = []): Promise<T> {
     try {
@@ -464,23 +469,6 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   async function chainTimestamp(): Promise<bigint> {
     const block = await publicClient.getBlock()
     return block.timestamp
-  }
-
-  // The onlyQuipWallet gate: QUIP_FACTORY.vaultIdOf(account) != bytes32(0).
-  // commit() preflights this so a non-wallet sender fails as NOT_QUIP_WALLET.
-  async function isQuipWallet(account: Address): Promise<boolean> {
-    const factory = await getQuipFactory()
-    try {
-      const vaultId = await publicClient.readContract({
-        address: factory,
-        abi: quipFactoryAbi,
-        functionName: 'vaultIdOf',
-        args: [account],
-      })
-      return BigInt(vaultId) !== 0n
-    } catch (error) {
-      throw wrapContractError(error, 'Reading vaultIdOf from QUIP_FACTORY')
-    }
   }
 
   /**
@@ -710,6 +698,17 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       const {wallet, sender} = requireWallet()
       return submitWrite({wallet, sender, functionName: 'acceptOwnership', args: [], opts, context: 'acceptOwnership'})
     },
+    async setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash> {
+      const {wallet, sender} = requireWallet()
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'setVerifierActivity',
+        args: [verifier, active],
+        opts,
+        context: 'setVerifierActivity',
+      })
+    },
   }
 
   return {
@@ -717,7 +716,6 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     publicClient,
     getVersion: () => read('VERSION'),
     getMaxFee: () => read('MAX_FEE'),
-    getQuipFactory,
     getCommitmentFee: () => read('commitmentFee'),
     getAccruedFees: () => read('accruedFees'),
     getLockState: async (lock: Hex32) => {
@@ -736,8 +734,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     },
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),
-
-    isQuipWallet,
+    isVerifierActive: (verifier: Address) => read('verifierActive', [verifier]),
+    getCommitDigest: (lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32) => {
+      assertHex32(lock, 'lock')
+      assertHex32(signerHash, 'signerHash')
+      return read<Hex32>('commitDigest', [lock, toAbiTerms(party), toAbiTerms(counterparty), signerHash])
+    },
 
     // confirm a write and decode events, always scoped to this client's
     // Omnibus address (the client knows the right address for its chain)
@@ -745,7 +747,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       waitForOmnibusReceipt(publicClient, hash, {...options, address}),
 
     // @audit-ok
-    async commit({lock, party, counterparty, verifyOnChainState = true}: CommitArgs, opts?: TxOptions): Promise<Hash> {
+    async commit(
+      {lock, party, counterparty, auth, verifyOnChainState = true}: CommitArgs,
+      opts?: TxOptions,
+    ): Promise<Hash> {
       assertHex32(lock, 'lock')
       const {wallet, sender} = requireWallet()
 
@@ -766,20 +771,13 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         })
       }
 
-      // 4. QuipWallet gate — only factory-deployed QuipWallets can commit
-      // (Omnibus.commit is onlyQuipWallet). Preflight it here, before the
-      // estimation round-trip, since a non-wallet sender is the most likely
-      // integration failure; surfaces as NOT_QUIP_WALLET with a clear cause.
-      if (!(await isQuipWallet(sender))) {
-        throw new QuipSwapError({
-          code: 'NOT_QUIP_WALLET',
-          message:
-            `Sender ${sender} is not a factory-deployed QuipWallet (QUIP_FACTORY.vaultIdOf is zero); ` +
-            'only QuipWallet contracts can commit (contract: CallerNotQuipWallet). The committer must be the ' +
-            "QuipWallet CONTRACT address — never substitute the wallet owner's EOA",
-          details: {sender},
-        })
-      }
+      // 4. signer-blob shape preflight — the contract reverts MalformedSigner
+      // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
+      // ERC-7913 verifier call: the
+      // SDK cannot know the route's semantics off-chain, and gas estimation
+      // surfaces a would-be InvalidCommitSignature as a decoded revert.
+      // NOTE the funding model: `sender` (not auth.signer) funds the leg + fee.
+      assertSignerBlob(auth.signer)
 
       // 5. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()
@@ -823,7 +821,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         wallet,
         sender,
         functionName: 'commit',
-        args: [lock, toAbiTerms(party), toAbiTerms(counterparty)],
+        args: [lock, toAbiTerms(party), toAbiTerms(counterparty), {signer: auth.signer, signature: auth.signature}],
         value,
         opts,
         context: 'commit',

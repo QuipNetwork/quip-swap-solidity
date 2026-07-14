@@ -3,7 +3,7 @@
 # ==============================================================================
 # Load .env file if it exists, and EXPORT every key into the environment so
 # child processes (forge, bun, …) see them — e.g. forge's vm.envAddress reads
-# DEPLOYER_ADDRESS / OMNIBUS_OWNER / QUIP_FACTORY without any $(VAR) plumbing.
+# DEPLOYER_ADDRESS / OMNIBUS_OWNER without any $(VAR) plumbing.
 # A missing .env is silently ignored (unscoped build/test need none of these).
 ifneq (,$(wildcard ./.env))
     include .env
@@ -57,8 +57,14 @@ clean: ## Clean build artifacts
 	forge clean
 
 # ==============================================================================
-# Deployment (Omnibus via the Deployer contract — env: DEPLOYER_PK,
-# DEPLOYER_ADDRESS, OMNIBUS_OWNER, QUIP_FACTORY)
+# Deployment (via the Deployer contract — env: DEPLOYER_PK, DEPLOYER_ADDRESS,
+# OMNIBUS_OWNER)
+#
+# Per-chain deploy ORDER:
+#   1. Deployer         (DeployDeployer, done once per chain)
+#   2. Omnibus          (make deploy)
+# Verifier activation is separate: post-deploy, the owner calls
+# setVerifierActivity(verifier, true).
 # ==============================================================================
 
 .PHONY: anvil-fork
@@ -66,7 +72,7 @@ anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SE
 	anvil --fork-url $(RPC_URL)
 
 .PHONY: deploy
-deploy: ## Deploy Omnibus + broadcast + verify. Usage: make deploy RPC=API_URL_BASE_SEPOLIA
+deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \
