@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {Omnibus} from '../../src/Omnibus.sol';
 import {Terms, TermsLib} from '../../src/TermsLib.sol';
-import {LockState} from '../../src/interfaces/IOmnibus.sol';
+import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
@@ -13,12 +13,8 @@ contract OmnibusHarness is Omnibus {
   constructor(address initialOwner) Omnibus(initialOwner) {}
 
   /// @notice exposes _enforceCommitAuthorized (the identity router)
-  function exposed_enforceCommitAuthorized(
-    bytes calldata signer,
-    bytes32 digest,
-    bytes calldata signature
-  ) external view {
-    _enforceCommitAuthorized(signer, digest, signature);
+  function exposed_enforceCommitAuthorized(CommitAuth calldata auth, bytes32 digest) external view {
+    _enforceCommitAuthorized(auth, digest);
   }
 
   /// @notice exposes _advanceLockTo
