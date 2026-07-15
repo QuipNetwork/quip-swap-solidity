@@ -10,6 +10,9 @@ import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IE
 import {
   IERC7913SignatureVerifier
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
+import {
+  IERC7913TransientAttestation
+} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913TransientAttestation.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -28,6 +31,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @dev no version suffix: version scoping comes from address(this) in the
   /// domain — each Omnibus version deploys at a distinct CREATE3 address
   bytes32 public constant COMMIT_DIGEST_TAG = keccak256('QUIP:Omnibus:commit');
+
+  /// @inheritdoc IOmnibus
+  /// @dev no extra domain fields on purpose: the downstreamDigest half is
+  /// commitDigest, which already binds DOMAIN_SEPARATOR (tag + chainid +
+  /// address(this)), the lock, both terms, and the declared identity
+  bytes32 public constant ENVELOPE_TYPEHASH =
+    keccak256('ShrincsEnvelope(bytes32 walletBinding,bytes32 downstreamDigest)');
 
   /// @inheritdoc IOmnibus
   /// @dev baked once at construction from the deploy-time chainid + address
@@ -107,9 +117,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     bytes32 partyDigest = party.digestTerms();
 
     // single digest code path — same fn the commitDigest view uses (no inline re-derivation)
-    _enforceCommitAuthorized(
-      auth.signer, _commitDigest(lock, partyDigest, counterparty.digestTerms(), keccak256(auth.signer)), auth.signature
-    );
+    _enforceCommitAuthorized(auth, _commitDigest(lock, partyDigest, counterparty.digestTerms(), keccak256(auth.signer)));
 
     LockState current = lockState[lock];
     LockState target;
@@ -325,23 +333,45 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   }
 
   /// @notice enforces the declared ERC-7913 keyed identity endorsed the digest
-  /// @dev view-only; resolves to a STATICCALL — no reentrancy surface. There is no
+  /// @dev view-only; resolves to STATICCALLs — no reentrancy surface. There is no
   /// membership check: identities attribute, they don't gate; the declared blob is
   /// bound into the digest (signerHash ingredient) and into verification itself.
   /// The ONLY accepted identity shape is ERC-7913 keyed: verifier(20 bytes) ‖ key —
-  /// the verifier must be owner-activated, then verify(key, digest, sig) must
-  /// return its selector. Anything 20 bytes or shorter (including a bare address)
-  /// is MalformedSigner
-  /// @param signer the committing side's identity blob: verifier(20 bytes) ‖ key
-  /// @param digest the commit digest the signature must cover
-  /// @param signature the signature bytes
-  function _enforceCommitAuthorized(bytes calldata signer, bytes32 digest, bytes calldata signature) internal view {
+  /// the verifier must be owner-activated. Anything 20 bytes or shorter (including
+  /// a bare address) is MalformedSigner. Two routes past that shared gate:
+  /// - non-empty signature (KEYED): verify(key, digest, sig) must return its
+  ///   selector
+  /// - empty signature (ATTESTED): the verifier must hold a same-transaction
+  ///   attestation (IERC7913TransientAttestation shared spec) that the key signed
+  ///   keccak256(abi.encode(ENVELOPE_TYPEHASH, auth.walletBinding, digest)) —
+  ///   ONE identity signature covers the wallet's own execution AND this commit.
+  ///   wasVerified binds account == msg.sender, so only the wallet that attested
+  ///   can spend the attestation; intra-transaction reuse is dead on arrival at
+  ///   the lock state machine (TermsAlreadyPosted / InvalidLockAdvancement).
+  ///   A verifier without the attestation surface reverts here on its missing
+  ///   selector — that is the rejection, not a fallback trigger
+  /// @param auth the committing side's identity blob, signature (empty selects
+  /// the attested route), and walletBinding witness
+  /// @param digest the commit digest the identity must have endorsed
+  function _enforceCommitAuthorized(CommitAuth calldata auth, bytes32 digest) internal view {
+    bytes calldata signer = auth.signer;
     if (signer.length <= 20) revert MalformedSigner();
     // ERC-7913 keyed: verifier(20) ‖ key
     address verifier = address(bytes20(signer[:20]));
     if (!verifierActive[verifier]) revert VerifierNotActive();
+
+    if (auth.signature.length == 0) {
+      // reconstruct the composite the wallet actually signed: its own half
+      // (walletBinding, opaque) ‖ commit half (the commit digest)
+      bytes32 envelopeHash = keccak256(abi.encode(ENVELOPE_TYPEHASH, auth.walletBinding, digest));
+      if (!IERC7913TransientAttestation(verifier).wasVerified(msg.sender, keccak256(signer[20:]), envelopeHash)) {
+        revert AttestationNotFound();
+      }
+      return;
+    }
+
     if (
-      IERC7913SignatureVerifier(verifier).verify(signer[20:], digest, signature)
+      IERC7913SignatureVerifier(verifier).verify(signer[20:], digest, auth.signature)
         != IERC7913SignatureVerifier.verify.selector
     ) revert InvalidCommitSignature();
   }

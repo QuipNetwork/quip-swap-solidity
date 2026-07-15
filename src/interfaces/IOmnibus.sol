@@ -16,17 +16,34 @@ enum LockState {
 }
 
 /// @notice auth data for one commit; identities attribute, they don't gate
-/// @dev the signature is a SOFT GUARD: it proves this exact payload (lock + both
+/// @dev the endorsement is a SOFT GUARD: it proves this exact payload (lock + both
 /// terms, on this chain, for this contract) was endorsed by the declared identity —
 /// it does NOT gate which identity may post a side. Counterparty-identity checks,
-/// where a client wants them, happen off-chain against the Commitment event
+/// where a client wants them, happen off-chain against the Commitment event.
+/// Two routes, discriminated by `signature`:
+/// - non-empty: KEYED route — `signature` is verified over commitDigest by the
+///   declared verifier (`walletBinding` is ignored; set it to zero)
+/// - empty: ATTESTED route — the identity signed ONE composite envelope,
+///   keccak256(abi.encode(ENVELOPE_TYPEHASH, walletBinding, commitDigest)),
+///   which the declared verifier already verified EARLIER THIS TRANSACTION via
+///   verifyAndAttest; commit only checks wasVerified(msg.sender, keyHash,
+///   envelopeHash). Lets a smart wallet burn a single one-time leaf for its own
+///   execution AND this commit. The attestation binds account == msg.sender, so
+///   the permissionless-sender model collapses to sender == attesting wallet on
+///   this route
 struct CommitAuth {
   /// @notice the committing side's identity blob
   /// @dev the ONLY accepted shape is an ERC-7913 keyed identity:
   /// verifier(20 bytes) ‖ key; length <= 20 reverts MalformedSigner
   bytes signer;
-  /// @notice signature over commitDigest, verified by the declared verifier
+  /// @notice signature over commitDigest, verified by the declared verifier;
+  /// EMPTY selects the attested route
   bytes signature;
+  /// @notice attested route only: the wallet's half of the signed envelope —
+  /// its own execution commitment (replay scope, target, calldata binding are
+  /// the WALLET's concern; opaque here). A wrong witness reconstructs a
+  /// different envelopeHash and fails the attestation lookup
+  bytes32 walletBinding;
 }
 
 interface IOmnibus {
@@ -62,6 +79,10 @@ interface IOmnibus {
 
   /// @notice thrown when the verifier rejects the signature
   error InvalidCommitSignature();
+
+  /// @notice thrown on the attested route when the declared verifier has no
+  /// transaction-scoped attestation for (msg.sender, keyHash, envelopeHash)
+  error AttestationNotFound();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -132,6 +153,13 @@ interface IOmnibus {
   /// @return separator the domain separator
   function DOMAIN_SEPARATOR() external view returns (bytes32 separator);
 
+  /// @notice the typehash of the attested route's composite envelope, shared
+  /// byte-for-byte with the wallet-side signer:
+  /// keccak256('ShrincsEnvelope(bytes32 walletBinding,bytes32 downstreamDigest)')
+  /// where downstreamDigest is this contract's commitDigest
+  /// @return typehash the envelope typehash
+  function ENVELOPE_TYPEHASH() external view returns (bytes32 typehash);
+
   /// @notice computes the digest a committer's identity must sign
   /// @dev pure function of caller-known data; the SDK computes it locally and
   /// commit recomputes it from calldata — it is never transmitted. Binds the
@@ -151,8 +179,11 @@ interface IOmnibus {
 
   /// @notice commits assets and collateral to a swap
   /// @dev permissionless: any sender may commit; the ERC-7913 keyed identity in
-  /// `auth` AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. The
-  /// signature is over commitDigest and is checked by the declared verifier
+  /// `auth` AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. With
+  /// a non-empty auth.signature it is verified over commitDigest by the declared
+  /// verifier; with an empty auth.signature the declared verifier must hold a
+  /// same-transaction attestation for the composite envelope (see CommitAuth —
+  /// on that route msg.sender must be the attesting wallet)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
