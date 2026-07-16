@@ -40,6 +40,10 @@ struct Terms {
   uint256 claimDeadline;
   /// @notice timestamp after which reclaim is permitted
   uint256 reclaimRelease;
+  /// @notice when BOTH sides set true, the LOWER bounds of the commit and claim
+  /// windows are waived (no forced sequencing waits); upper bounds and
+  /// reclaimRelease are always enforced
+  bool optimistic;
   /// @notice the assets offered by the party
   Asset[] assets;
 }
@@ -58,6 +62,9 @@ library TermsLib {
 
   /// @notice thrown when deadlines are not strictly increasing
   error DisordedDeadlines();
+
+  /// @notice thrown when the two sides' optimistic flags differ
+  error OptimismMismatch();
 
   /// @notice thrown when a native asset has invalid fields
   error InvalidNativeAsset();
@@ -104,6 +111,7 @@ library TermsLib {
         terms.commitmentDeadline,
         terms.claimDeadline,
         terms.reclaimRelease,
+        terms.optimistic,
         terms.assets
       )
     );
@@ -309,11 +317,13 @@ library TermsLib {
   }
 
   /// @notice enforces that two sides' lifecycle deadlines strictly interleave
+  /// and that their optimistic flags match
   /// @dev whichever side proposes terms must precede the other at every stage;
   ///      requires either (A proposes)
   ///      A.commitmentDeadline < B.commitmentDeadline < A.claimDeadline <
   ///      B.claimDeadline < A.reclaimRelease < B.reclaimRelease,
-  ///      or the same chain with A and B swapped (B proposes). reverts otherwise
+  ///      or the same chain with A and B swapped (B proposes). reverts otherwise.
+  ///      optimistic mode is a bilateral opt-in: both flags must be equal
   /// @param A one side's terms
   /// @param B the other side's terms
   function validateTermPairing(Terms calldata A, Terms calldata B) internal pure {
@@ -325,6 +335,10 @@ library TermsLib {
 
     if (!(aProposes || bProposes)) {
       revert DisordedDeadlines();
+    }
+
+    if (A.optimistic != B.optimistic) {
+      revert OptimismMismatch();
     }
   }
 

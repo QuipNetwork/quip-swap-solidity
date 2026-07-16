@@ -106,9 +106,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     } else {
       // if the counterparty has proposed, the counterparty's commitment deadline must have elapsed and
       // the party's commitment deadline must not have elapsed
+      // OR swap is optimistic: the sequencing wait is waived — the lock
+      // state machine (same-chain) / off-chain funding verification (cross-chain) supply the ordering
       // NB: the party *MUST* ensure the commitment from the counterparty has taken effect especially if
       // the swap is cross-chain
-      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.commitmentDeadline, block.timestamp);
+      TermsLib.enforceWithin(
+        party.optimistic ? 0 : counterparty.commitmentDeadline, party.commitmentDeadline, block.timestamp
+      );
     }
 
     _enforceCorrectNative(party.totalNative() + commitmentFee);
@@ -171,18 +175,27 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // commitment check in a cross-chain swap is not on-chain enforceable so
       // only deadlines are checked
       // in same-chain swap, the lock checks for commitment of counterparty
-      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp);
+      // if optimistic the lower bound is waived and only the
+      // claim deadline (upper) stays
+      TermsLib.enforceWithin(
+        party.optimistic ? 0 : counterparty.commitmentDeadline, party.claimDeadline, block.timestamp
+      );
     } else {
       // counterparty is proposer which means the counterparty has revealed the secret
       // claim only after the claim deadline of the counterparty
-      // NB: this path is only reachable in the following:
+      // if optimistic,  the lower bound is waived; the
+      // upper bound stays
+      // NB: this path is reachable in the following:
       // 1. during a cross-chain swap because otherwise the lock state is spent
       //    since claiming occurs for both parties in this call
-      // 2. during a same-chain swap if the taker has the secret and calls
-      //    claim first - should never occur
+      // 2. during a same-chain swap if the taker holds the secret and calls
+      //    claim first — possible under optimistic mode OTHERWISE should _never_
+      //    occur because that would mean proposer has revealed secret prior to claiming
       //
       // in both cases, the claim settles correctly
-      TermsLib.enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp);
+      TermsLib.enforceWithin(
+        party.optimistic ? 0 : counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp
+      );
     }
 
     LockState current = lockState[lock];
@@ -218,6 +231,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // validate reclaim in correct window
     // if the party is the proposer, then the party's reclaimRelease must have elapsed
     // if the counterparty is the proposer, then the party's reclaimRelease must have elapsed
+    // reclaimRelease is enforced regardless of optimistic mode — it is the theft-prevention
+    // gate (cross-chain)
     TermsLib.enforceWithin(party.reclaimRelease, type(uint256).max, block.timestamp);
 
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
