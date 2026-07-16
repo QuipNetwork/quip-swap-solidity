@@ -83,6 +83,13 @@ contract TermsLib_digestTerms is TermsLibTest {
     assertNotEq(harness.exposed_digestTerms(base), original);
   }
 
+  function test_digestTerms_bindsOptimistic() public view {
+    Terms memory base = _terms();
+    bytes32 original = harness.exposed_digestTerms(base);
+    base.optimistic = true;
+    assertNotEq(harness.exposed_digestTerms(base), original);
+  }
+
   function test_digestTerms_bindsAssets() public view {
     Terms memory base = _terms();
     bytes32 original = harness.exposed_digestTerms(base);

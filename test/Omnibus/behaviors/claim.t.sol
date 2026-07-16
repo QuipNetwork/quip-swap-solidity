@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
+import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
@@ -14,6 +15,7 @@ import {Vm} from 'forge-std-1.14.0/Vm.sol';
 ///      on-chain, the party's assets to counterparty.recipient.
 contract Omnibus_claim is OmnibusTest {
   using AssetHelper for *;
+  using TermsHelper for *;
 
   // ============ Success Cases ============
 
@@ -404,6 +406,86 @@ contract Omnibus_claim is OmnibusTest {
 
     vm.warp(ALICE_RECLAIM_RELEASE - 1);
     omnibus.claim(SECRET, bob, alice);
+    _assertLockState(lock, LockState.Spent);
+  }
+
+  // ============ Optimistic Mode ============
+
+  /// @dev both optimistic sides committed at a single timestamp (no window waits)
+  function _commitBothOptimistic() internal returns (Terms memory alice, Terms memory bob) {
+    alice = _aliceOptimisticTerms();
+    bob = _bobOptimisticTerms();
+    _commitBothPartiesAt(lock, alice, bob, AT_PROPOSER_COMMIT);
+  }
+
+  function test_optimistic_claim_immediatelyAfterCommits() public {
+    // the proposer-claim lower bound (taker's commitmentDeadline) is waived: settlement
+    // happens at the same timestamp as the two commits
+    (Terms memory alice, Terms memory bob) = _commitBothOptimistic();
+
+    uint256 bobRecipientBefore = BOB_RECIPIENT.balance;
+    uint256 aliceRecipientBefore = mockERC20.balanceOf(ALICE_RECIPIENT);
+
+    vm.prank(ALICE);
+    omnibus.claim(SECRET, alice, bob);
+
+    assertEq(block.timestamp, AT_PROPOSER_COMMIT);
+    assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, DEFAULT_AMOUNT);
+    assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - aliceRecipientBefore, DEFAULT_AMOUNT);
+    _assertLockState(lock, LockState.Spent);
+  }
+
+  function test_optimistic_claim_revertsWhen_atClaimDeadline() public {
+    // optimistic waives only the LOWER bound; the proposer's claimDeadline (upper,
+    // exclusive) is still enforced
+    (Terms memory alice, Terms memory bob) = _commitBothOptimistic();
+
+    vm.warp(ALICE_CLAIM_DEADLINE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, alice, bob);
+  }
+
+  function test_optimistic_claim_takerClaimBeforeProposerClaimDeadline() public {
+    // taker-path lower bound (the proposer's claimDeadline) is waived: with the secret in
+    // hand the taker claims the on-chain leg without waiting for the reveal window to close
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobCrossChainTerms().withOptimistic();
+
+    _commitAt(ALICE, lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    // still well before ALICE_CLAIM_DEADLINE — non-optimistic this reverts (see
+    // test_claim_takerClaim_revertsWhen_beforeWindow)
+    omnibus.claim(SECRET, bob, alice);
+    _assertLockState(lock, LockState.Spent);
+  }
+
+  function test_optimistic_claim_revertsWhen_takerClaimAtReclaimRelease() public {
+    // the taker-claim upper bound (the proposer's reclaimRelease — the reaction gap) is
+    // never waived: at that instant the proposer's reclaim window opens instead
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobCrossChainTerms().withOptimistic();
+
+    _commitAt(ALICE, lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    vm.warp(ALICE_RECLAIM_RELEASE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_optimistic_claim_takerWithSecretClaimsFirst() public {
+    // same-chain taker-first claim: with either commit order possible under optimistic
+    // mode, a secret-holding taker may settle — both legs must route correctly
+    (Terms memory alice, Terms memory bob) = _commitBothOptimistic();
+
+    uint256 bobRecipientBefore = BOB_RECIPIENT.balance;
+    uint256 aliceRecipientBefore = mockERC20.balanceOf(ALICE_RECIPIENT);
+
+    // party = bob (taker), counterparty = alice — at the commit timestamp
+    vm.prank(BOB);
+    omnibus.claim(SECRET, bob, alice);
+
+    assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, DEFAULT_AMOUNT);
+    assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - aliceRecipientBefore, DEFAULT_AMOUNT);
     _assertLockState(lock, LockState.Spent);
   }
 

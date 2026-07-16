@@ -6,6 +6,7 @@ import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.
 import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
+import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {
   IERC7913SignatureVerifier
@@ -26,7 +27,7 @@ contract Omnibus_commit is OmnibusTest {
     address recipient,
     Asset[] memory assets
   ) internal view returns (Terms memory) {
-    return _makeTerms(
+    return TermsHelper.makeTerms(
       block.chainid,
       reclaimRecipient,
       recipient,
@@ -279,7 +280,7 @@ contract Omnibus_commit is OmnibusTest {
   }
 
   function test_commit_revertsWhen_partyChainIdMismatch() public {
-    Terms memory alice = _makeTerms(
+    Terms memory alice = TermsHelper.makeTerms(
       OTHER_CHAIN_ID, // Wrong chain
       ALICE,
       ALICE_RECIPIENT,
@@ -349,6 +350,85 @@ contract Omnibus_commit is OmnibusTest {
     vm.expectRevert(TermsLib.WindowViolated.selector);
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), BOB));
+  }
+
+  // ============ Optimistic Mode ============
+
+  function test_optimistic_commit_takerCommitsBeforeProposerDeadline() public {
+    // optimistic waives the taker window's lower bound (the proposer's commitmentDeadline):
+    // the taker may commit while the proposer's window is still open
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitAt(ALICE, lock, alice, bob, AT_PROPOSER_COMMIT);
+    _commitAt(BOB, lock, bob, alice, AT_PROPOSER_COMMIT + 1);
+
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  function test_optimistic_commit_bothPartiesCommitInSameBlock() public {
+    // no forced wait between the two commits: both land at a single timestamp
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitBothPartiesAt(lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    _assertLockState(lock, LockState.Committed);
+    assertEq(block.timestamp, AT_PROPOSER_COMMIT);
+  }
+
+  function test_optimistic_commit_takerCanCommitFirst() public {
+    // with the lower bound waived either side may post first: the taker's commit takes
+    // Unused -> Free, the proposer's follow-up takes Free -> Committed
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitAt(BOB, lock, bob, alice, AT_PROPOSER_COMMIT);
+    _assertLockState(lock, LockState.Free);
+
+    _commitAt(ALICE, lock, alice, bob, AT_PROPOSER_COMMIT);
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  function test_optimistic_commit_revertsWhen_takerCommitsAtOwnDeadline() public {
+    // optimistic waives only the LOWER bound; the taker's own commitmentDeadline (upper,
+    // exclusive) is still enforced
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitAt(ALICE, lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    vm.warp(BOB_COMMIT_DEADLINE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    vm.prank(BOB);
+    omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), BOB));
+  }
+
+  function test_optimistic_commit_revertsWhen_mismatchedFlags() public {
+    // optimistic mode is a bilateral opt-in: a mixed pairing (party optimistic,
+    // counterparty not) is rejected before any funds move
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.OptimismMismatch.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+  }
+
+  function test_optimistic_commit_revertsWhen_mismatchedFlagsReversed() public {
+    // mirror image: party plain, counterparty optimistic
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.OptimismMismatch.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
   }
 
   function test_commit_revertsWhen_incorrectNativeAmount() public {

@@ -102,6 +102,45 @@ contract TermsLib_validateTermPairing is TermsLibTest {
     harness.exposed_validateTermPairing(a, b);
   }
 
+  // ============ Optimistic Flag ============
+
+  function test_optimistic_validateTermPairing_succeedsWhen_bothFlagsSet() public view {
+    Terms memory a = _proposer();
+    Terms memory b = _taker();
+    a.optimistic = true;
+    b.optimistic = true;
+    harness.exposed_validateTermPairing(a, b);
+  }
+
+  function test_optimistic_validateTermPairing_revertsWhen_mismatchedFlags() public {
+    // optimistic mode is a bilateral opt-in: A optimistic, B not
+    Terms memory a = _proposer();
+    Terms memory b = _taker();
+    a.optimistic = true;
+    vm.expectRevert(TermsLib.OptimismMismatch.selector);
+    harness.exposed_validateTermPairing(a, b);
+  }
+
+  function test_optimistic_validateTermPairing_revertsWhen_mismatchedFlagsReversed() public {
+    // mirror image: B optimistic, A not
+    Terms memory a = _proposer();
+    Terms memory b = _taker();
+    b.optimistic = true;
+    vm.expectRevert(TermsLib.OptimismMismatch.selector);
+    harness.exposed_validateTermPairing(a, b);
+  }
+
+  function test_optimistic_validateTermPairing_revertsWhen_disordered() public {
+    // deadline values stay required and strictly interleaved in optimistic mode (roles
+    // derive from them; the timed schedule is the fallback); ordering is checked first
+    Terms memory a = _side(100, 300, 500);
+    Terms memory b = _side(100, 400, 600); // equal commitment deadlines
+    a.optimistic = true;
+    b.optimistic = true;
+    vm.expectRevert(TermsLib.DisordedDeadlines.selector);
+    harness.exposed_validateTermPairing(a, b);
+  }
+
   // ============ Fuzz Tests ============
 
   function testFuzz_validateTermPairing_succeedsWhenStrictlyInterleaved(uint256 ac, uint256 gap) public view {

@@ -161,31 +161,18 @@ contract OmnibusTest is TestBase {
 
   // ============ Terms Helpers ============
 
-  /// @notice Creates terms with explicit lifecycle deadlines
-  function _makeTerms(
-    uint256 chainId,
-    address reclaimRecipient,
-    address recipient,
-    uint256 commitmentDeadline,
-    uint256 claimDeadline,
-    uint256 reclaimRelease,
-    Asset[] memory assets
-  ) internal pure returns (Terms memory) {
-    return TermsHelper.makeTerms(
-      chainId, reclaimRecipient, recipient, commitmentDeadline, claimDeadline, reclaimRelease, assets
-    );
-  }
-
   /// @notice Proposer (Alice) terms on a given chain with the proposer deadline schedule
   function _aliceTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
-    return _makeTerms(
+    return TermsHelper.makeTerms(
       chainId, ALICE, ALICE_RECIPIENT, ALICE_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE, assets
     );
   }
 
   /// @notice Taker (Bob) terms on a given chain with the taker deadline schedule
   function _bobTermsOn(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
-    return _makeTerms(chainId, BOB, BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, assets);
+    return TermsHelper.makeTerms(
+      chainId, BOB, BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, assets
+    );
   }
 
   /// @notice Default same-chain proposer terms for Alice (native)
@@ -201,6 +188,16 @@ contract OmnibusTest is TestBase {
   /// @notice Cross-chain taker terms for Bob (on OTHER_CHAIN_ID)
   function _bobCrossChainTerms() internal view returns (Terms memory) {
     return _bobTermsOn(OTHER_CHAIN_ID, _makeERC20Assets(DEFAULT_AMOUNT));
+  }
+
+  /// @notice Default same-chain optimistic proposer terms for Alice (native)
+  function _aliceOptimisticTerms() internal view returns (Terms memory) {
+    return _aliceTerms().withOptimistic();
+  }
+
+  /// @notice Default same-chain optimistic taker terms for Bob (ERC20)
+  function _bobOptimisticTerms() internal view returns (Terms memory) {
+    return _bobTerms().withOptimistic();
   }
 
   /// @notice Calculate native amount required for commit (excludes fee)
@@ -249,10 +246,33 @@ contract OmnibusTest is TestBase {
     omnibus.commit{value: value}(_lock, party, counterparty, auth);
   }
 
+  /// @notice Like _commitFor but warps to an explicit timestamp instead of the role-derived
+  ///         anchor — optimistic tests commit both sides at (or around) a single instant
+  function _commitAt(
+    address committer,
+    bytes32 _lock,
+    Terms memory party,
+    Terms memory counterparty,
+    uint256 timestamp
+  ) internal {
+    vm.warp(timestamp);
+    uint256 value = _totalNativeForCommit(party) + omnibus.commitmentFee();
+    CommitAuth memory auth = _authFor(committer, _lock, party, counterparty);
+    vm.prank(committer);
+    omnibus.commit{value: value}(_lock, party, counterparty, auth);
+  }
+
   /// @notice Helper to commit both parties for same-chain swaps (proposer then taker)
   function _commitBothParties(bytes32 _lock, Terms memory alice, Terms memory bob) internal {
     _commitFor(ALICE, _lock, alice, bob);
     _commitFor(BOB, _lock, bob, alice);
+  }
+
+  /// @notice Commit both optimistic sides at a single timestamp (proposer then taker,
+  ///         no window wait between them)
+  function _commitBothPartiesAt(bytes32 _lock, Terms memory alice, Terms memory bob, uint256 timestamp) internal {
+    _commitAt(ALICE, _lock, alice, bob, timestamp);
+    _commitAt(BOB, _lock, bob, alice, timestamp);
   }
 
   /// @notice Commit both, then settle same-chain by having the proposer (secret holder)

@@ -305,6 +305,34 @@ contract Omnibus_reclaim is OmnibusTest {
     omnibus.reclaim(lock, bob, alice);
   }
 
+  // ============ Optimistic Mode ============
+
+  function test_optimistic_reclaim_revertsWhen_beforeReclaimRelease() public {
+    // optimistic waives commit/claim lower bounds ONLY — reclaimRelease is the
+    // theft-prevention gate and is enforced unconditionally
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitBothPartiesAt(lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    // immediately after the commits — long before ALICE_RECLAIM_RELEASE
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.reclaim(lock, alice, bob);
+  }
+
+  function test_optimistic_reclaim_afterRelease() public {
+    // an abandoned optimistic swap degrades to the normal timed fallback: reclaim opens
+    // at reclaimRelease exactly as in non-optimistic mode
+    Terms memory alice = _aliceOptimisticTerms();
+    Terms memory bob = _bobOptimisticTerms();
+
+    _commitBothPartiesAt(lock, alice, bob, AT_PROPOSER_COMMIT);
+
+    vm.warp(ALICE_RECLAIM_RELEASE);
+    omnibus.reclaim(lock, alice, bob);
+    _assertLockState(lock, LockState.Spent);
+  }
+
   // ============ Edge Cases ============
 
   function test_reclaim_succeedsAtExactReclaimRelease() public {
