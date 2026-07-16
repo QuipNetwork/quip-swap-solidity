@@ -20,7 +20,7 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {buildKeyedSigner} from '../../src/index.js'
+import {ZERO_WALLET_BINDING, buildKeyedSigner} from '../../src/index.js'
 import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -164,7 +164,7 @@ async function codeOf(promise: Promise<unknown>): Promise<string> {
   throw new Error('expected the promise to reject with a QuipSwapError')
 }
 
-/** The 7-field tuple shape the ABI expects for Terms. */
+/** The 8-field tuple shape the ABI expects for Terms. */
 function expectAbiTerms(actual: unknown, expected: typeof alice): void {
   expect(actual).toEqual({
     chainId: expected.chainId,
@@ -173,6 +173,7 @@ function expectAbiTerms(actual: unknown, expected: typeof alice): void {
     commitmentDeadline: expected.commitmentDeadline,
     claimDeadline: expected.claimDeadline,
     reclaimRelease: expected.reclaimRelease,
+    optimistic: expected.optimistic,
     assets: expected.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   })
 }
@@ -185,7 +186,7 @@ describe('commit orchestration', () => {
     mocks = setup({lockState: LockState.Unused})
   })
 
-  it('selects the commit function with 7-field Terms tuples and exact msg.value', async () => {
+  it('selects the commit function with 8-field Terms tuples and exact msg.value', async () => {
     const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     expect(hash).toBe(TX_HASH)
 
@@ -202,7 +203,12 @@ describe('commit orchestration', () => {
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
     // the CommitAuth struct rides along as the fourth argument
-    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
+    // walletBinding defaults to zero bytes32 on the keyed route
+    expect(est.args[3]).toEqual({
+      signer: buildKeyedSigner(VERIFIER, SENDER),
+      signature: '0x',
+      walletBinding: ZERO_WALLET_BINDING,
+    })
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
     // the write carries the same function/args/value
@@ -348,7 +354,7 @@ describe('commit lock-state preflight', () => {
 })
 
 describe('claim orchestration', () => {
-  it('selects the claim function with the secret and 7-field tuples', async () => {
+  it('selects the claim function with the secret and 8-field tuples', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_CLAIM})
     await mocks.client.claim({secret: FOUNDRY_SECRET, party: alice, counterparty: bob})
     const est = mocks.log.estimations[0] as {functionName: string; args: [unknown, unknown, unknown]; value?: bigint}

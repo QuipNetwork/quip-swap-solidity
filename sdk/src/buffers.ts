@@ -14,6 +14,13 @@
  * congestion, and relayer latency — most critically the taker's post-reveal
  * reaction buffer (`proposer.reclaimRelease - proposer.claimDeadline`).
  *
+ * OPTIMISTIC pairings get the SAME buffer treatment. Optimistic mode waives
+ * only the commit/claim LOWER bounds (the waits); the deadlines themselves
+ * remain the timed FALLBACK schedule if the fast path stalls, and the
+ * reaction buffer remains the surviving theft prevention (reclaimRelease is
+ * never waived). Generous gaps are therefore just as important — never tune
+ * a schedule tight because the happy path is expected to settle instantly.
+ *
  * The {@link DEFAULT_BUFFERS} presets are conservative STARTING POINTS keyed
  * to a chain's finality profile, not authoritative values — tune them to the
  * chains you actually operate on.

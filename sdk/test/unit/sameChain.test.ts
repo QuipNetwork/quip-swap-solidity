@@ -12,7 +12,7 @@ import {DEFAULT_SAME_CHAIN_BUFFER_SECONDS} from '../../src/buffers.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {planSameChainSwap} from '../../src/workflows/sameChain.js'
 import type {Terms} from '../../src/types.js'
-import {aliceTerms, bobTerms, CHAIN_A, withOverrides} from '../helpers/fixtures.js'
+import {aliceTerms, bobTerms, CHAIN_A, withOptimistic, withOverrides} from '../helpers/fixtures.js'
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -68,5 +68,36 @@ describe('planSameChainSwap buffer enforcement', () => {
   it('an explicit override BELOW the default lets a tighter (but ordered) schedule through', () => {
     const {a, b} = sameChainPair(1000n) // rejected by the default, allowed at 1000n
     expect(() => planSameChainSwap(a, b, {minimumBufferSeconds: 1000n})).not.toThrow()
+  })
+})
+
+describe('planSameChainSwap optimistic mode', () => {
+  it('an optimistic pair plans with zero-lower commit/claim windows and reports optimistic: true', () => {
+    const {a, b} = sameChainPair(2000n)
+    const plan = planSameChainSwap(withOptimistic(a), withOptimistic(b))
+    expect(plan.optimistic).toBe(true)
+    expect(plan.takerCommitWindow.lower).toBe(0n)
+    expect(plan.claimWindow.lower).toBe(0n)
+    // uppers and reclaim windows are untouched
+    expect(plan.takerCommitWindow.upper).toBe(plan.takerTerms.commitmentDeadline)
+    expect(plan.claimWindow.upper).toBe(plan.proposerTerms.claimDeadline)
+    expect(plan.proposerReclaimWindow.lower).toBe(plan.proposerTerms.reclaimRelease)
+  })
+
+  it('a non-optimistic pair reports optimistic: false with the classic windows', () => {
+    const {a, b} = sameChainPair(2000n)
+    const plan = planSameChainSwap(a, b)
+    expect(plan.optimistic).toBe(false)
+    expect(plan.takerCommitWindow.lower).toBe(plan.proposerTerms.commitmentDeadline)
+  })
+
+  it('rejects mismatched optimistic flags (contract: OptimismMismatch)', () => {
+    const {a, b} = sameChainPair(2000n)
+    expect(codeOf(() => planSameChainSwap(withOptimistic(a), b))).toBe('OPTIMISM_MISMATCH')
+  })
+
+  it('still applies the buffer check to optimistic pairs — the schedule is the fallback path', () => {
+    const {a, b} = sameChainPair(1n)
+    expect(codeOf(() => planSameChainSwap(withOptimistic(a), withOptimistic(b)))).toBe('INSUFFICIENT_BUFFER')
   })
 })

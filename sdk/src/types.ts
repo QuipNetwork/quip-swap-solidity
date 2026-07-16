@@ -131,6 +131,14 @@ export interface Terms {
    * `claimDeadline`.
    */
   readonly reclaimRelease: bigint
+  /**
+   * When BOTH sides set true, the contract waives the LOWER bounds of the
+   * commit and claim windows — no forced sequencing waits, so a same-chain
+   * swap can commit+commit+claim in a single block. Upper bounds and
+   * `reclaimRelease` are ALWAYS enforced. Must equal the counterparty's
+   * flag (contract: OptimismMismatch).
+   */
+  readonly optimistic: boolean
   /** The assets this side escrows. Must be non-empty and each asset valid. */
   readonly assets: readonly Asset[]
 }

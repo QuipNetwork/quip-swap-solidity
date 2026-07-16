@@ -24,7 +24,7 @@ describe('digestTerms', () => {
     expect(digestTerms(base)).toBe(digestTerms({...base, assets: [...base.assets]}))
   })
 
-  it('every one of the seven Terms fields affects the digest', () => {
+  it('every one of the eight Terms fields affects the digest', () => {
     const variants: Partial<Terms>[] = [
       {chainId: base.chainId + 1n},
       {reclaimRecipient: BOB},
@@ -32,6 +32,7 @@ describe('digestTerms', () => {
       {commitmentDeadline: base.commitmentDeadline + 1n},
       {claimDeadline: base.claimDeadline + 1n},
       {reclaimRelease: base.reclaimRelease + 1n},
+      {optimistic: !base.optimistic},
       {assets: [nativeAsset(10n)]},
     ]
     const baseline = digestTerms(base)

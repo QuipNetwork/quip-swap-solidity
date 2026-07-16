@@ -37,7 +37,7 @@ export const assetArrayAbiParameter = {
  * event's `party` field back into a typed {@link Terms}.
  *
  * Note: {@link digestTerms} does NOT use this tuple — the contract hashes
- * `abi.encode(field1, ..., field7)` (seven separate top-level values), not
+ * `abi.encode(field1, ..., field8)` (eight separate top-level values), not
  * `abi.encode(struct)`; for a single dynamic struct argument those two
  * encodings differ by a leading offset word.
  *
@@ -53,13 +53,16 @@ export const termsAbiParameter = {
     {name: 'commitmentDeadline', type: 'uint256'},
     {name: 'claimDeadline', type: 'uint256'},
     {name: 'reclaimRelease', type: 'uint256'},
+    {name: 'optimistic', type: 'bool'},
     assetArrayAbiParameter,
   ],
 } as const
 
 /**
- * The seven top-level ABI parameters hashed by `TermsLib.digestTerms`, in
- * the exact order the contract encodes them.
+ * The eight top-level ABI parameters hashed by `TermsLib.digestTerms`, in
+ * the exact order the contract encodes them. `optimistic` sits between
+ * `reclaimRelease` and `assets` — position parity with the Solidity
+ * `abi.encode` is load-bearing (the differential suite pins it).
  */
 const termsDigestAbiParameters = [
   {name: 'chainId', type: 'uint256'},
@@ -68,6 +71,7 @@ const termsDigestAbiParameters = [
   {name: 'commitmentDeadline', type: 'uint256'},
   {name: 'claimDeadline', type: 'uint256'},
   {name: 'reclaimRelease', type: 'uint256'},
+  {name: 'optimistic', type: 'bool'},
   assetArrayAbiParameter,
 ] as const
 
@@ -81,12 +85,12 @@ const termsDigestAbiParameters = [
  *   abi.encode(
  *     terms.chainId, terms.reclaimRecipient, terms.recipient,
  *     terms.commitmentDeadline, terms.claimDeadline, terms.reclaimRelease,
- *     terms.assets
+ *     terms.optimistic, terms.assets
  *   )
  * );
  * ```
  *
- * Standard (head/tail) ABI encoding of SEVEN top-level values — not packed
+ * Standard (head/tail) ABI encoding of EIGHT top-level values — not packed
  * encoding, and not the encoding of a single `Terms` struct. The asset
  * order matters: reordering assets changes the digest.
  *
@@ -108,6 +112,7 @@ export function digestTerms(terms: Terms): Hex32 {
       terms.commitmentDeadline,
       terms.claimDeadline,
       terms.reclaimRelease,
+      terms.optimistic,
       // readonly Asset[] is structurally compatible with the tuple components
       terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
     ]),

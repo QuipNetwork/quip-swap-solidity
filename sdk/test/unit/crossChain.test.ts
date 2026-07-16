@@ -15,6 +15,7 @@ import {
   bobTerms,
   CHAIN_A,
   CHAIN_B,
+  withOptimistic,
   withOverrides,
 } from '../helpers/fixtures.js'
 
@@ -124,5 +125,45 @@ describe('validateCrossChainSchedule', () => {
         }),
       ),
     ).toBe('CHAIN_ID_MISMATCH')
+  })
+
+  it('accepts an optimistic pair and reports optimistic: true with the same reaction buffer', () => {
+    const schedule = validateCrossChainSchedule({
+      proposerTerms: withOptimistic(alice),
+      takerTerms: withOptimistic(bob),
+      minimumBufferSeconds: 1000n,
+    })
+    expect(schedule.optimistic).toBe(true)
+    // the reaction buffer — the surviving theft prevention — is unchanged
+    expect(schedule.reactionBufferSeconds).toBe(ALICE_RECLAIM_RELEASE - ALICE_CLAIM_DEADLINE)
+  })
+
+  it('reports optimistic: false for a plain pair', () => {
+    const schedule = validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1000n})
+    expect(schedule.optimistic).toBe(false)
+  })
+
+  it('rejects mismatched optimistic flags (contract: OptimismMismatch)', () => {
+    expect(
+      codeOf(() =>
+        validateCrossChainSchedule({
+          proposerTerms: withOptimistic(alice),
+          takerTerms: bob,
+          minimumBufferSeconds: 1000n,
+        }),
+      ),
+    ).toBe('OPTIMISM_MISMATCH')
+  })
+
+  it('still applies the buffer check to optimistic pairs — the schedule is the fallback path', () => {
+    expect(
+      codeOf(() =>
+        validateCrossChainSchedule({
+          proposerTerms: withOptimistic(alice),
+          takerTerms: withOptimistic(bob),
+          minimumBufferSeconds: 1001n,
+        }),
+      ),
+    ).toBe('INSUFFICIENT_BUFFER')
   })
 })

@@ -16,7 +16,7 @@ import {QuipSwapError} from '../../src/errors.js'
 import {createTerms, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
 import type {Asset} from '../../src/types.js'
-import {ALICE, aliceTerms, BOB, bobTerms, CHAIN_A, withOverrides} from '../helpers/fixtures.js'
+import {ALICE, aliceTerms, BOB, bobTerms, CHAIN_A, withOptimistic, withOverrides} from '../helpers/fixtures.js'
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -128,6 +128,20 @@ describe('createTerms', () => {
       ),
     ).toBe('ZERO_CHAIN_ID')
   })
+
+  it('defaults optimistic to false when omitted, and freezes an explicit true in', () => {
+    const args = {
+      chainId: CHAIN_A,
+      reclaimRecipient: ALICE,
+      recipient: BOB,
+      commitmentDeadline: 100n,
+      claimDeadline: 200n,
+      reclaimRelease: 300n,
+      assets: [nativeAsset(1n)],
+    }
+    expect(createTerms(args).optimistic).toBe(false)
+    expect(createTerms({...args, optimistic: true}).optimistic).toBe(true)
+  })
 })
 
 describe('validateTermPairing', () => {
@@ -164,6 +178,29 @@ describe('validateTermPairing', () => {
   it('rejects equal timestamps across sides', () => {
     const sameCommit = withOverrides(bob, {commitmentDeadline: alice.commitmentDeadline})
     expect(codeOf(() => validateTermPairing(alice, sameCommit))).toBe('DISORDERED_DEADLINES')
+  })
+
+  it('accepts both sides optimistic (bilateral opt-in)', () => {
+    expect(() => validateTermPairing(withOptimistic(alice), withOptimistic(bob))).not.toThrow()
+  })
+
+  it('rejects mismatched optimistic flags in both directions (contract: OptimismMismatch)', () => {
+    expect(codeOf(() => validateTermPairing(withOptimistic(alice), bob))).toBe('OPTIMISM_MISMATCH')
+    expect(codeOf(() => validateTermPairing(alice, withOptimistic(bob)))).toBe('OPTIMISM_MISMATCH')
+  })
+
+  it('checks interleaving BEFORE the optimistic flags — disordered-and-both-optimistic reports the ordering', () => {
+    const sequentialA = withOverrides(withOptimistic(alice), {
+      commitmentDeadline: 100n,
+      claimDeadline: 200n,
+      reclaimRelease: 300n,
+    })
+    const sequentialB = withOverrides(withOptimistic(bob), {
+      commitmentDeadline: 400n,
+      claimDeadline: 500n,
+      reclaimRelease: 600n,
+    })
+    expect(codeOf(() => validateTermPairing(sequentialA, sequentialB))).toBe('DISORDERED_DEADLINES')
   })
 })
 

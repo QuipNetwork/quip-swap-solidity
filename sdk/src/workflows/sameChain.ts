@@ -20,9 +20,18 @@
  *    — ONE claim settles BOTH legs                           -> lock Spent
  * ```
  *
- * Unhappy paths: reclaim from `Free` (only the proposer committed) is valid
- * once the proposer's `reclaimRelease` passes; reclaim from `Committed`
- * returns BOTH legs in one transaction when the counterparty leg is local.
+ * OPTIMISTIC fast path: when BOTH sides sign `optimistic = true`, every
+ * commit/claim LOWER bound is waived — no step 4 wait, either side may
+ * commit first, and commit + commit + claim can land in a single block
+ * (`commit` is permissionless, so all three calls can even be bundled into
+ * one transaction). Upper bounds and `reclaimRelease` are unchanged: the
+ * interleaved schedule above remains the timed FALLBACK if the fast path
+ * stalls, which is why generous gap-size buffers still matter.
+ *
+ * Unhappy paths: reclaim from `Free` (only one side committed — under
+ * optimistic mode that side may be EITHER role) is valid once the posted
+ * leg's `reclaimRelease` passes; reclaim from `Committed` returns BOTH legs
+ * in one transaction when the counterparty leg is local.
  *
  * These helpers never hide wallet signing, never auto-approve, and never
  * submit transactions on their own — every transaction is an explicit
@@ -70,14 +79,23 @@ export interface SameChainSwapPlan {
   readonly takerDigest: Hex32
   /** `[0, proposer.commitmentDeadline)`. */
   readonly proposerCommitWindow: TimeWindow
-  /** `[proposer.commitmentDeadline, taker.commitmentDeadline)`. */
+  /** `[proposer.commitmentDeadline, taker.commitmentDeadline)`; lower is `0` when optimistic. */
   readonly takerCommitWindow: TimeWindow
-  /** `[taker.commitmentDeadline, proposer.claimDeadline)` — one claim settles both legs. */
+  /**
+   * `[taker.commitmentDeadline, proposer.claimDeadline)` — one claim settles
+   * both legs; lower is `0` when optimistic.
+   */
   readonly claimWindow: TimeWindow
-  /** `[proposer.reclaimRelease, +inf)` for the proposer's leg. */
+  /** `[proposer.reclaimRelease, +inf)` for the proposer's leg. NEVER waived. */
   readonly proposerReclaimWindow: TimeWindow
-  /** `[taker.reclaimRelease, +inf)` for the taker's leg. */
+  /** `[taker.reclaimRelease, +inf)` for the taker's leg. NEVER waived. */
   readonly takerReclaimWindow: TimeWindow
+  /**
+   * True when both sides opted into optimistic mode (a validated pairing
+   * guarantees the flags are equal): all commit/claim lower bounds are `0`,
+   * either side may commit first, and settlement can complete in one block.
+   */
+  readonly optimistic: boolean
 }
 
 /**
@@ -131,7 +149,9 @@ export function planSameChainSwap(
     })
   }
   const [proposerTerms, takerTerms] = proposedBy(a, b) === 'party' ? [a, b] : [b, a]
-  // gap-SIZE buffer check (the contract never does this) — the new protection
+  // gap-SIZE buffer check (the contract never does this) — the new protection.
+  // Applied to optimistic pairings too: the schedule is the timed FALLBACK
+  // when the fast path stalls, so its gaps must still be generously sized
   checkScheduleBuffers(proposerTerms, takerTerms, opts?.minimumBufferSeconds ?? DEFAULT_SAME_CHAIN_BUFFER_SECONDS)
   return {
     proposerTerms,
@@ -144,6 +164,8 @@ export function planSameChainSwap(
     claimWindow: proposerClaimWindow(proposerTerms, takerTerms),
     proposerReclaimWindow: reclaimWindow(proposerTerms),
     takerReclaimWindow: reclaimWindow(takerTerms),
+    // flags are equal in any pairing that passed validateTermPairing
+    optimistic: proposerTerms.optimistic,
   }
 }
 
@@ -153,24 +175,30 @@ export function planSameChainSwap(
  * needs to know which window is open and which side has posted.
  */
 export type SameChainSwapStatus =
-  /** Nothing committed; the proposer's commit window is open. */
+  /**
+   * Nothing committed; the proposer's commit window is open. Under
+   * optimistic mode the TAKER may also commit during this status (either
+   * side may post first) — a legitimate ordering, unlike the expired case
+   * below.
+   */
   | 'awaiting-proposer-commit'
   /**
    * Nothing committed and the proposer's window has closed. The swap can
-   * no longer COMPLETE (the proposer can never commit, so the lock can
+   * no longer COMPLETE (the proposer can never commit — its own deadline is
+   * an upper bound that not even optimistic mode waives, so the lock can
    * never reach Committed) — but the contract will still accept a
-   * taker-first commit in `[proposer.commitmentDeadline,
-   * taker.commitmentDeadline)`: `Omnibus.commit` checks only the window,
-   * not that the proposer actually committed (verifying the counterparty's
-   * commitment is the committer's duty, per the contract comments). Such a
-   * commit is pointless and self-harming — it moves the lock Unused→Free
-   * and strands the taker's assets until `taker.reclaimRelease` (reclaim
-   * from Free). Treat this status as terminal and do NOT commit into it.
+   * taker-first commit until `taker.commitmentDeadline`: `Omnibus.commit`
+   * checks only the window, not that the proposer actually committed
+   * (verifying the counterparty's commitment is the committer's duty, per
+   * the contract comments). Such a commit is pointless and self-harming —
+   * it moves the lock Unused→Free and strands the taker's assets until
+   * `taker.reclaimRelease` (reclaim from Free). Treat this status as
+   * terminal and do NOT commit into it.
    */
   | 'proposer-commit-expired'
-  /** Proposer committed (lock Free); the taker's window has not opened yet. */
+  /** One side committed (lock Free); the taker's window has not opened yet. */
   | 'awaiting-taker-window'
-  /** Proposer committed (lock Free); the taker's window is open. */
+  /** One side committed (lock Free); the taker's window is open. */
   | 'awaiting-taker-commit'
   /** Only the proposer committed and the taker's window closed; awaiting the proposer's reclaimRelease. */
   | 'half-committed-expired'
@@ -204,6 +232,14 @@ export interface SameChainSwapStatusReport {
 /**
  * Inspects a same-chain swap's status from ACTUAL on-chain state
  * (`lockState`, `posted`) combined with the current block timestamp.
+ *
+ * NOTE (optimistic mode): `LockState.Free` only means ONE side posted — the
+ * status names assume the proposer posted first, but under optimistic mode
+ * the taker may have. Do not infer WHICH side posted from the status alone;
+ * check the report's `proposerPosted` / `takerPosted` fields. (The
+ * lower-bound-dependent statuses `awaiting-taker-window` and
+ * `awaiting-claim-window` are unreachable for optimistic plans — their
+ * windows' lower bounds are `0`.)
  *
  * @param client - An {@link OmnibusClient} on the swap's chain.
  * @param lock - The swap's hashlock.

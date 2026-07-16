@@ -64,10 +64,12 @@ const CHAIN_B_ID = 31_338
 
 /**
  * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
- * (the address doubles as the key; the mock ignores signatures, so '0x').
+ * (the address doubles as the key). The signature is a NON-EMPTY placeholder
+ * ('envelope'): an EMPTY signature selects the ATTESTED route, which the
+ * accept-all mock does not implement.
  */
 function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
+  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x656e76656c6f7065'}
 }
 
 // distinct, checksummed recipients per flow/role so balance deltas are
@@ -222,6 +224,7 @@ function makeAliceTerms(chainId: number, s: Schedule, recipient: Address, reclai
     commitmentDeadline: s.aliceCommit,
     claimDeadline: s.aliceClaim,
     reclaimRelease: s.aliceReclaim,
+    optimistic: false,
     assets,
   }
 }
@@ -234,6 +237,7 @@ function makeBobTerms(chainId: number, s: Schedule, recipient: Address, reclaim:
     commitmentDeadline: s.bobCommit,
     claimDeadline: s.bobClaim,
     reclaimRelease: s.bobReclaim,
+    optimistic: false,
     assets,
   }
 }

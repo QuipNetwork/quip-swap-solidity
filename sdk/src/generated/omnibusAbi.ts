@@ -51,6 +51,19 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "ENVELOPE_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_FEE",
     "inputs": [],
     "outputs": [
@@ -140,6 +153,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -202,6 +220,11 @@ export const omnibusAbi = [
             "name": "reclaimRelease",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "assets",
@@ -281,6 +304,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -345,6 +373,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -387,6 +420,11 @@ export const omnibusAbi = [
             "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
+          },
+          {
+            "name": "walletBinding",
+            "type": "bytes32",
+            "internalType": "bytes32"
           }
         ]
       }
@@ -439,6 +477,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -501,6 +544,11 @@ export const omnibusAbi = [
             "name": "reclaimRelease",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "assets",
@@ -785,6 +833,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -847,6 +900,11 @@ export const omnibusAbi = [
             "name": "reclaimRelease",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
           },
           {
             "name": "assets",
@@ -1074,6 +1132,11 @@ export const omnibusAbi = [
             "internalType": "uint256"
           },
           {
+            "name": "optimistic",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
             "name": "assets",
             "type": "tuple[]",
             "internalType": "struct Asset[]",
@@ -1239,6 +1302,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "AttestationNotFound",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },
@@ -1305,6 +1373,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "MalformedSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OptimismMismatch",
     "inputs": []
   },
   {

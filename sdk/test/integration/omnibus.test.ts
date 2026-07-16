@@ -21,7 +21,13 @@ import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {COMMIT_DIGEST_TAG, buildKeyedSigner, computeCommitDigest, computeDomainSeparator} from '../../src/commitAuth.js'
+import {
+  COMMIT_DIGEST_TAG,
+  ZERO_WALLET_BINDING,
+  buildKeyedSigner,
+  computeCommitDigest,
+  computeDomainSeparator,
+} from '../../src/commitAuth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -100,6 +106,7 @@ async function freshSchedule(): Promise<Schedule> {
       commitmentDeadline: base + 1000n,
       claimDeadline: base + 3000n,
       reclaimRelease: base + 5000n,
+      optimistic: false,
       assets,
     }),
     bobTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
@@ -109,6 +116,7 @@ async function freshSchedule(): Promise<Schedule> {
       commitmentDeadline: base + 2000n,
       claimDeadline: base + 4000n,
       reclaimRelease: base + 6000n,
+      optimistic: false,
       assets,
     }),
   }
@@ -137,11 +145,21 @@ async function rawCommit(
   value: bigint,
   auth?: CommitAuth,
 ) {
+  const resolvedAuth = auth ?? keyedAuth(actor.address)
   const {request} = await ctx.publicClient.simulateContract({
     address: fixture.omnibus,
     abi: omnibusAbi,
     functionName: 'commit',
-    args: [lock, toTuple(party), toTuple(counterparty), auth ?? keyedAuth(actor.address)],
+    args: [
+      lock,
+      toTuple(party),
+      toTuple(counterparty),
+      {
+        signer: resolvedAuth.signer,
+        signature: resolvedAuth.signature,
+        walletBinding: resolvedAuth.walletBinding ?? ZERO_WALLET_BINDING,
+      },
+    ],
     value,
     account: actor.account,
   })
@@ -157,6 +175,7 @@ function toTuple(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
+    optimistic: terms.optimistic,
     assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   }
 }
@@ -177,9 +196,14 @@ function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
 /**
  * Keyed ERC-7913 auth for an actor: the fixture's AcceptAll VerifierMock is
  * the verifier and the actor's 20-byte address doubles as the key (40-byte
- * blob). The mock ignores signatures, so '0x' is fine.
+ * blob). The signature is a NON-EMPTY placeholder ('envelope', as in the
+ * Foundry AuthHelper): an EMPTY signature selects the ATTESTED route, which
+ * the accept-all mock does not implement.
  */
-const keyedAuth = (addr: Address): CommitAuth => ({signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'})
+const keyedAuth = (addr: Address): CommitAuth => ({
+  signer: buildKeyedSigner(fixture.verifier, addr),
+  signature: '0x656e76656c6f7065',
+})
 
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
@@ -666,6 +690,83 @@ describe('same-chain happy path', () => {
 })
 
 // ---------------------------------------------------------------------------
+// optimistic fast path (waived commit/claim lower bounds)
+// ---------------------------------------------------------------------------
+
+describe('optimistic same-chain fast path', () => {
+  it('commit + commit + claim settle back-to-back BEFORE the first schedule deadline', async () => {
+    const {secret, lock} = nextSecret()
+    const s = await freshSchedule()
+    const NATIVE = 111_111n
+    const TOKENS = 2_222n
+    const alice = {...s.aliceTerms([nativeAsset(NATIVE)]), optimistic: true}
+    const bob = {...s.bobTerms([erc20Asset(fixture.erc20, TOKENS)]), optimistic: true}
+
+    // one warp to the proposer-commit anchor; NO warps between the steps —
+    // non-optimistically the taker could not commit until alice's deadline
+    // and the claim not until bob's
+    await ctx.warpTo(s.anchors.proposerCommit)
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
+
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
+
+    const bobRecipientNativeBefore = await ctx.publicClient.getBalance({address: BOB_RECIPIENT})
+    const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
+    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}))
+
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
+    expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
+
+    // the whole swap settled before even the FIRST deadline of the schedule
+    const settledAt = (await ctx.publicClient.getBlock()).timestamp
+    expect(settledAt).toBeLessThan(alice.commitmentDeadline)
+  })
+
+  it('mismatched optimistic flags are rejected in SDK preflight AND on-chain (OptimismMismatch)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = {...s.aliceTerms([nativeAsset(100n)]), optimistic: true}
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)]) // NOT optimistic
+
+    await ctx.warpTo(s.anchors.proposerCommit)
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('OPTIMISM_MISMATCH')
+    }
+    // the contract agrees (raw call bypassing SDK preflight)
+    await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 100n), 'OptimismMismatch')
+  })
+
+  it('reclaim stays gated at reclaimRelease even on an optimistic pair (WindowViolated)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = {...s.aliceTerms([nativeAsset(100n)]), optimistic: true}
+    const bob = {...s.bobTerms([erc20Asset(fixture.erc20, 100n)]), optimistic: true}
+
+    await ctx.warpTo(s.anchors.proposerCommit)
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+
+    // immediately after the commits — reclaimRelease is the never-waived gate
+    await expectContractError(
+      ctx.publicClient.simulateContract({
+        address: fixture.omnibus,
+        abi: omnibusAbi,
+        functionName: 'reclaim',
+        args: [lock, toTuple(alice), toTuple(bob)],
+        account: ctx.alice.account,
+      }),
+      'WindowViolated',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // keyed commit authorization (the identity is distinct from the sender)
 // ---------------------------------------------------------------------------
 
@@ -716,7 +817,8 @@ describe('keyed ERC-7913 commit authorization', () => {
     expect(await charlieClient.getCommitDigest(lock, alice, bob, keccak256(keyedSigner))).toBe(digest)
 
     // a DIFFERENT actor (charlie) submits and FUNDS the leg + fee; the
-    // AcceptAll mock ignores the envelope, so '0x' suffices
+    // AcceptAll mock ignores the envelope BYTES, but the signature must be
+    // NON-EMPTY — an empty signature selects the ATTESTED route
     expect(signerAccount.address.toLowerCase()).not.toBe(ctx.charlie.address.toLowerCase())
     await ctx.warpTo(s.anchors.proposerCommit)
     const commitA = await confirmReceipt(
@@ -724,7 +826,7 @@ describe('keyed ERC-7913 commit authorization', () => {
         lock,
         party: alice,
         counterparty: bob,
-        auth: {signer: keyedSigner, signature: '0x'},
+        auth: {signer: keyedSigner, signature: '0x656e76656c6f7065'},
       }),
     )
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Free)

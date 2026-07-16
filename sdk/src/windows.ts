@@ -104,13 +104,16 @@ export function proposerCommitWindow(proposer: Terms): TimeWindow {
 
 /**
  * The taker's commit window:
- * `[proposer.commitmentDeadline, taker.commitmentDeadline)`.
+ * `[proposer.commitmentDeadline, taker.commitmentDeadline)` — or
+ * `[0, taker.commitmentDeadline)` when both sides are optimistic.
  *
- * The taker can only commit AFTER the proposer's commitment deadline has
- * elapsed — enforced by `Omnibus.commit` via
- * `enforceWithin(counterparty.commitmentDeadline, party.commitmentDeadline, block.timestamp)`.
- * A taker commit attempted while the proposer's window is still open
- * reverts with `WindowViolated`.
+ * Non-optimistic, the taker can only commit AFTER the proposer's commitment
+ * deadline has elapsed — enforced by `Omnibus.commit` via
+ * `enforceWithin(party.optimistic ? 0 : counterparty.commitmentDeadline,
+ * party.commitmentDeadline, block.timestamp)`. A taker commit attempted
+ * while the proposer's window is still open reverts with `WindowViolated`.
+ * Optimistic mode waives that lower bound (both flags must match — a valid
+ * pairing guarantees it; this helper defensively requires both).
  *
  * @param taker - The taker's terms.
  * @param proposer - The proposer's terms.
@@ -118,15 +121,21 @@ export function proposerCommitWindow(proposer: Terms): TimeWindow {
  * @see Omnibus.commit
  */
 export function takerCommitWindow(taker: Terms, proposer: Terms): TimeWindow {
-  return {lower: proposer.commitmentDeadline, upper: taker.commitmentDeadline}
+  return {
+    lower: taker.optimistic && proposer.optimistic ? 0n : proposer.commitmentDeadline,
+    upper: taker.commitmentDeadline,
+  }
 }
 
 /**
  * The proposer's claim window:
- * `[taker.commitmentDeadline, proposer.claimDeadline)`.
+ * `[taker.commitmentDeadline, proposer.claimDeadline)` — or
+ * `[0, proposer.claimDeadline)` when both sides are optimistic.
  *
  * Enforced by `Omnibus.claim` when the claimant role is the proposer:
- * `enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp)`.
+ * `enforceWithin(party.optimistic ? 0 : counterparty.commitmentDeadline,
+ * party.claimDeadline, block.timestamp)`. The upper bound (the reveal
+ * deadline) is never waived.
  *
  * @param proposer - The proposer's terms.
  * @param taker - The taker's terms.
@@ -134,25 +143,35 @@ export function takerCommitWindow(taker: Terms, proposer: Terms): TimeWindow {
  * @see Omnibus.claim
  */
 export function proposerClaimWindow(proposer: Terms, taker: Terms): TimeWindow {
-  return {lower: taker.commitmentDeadline, upper: proposer.claimDeadline}
+  return {
+    lower: proposer.optimistic && taker.optimistic ? 0n : taker.commitmentDeadline,
+    upper: proposer.claimDeadline,
+  }
 }
 
 /**
  * The taker's claim window:
- * `[proposer.claimDeadline, proposer.reclaimRelease)`.
+ * `[proposer.claimDeadline, proposer.reclaimRelease)` — or
+ * `[0, proposer.reclaimRelease)` when the pairing is optimistic.
  *
  * Enforced by `Omnibus.claim` when the claimant role is the taker:
- * `enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp)`
- * (the counterparty is the proposer on this path). The width of this
- * window, `proposer.reclaimRelease - proposer.claimDeadline`, is the
- * taker's post-reveal reaction buffer in a cross-chain swap.
+ * `enforceWithin(party.optimistic ? 0 : counterparty.claimDeadline,
+ * counterparty.reclaimRelease, block.timestamp)` (the counterparty is the
+ * proposer on this path). The upper bound — the proposer's reclaimRelease,
+ * i.e. the taker's post-reveal reaction buffer in a cross-chain swap — is
+ * NEVER waived. Only the proposer's terms are in scope here; in any pairing
+ * that passed {@link validateTermPairing} the flags are equal, so the
+ * proposer's flag is authoritative.
  *
  * @param proposer - The proposer's terms (the claim is gated on the PROPOSER's schedule).
  * @returns The half-open claim window for the taker.
  * @see Omnibus.claim
  */
 export function takerClaimWindow(proposer: Terms): TimeWindow {
-  return {lower: proposer.claimDeadline, upper: proposer.reclaimRelease}
+  return {
+    lower: proposer.optimistic ? 0n : proposer.claimDeadline,
+    upper: proposer.reclaimRelease,
+  }
 }
 
 /**
@@ -160,7 +179,9 @@ export function takerClaimWindow(proposer: Terms): TimeWindow {
  *
  * Enforced by `Omnibus.reclaim` via
  * `enforceWithin(party.reclaimRelease, type(uint256).max, block.timestamp)`.
- * Reclaim never closes once open.
+ * Reclaim never closes once open. Optimistic mode NEVER touches this
+ * window — reclaimRelease is the theft-prevention gate (cross-chain, the
+ * only thing preventing reveal-then-reclaim).
  *
  * @param leg - The terms of the leg being reclaimed.
  * @returns The half-open reclaim window (upper bound `MAX_UINT256`).
@@ -176,7 +197,8 @@ export function reclaimWindow(leg: Terms): TimeWindow {
  * performs:
  *
  * - `party` is the proposer: `[0, party.commitmentDeadline)`
- * - `party` is the taker: `[counterparty.commitmentDeadline, party.commitmentDeadline)`
+ * - `party` is the taker: `[counterparty.commitmentDeadline, party.commitmentDeadline)`,
+ *   or `[0, party.commitmentDeadline)` when both sides are optimistic
  *
  * @param party - The committing side's terms.
  * @param counterparty - The other side's terms.
@@ -195,8 +217,13 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
   if (proposedBy(party, counterparty) === 'party') {
     enforceWithin(0n, party.commitmentDeadline, currentTimestamp)
   } else {
-    // taker path: the proposer's (counterparty's) deadline must have elapsed
-    enforceWithin(counterparty.commitmentDeadline, party.commitmentDeadline, currentTimestamp)
+    // taker path: the proposer's (counterparty's) deadline must have elapsed —
+    // unless the pairing is optimistic, which waives the sequencing wait
+    enforceWithin(
+      party.optimistic && counterparty.optimistic ? 0n : counterparty.commitmentDeadline,
+      party.commitmentDeadline,
+      currentTimestamp,
+    )
   }
 }
 
@@ -207,6 +234,9 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
  * - `party` is the proposer: `[counterparty.commitmentDeadline, party.claimDeadline)`
  * - `party` is the taker: `[counterparty.claimDeadline, counterparty.reclaimRelease)`
  *
+ * When the pairing is optimistic both lower bounds drop to `0` — the upper
+ * bounds (reveal deadline / reclaimRelease reaction gap) are never waived.
+ *
  * @param party - The claimant role's terms (the side the claimant acts for).
  * @param counterparty - The other side's terms (the leg being claimed).
  * @param currentTimestamp - The chain's current `block.timestamp` (Unix seconds).
@@ -215,10 +245,11 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
  * @see Omnibus.claim
  */
 export function validateClaimWindow(party: Terms, counterparty: Terms, currentTimestamp: bigint): void {
+  const optimistic = party.optimistic && counterparty.optimistic
   if (proposedBy(party, counterparty) === 'party') {
-    enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, currentTimestamp)
+    enforceWithin(optimistic ? 0n : counterparty.commitmentDeadline, party.claimDeadline, currentTimestamp)
   } else {
-    enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, currentTimestamp)
+    enforceWithin(optimistic ? 0n : counterparty.claimDeadline, counterparty.reclaimRelease, currentTimestamp)
   }
 }
 

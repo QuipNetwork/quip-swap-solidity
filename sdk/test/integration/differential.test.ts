@@ -34,7 +34,7 @@ import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {enforceWithin} from '../../src/windows.js'
 import {connectChain, deployFixture, loadArtifact} from '../helpers/chain.js'
 import type {ChainContext, Fixture} from '../helpers/chain.js'
-import {aliceTerms, bobTerms, CHAIN_A, CHAIN_B, withOverrides} from '../helpers/fixtures.js'
+import {aliceTerms, bobTerms, CHAIN_A, CHAIN_B, withOptimistic, withOverrides} from '../helpers/fixtures.js'
 
 const RPC_URL = process.env['QUIP_SDK_RPC_URL']
 const CHAIN_ID = Number(process.env['QUIP_SDK_CHAIN_ID'] ?? '31337')
@@ -69,6 +69,7 @@ function abiTerms(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
+    optimistic: terms.optimistic,
     assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   }
 }
@@ -130,6 +131,8 @@ function rndTerms(rng: () => bigint): Terms {
     commitmentDeadline: commitment,
     claimDeadline: commitment + rndIn(rng, 10n ** 6n),
     reclaimRelease: commitment + 10n ** 6n + rndIn(rng, 10n ** 6n),
+    // randomized so digest parity covers both flag values
+    optimistic: rng() % 2n === 0n,
     assets: Array.from({length: assetCount}, () => rndAsset(rng)),
   }
 }
@@ -199,6 +202,25 @@ describe('digestTerms parity (oracle: TermsLibHarness.exposed_digestTerms)', () 
       ])
       expect(digestTerms(terms), `vector ${i}`).toBe(onChain)
     }
+  })
+
+  it('the optimistic flag is digest-relevant and position-parity holds for both values', async () => {
+    // two terms identical except the flag: the SDK and the harness must agree
+    // on BOTH digests, and the two digests must differ from each other
+    const plain = aliceTerms(CHAIN_A)
+    const flagged = withOptimistic(plain)
+    const onChainPlain = await callHarness<Hex32>(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_digestTerms', [
+      abiTerms(plain),
+    ])
+    const onChainFlagged = await callHarness<Hex32>(
+      fixture.termsLibHarness,
+      termsLibHarnessAbi,
+      'exposed_digestTerms',
+      [abiTerms(flagged)],
+    )
+    expect(digestTerms(plain)).toBe(onChainPlain)
+    expect(digestTerms(flagged)).toBe(onChainFlagged)
+    expect(onChainPlain).not.toBe(onChainFlagged)
   })
 })
 
@@ -393,6 +415,22 @@ describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () 
     for (const [a, b] of cases) {
       expect(sdkAccepts(a, b)).toBe(await oracleAccepts(a, b))
     }
+  })
+
+  it('agrees on optimistic pairings: both-set accepted, mismatched rejected (OptimismMismatch)', async () => {
+    const alice = aliceTerms(CHAIN_A)
+    const bob = bobTerms(CHAIN_A)
+    const cases: [Terms, Terms][] = [
+      [withOptimistic(alice), withOptimistic(bob)], // bilateral opt-in — accepted
+      [withOptimistic(alice), bob], // mismatch — rejected
+      [alice, withOptimistic(bob)], // mismatch, reversed — rejected
+    ]
+    for (const [a, b] of cases) {
+      expect(sdkAccepts(a, b)).toBe(await oracleAccepts(a, b))
+    }
+    // pin the outcomes themselves (not just agreement)
+    expect(sdkAccepts(withOptimistic(alice), withOptimistic(bob))).toBe(true)
+    expect(sdkAccepts(withOptimistic(alice), bob)).toBe(false)
   })
 
   it('agrees across 40 deterministic generated schedule pairs (fixed seed)', async () => {

@@ -64,6 +64,7 @@ export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEF
     commitmentDeadline: ALICE_COMMIT_DEADLINE,
     claimDeadline: ALICE_CLAIM_DEADLINE,
     reclaimRelease: ALICE_RECLAIM_RELEASE,
+    optimistic: false,
     assets,
   }
 }
@@ -77,6 +78,7 @@ export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT
     commitmentDeadline: BOB_COMMIT_DEADLINE,
     claimDeadline: BOB_CLAIM_DEADLINE,
     reclaimRelease: BOB_RECLAIM_RELEASE,
+    optimistic: false,
     assets,
   }
 }
@@ -84,4 +86,9 @@ export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT
 /** Returns a copy of `terms` with the given overrides (tests never mutate fixtures). */
 export function withOverrides(terms: Terms, overrides: Partial<Terms>): Terms {
   return {...terms, ...overrides}
+}
+
+/** Returns a copy of `terms` with the optimistic flag set. */
+export function withOptimistic(terms: Terms): Terms {
+  return {...terms, optimistic: true}
 }

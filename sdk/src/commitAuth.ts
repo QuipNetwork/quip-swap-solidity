@@ -34,9 +34,23 @@ import type {Hex32, Terms} from './types.js'
 export interface CommitAuth {
   /** The committing side's identity blob: `verifier(20) ‖ key` (see module docs). */
   readonly signer: Hex
-  /** Signature over {@link computeCommitDigest}, checked by the declared verifier. */
+  /**
+   * Signature over {@link computeCommitDigest}, checked by the declared
+   * verifier. An EMPTY signature (`0x`) selects the ATTESTED route, which
+   * requires `walletBinding`.
+   */
   readonly signature: Hex
+  /**
+   * The attested-route witness (`ShrincsEnvelope.walletBinding`): the opaque
+   * wallet-half of the envelope the identity signed. Only meaningful when
+   * `signature` is empty (the attested route); ignored by the keyed route.
+   * Defaults to zero bytes32 when omitted.
+   */
+  readonly walletBinding?: Hex32
 }
+
+/** Zero bytes32 — the `walletBinding` default for keyed-route commits. */
+export const ZERO_WALLET_BINDING: Hex32 = `0x${'00'.repeat(32)}`
 
 /**
  * The protocol tag bound into the commit-digest domain separator —

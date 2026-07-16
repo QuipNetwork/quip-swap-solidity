@@ -24,6 +24,12 @@ export interface CreateTermsArgs {
   readonly claimDeadline: bigint
   /** Unix seconds; strictly after `claimDeadline`. */
   readonly reclaimRelease: bigint
+  /**
+   * Waives the commit/claim window LOWER bounds when the counterparty sets
+   * it too; defaults to `false`. Both sides must match
+   * (contract: OptimismMismatch).
+   */
+  readonly optimistic?: boolean
   /** Non-empty list of structurally valid assets. */
   readonly assets: readonly Asset[]
 }
@@ -62,6 +68,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
     commitmentDeadline: args.commitmentDeadline,
     claimDeadline: args.claimDeadline,
     reclaimRelease: args.reclaimRelease,
+    optimistic: args.optimistic ?? false,
     assets: Object.freeze([...args.assets]),
   })
   validateTerms(terms)
@@ -167,10 +174,14 @@ function isRecipientAddress(value: Address): boolean {
  * cross-chain swap it guarantees the taker a reaction buffer after the
  * secret is revealed (see {@link validateCrossChainSchedule}).
  *
+ * Additionally requires the two sides' `optimistic` flags to be EQUAL —
+ * optimistic mode (waived commit/claim lower bounds) is a bilateral opt-in.
+ *
  * @param a - One side's terms.
  * @param b - The other side's terms.
  * @throws QuipSwapError `DISORDERED_DEADLINES` when neither interleaving
- *   holds (contract: DisordedDeadlines).
+ *   holds (contract: DisordedDeadlines); `OPTIMISM_MISMATCH` when exactly
+ *   one side sets `optimistic` (contract: OptimismMismatch).
  * @see TermsLib.validateTermPairing
  * @example
  * ```ts
@@ -200,6 +211,16 @@ export function validateTermPairing(a: Terms, b: Terms): void {
         '(proposer.commit < taker.commit < proposer.claim < taker.claim < proposer.reclaim < taker.reclaim; ' +
         'contract: DisordedDeadlines)',
       details: {a: lifecycleOf(a), b: lifecycleOf(b)},
+    })
+  }
+
+  // optimistic mode is a bilateral opt-in: both flags must be equal (checked
+  // AFTER the interleaving so DisordedDeadlines stays the primary structural error)
+  if (a.optimistic !== b.optimistic) {
+    throw new QuipSwapError({
+      code: 'OPTIMISM_MISMATCH',
+      message: "The two sides' optimistic flags must be equal (contract: OptimismMismatch)",
+      details: {a: a.optimistic, b: b.optimistic},
     })
   }
 }

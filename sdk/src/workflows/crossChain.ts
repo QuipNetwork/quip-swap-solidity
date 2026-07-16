@@ -31,6 +31,28 @@
  * retaining the option to let their own leg expire — the cross-chain
  * "free option" the interleaving exists to prevent (see
  * `test/attack/CrossChainFreeOption.t.sol`).
+ *
+ * OPTIMISTIC fast path: when BOTH sides sign `optimistic = true`, the
+ * commit/claim LOWER bounds above are waived — step 3 need not wait for
+ * `alice.commitmentDeadline`, step 4 need not wait for
+ * `bob.commitmentDeadline` (the proposer may reveal the instant both legs
+ * are funded), and step 6 opens at the reveal instead of
+ * `alice.claimDeadline`. The upper bounds and `alice.reclaimRelease` — the
+ * reaction gap — are UNCHANGED; the schedule remains the timed fallback.
+ *
+ * ⚠️ TAKER NEGLIGENCE LOSES BOTH LEGS. A cross-chain taker that commits and
+ * then fails to claim within `[reveal, proposer.reclaimRelease)` forfeits
+ * the swap: the proposer claims the taker's leg with the secret AND
+ * reclaims their own once `reclaimRelease` passes — one side ends up
+ * holding BOTH their own and the counterparty's funds. This risk PREDATES
+ * optimistic mode (it is inherent to HTLCs; see
+ * `test_crossChain_takerNegligence_proposerTakesBothLegs`), and the reclaim
+ * boundary does not move under it — but optimistic mode removes the forced
+ * waits that used to pace the flow, so {@link verifyRemoteCommitment}
+ * before committing and actively watching for the reveal (step 5) are the
+ * taker's ONLY protections. Run a watchtower or monitor; do not rely on
+ * having "plenty of time". Same-chain swaps have NO equivalent risk —
+ * settlement and refund are atomic across both legs there.
  */
 import {DEFAULT_CROSS_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
 import {QuipSwapError} from '../errors.js'
@@ -81,10 +103,24 @@ export interface CrossChainSchedule {
    * `proposer.claimDeadline`) and the close of the taker's claim window
    * (`proposer.reclaimRelease`). This is the taker's time to observe the
    * revealed secret and land their own claim.
+   *
+   * Under optimistic mode this buffer matters MORE, not less: it is the
+   * surviving theft prevention (the reclaim gate is never waived) while the
+   * actual reaction window only widens (the reveal may come earlier; its
+   * close, `proposer.reclaimRelease`, does not move). Size it generously —
+   * it is the worst-case guarantee when the reveal lands at the last
+   * instant.
    */
   readonly reactionBufferSeconds: bigint
   /** The smallest gap between any two adjacent schedule timestamps, in seconds. */
   readonly minimumGapSeconds: bigint
+  /**
+   * True when both sides opted into optimistic mode (a validated pairing
+   * guarantees the flags are equal): the commit/claim lower bounds are
+   * waived on both chains. The taker's duties sharpen accordingly — see
+   * the module doc's taker-negligence warning.
+   */
+  readonly optimistic: boolean
 }
 
 /**
@@ -166,6 +202,8 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
     // reactionBuffer = proposer.reclaimRelease - proposer.claimDeadline
     reactionBufferSeconds: proposerTerms.reclaimRelease - proposerTerms.claimDeadline,
     minimumGapSeconds,
+    // flags are equal in any pairing that passed validateTermPairing
+    optimistic: proposerTerms.optimistic,
   }
 }
 
@@ -193,6 +231,14 @@ export interface RemoteCommitmentStatus {
  * "the party MUST ensure the commitment from the counterparty has taken
  * effect especially if the swap is cross-chain") but CANNOT enforce it
  * cross-chain, because the taker's chain cannot read the proposer's chain.
+ *
+ * Under OPTIMISTIC mode this check is the taker's ONLY ordering guarantee:
+ * the forced wait for `proposer.commitmentDeadline` — which used to give
+ * the taker a race-free moment to verify — is waived, and the proposer may
+ * reveal the instant both legs are funded. Verify, apply your confirmation
+ * depth, and only then commit; then watch for the reveal and claim within
+ * `[reveal, proposer.reclaimRelease)` (see the module doc's
+ * taker-negligence warning — missing that window forfeits both legs).
  *
  * Not spoofable: this reads on-chain STORAGE (`lockState` / `posted` /
  * `termsHash`), not events, so a forged log cannot fake a commitment. But

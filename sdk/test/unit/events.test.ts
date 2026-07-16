@@ -19,7 +19,7 @@ import {
 } from '../../src/events.js'
 import {generateLock} from '../../src/hashing.js'
 import type {Hex32} from '../../src/types.js'
-import {aliceTerms, CHAIN_A, FOUNDRY_LOCK, FOUNDRY_SECRET} from '../helpers/fixtures.js'
+import {aliceTerms, CHAIN_A, FOUNDRY_LOCK, FOUNDRY_SECRET, withOptimistic} from '../helpers/fixtures.js'
 import {claimLog, commitmentLog} from '../helpers/logs.js'
 
 const OMNIBUS: Address = getAddress('0x0000000000000000000000000000000000000999')
@@ -65,6 +65,17 @@ describe('decodeCommitmentEvents (new event shape)', () => {
     if (event === undefined) throw new Error('expected one Commitment event')
     expect(event.signer.toLowerCase()).toBe(keyedSigner.toLowerCase())
     expect(event.sender).toBe(SENDER) // funding sender, distinct from the identity
+  })
+
+  it('round-trips the optimistic flag through encode + decode', () => {
+    const party = withOptimistic(aliceTerms(CHAIN_A))
+    const signer = concatHex([SENDER, '0x7913'])
+    const [event] = decodeCommitmentEvents([
+      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer, party}),
+    ])
+    if (event === undefined) throw new Error('expected one Commitment event')
+    expect(event.party.optimistic).toBe(true)
+    expect(event.party).toEqual(checksummedTerms(party))
   })
 })
 

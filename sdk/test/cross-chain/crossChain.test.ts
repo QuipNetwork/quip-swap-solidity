@@ -19,7 +19,7 @@ import {getAddress, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
-import {buildKeyedSigner} from '../../src/commitAuth.js'
+import {ZERO_WALLET_BINDING, buildKeyedSigner} from '../../src/commitAuth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
@@ -56,11 +56,12 @@ let fixtureB: Fixture
 /**
  * Keyed ERC-7913 auth via the given chain's AcceptAll VerifierMock — each
  * commit must use ITS OWN chain's fixture verifier (the address doubles as
- * the key; the mock ignores signatures).
+ * the key). The signature is a NON-EMPTY placeholder ('envelope'): an EMPTY
+ * signature selects the ATTESTED route, which the mock does not implement.
  */
 const keyedAuth = (fixture: Fixture, addr: Address): CommitAuth => ({
   signer: buildKeyedSigner(fixture.verifier, addr),
-  signature: '0x',
+  signature: '0x656e76656c6f7065',
 })
 /** Alice (proposer, secret holder) acts on chain A for commits; on B for her claim. */
 let aliceOnA: OmnibusClient
@@ -109,6 +110,7 @@ async function sharedSchedule(): Promise<SharedSchedule> {
       commitmentDeadline: base + 1000n,
       claimDeadline: base + 3000n,
       reclaimRelease: base + 5000n,
+      optimistic: false,
       assets,
     }),
     bobTerms: assets => ({
@@ -118,6 +120,7 @@ async function sharedSchedule(): Promise<SharedSchedule> {
       commitmentDeadline: base + 2000n,
       claimDeadline: base + 4000n,
       reclaimRelease: base + 6000n,
+      optimistic: false,
       assets,
     }),
   }
@@ -261,6 +264,56 @@ describe('cross-chain happy path', () => {
       }),
     ).toBe(bobRecipientTokensBefore + TOKENS)
   })
+
+  it('OPTIMISTIC flow: the forced waits are gone; the reveal-then-reclaim theft is still blocked', async () => {
+    const TOKENS = 40_000n
+    const NATIVE = 55_555n
+    const {secret, lock} = nextSecret()
+    const s = await sharedSchedule()
+    const alice = {...s.aliceTerms([erc20Asset(fixtureA.erc20, TOKENS)]), optimistic: true}
+    const bob = {...s.bobTerms([nativeAsset(NATIVE)]), optimistic: true}
+
+    const schedule = validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 500n})
+    expect(schedule.optimistic).toBe(true)
+
+    // ALL actions run at/around the proposer-commit anchor — every step below
+    // would revert WindowViolated non-optimistically except the first commit
+    await warpBoth(s.anchors.proposerCommit)
+
+    // 1. Alice commits on chain A
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(fixtureA, chainA.alice.address)}))
+
+    // 2. Bob verifies Alice's remote escrow — under optimistic mode this is
+    // his ONLY ordering guarantee (no forced wait) — then commits IMMEDIATELY
+    const remote = await verifyRemoteCommitment(bobOnA, lock, alice, bob)
+    expect(remote.committed).toBe(true)
+    await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(fixtureB, chainB.bob.address)}))
+
+    // 3. Alice reveals IMMEDIATELY on chain B (proposer-claim lower bound waived)
+    const claimB = await aliceOnB.waitForReceipt(await aliceOnB.claim({secret, party: alice, counterparty: bob}))
+    expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
+
+    // 4. the theft attempt: Alice tries to reclaim her untouched chain-A leg
+    // right after revealing — reclaimRelease (never waived) blocks it
+    try {
+      await aliceOnA.reclaim({lock, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('WINDOW_VIOLATED')
+    }
+
+    // 5. Bob extracts the revealed secret and claims on chain A at once —
+    // his claim window is [reveal, alice.reclaimRelease), already open
+    const revealed = extractSecretFromClaims(claimB.claims, lock)
+    if (revealed === undefined) throw new Error('secret must have been revealed')
+    await bobOnA.waitForReceipt(await bobOnA.claim({secret: revealed, party: bob, counterparty: alice}))
+
+    expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
+    expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
+    // fair settlement, still ahead of the ENTIRE non-optimistic schedule
+    const nowA = await chainA.now()
+    expect(nowA).toBeLessThan(alice.commitmentDeadline)
+  })
 })
 
 describe('cross-chain validator guards', () => {
@@ -306,7 +359,7 @@ describe('cross-chain validator guards', () => {
           lock,
           {...alice, assets: alice.assets.map(a => ({...a}))},
           {...bob, assets: bob.assets.map(a => ({...a}))},
-          keyedAuth(fixtureA, chainA.alice.address),
+          {...keyedAuth(fixtureA, chainA.alice.address), walletBinding: ZERO_WALLET_BINDING},
         ],
         value: 0n,
         account: chainA.alice.account,

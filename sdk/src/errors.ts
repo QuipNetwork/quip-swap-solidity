@@ -33,6 +33,7 @@ export type QuipSwapErrorCode =
   // pairing / window validation (mirrors TermsLib.validateTermPairing / enforceWithin)
   | 'INVALID_RANGE'
   | 'WINDOW_VIOLATED'
+  | 'OPTIMISM_MISMATCH'
   // secrets and hex inputs
   | 'INVALID_HEX32'
   // client preflight

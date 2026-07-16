@@ -93,6 +93,7 @@ interface DecodedTermsTuple {
   readonly commitmentDeadline: bigint
   readonly claimDeadline: bigint
   readonly reclaimRelease: bigint
+  readonly optimistic: boolean
   readonly assets: readonly {
     readonly assetType: number
     readonly target: Address
@@ -110,6 +111,7 @@ function toTerms(decoded: DecodedTermsTuple): Terms {
     commitmentDeadline: decoded.commitmentDeadline,
     claimDeadline: decoded.claimDeadline,
     reclaimRelease: decoded.reclaimRelease,
+    optimistic: decoded.optimistic,
     assets: Object.freeze(
       decoded.assets.map(a =>
         Object.freeze({assetType: toAssetType(a.assetType), target: a.target, id: a.id, amount: a.amount}),

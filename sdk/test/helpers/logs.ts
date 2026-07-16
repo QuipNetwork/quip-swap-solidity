@@ -42,6 +42,7 @@ function toTuple(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
+    optimistic: terms.optimistic,
     assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   }
 }

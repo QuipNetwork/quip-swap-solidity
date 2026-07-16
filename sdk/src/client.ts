@@ -21,7 +21,7 @@
 import {BaseError, InsufficientFundsError} from 'viem'
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
-import {assertSignerBlob} from './commitAuth.js'
+import {ZERO_WALLET_BINDING, assertSignerBlob} from './commitAuth.js'
 import type {CommitAuth} from './commitAuth.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
 import {prepareTx} from './gas.js'
@@ -404,6 +404,7 @@ function toAbiTerms(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
+    optimistic: terms.optimistic,
     assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
   }
 }
@@ -821,7 +822,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         wallet,
         sender,
         functionName: 'commit',
-        args: [lock, toAbiTerms(party), toAbiTerms(counterparty), {signer: auth.signer, signature: auth.signature}],
+        args: [
+          lock,
+          toAbiTerms(party),
+          toAbiTerms(counterparty),
+          {signer: auth.signer, signature: auth.signature, walletBinding: auth.walletBinding ?? ZERO_WALLET_BINDING},
+        ],
         value,
         opts,
         context: 'commit',

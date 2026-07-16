@@ -37,6 +37,7 @@ import {
   BOB_COMMIT_DEADLINE,
   bobTerms,
   CHAIN_A,
+  withOptimistic,
 } from '../helpers/fixtures.js'
 
 function codeOf(fn: () => unknown): string {
@@ -161,5 +162,51 @@ describe('validateReclaimWindow', () => {
     expect(() => validateReclaimWindow(alice, ALICE_RECLAIM_RELEASE)).not.toThrow()
     expect(() => validateReclaimWindow(alice, AT_PROPOSER_RECLAIM)).not.toThrow()
     expect(() => validateReclaimWindow(alice, MAX_UINT256 - 1n)).not.toThrow()
+  })
+})
+
+describe('optimistic mode — lower bounds waived, uppers and reclaim untouched', () => {
+  const oAlice = withOptimistic(alice)
+  const oBob = withOptimistic(bob)
+
+  it('optimistic pair: taker commit / proposer claim / taker claim windows all open at 0', () => {
+    expect(takerCommitWindow(oBob, oAlice)).toEqual({lower: 0n, upper: BOB_COMMIT_DEADLINE})
+    expect(proposerClaimWindow(oAlice, oBob)).toEqual({lower: 0n, upper: ALICE_CLAIM_DEADLINE})
+    expect(takerClaimWindow(oAlice)).toEqual({lower: 0n, upper: ALICE_RECLAIM_RELEASE})
+  })
+
+  it('proposer commit and reclaim windows are IDENTICAL to non-optimistic', () => {
+    expect(proposerCommitWindow(oAlice)).toEqual(proposerCommitWindow(alice))
+    expect(reclaimWindow(oAlice)).toEqual(reclaimWindow(alice))
+    expect(reclaimWindow(oBob)).toEqual(reclaimWindow(bob))
+  })
+
+  it('a MIXED pair does not waive anything (defensive && — such a pairing never validates)', () => {
+    expect(takerCommitWindow(oBob, alice)).toEqual({lower: ALICE_COMMIT_DEADLINE, upper: BOB_COMMIT_DEADLINE})
+    expect(proposerClaimWindow(oAlice, bob)).toEqual({lower: BOB_COMMIT_DEADLINE, upper: ALICE_CLAIM_DEADLINE})
+  })
+
+  it('validateCommitWindow accepts the taker BEFORE the proposer deadline when optimistic', () => {
+    // the exact timestamp the non-optimistic variant rejects
+    expect(() => validateCommitWindow(oBob, oAlice, AT_PROPOSER_COMMIT)).not.toThrow()
+  })
+
+  it('validateCommitWindow still rejects the taker at its own deadline when optimistic', () => {
+    expect(codeOf(() => validateCommitWindow(oBob, oAlice, BOB_COMMIT_DEADLINE))).toBe('WINDOW_VIOLATED')
+  })
+
+  it('validateClaimWindow accepts both roles at the commit anchor when optimistic', () => {
+    expect(() => validateClaimWindow(oAlice, oBob, AT_PROPOSER_COMMIT)).not.toThrow()
+    expect(() => validateClaimWindow(oBob, oAlice, AT_PROPOSER_COMMIT)).not.toThrow()
+  })
+
+  it('validateClaimWindow still enforces the upper bounds when optimistic', () => {
+    expect(codeOf(() => validateClaimWindow(oAlice, oBob, ALICE_CLAIM_DEADLINE))).toBe('WINDOW_VIOLATED')
+    expect(codeOf(() => validateClaimWindow(oBob, oAlice, ALICE_RECLAIM_RELEASE))).toBe('WINDOW_VIOLATED')
+  })
+
+  it('validateReclaimWindow is unaffected by the optimistic flag', () => {
+    expect(codeOf(() => validateReclaimWindow(oAlice, AT_TAKER_CLAIM))).toBe('WINDOW_VIOLATED')
+    expect(() => validateReclaimWindow(oAlice, ALICE_RECLAIM_RELEASE)).not.toThrow()
   })
 })
