@@ -22,6 +22,7 @@ sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 - **Funding model:** in every route the transaction SENDER funds the committed leg + fee; the identity only authorizes. "Relayed" means the sender pays.
 - `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are unchanged and identity-free — claim is secret-gated, reclaim recipients are terms-pinned.
 - All timing windows are half-open `[lower, upper)`.
+- **Optimistic mode:** each side's `Terms` carries a `bool optimistic`. When BOTH sides sign `true` (bilateral opt-in — mixed flags revert `OptimismMismatch`), the LOWER bounds of the commit and claim windows are waived: no forced sequencing waits, either side may commit first, and a same-chain swap can commit + commit + claim in a single block. **What is never waived:** the claim upper bounds and `reclaimRelease` — the reaction gap that prevents cross-chain reveal-then-reclaim theft. The interleaved deadline schedule stays required and acts as the timed fallback if the fast path stalls. ⚠️ Cross-chain takers: with the forced waits gone, off-chain commitment verification and watching for the reveal are your only protections — a negligent taker forfeits both legs (see `TIMING_MODEL.md` §7).
 
 ## Smart contracts (Foundry)
 

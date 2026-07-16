@@ -13,6 +13,8 @@ The SDK is **intended to be non-custodial**: by design it does not hold keys, st
 The genuine fund-loss paths, loudest first. Each entry is terse — follow the link for depth (full prose lives in [§6 Security & risks](#6-security--risks)). The SDK preflights what it can, but these are the cases it (and the contract) cannot fully prevent for you.
 
 > **⚠️ DANGER — cross-chain taker drain.** A taker who commits before verifying the proposer has actually committed can **permanently lose the escrowed assets** — the proposer holds the secret and can claim the taker's leg while risking nothing. *Avoid:* run `verifyRemoteCommitment` against the proposer's chain, gate your commit on the result, and apply your own confirmation depth. → [§5 callout](#5-cross-chain-swap-end-to-end), [§6 item 1](#6-security--risks).
+>
+> **⚠️ DANGER — cross-chain taker negligence: one side ends up with BOTH legs.** A taker who commits and then fails to claim within `[reveal, proposer.reclaimRelease)` **forfeits the swap — the proposer claims the taker's leg with the secret AND reclaims their own, holding both their own and the counterparty's funds.** Inherent to HTLCs (not introduced by optimistic mode, and the reclaim boundary never moves), but under **optimistic mode** the forced waits that used to pace the flow are gone, so `verifyRemoteCommitment` before committing and a watchtower/monitor for the reveal are the taker's ONLY protections. Same-chain swaps have no equivalent risk (settlement/refund are atomic across both legs). → [§6 item 3](#6-security--risks).
 
 > **⚠️ DANGER — overriding buffers below the defaults.** Too-tight `minimumBufferSeconds` (same-chain or cross-chain) can cause a **missed claim/reaction window and forfeited funds**; the contract never checks gap SIZE, so the SDK default is the only guard. *Avoid:* keep the default, or override only after evaluating finality, congestion, reorg risk, and relayer latency. → [§5 "Schedule buffers"](#schedule-buffers).
 
@@ -95,6 +97,7 @@ const aliceTerms = createTerms({
   commitmentDeadline: now + 600n,
   claimDeadline: now + 1800n,
   reclaimRelease: now + 3600n,
+  optimistic: false,         // optional (default false) — see "Optimistic mode" below
   assets: [nativeAsset(10n ** 18n)],
 })
 ```
@@ -108,6 +111,16 @@ proposer.commitmentDeadline < taker.commitmentDeadline
 ```
 
 The **proposer** is the side with the smaller `commitmentDeadline`; it commits first. `proposedBy(party, counterparty)` returns `'party' | 'counterparty'`. Structural validation deliberately does **not** check that deadlines are in the future (see footgun).
+
+### Optimistic mode — waiving the waits
+
+When **both** sides set `optimistic: true` (bilateral — `validateTermPairing` and the contract reject mixed flags with `OPTIMISM_MISMATCH` / `OptimismMismatch`), the contract waives the **LOWER bounds** of the commit and claim windows:
+
+- no forced wait between the two commits (either side may commit first),
+- the claim may follow immediately — a same-chain swap can commit + commit + claim in a **single block** (`commit` is permissionless, so the three calls can even be bundled into one transaction),
+- cross-chain, the taker may commit as soon as it has verified the proposer's escrow, and the proposer may reveal at once.
+
+**Never waived:** the claim upper bounds and `reclaimRelease`. The reaction gap (`proposer.reclaimRelease - proposer.claimDeadline`) survives untouched — it is what blocks cross-chain reveal-then-reclaim theft. The six-timestamp schedule stays required and strictly interleaved: it is the timed **fallback** if the fast path stalls, so keep the deadlines generous (the buffer checks apply to optimistic pairings identically). `planSameChainSwap` / `validateCrossChainSchedule` report `optimistic: true` and compute zero-lower windows automatically.
 
 ### Secret generation — and the rule that the SDK never stores it
 
@@ -154,6 +167,20 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 ```
 
 `commit(args: CommitArgs, opts?)`, `claim(args: ClaimArgs, opts?)`, and `reclaim(args: ReclaimArgs, opts?)` each return a `Promise<Hash>`. `CommitArgs` is `{lock, party, counterparty, auth, verifyOnChainState?}`; `ReclaimArgs` is `{lock, party, counterparty, verifyOnChainState?}`; `ClaimArgs` is `{secret, party, counterparty, verifyOnChainState?}` (the lock is derived from the secret).
+
+### Optimistic fast path (same-chain, single block)
+
+Build both sides with `optimistic: true` and step 2's wait disappears — the three calls run back-to-back (in either commit order), even inside one block:
+
+```ts
+const plan = planSameChainSwap(aliceOptimisticTerms, bobOptimisticTerms) // plan.optimistic === true
+// plan.takerCommitWindow.lower === 0n; plan.claimWindow.lower === 0n — no waits
+await proposerClient.commit({lock, party: plan.proposerTerms, counterparty: plan.takerTerms, auth: proposerAuth})
+await takerClient.commit({lock, party: plan.takerTerms, counterparty: plan.proposerTerms, auth: takerAuth})
+await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.takerTerms}) // settles both legs
+```
+
+The upper bounds and both `reclaimRelease` gates are unchanged — the interleaved schedule is the timed fallback if any step stalls, so keep it generously sized (the buffer check applies identically). Note that under optimistic mode `LockState.Free` only means *one* side posted (either role may have committed first): read `proposerPosted` / `takerPosted` from `getSameChainSwapStatus` rather than inferring who posted from the status name.
 
 ### Commit authorization (`auth`) and the funding model
 
@@ -250,6 +277,7 @@ if (revealed) {
 - **`validateCrossChainSchedule({proposerTerms, takerTerms, minimumBufferSeconds})`** enforces strict interleaving, that the secret-holder is the proposer, and a minimum gap between **every** adjacent pair of the six schedule timestamps. `minimumBufferSeconds` is mandatory and has **no default** — choose it from chain finality/reorg risk, RPC reliability, relayer responsiveness, and your safety margin. A buffer fine on a fast-finality L2 may be reckless on a congested L1.
 - **`verifyRemoteCommitment(remoteClient, lock, proposerTerms, takerTerms)`** is the **mandatory off-chain check** Chain B cannot do for you (it cannot read Chain A). Returns `{committed, lockState, proposerPosted, termsHashMatches}`. A taker that skips it risks escrowing against a proposer who never committed. **Do not treat a `Commitment` event alone as proof that Bob may commit; taker readiness must come from `verifyRemoteCommitment`'s storage checks** (`lockState`, `posted`, `termsHash`) — an event can be reorged away or emitted by an impostor contract, whereas the storage reads reflect committed chain state.
 - **This is NOT atomic.** The buffer is the taker's reaction window between the latest possible secret reveal and the close of their claim window (`proposer.reclaimRelease - proposer.claimDeadline`). If either side stalls past their windows, each side reclaims its own leg.
+- **Optimistic cross-chain:** with both flags set, steps 3, 4, and 6 lose their lower bounds — Bob may commit as soon as `verifyRemoteCommitment` passes, Alice may reveal at once, and Bob may claim from the reveal onward. The reaction gap's CLOSE (`alice.reclaimRelease`) does not move, so the window only widens — but with the forced waits gone, step 2 (verification) and step 5 (watching for the reveal) are Bob's **only** protections. See the DANGER items above.
 
 ### Schedule buffers
 
@@ -281,7 +309,7 @@ The real failure modes, in order of severity. Read them deliberately before inte
 
 2. **Secret loss (integrator's responsibility).** The proposer generates and holds the secret; the SDK never persists or logs it. If the secret is lost before the claim, the swap cannot be completed — the only recovery is `reclaim`, available after `reclaimRelease`, which returns each leg to its `reclaimRecipient`. Custody of the secret until claim is the application's job.
 
-3. **Missed reaction window (integrator's responsibility).** Once the proposer's claim reveals the secret on one chain, the taker must claim the other leg within `[proposer.claimDeadline, proposer.reclaimRelease)`. Miss that window and the taker forfeits the swap (the proposer can reclaim). Watch the counterparty chain for the `Claim` event rather than polling on a slow interval, and size `minimumBufferSeconds` for your finality/relay latency.
+3. **Missed reaction window — the taker loses BOTH legs (integrator's responsibility).** Once the proposer's claim reveals the secret on one chain, the taker must claim the other leg before `proposer.reclaimRelease`. Miss that window and the taker forfeits the swap outright: the proposer already took the taker's leg with the secret and now reclaims their own — **one side ends up holding both their own and the counterparty's funds**, and nothing on-chain can prevent it (the two chains cannot see each other). This predates optimistic mode and the reclaim boundary never moves; under **optimistic mode** the reaction window only widens (the reveal may come earlier), but the forced waits that used to pace the flow are gone — so watch the counterparty chain for the `Claim` event (a watchtower, not a slow poll), and size `minimumBufferSeconds` for your finality/relay latency. Same-chain there is no equivalent: settlement and refund are atomic across both legs.
 
 4. **Reorgs / finality (integrator's responsibility).** A commitment or a revealed secret observed once is not final — a reorg can undo a young commit, and `verifyRemoteCommitment` is point-in-time. Honor a confirmation policy (re-check after N blocks) before treating any observation as settled.
 
