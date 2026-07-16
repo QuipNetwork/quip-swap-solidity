@@ -31,6 +31,7 @@ library TermsHelper {
       commitmentDeadline: commitmentDeadline,
       claimDeadline: claimDeadline,
       reclaimRelease: reclaimRelease,
+      optimistic: false,
       assets: assets
     });
   }
