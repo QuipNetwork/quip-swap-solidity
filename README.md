@@ -24,6 +24,10 @@ sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 - All timing windows are half-open `[lower, upper)`.
 - **Optimistic mode:** each side's `Terms` carries a `bool optimistic`. When BOTH sides sign `true` (bilateral opt-in — mixed flags revert `OptimismMismatch`), the LOWER bounds of the commit and claim windows are waived: no forced sequencing waits, either side may commit first, and a same-chain swap can commit + commit + claim in a single block. **What is never waived:** the claim upper bounds and `reclaimRelease` — the reaction gap that prevents cross-chain reveal-then-reclaim theft. The interleaved deadline schedule stays required and acts as the timed fallback if the fast path stalls. ⚠️ Cross-chain takers: with the forced waits gone, off-chain commitment verification and watching for the reveal are your only protections — a negligent taker forfeits both legs (see `TIMING_MODEL.md` §7).
 
+## SVM (Solana) compatibility
+
+Token and recipient identifiers are **bytes32** universal identifiers (EVM addresses low-20-byte aligned), so a swap leg on Solana can carry 32-byte pubkeys; the EVM side and SDK are implemented, the Solana program is future work. [`SVM_COMPATIBILITY.md`](SVM_COMPATIBILITY.md) is the canonical spec: addressing and chain-id conventions, what's supported on Solana, and the ⚠️ **token due-diligence** section every party should read (a token that escrows fine but becomes untransferable at claim time — blacklists, pauses, transfer hooks — can make a swap one-sided; this applies on EVM today).
+
 ## Smart contracts (Foundry)
 
 ```shell
@@ -36,7 +40,7 @@ Or via make: `make build`, `make test`, `make fmt-check`, `make coverage`. Run `
 
 ## TypeScript SDK
 
-The `sdk/` directory contains a publishable TypeScript SDK providing typed access to Omnibus — asset/terms builders, Solidity-exact hashing, secret generation, a preflighted client, approval planning, event decoding, and same-chain / cross-chain workflow helpers.
+The `sdk/` directory contains a publishable TypeScript SDK providing typed access to Omnibus — asset/terms builders, universal (bytes32) address helpers + SVM chain constants, Solidity-exact hashing, secret generation, a preflighted client, approval planning, event decoding, and same-chain / cross-chain workflow helpers.
 
 > Use client-bound receipt helpers or pass the Omnibus address when decoding receipts (`client.waitForReceipt(hash)` or `waitForOmnibusReceipt(..., {address})`); the raw `decode*Events` decoders are low-level and expect pre-scoped logs.
 

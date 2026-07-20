@@ -1,6 +1,6 @@
 # Quip Swap SDK — Usage
 
-Task-oriented guide to integrating the Quip Swap SDK into a dapp or backend. For build/test/repo orientation see [`README.md`](README.md); for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
+Task-oriented guide to integrating the Quip Swap SDK into a dapp or backend. For build/test/repo orientation see [`README.md`](README.md); for protocol theory see the root [`../README.md`](../README.md), [`../TIMING_MODEL.md`](../TIMING_MODEL.md), and [`../SVM_COMPATIBILITY.md`](../SVM_COMPATIBILITY.md).
 
 The SDK is **intended to be non-custodial**: by design it does not hold keys, store secrets, auto-approve tokens, or hide wallet signing. Its SDK-side validation mirrors the contract checks to fail early with actionable errors, but it never replaces on-chain enforcement, and (like any software) it may have bugs — treat it as a convenience layer over the contracts, not a security guarantee.
 
@@ -82,6 +82,10 @@ erc1155Asset(ITEMS, 7n, 25n)   // function erc1155Asset(target, tokenId, amount)
 ```
 
 Every amount must be `> 0n` for **every** asset type (contract rule). ERC-721 `tokenId 0n` is valid; the builder canonicalizes the **amount** to `1n` (see the footgun below). Use `validateAsset(asset): void` on any `Asset` arriving from JSON/APIs/DB — it mirrors `TermsLib.validateAsset` exactly and throws a `QuipSwapError` on bad input.
+
+### Universal (bytes32) addressing
+
+`Asset.target`, `Terms.recipient`, and `Terms.reclaimRecipient` are 32-byte **universal identifiers**, not `Address` — an EVM address occupies the low 20 bytes; a Solana pubkey uses all 32. The builders and `createTerms` accept either form (a 20-byte address is widened automatically), so EVM-only code changes nothing. Helpers: `evmToBytes32` / `bytes32ToEvm` / `isEvmBytes32` / `toUniversalAddress` (plus `ZERO_BYTES32`). Note the field semantics: `target`/`reclaimRecipient` live on the leg's **own** chain, while `recipient` lives on the **counterparty's** chain — an EVM leg swapping against Solana carries a Solana owner-wallet pubkey as its `recipient`. For SVM legs (`chainId` in `SVM_CHAIN_IDS`, e.g. `SOLANA_MAINNET_CHAIN_ID`), `validateTerms` additionally enforces `u64` amounts and the supported asset types (no ERC-1155; NFT `id` must be `0n`). The commit preflight (`assertEvmLocalLeg`, run automatically by `client.commit`) rejects any identifier the local chain would fail to narrow. See `SVM_COMPATIBILITY.md` at the repo root for the full conventions.
 
 ### Terms and the three lifecycle timestamps
 

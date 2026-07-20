@@ -13,6 +13,7 @@
 > | `taker.claimDeadline` | `0` (unused) | **Required, nonzero, ordered** — but used *only* for the pairing's strict ordering, never as a live window bound. The taker's claim is bounded by the proposer's `claimDeadline`/`reclaimRelease` |
 > | `proposer.deadline` (`E`) | the taker's terminal field | **No `deadline` field exists** in `Terms` |
 > | Refund recipient | implied = committer | explicit **`reclaimRecipient`** field on every side |
+> | Addressing | `address` recipients/targets | **`bytes32` universal identifiers** (EVM addresses in the low 20 bytes; foreign-chain pubkeys use all 32) — see `SVM_COMPATIBILITY.md` |
 > | Optimistic mode | Not present | New **`bool optimistic`** field on every side (7th of the 8 top-level `abi.encode` values in `digestTerms`, between `reclaimRelease` and `assets`). When BOTH sides sign `true`, the **LOWER bounds** of the commit and claim windows are waived; **all upper bounds and `reclaimRelease` stay enforced unconditionally**. Flags must be equal across the pair (`OptimismMismatch` at commit). See the subsection below. |
 >
 > ### Optimistic mode (implemented)
@@ -45,11 +46,11 @@
 > **Why unbounded reclaim is safe (and chosen):** the "one action per window" partition is
 > still preserved where it matters — claim and reclaim are mutually exclusive by the
 > half-open window boundary *and* by the `Spent` lock state, so no asset is ever both
-> claimed and reclaimed. Dropping the terminal `E` only removes the *stranding* edge from
-> §10: an actor that misses its reclaim window can still recover later instead of losing the
-> funds forever. Cross-chain, the two reclaims sit on disjoint chains; same-chain, the first
-> reclaim refunds **both** legs atomically to their respective `reclaimRecipient`s. The
-> trade-offs in §10 (terminal sweep) are therefore moot as implemented.
+> claimed and reclaimed. Dropping the terminal `E` only removes the design's *stranding*
+> edge: an actor that misses its reclaim window can still recover later instead of losing
+> the funds forever. Cross-chain, the two reclaims sit on disjoint chains; same-chain, the
+> first reclaim refunds **both** legs atomically to their respective `reclaimRecipient`s.
+> The design's terminal-sweep trade-off is therefore moot as implemented.
 >
 > Sections below describe the original 6-boundary/`E` model and are kept for design
 > rationale; treat the **bridging mechanisms (§5), enforcement split (§6), and clock-skew /
@@ -218,9 +219,8 @@ safety alone, which is why they are never waivable.)*
 
 A‑reclaim closes at `reclaimB⁺`; B‑reclaim closes at the terminal expiry `E`. Every
 window is now closed on both ends, so the partition is complete. **Trade-off:** a reclaim
-not taken within its window strands those assets (the actor's own liveness risk). If that
-is unacceptable, add a terminal "anyone sweeps to rightful owner" path *after* `E` — see
-§10.
+not taken within its window strands those assets (the actor's own liveness risk).
+*(Implemented: reclaims are open-ended, so no stranding exists and no sweep is needed.)*
 
 ---
 
@@ -290,7 +290,7 @@ counterparty's deposit* and *gap width* are trusted.**
 | 3 | Both commit, A never reveals | A refunds in W4; B refunds in W5. A gains nothing by stalling. |
 | 4 | Both commit, A reveals by `claimA⁻` | `s` public → B claims A's assets in `[claimA⁻, reclaimA⁺]`. **Swap completes.** |
 | 5 | A reveals, **B negligent** (misses W3) | A claimed B's assets *and* reclaims A's own → B loses. **Only via B's own inaction inside its reaction window.** |
-| 6 | An actor misses its own **reclaim** window | Bounded reclaims mean those assets are stranded past the window — the actor's liveness risk. Mitigate with a post-`E` sweep (§10) if needed. |
+| 6 | An actor misses its own **reclaim** window | Bounded reclaims mean those assets are stranded past the window — the actor's liveness risk. *(Implemented: reclaims are open-ended; a late actor recovers whenever they act.)* |
 
 Scenarios 5 and 6 are liveness assumptions, not theft by the counterparty: each actor (or
 its watchtower) **must** act inside its window. Size the windows generously and monitor.
@@ -350,124 +350,15 @@ its watchtower) **must** act inside its window. Size the windows generously and 
 - *(Design model only)* Each role leaves exactly **one timestamp field unused** (the
   symmetry of the asymmetry): the **taker's `claimDeadline`** (B's claim is bounded by A's
   boundaries) and the **proposer's terminal `deadline`** (A‑reclaim is bounded by the
-  taker's `reclaimRelease`). See §11. *(Implemented: there is no `deadline` field and the
+  taker's `reclaimRelease`). *(Implemented: there is no `deadline` field and the
   taker's `claimDeadline` is required non-zero — it participates in ordering only; see the
   banner table.)*
 
 ---
 
-## 10. Open question carried forward — terminal sweep
+## 10. The shipped struct
 
-Both reclaims are now bounded (W4, W5), so the partition is closed. That introduces a
-*stranding* edge: assets whose owner misses their reclaim window sit locked past `E`.
-Decide whether to:
-
-- **(a) leave them locked** (simplest; pure liveness risk on a negligent owner), or
-- **(b) add a post-`E` terminal path** — e.g. "after `E`, anyone may sweep each escrow to
-  its rightful owner" — restoring recoverability at the cost of one more code path.
-
----
-
-## 11. Struct layout
-
-### 11.1 The symmetric `Terms`
-
-One struct, **identical shape for both sides**. The proposer/taker asymmetry lives in
-*interpretation* (§11.2), never in the fields — `proposedByParty` tells you the role.
-
-```solidity
-/// @notice one party's half of a swap, enforced on a single chain.
-/// @dev    symmetric: proposer and taker submit the same shape. Which fields are
-///         meaningful, and on which chain, depends on role — see §11.2.
-struct Terms {
-  /// @notice chain on which these terms are enforced — where THIS party escrows `assets`
-  uint256 chainId;
-  /// @notice address that receives the COUNTERPARTY's assets when this party claims
-  address recipient;
-  /// @notice commit window upper bound — escrow `assets` before this        (commitX⁻)
-  uint64 commitmentDeadline;
-  /// @notice reveal window upper bound — PROPOSER must reveal before this (claimA⁻),
-  ///         enforced on the COUNTERPARTY's chain. MUST be 0 for the taker.
-  uint64 claimDeadline;
-  /// @notice reclaim window LOWER bound — refund own `assets` only AFTER this (reclaimX⁺).
-  ///         A release, not a deadline.
-  uint64 reclaimRelease;
-  /// @notice reclaim window UPPER bound — terminal expiry `E` closing this party's
-  ///         reclaim (and the swap). MUST be 0 for the proposer (A‑reclaim is closed by
-  ///         the taker's `reclaimRelease`).
-  uint64 deadline;
-  /// @notice the assets this party escrows on `chainId`
-  Asset[] assets;
-}
-```
-
-Changes from the current struct:
-
-| Current field | Becomes | Why |
-|---------------|---------|-----|
-| `commitmentDeadline` | `commitmentDeadline` *(unchanged)* | upper bound — correct as a deadline |
-| `claimDeadline` | `claimDeadline` *(taker must be 0)* | proposer-only reveal deadline |
-| `reclaimDeadline` | **`reclaimRelease`** | reclaim is "act *after*" — a **lower** bound |
-| `deadline` | **kept, repurposed → `E`** | it is the **taker's terminal reclaim deadline** that closes W5; proposer's is 0 |
-
-The **hashlock `H` is not in `Terms`** — shared across both chains/parties, passed once:
-
-```solidity
-function commit(bytes32 lock, Terms calldata party, Terms calldata counterparty) external payable;
-function claim (bytes32 preimage, Terms calldata party, Terms calldata counterparty) external;
-function reclaim(Terms calldata party, Terms calldata counterparty) external;
-```
-
-### 11.2 Field → role → chain (with the unused-field diagonal)
-
-| Field | In **proposer** `Terms` (A) | In **taker** `Terms` (B) |
-|-------|------------------------------|---------------------------|
-| `chainId` | Chain‑A | Chain‑B |
-| `commitmentDeadline` | `commitA⁻` · W0 · **Chain‑A** | `commitB⁻` · W1 · **Chain‑B** |
-| `claimDeadline` | `claimA⁻` · W2 · **Chain‑B** | **unused — `0`** |
-| `reclaimRelease` | `reclaimA⁺` · opens W4 / closes W3 · **Chain‑A** | `reclaimB⁺` · opens W5 / closes W4 · **Chain‑B** |
-| `deadline` | **unused — `0`** | `E` · closes W5 · **Chain‑B** |
-
-Each role nulls exactly one field: **`proposer.deadline == 0`** and
-**`taker.claimDeadline == 0`**.
-
-### 11.3 What each chain reads
-
-```
-Chain‑A:  proposer.commitmentDeadline   W0  before
-          proposer.claimDeadline        W3  after   (opens B‑claim) + hashlock
-          proposer.reclaimRelease       W3/W4 boundary (closes B‑claim, opens A‑reclaim)
-          taker.reclaimRelease          W4  before   (closes A‑reclaim)
-
-Chain‑B:  proposer.commitmentDeadline   W1  after    (opens B‑commit)
-          taker.commitmentDeadline      W1/W2 boundary (closes B‑commit, opens A‑claim)
-          proposer.claimDeadline        W2  before   (closes A‑claim/reveal) + reveals s
-          taker.reclaimRelease          W5  after    (opens B‑reclaim)
-          taker.deadline (E)            W5  before   (closes B‑reclaim)
-```
-
-### 11.4 Validation invariants
-
-```solidity
-// well-formedness, checkable on EITHER chain (both Terms present):
-proposer.commitmentDeadline < taker.commitmentDeadline       // A commits first
-                            < proposer.claimDeadline           // reveal deadline
-                            < proposer.reclaimRelease          // A-reclaim opens / B-claim closes
-                            < taker.reclaimRelease             // B-reclaim opens / A-reclaim closes
-                            < taker.deadline;                  // E: terminal, B-reclaim closes
-require(proposer.deadline    == 0);                           // proposer has no terminal slot
-require(taker.claimDeadline  == 0);                           // taker has no reveal deadline
-require(proposer.chainId != taker.chainId);                  // genuinely cross-chain
-```
-
-⚠️ Passing this does **not** certify the reaction window `proposer.reclaimRelease −
-proposer.claimDeadline` is wide enough — that is parameter sizing (§8), orthogonal to
-ordering.
-
-### 11.5 Note on a compact derived form
-
-Bridgeless cross-chain *requires* agreed absolute times (event-anchoring can't cross
-chains — §5), so the explicit `uint64` fields above are the right representation. A
-compact `(anchor, Δ[])` schedule would make ordering automatic, but you'd still have to
-materialize absolute boundaries for each chain to clock-check — so it buys less here than
-in a single-chain setting. Keep the explicit form.
+The design-model struct this document originally proposed (terminal `deadline`, nulled
+taker fields) was NOT shipped. The authoritative `Terms`/`Asset` layout — including the
+explicit `reclaimRecipient`, the `optimistic` flag, and bytes32 universal identifiers —
+is `src/TermsLib.sol`; the divergences are tabulated in the banner at the top of this file.

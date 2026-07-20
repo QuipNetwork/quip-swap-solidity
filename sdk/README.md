@@ -1,6 +1,6 @@
 # Quip Swap SDK
 
-A TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets, including the **optimistic fast path** (both sides sign `optimistic: true` to waive the commit/claim waiting periods — same-chain swaps can settle in a single block; upper bounds and `reclaimRelease` are never waived). Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). By design it does not custody keys or store secrets, and it never replaces on-chain enforcement (treat it as a convenience layer over the contracts, not a security guarantee). **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).
+A TypeScript SDK for the Quip Swap **Omnibus** protocol — hashlocked same-chain and cross-chain swaps of Native / ERC-20 / ERC-721 / ERC-1155 assets, including the **optimistic fast path** (both sides sign `optimistic: true` to waive the commit/claim waiting periods — same-chain swaps can settle in a single block; upper bounds and `reclaimRelease` are never waived). Built on [viem](https://viem.sh) (a peer dependency), it layers pure-protocol helpers (asset/terms builders, Solidity-exact hashing, window math, secret generation — no RPC), a typed client (reads plus preflighted writes with node-side gas estimation), and workflow helpers (plan / validate / status; they never submit transactions). By design it does not custody keys or store secrets, and it never replaces on-chain enforcement (treat it as a convenience layer over the contracts, not a security guarantee). **For integration instructions and end-to-end walkthroughs, see [`USAGE.md`](USAGE.md);** for protocol theory see the root [`../README.md`](../README.md), [`../TIMING_MODEL.md`](../TIMING_MODEL.md), and [`../SVM_COMPATIBILITY.md`](../SVM_COMPATIBILITY.md).
 
 > **⚠️ Before integrating, read the [DANGER — ways to lose funds](USAGE.md#danger) section.** Cross-chain takers can lose funds by skipping commitment verification or by missing the post-reveal reaction window (**the counterparty then ends up with both legs** — and optimistic mode removes the forced waits that used to pace this); overriding the default buffers too tight can forfeit windows.
 >
@@ -42,7 +42,7 @@ bun run generate:abi   # reads that artifact, writes src/generated/omnibusAbi.ts
 
 The public surface (`src/index.ts`) is three layers — import only what you need:
 
-- **Pure protocol** (`hashing`, `terms`, `windows`, `assets`, `secrets`, `types`) — asset/terms builders and validators, the half-open `[lower, upper)` window math, Solidity-exact `digestTerms` / `generateLock`, and CSPRNG secret generation. **No RPC**; deterministic and unit-testable in isolation.
+- **Pure protocol** (`hashing`, `terms`, `windows`, `assets`, `secrets`, `types`, `universalAddress`, `chains`) — asset/terms builders and validators, the half-open `[lower, upper)` window math, Solidity-exact `digestTerms` / `generateLock`, CSPRNG secret generation, universal (bytes32) address helpers, and the pinned SVM chain-id constants + SVM-leg validation (see `../SVM_COMPATIBILITY.md`). **No RPC**; deterministic and unit-testable in isolation.
 - **Client** (`client`, `gas`, `approvals`, `receipts`, `events`, `errors`, `deployments`) — `createOmnibusClient({address, publicClient, walletClient?})` exposes typed reads and **preflighted writes** (`commit` / `claim` / `reclaim`, plus owner-only `admin.*`): structural/pairing/window/chain-id/lock-state checks and a balance check run before gas estimation and a safety-buffered submission. Plus approval planning, **address-scoped receipt decoding** (`client.waitForReceipt`, or `waitForOmnibusReceipt(..., {address})`, decode only logs from the Omnibus address), address-scoped event queries, and a single `QuipSwapError` type. The raw `decode*Events` / `extractRevealedSecret` decoders are low-level and expect pre-scoped logs.
 - **Workflows** (`workflows/sameChain`, `workflows/crossChain`) — `planSameChainSwap` / `getSameChainSwapStatus` and `validateCrossChainSchedule` / `verifyRemoteCommitment`. These **plan, validate, and report only — they never submit transactions.**
 
@@ -93,7 +93,9 @@ sdk/
 │   ├── index.ts            Public entrypoint (re-exports the surface below)
 │   ├── types.ts            AssetType, LockState, Asset, Terms, Hex32, SecretLockPair
 │   ├── assets.ts           Asset builders + validateAsset + totalNative
-│   ├── terms.ts            createTerms, validateTerms/validateTermPairing, proposedBy
+│   ├── universalAddress.ts evmToBytes32 / bytes32ToEvm / toUniversalAddress (bytes32 addressing)
+│   ├── chains.ts           Pinned SVM chain ids (SOLANA_*_CHAIN_ID), U64_MAX, isSvmChainId
+│   ├── terms.ts            createTerms, validateTerms/validateTermPairing, proposedBy, assertEvmLocalLeg
 │   ├── windows.ts          Half-open [lower,upper) window helpers + validators
 │   ├── hashing.ts          Solidity-exact digestTerms / digestTermsCanonically / generateLock
 │   ├── secrets.ts          generateSecret (CSPRNG), secretToPair
