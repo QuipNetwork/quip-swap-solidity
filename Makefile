@@ -57,14 +57,14 @@ clean: ## Clean build artifacts
 	forge clean
 
 # ==============================================================================
-# Deployment (via the Deployer contract — env: DEPLOYER_PK, DEPLOYER_ADDRESS,
-# OMNIBUS_OWNER)
+# Deployment (via the canonical CreateX factory, pre-deployed on every chain —
+# no per-chain bootstrap. env: DEPLOYER_PK, OMNIBUS_OWNER; verify-omnibus also
+# needs DEPLOYER_ADDRESS = the EOA of DEPLOYER_PK, since the CreateX salt is
+# permissioned to it and the predicted address depends on it.)
 #
-# Per-chain deploy ORDER:
-#   1. Deployer         (DeployDeployer, done once per chain)
-#   2. Omnibus          (make deploy)
-# Verifier activation is separate: post-deploy, the owner calls
-# setVerifierActivity(verifier, true).
+# Per-chain deploy: Omnibus (make deploy). Verifier activation is separate:
+# post-deploy, the owner calls setVerifierActivity(verifier, true).
+# Local rehearsal: bare Anvil has no CreateX — use `make anvil-fork RPC=...`.
 # ==============================================================================
 
 .PHONY: anvil-fork
@@ -155,7 +155,7 @@ snapshot: ## Generate gas snapshot
 # usage:
 #   make verify-omnibus                      # uses sdk/src/address.json
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
-verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (Deployer, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
+verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (CreateX, deployer EOA, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
 

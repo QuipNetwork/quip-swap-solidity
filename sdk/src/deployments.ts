@@ -1,18 +1,19 @@
 /**
  * Typed deployment registry for verified Omnibus deployments.
  *
- * Omnibus is deployed via CREATE3 through the canonical Deployer contract
- * (`script/DeployOmnibus.s.sol`, using solady's `CREATE3.deployDeterministic`).
- * The address derives only from (Deployer contract, salt) — neither
- * chain-specific nor dependent on the broadcasting EOA — so a single
- * deployment has the SAME address on every chain. The registry therefore ships
- * ONE canonical address ({@link OMNIBUS_CREATE3_ADDRESS}) gated to the chain
- * ids where it has been VERIFIED-deployed, plus the existing per-chain override.
+ * Omnibus is deployed via CREATE3 through the canonical CreateX factory
+ * (`script/DeployOmnibus.s.sol`, pre-deployed at the same address on
+ * essentially every EVM chain). The salt is CreateX-permissioned to the ops
+ * EOA, so the address derives only from (CreateX, deployer EOA, salt) — not
+ * chain-specific — and a single deployment has the SAME address on every
+ * chain. The registry therefore ships ONE canonical address
+ * ({@link OMNIBUS_CREATE3_ADDRESS}) gated to the chain ids where it has been
+ * VERIFIED-deployed, plus the existing per-chain override.
  *
  * The address DATA is the single source of truth in `address.json` (imported
  * below). `script/VerifyOmnibus.s.sol` (run `make verify-omnibus`) asserts
- * `address.json` matches the address predicted from (Deployer, salt) — pure
- * offline math, not an on-chain semantic check. A chain id is added to that
+ * `address.json` matches the address predicted from (CreateX, deployer EOA,
+ * salt) — pure offline math, not an on-chain semantic check. A chain id is added to that
  * file's `chains` array ONLY after the deployed contract is confirmed on-chain
  * for it. This module derives its constants from that JSON; activating a
  * deployment is a data-only edit.
@@ -45,14 +46,14 @@ export interface OmnibusDeployment {
 /**
  * The canonical CREATE3 Omnibus address, sourced from `address.json`.
  *
- * CREATE3 (via the canonical Deployer contract) derives the address from
- * (Deployer contract, salt) — both chain-independent — so a single Omnibus
+ * CREATE3 (via the canonical CreateX factory) derives the address from
+ * (CreateX, deployer EOA, salt) — all chain-independent — so a single Omnibus
  * deployed via `script/DeployOmnibus.s.sol` has the SAME address on every
  * chain.
  *
  * Sourced from `address.json`, gated to that file's verified `chains`. To
  * enable a NEW chain: run `make verify-omnibus` (offline: confirms the
- * address matches the predicted (Deployer, salt) address), confirm on-chain
+ * address matches the predicted (CreateX, deployer EOA, salt) address), confirm on-chain
  * that the correct Omnibus sits there (CREATE3 addresses ignore init code,
  * so semantic verification is mandatory), then add the chain id to `chains`.
  * No code change required.

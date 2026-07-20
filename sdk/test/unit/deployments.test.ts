@@ -2,11 +2,11 @@
  * Deployment-resolution unit tests.
  *
  * Two concerns:
- * - SHIPPED STATE (canonical address + Base Sepolia verified): the registry
- *   resolves the canonical Omnibus for chain 84532, while `resolveDeployment`
- *   still throws `UNKNOWN_DEPLOYMENT` for every other chain without an override;
- *   an override still resolves and still validates. This pins both the active
- *   deployment and the "no false defaults for unverified chains" guarantee.
+ * - SHIPPED STATE (placeholder registry — no verified deployment yet): the
+ *   registry is empty, `resolveDeployment` throws `UNKNOWN_DEPLOYMENT` for
+ *   EVERY chain without an override, and an override still resolves and still
+ *   validates. This pins the "no false defaults" guarantee until the CreateX
+ *   redeploy is confirmed and address.json is repopulated.
  * - MECHANISM (so enabling a chain later is safe): a LOCAL registry built the
  *   same way (canonical address + a verified-chain set) returns the canonical
  *   address for a listed chain and nothing for an unlisted one — exercised
@@ -31,20 +31,19 @@ function codeOf(fn: () => unknown): string {
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
-// The canonical Omnibus address + verified chains shipped in src/address.json.
-const SHIPPED_OMNIBUS: Address = '0xD113aaA0F40945136A11a832087E23A72b38CE00'
-const BASE_SEPOLIA = 84532n
-const OP_SEPOLIA = 11_155_420n
+// The placeholder shipped in src/address.json until the CreateX redeploy is
+// confirmed on-chain (old pre-CreateX testnet deployments were retired).
+const SHIPPED_OMNIBUS: Address = `0x${'00'.repeat(20)}`
 
-describe('resolveDeployment — shipped state (Base Sepolia + OP Sepolia verified)', () => {
-  it('ships the canonical address with Base Sepolia and OP Sepolia in the verified registry', () => {
+describe('resolveDeployment — shipped state (placeholder, no verified chains)', () => {
+  it('ships the zero placeholder with an EMPTY verified registry', () => {
     expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
-    expect(knownDeployments.size).toBe(2)
-    expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
-    expect(resolveDeployment(OP_SEPOLIA)).toEqual({chainId: OP_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
+    expect(knownDeployments.size).toBe(0)
   })
 
-  it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
+  it('throws UNKNOWN_DEPLOYMENT for every chain without an override', () => {
+    expect(codeOf(() => resolveDeployment(84_532n))).toBe('UNKNOWN_DEPLOYMENT')
+    expect(codeOf(() => resolveDeployment(11_155_420n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(8453n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
   })

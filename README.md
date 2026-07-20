@@ -8,7 +8,7 @@ Non-custodial, hashlocked same-chain and cross-chain swaps built around the **Om
 src/                  Production contracts (Omnibus, TermsLib, interfaces)
 test/                 Foundry test suite (behaviors, scenarios, attack tests,
                       harnesses, mocks, real-verifier integration)
-script/               Deployment scripts (Omnibus via CREATE3;
+script/               Deployment scripts (Omnibus via CreateX CREATE3;
                       constructor (address initialOwner) from OMNIBUS_OWNER)
 sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 ```
@@ -62,4 +62,4 @@ make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
 
 ## Deployment
 
-Per-chain order: **Deployer → Omnibus (`make deploy`)**. Commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`. Env: `DEPLOYER_PK`, `DEPLOYER_ADDRESS`, `OMNIBUS_OWNER` (non-zero). Omnibus deploys via CREATE3 (salt `QUIP:Omnibus:v1.0.0-alpha.1`), so its address is independent of constructor args and identical across chains. Salts follow semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.
+Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.1`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains when the same EOA deploys, and unclaimable by anyone else. Commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`. Env: `DEPLOYER_PK`, `OMNIBUS_OWNER` (non-zero); `make verify-omnibus` additionally needs `DEPLOYER_ADDRESS` (the EOA of `DEPLOYER_PK`). Salt entropy follows semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.
