@@ -18,8 +18,10 @@ enum AssetType {
 struct Asset {
   /// @notice the type of asset
   AssetType assetType;
-  /// @notice the contract address of the asset, zero for native
-  address target;
+  /// @notice the token identifier on the leg's own chain: zero for native; an
+  /// EVM token address in the LOW 20 bytes for EVM legs; a full 32-byte
+  /// identifier (e.g. an SPL mint pubkey) for non-EVM legs
+  bytes32 target;
   /// @notice the token id, only used for erc721 and erc1155
   uint256 id;
   /// @notice the amount, only used for native, erc20, and erc1155
@@ -30,10 +32,14 @@ struct Asset {
 struct Terms {
   /// @notice the chain where the assets of these terms are held
   uint256 chainId;
-  /// @notice address which will receive committed assets upon reclaim
-  address reclaimRecipient;
-  /// @notice the address that receives the counterparty's assets
-  address recipient;
+  /// @notice account receiving this leg's own assets back upon reclaim; lives
+  /// on THIS leg's chain (an EVM address in the low 20 bytes when the leg is
+  /// local)
+  bytes32 reclaimRecipient;
+  /// @notice account receiving the counterparty's assets upon claim; lives on
+  /// the COUNTERPARTY's chain — may be a foreign 32-byte pubkey when the
+  /// counterparty leg is non-EVM
+  bytes32 recipient;
   /// @notice timestamp after which commitment is forbidden
   uint256 commitmentDeadline;
   /// @notice timestamp after which claiming is forbidden
@@ -91,11 +97,30 @@ library TermsLib {
   /// (before its lower bound or at/after its upper bound)
   error WindowViolated();
 
-  /// @notice thrown when either recipient or reclaimRecipient is the zero address
-  error ZeroAddressRecipient();
+  /// @notice thrown when either recipient or reclaimRecipient is zero
+  error ZeroRecipient();
 
   /// @notice thrown when a window's bounds are degenerate (lower >= upper)
   error InvalidRange();
+
+  /// @notice thrown when narrowing a bytes32 identifier that does not fit an
+  /// EVM address (any of the upper 12 bytes set)
+  error NotEvmAddress(bytes32 value);
+
+  // ============ Addressing ============
+
+  /// @notice narrows a 32-byte account/token identifier to an EVM address
+  /// @dev identifiers use LayerZero-style alignment: an EVM address occupies the
+  /// LOW 20 bytes — bytes32(uint256(uint160(addr))), matching abi.encode(address)
+  /// so EVM-only terms digests are unchanged by the bytes32 widening. NEVER
+  /// left-align (bytes32(bytes20(addr))); that changes every digest. Values with
+  /// upper bits set are foreign-chain identifiers and revert here
+  /// @param value the 32-byte identifier
+  /// @return the narrowed EVM address
+  function toEvmAddress(bytes32 value) internal pure returns (address) {
+    if (uint256(value) >> 160 != 0) revert NotEvmAddress(value);
+    return address(uint160(uint256(value)));
+  }
 
   // ============ Hashing ============
 
@@ -150,7 +175,7 @@ library TermsLib {
     bool isERC721 = asset.assetType == AssetType.ERC721;
     bool isERC1155 = asset.assetType == AssetType.ERC1155;
     bool isZeroId = asset.id == 0;
-    bool isZeroTarget = asset.target == address(0);
+    bool isZeroTarget = asset.target == bytes32(0);
 
     if (isNative && (!isZeroTarget || !isZeroId)) {
       revert InvalidNativeAsset();
@@ -174,8 +199,8 @@ library TermsLib {
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal pure {
     if (terms.assets.length == 0) revert EmptyAssets();
-    if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
-      revert ZeroAddressRecipient();
+    if (terms.reclaimRecipient == bytes32(0) || terms.recipient == bytes32(0)) {
+      revert ZeroRecipient();
     }
     // deadlines are only sanity-checked as non-zero here; actual freshness (a deadline still
     // lying in the future) is enforced per-action by the commit/claim/reclaim windows via
@@ -190,6 +215,20 @@ library TermsLib {
     }
     enforceNonZeroChainId(terms);
     validateAssets(terms);
+  }
+
+  /// @notice validates that a leg's locally-dereferenced identifiers are EVM addresses
+  /// @dev call on the leg being escrowed on THIS chain: its asset targets are pulled
+  /// into escrow now and its reclaimRecipient is paid here on reclaim. the leg's
+  /// `recipient` is NOT checked — it receives on the COUNTERPARTY's chain and may be
+  /// a foreign pubkey. validateTerms stays chain-agnostic (it runs on both sides)
+  /// @param terms the local leg's terms
+  function validateLocalLeg(Terms calldata terms) internal pure {
+    toEvmAddress(terms.reclaimRecipient);
+    uint256 length = terms.assets.length;
+    for (uint256 i; i < length; ++i) {
+      toEvmAddress(terms.assets[i].target);
+    }
   }
 
   /// @notice reverts if the terms chainId is zero
@@ -234,17 +273,21 @@ library TermsLib {
       return SafeTransferLib.safeTransferETH(to, asset.amount);
     }
 
+    // single choke point narrowing token identifiers for local dereference;
+    // commit-time validateLocalLeg guarantees escrowed targets narrow cleanly
+    address target = toEvmAddress(asset.target);
+
     if (asset.assetType == AssetType.ERC20) {
       return from == address(this)
-        ? SafeTransferLib.safeTransfer(asset.target, to, asset.amount)
-        : SafeTransferLib.safeTransferFrom(asset.target, from, to, asset.amount);
+        ? SafeTransferLib.safeTransfer(target, to, asset.amount)
+        : SafeTransferLib.safeTransferFrom(target, from, to, asset.amount);
     }
 
     if (asset.assetType == AssetType.ERC721) {
-      return IERC721(asset.target).safeTransferFrom(from, to, asset.id);
+      return IERC721(target).safeTransferFrom(from, to, asset.id);
     }
 
-    IERC1155(asset.target).safeTransferFrom(from, to, asset.id, asset.amount, '');
+    IERC1155(target).safeTransferFrom(from, to, asset.id, asset.amount, '');
   }
 
   /// @notice transfers all assets from terms
@@ -302,9 +345,10 @@ library TermsLib {
   /// @param account the account whose balance to read
   /// @return balance the account's balance of the asset
   function heldBalance(Asset memory asset, address account) internal view returns (uint256 balance) {
+    address target = toEvmAddress(asset.target);
     balance = asset.assetType == AssetType.ERC1155
-      ? IERC1155(asset.target).balanceOf(account, asset.id)
-      : SafeTransferLib.balanceOf(asset.target, account);
+      ? IERC1155(target).balanceOf(account, asset.id)
+      : SafeTransferLib.balanceOf(target, account);
   }
 
   /// @notice validates assets in terms

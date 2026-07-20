@@ -504,4 +504,26 @@ contract Omnibus_claim is OmnibusTest {
     omnibus.claim(secret, alice, bob);
     _assertLockState(_lock, LockState.Spent);
   }
+
+  // ============ SVM (bytes32) addressing ============
+
+  function test_claim_crossChain_solanaStyleRemoteLeg() public {
+    // the remote (Solana) party leg carries a foreign mint target and
+    // reclaimRecipient but an EVM recipient; claiming here pays the local
+    // counterparty escrow to that recipient
+    Terms memory aliceSolana = _aliceSolanaTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitFor(BOB, lock, bob, aliceSolana);
+    _assertLockState(lock, LockState.Committed);
+
+    _warpToProposerClaim();
+    uint256 recipientBefore = mockERC20.balanceOf(ALICE_RECIPIENT);
+
+    vm.prank(ALICE);
+    omnibus.claim(SECRET, aliceSolana, bob);
+
+    _assertLockState(lock, LockState.Spent);
+    assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - recipientBefore, DEFAULT_AMOUNT);
+  }
 }

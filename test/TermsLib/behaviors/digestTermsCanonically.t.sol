@@ -97,12 +97,12 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
 
     // Change reclaimRecipient
     Terms memory aliceReclaimRecipient = alice;
-    aliceReclaimRecipient.reclaimRecipient = BOB;
+    aliceReclaimRecipient.reclaimRecipient = _b32(BOB);
     assertNotEq(harness.exposed_digestTermsCanonically(aliceReclaimRecipient, bob), originalHash);
 
     // Change recipient
     Terms memory aliceRecipient = alice;
-    aliceRecipient.recipient = BOB_RECIPIENT;
+    aliceRecipient.recipient = _b32(BOB_RECIPIENT);
     assertNotEq(harness.exposed_digestTermsCanonically(aliceRecipient, bob), originalHash);
 
     // Change commitmentDeadline
@@ -124,6 +124,14 @@ contract TermsLib_digestTermsCanonically is TermsLibTest {
     Terms memory aliceAssets = alice;
     aliceAssets.assets = _makeNativeAsset(2 ether).toArray();
     assertNotEq(harness.exposed_digestTermsCanonically(aliceAssets, bob), originalHash);
+  }
+
+  // ============ Pinned vectors (fixtures + pins live in TermsLibTest) ============
+
+  function test_digestTermsCanonically_pinned_evmSolanaPair() public view {
+    assertEq(harness.exposed_digestTermsCanonically(_evmVectorTerms(), _solanaVectorTerms()), CANONICAL_PAIR_DIGEST);
+    // order independence holds for the pinned pair too
+    assertEq(harness.exposed_digestTermsCanonically(_solanaVectorTerms(), _evmVectorTerms()), CANONICAL_PAIR_DIGEST);
   }
 
   // ============ Fuzz Tests ============

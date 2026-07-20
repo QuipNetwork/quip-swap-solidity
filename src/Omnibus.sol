@@ -94,6 +94,18 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     party.enforceChainId(block.chainid);
     party.validateTerms();
     counterparty.validateTerms();
+    // local-leg EVM addressing: every identifier this chain will ever dereference
+    // for this escrow is checked NOW, so a foreign (e.g. Solana) pubkey can never
+    // reach an EVM transfer later:
+    // - party.assets[].target + party.reclaimRecipient: escrowed/refunded HERE
+    // - counterparty.recipient: whoever claims party's escrow is paid HERE
+    // party.recipient is deliberately NOT checked — it receives on the
+    // counterparty's chain and may be a foreign pubkey. claim payouts on this
+    // chain dereference the OTHER side's recipient, which the commit that
+    // escrowed those assets validated (_enforceSameTerms/_enforcePosted pin the
+    // claim's terms to the committed ones)
+    party.validateLocalLeg();
+    TermsLib.toEvmAddress(counterparty.recipient);
     // term pairing validity ensures deadline ordering
     TermsLib.validateTermPairing(party, counterparty);
 
@@ -207,8 +219,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // counterParty's side must have been posted for this lock
     _enforcePosted(lock, counterparty.digestTerms());
 
-    // counterparty's assets to party's recipient
-    counterparty.transferAssets(address(this), party.recipient);
+    // counterparty's assets to party's recipient; narrowing is defense in depth —
+    // the commit that escrowed the counterparty's leg validated party.recipient
+    counterparty.transferAssets(address(this), TermsLib.toEvmAddress(party.recipient));
 
     // if counterparty is on chainId, prevent double-spend by executing on counterparty
     // terms
@@ -216,7 +229,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // counterparty's side must have been posted for this lock
       _enforcePosted(lock, party.digestTerms());
       // party's assets to counterparty's recipient
-      party.transferAssets(address(this), counterparty.recipient);
+      party.transferAssets(address(this), TermsLib.toEvmAddress(counterparty.recipient));
     }
 
     emit Claim(msg.sender, lock, secret);
@@ -259,7 +272,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // return everything to counterparty's recipient
       // counterparty's side must have been posted for this lock
       _enforcePosted(lock, counterparty.digestTerms());
-      counterparty.transferAssets(address(this), counterparty.reclaimRecipient);
+      counterparty.transferAssets(address(this), TermsLib.toEvmAddress(counterparty.reclaimRecipient));
 
       emit Reclaimed(msg.sender, lock, counterparty.reclaimRecipient);
     }
@@ -270,7 +283,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     }
 
     // return everything to party's recipient
-    party.transferAssets(address(this), party.reclaimRecipient);
+    party.transferAssets(address(this), TermsLib.toEvmAddress(party.reclaimRecipient));
 
     emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
   }

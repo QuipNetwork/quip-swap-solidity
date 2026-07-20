@@ -51,14 +51,14 @@ contract TermsLib_digestTerms is TermsLibTest {
   function test_digestTerms_bindsReclaimRecipient() public view {
     Terms memory base = _terms();
     bytes32 original = harness.exposed_digestTerms(base);
-    base.reclaimRecipient = BOB;
+    base.reclaimRecipient = _b32(BOB);
     assertNotEq(harness.exposed_digestTerms(base), original);
   }
 
   function test_digestTerms_bindsRecipient() public view {
     Terms memory base = _terms();
     bytes32 original = harness.exposed_digestTerms(base);
-    base.recipient = BOB_RECIPIENT;
+    base.recipient = _b32(BOB_RECIPIENT);
     assertNotEq(harness.exposed_digestTerms(base), original);
   }
 
@@ -101,6 +101,25 @@ contract TermsLib_digestTerms is TermsLibTest {
     Terms memory base = _terms();
     bytes32 original = harness.exposed_digestTerms(base);
     base.assets = AssetHelper.toArray(_makeNativeAsset(1 ether), _makeNativeAsset(1 ether));
+    assertNotEq(harness.exposed_digestTerms(base), original);
+  }
+
+  // ============ Pinned vectors (fixtures + pins live in TermsLibTest) ============
+
+  function test_digestTerms_pinned_evmVector() public view {
+    assertEq(harness.exposed_digestTerms(_evmVectorTerms()), EVM_VECTOR_DIGEST);
+  }
+
+  function test_digestTerms_pinned_solanaVector() public view {
+    assertEq(harness.exposed_digestTerms(_solanaVectorTerms()), SOLANA_VECTOR_DIGEST);
+  }
+
+  function test_digestTerms_bindsForeignUpperBits() public view {
+    // a full 32-byte pubkey and its low-20-byte truncation must digest differently —
+    // the upper 12 bytes are load-bearing
+    Terms memory base = _solanaVectorTerms();
+    bytes32 original = harness.exposed_digestTerms(base);
+    base.assets[0].target = bytes32(uint256(SOLANA_MINT) & type(uint160).max);
     assertNotEq(harness.exposed_digestTerms(base), original);
   }
 

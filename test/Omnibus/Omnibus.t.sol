@@ -190,6 +190,22 @@ contract OmnibusTest is TestBase {
     return _bobTermsOn(OTHER_CHAIN_ID, _makeERC20Assets(DEFAULT_AMOUNT));
   }
 
+  /// @notice Proposer-scheduled (Alice) leg living on a Solana-style chain:
+  /// foreign mint target + foreign reclaimRecipient (both dereferenced only on
+  /// the Solana side), EVM recipient (it receives the counterparty's assets on
+  /// THIS chain at claim)
+  function _aliceSolanaTerms() internal view returns (Terms memory) {
+    return TermsHelper.makeTerms(
+      SOLANA_CHAIN_ID,
+      SOLANA_PUBKEY,
+      _b32(ALICE_RECIPIENT),
+      ALICE_COMMIT_DEADLINE,
+      ALICE_CLAIM_DEADLINE,
+      ALICE_RECLAIM_RELEASE,
+      AssetHelper.makeERC20(SOLANA_MINT, DEFAULT_AMOUNT).toArray()
+    );
+  }
+
   /// @notice Default same-chain optimistic proposer terms for Alice (native)
   function _aliceOptimisticTerms() internal view returns (Terms memory) {
     return _aliceTerms().withOptimistic();

@@ -22,6 +22,16 @@ abstract contract TestBase is Test {
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
   uint64 public constant DEFAULT_DEADLINE_DELTA = 1 days;
 
+  /// @notice a Solana-style 32-byte pubkey: high bit forced so it can never
+  /// narrow to an EVM address
+  bytes32 public constant SOLANA_PUBKEY = bytes32(uint256(keccak256('SOLANA_PUBKEY_FIXTURE')) | (uint256(1) << 255));
+
+  /// @notice a second distinct Solana-style pubkey for mint/recipient pairs
+  bytes32 public constant SOLANA_MINT = bytes32(uint256(keccak256('SOLANA_MINT_FIXTURE')) | (uint256(1) << 255));
+
+  /// @notice a foreign chainId standing in for Solana in cross-chain fixtures
+  uint256 public constant SOLANA_CHAIN_ID = uint256(keccak256('solana:mainnet'));
+
   // ============ Actors ============
 
   address public ALICE = makeAddr('alice');
@@ -80,6 +90,11 @@ abstract contract TestBase is Test {
     mockERC721.setApprovalForAll(spender, true);
     mockERC1155.setApprovalForAll(spender, true);
     vm.stopPrank();
+  }
+
+  /// @notice widens an EVM address to its bytes32 identifier (low 20 bytes)
+  function _b32(address addr) internal pure returns (bytes32) {
+    return bytes32(uint256(uint160(addr)));
   }
 
   function _makeNativeAsset(uint256 amount) internal pure returns (Asset memory) {

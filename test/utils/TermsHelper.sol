@@ -24,6 +24,36 @@ library TermsHelper {
     uint256 reclaimRelease,
     Asset[] memory assets
   ) internal pure returns (Terms memory terms) {
+    terms = makeTerms(
+      chainId,
+      bytes32(uint256(uint160(reclaimRecipient))),
+      bytes32(uint256(uint160(recipient))),
+      commitmentDeadline,
+      claimDeadline,
+      reclaimRelease,
+      assets
+    );
+  }
+
+  /// @notice creates a non-optimistic Terms struct with raw bytes32 recipients
+  /// (for foreign-chain legs, e.g. Solana-style pubkeys)
+  /// @param chainId the chain where these terms' assets are held
+  /// @param reclaimRecipient account that receives committed assets on reclaim
+  /// @param recipient account that receives the counterparty's assets on claim
+  /// @param commitmentDeadline timestamp after which commitment is forbidden
+  /// @param claimDeadline timestamp after which claiming is forbidden
+  /// @param reclaimRelease timestamp after which reclaim is permitted
+  /// @param assets the assets array
+  /// @return terms the constructed Terms struct
+  function makeTerms(
+    uint256 chainId,
+    bytes32 reclaimRecipient,
+    bytes32 recipient,
+    uint256 commitmentDeadline,
+    uint256 claimDeadline,
+    uint256 reclaimRelease,
+    Asset[] memory assets
+  ) internal pure returns (Terms memory terms) {
     terms = Terms({
       chainId: chainId,
       reclaimRecipient: reclaimRecipient,

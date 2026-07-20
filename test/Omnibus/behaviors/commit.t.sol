@@ -571,7 +571,7 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_revertsWhen_invalidNativeAsset() public {
     Asset[] memory assets = new Asset[](1);
-    assets[0] = Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: DEFAULT_AMOUNT});
+    assets[0] = Asset({assetType: AssetType.Native, target: bytes32(uint256(1)), id: 0, amount: DEFAULT_AMOUNT});
 
     Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, assets);
     Terms memory bob = _bobTerms();
@@ -584,7 +584,7 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_revertsWhen_invalidERC20Asset() public {
     Asset[] memory assets = new Asset[](1);
-    assets[0] = Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: DEFAULT_AMOUNT}); // Zero target
+    assets[0] = Asset({assetType: AssetType.ERC20, target: bytes32(0), id: 0, amount: DEFAULT_AMOUNT}); // Zero target
 
     Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, assets);
     Terms memory bob = _bobTerms();
@@ -597,7 +597,7 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_revertsWhen_invalidERC721Asset() public {
     Asset[] memory assets = new Asset[](1);
-    assets[0] = Asset({assetType: AssetType.ERC721, target: address(0), id: 1, amount: 1}); // Zero target
+    assets[0] = Asset({assetType: AssetType.ERC721, target: bytes32(0), id: 1, amount: 1}); // Zero target
 
     Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, assets);
     Terms memory bob = _bobTerms();
@@ -610,7 +610,7 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_revertsWhen_invalidERC1155Asset() public {
     Asset[] memory assets = new Asset[](1);
-    assets[0] = Asset({assetType: AssetType.ERC1155, target: address(0), id: 1, amount: 100}); // Zero target
+    assets[0] = Asset({assetType: AssetType.ERC1155, target: bytes32(0), id: 1, amount: 100}); // Zero target
 
     Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, assets);
     Terms memory bob = _bobTerms();
@@ -1212,5 +1212,69 @@ contract Omnibus_commit is OmnibusTest {
     _assertLockState(lock, LockState.Free);
     assertEq(relayer.balance, 0); // relayer paid everything
     assertEq(omnibus.accruedFees(), fee);
+  }
+
+  // ============ SVM (bytes32) addressing ============
+  // identifiers are bytes32; the leg escrowed HERE plus the counterparty's
+  // recipient (paid here at claim) must narrow to EVM addresses, while remote-leg
+  // identifiers and the local leg's own recipient may be foreign pubkeys
+
+  function test_commit_acceptsSolanaStyleRemoteLeg() public {
+    // fully Solana-styled counterparty leg: foreign chainId, mint target, and
+    // reclaimRecipient — only its recipient (paid here) must be EVM
+    Terms memory bob = _bobTerms();
+    Terms memory aliceSolana = _aliceSolanaTerms();
+
+    _commitFor(BOB, lock, bob, aliceSolana);
+
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  function test_commit_acceptsForeignRecipientOnLocalLeg() public {
+    // the crux regression: the LOCAL leg's recipient receives on the
+    // COUNTERPARTY's (Solana) chain and may be a foreign pubkey
+    Terms memory bob = _bobTerms();
+    bob.recipient = SOLANA_PUBKEY;
+    Terms memory aliceSolana = _aliceSolanaTerms();
+
+    _commitFor(BOB, lock, bob, aliceSolana);
+
+    _assertLockState(lock, LockState.Committed);
+  }
+
+  function test_commit_revertsWhen_partyReclaimRecipientNotEvm() public {
+    // the local leg's refund destination is paid HERE on reclaim
+    Terms memory bob = _bobTerms();
+    bob.reclaimRecipient = SOLANA_PUBKEY;
+    Terms memory aliceSolana = _aliceSolanaTerms();
+
+    vm.warp(AT_TAKER_COMMIT);
+    vm.expectRevert(abi.encodeWithSelector(TermsLib.NotEvmAddress.selector, SOLANA_PUBKEY));
+    vm.prank(BOB);
+    omnibus.commit{value: 0}(lock, bob, aliceSolana, AuthHelper.auth(bobSigner));
+  }
+
+  function test_commit_revertsWhen_partyAssetTargetNotEvm() public {
+    // the local leg's escrow targets are dereferenced HERE at commit
+    Terms memory bob = _bobTermsOn(block.chainid, AssetHelper.makeERC20(SOLANA_MINT, DEFAULT_AMOUNT).toArray());
+    Terms memory aliceSolana = _aliceSolanaTerms();
+
+    vm.warp(AT_TAKER_COMMIT);
+    vm.expectRevert(abi.encodeWithSelector(TermsLib.NotEvmAddress.selector, SOLANA_MINT));
+    vm.prank(BOB);
+    omnibus.commit{value: 0}(lock, bob, aliceSolana, AuthHelper.auth(bobSigner));
+  }
+
+  function test_commit_revertsWhen_counterpartyRecipientNotEvm() public {
+    // counterparty.recipient is paid on THIS chain when the local escrow is
+    // claimed — it must narrow even though the counterparty leg itself is foreign
+    Terms memory bob = _bobTerms();
+    Terms memory aliceSolana = _aliceSolanaTerms();
+    aliceSolana.recipient = SOLANA_PUBKEY;
+
+    vm.warp(AT_TAKER_COMMIT);
+    vm.expectRevert(abi.encodeWithSelector(TermsLib.NotEvmAddress.selector, SOLANA_PUBKEY));
+    vm.prank(BOB);
+    omnibus.commit{value: 0}(lock, bob, aliceSolana, AuthHelper.auth(bobSigner));
   }
 }

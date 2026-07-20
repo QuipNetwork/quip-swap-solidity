@@ -102,7 +102,7 @@ contract TermsLib_validateTerms is TermsLibTest {
       _makeNativeAsset(1 ether).toArray()
     );
 
-    vm.expectRevert(TermsLib.ZeroAddressRecipient.selector);
+    vm.expectRevert(TermsLib.ZeroRecipient.selector);
     harness.exposed_validateTerms(terms);
   }
 
@@ -117,7 +117,7 @@ contract TermsLib_validateTerms is TermsLibTest {
       _makeNativeAsset(1 ether).toArray()
     );
 
-    vm.expectRevert(TermsLib.ZeroAddressRecipient.selector);
+    vm.expectRevert(TermsLib.ZeroRecipient.selector);
     harness.exposed_validateTerms(terms);
   }
 
@@ -226,7 +226,7 @@ contract TermsLib_validateTerms is TermsLibTest {
 
   function test_validateTerms_revertsWhen_invalidAssetZeroAmount() public {
     Asset[] memory invalidAssets = new Asset[](1);
-    invalidAssets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 0});
+    invalidAssets[0] = Asset({assetType: AssetType.Native, target: bytes32(0), id: 0, amount: 0});
 
     Terms memory terms = TermsHelper.makeTerms(
       block.chainid,
@@ -244,7 +244,7 @@ contract TermsLib_validateTerms is TermsLibTest {
 
   function test_validateTerms_revertsWhen_invalidNativeAsset() public {
     Asset[] memory invalidAssets = new Asset[](1);
-    invalidAssets[0] = Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: 1 ether});
+    invalidAssets[0] = Asset({assetType: AssetType.Native, target: bytes32(uint256(1)), id: 0, amount: 1 ether});
 
     Terms memory terms = TermsHelper.makeTerms(
       block.chainid,
@@ -262,7 +262,7 @@ contract TermsLib_validateTerms is TermsLibTest {
 
   function test_validateTerms_revertsWhen_invalidERC20Asset() public {
     Asset[] memory invalidAssets = new Asset[](1);
-    invalidAssets[0] = Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: 1 ether});
+    invalidAssets[0] = Asset({assetType: AssetType.ERC20, target: bytes32(0), id: 0, amount: 1 ether});
 
     Terms memory terms = TermsHelper.makeTerms(
       block.chainid,

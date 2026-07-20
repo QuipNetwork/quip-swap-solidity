@@ -115,8 +115,10 @@ interface IOmnibus {
   /// @notice emitted when a party reclaims their assets
   /// @param caller address which initiated reclaim
   /// @param lock the hashlock identifier
-  /// @param recipient the address that received the reclaim
-  event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
+  /// @param recipient the account that received the reclaim, as a 32-byte
+  /// identifier (always EVM-narrowable — low 20 bytes — since reclaim settles
+  /// on this chain and commit validated the reclaimRecipient)
+  event Reclaimed(address caller, bytes32 indexed lock, bytes32 indexed recipient);
 
   /// @notice returns the state of a lock
   /// @param lock the hashlock identifier
@@ -183,7 +185,12 @@ interface IOmnibus {
   /// a non-empty auth.signature it is verified over commitDigest by the declared
   /// verifier; with an empty auth.signature the declared verifier must hold a
   /// same-transaction attestation for the composite envelope (see CommitAuth —
-  /// on that route msg.sender must be the attesting wallet)
+  /// on that route msg.sender must be the attesting wallet).
+  /// Addressing: identifiers are bytes32 (EVM addresses in the low 20 bytes).
+  /// Everything this chain dereferences must narrow — party.assets[].target,
+  /// party.reclaimRecipient, and counterparty.recipient (paid here at claim) —
+  /// else NotEvmAddress. party.recipient receives on the counterparty's chain
+  /// and MAY be a foreign 32-byte pubkey (e.g. an SVM wallet)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

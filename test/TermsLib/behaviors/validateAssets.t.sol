@@ -73,7 +73,7 @@ contract TermsLib_validateAssets is TermsLibTest {
 
   function test_validateAssets_revertsWhen_singleInvalidAsset() public {
     Asset[] memory assets = new Asset[](1);
-    assets[0] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 0});
+    assets[0] = Asset({assetType: AssetType.Native, target: bytes32(0), id: 0, amount: 0});
     Terms memory terms = _makeTermsWithAssets(assets);
 
     vm.expectRevert(TermsLib.ZeroAmount.selector);
@@ -82,7 +82,7 @@ contract TermsLib_validateAssets is TermsLibTest {
 
   function test_validateAssets_revertsWhen_firstAssetInvalid() public {
     Asset[] memory assets = new Asset[](2);
-    assets[0] = Asset({assetType: AssetType.Native, target: address(1), id: 0, amount: 1 ether}); // invalid: non-zero target
+    assets[0] = Asset({assetType: AssetType.Native, target: bytes32(uint256(1)), id: 0, amount: 1 ether}); // invalid: non-zero target
     assets[1] = _makeNativeAsset(1 ether); // valid
 
     Terms memory terms = _makeTermsWithAssets(assets);
@@ -94,7 +94,7 @@ contract TermsLib_validateAssets is TermsLibTest {
   function test_validateAssets_revertsWhen_middleAssetInvalid() public {
     Asset[] memory assets = new Asset[](3);
     assets[0] = _makeNativeAsset(1 ether); // valid
-    assets[1] = Asset({assetType: AssetType.ERC20, target: address(0), id: 0, amount: 100 ether}); // invalid: zero target
+    assets[1] = Asset({assetType: AssetType.ERC20, target: bytes32(0), id: 0, amount: 100 ether}); // invalid: zero target
     assets[2] = _makeNativeAsset(2 ether); // valid
 
     Terms memory terms = _makeTermsWithAssets(assets);
@@ -107,7 +107,7 @@ contract TermsLib_validateAssets is TermsLibTest {
     Asset[] memory assets = new Asset[](3);
     assets[0] = _makeNativeAsset(1 ether); // valid
     assets[1] = _makeERC20Asset(100 ether); // valid
-    assets[2] = Asset({assetType: AssetType.ERC721, target: address(0), id: 1, amount: 1}); // invalid: zero target
+    assets[2] = Asset({assetType: AssetType.ERC721, target: bytes32(0), id: 1, amount: 1}); // invalid: zero target
 
     Terms memory terms = _makeTermsWithAssets(assets);
 
@@ -120,7 +120,7 @@ contract TermsLib_validateAssets is TermsLibTest {
     assets[0] = _makeNativeAsset(1 ether);
     assets[1] = _makeERC20Asset(100 ether);
     assets[2] = _makeERC721Asset(1);
-    assets[3] = Asset({assetType: AssetType.ERC1155, target: address(0), id: 1, amount: 100}); // invalid: zero target
+    assets[3] = Asset({assetType: AssetType.ERC1155, target: bytes32(0), id: 1, amount: 100}); // invalid: zero target
 
     Terms memory terms = _makeTermsWithAssets(assets);
 

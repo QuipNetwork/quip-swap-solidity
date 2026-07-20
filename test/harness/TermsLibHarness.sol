@@ -31,6 +31,16 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
     TermsLib.validateTerms(terms);
   }
 
+  /// @notice exposes toEvmAddress
+  function exposed_toEvmAddress(bytes32 value) external pure returns (address) {
+    return TermsLib.toEvmAddress(value);
+  }
+
+  /// @notice exposes validateLocalLeg
+  function exposed_validateLocalLeg(Terms calldata terms) external pure {
+    TermsLib.validateLocalLeg(terms);
+  }
+
   /// @notice exposes validateAssets
   function exposed_validateAssets(Terms calldata terms) external pure {
     TermsLib.validateAssets(terms);

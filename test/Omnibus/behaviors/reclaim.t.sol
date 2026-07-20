@@ -374,4 +374,35 @@ contract Omnibus_reclaim is OmnibusTest {
     omnibus.reclaim(lock, alice, bob);
     _assertLockState(lock, LockState.Spent);
   }
+
+  // ============ SVM (bytes32) addressing ============
+
+  function test_reclaim_localLegOfSolanaStyleSwap() public {
+    // the local escrow committed against a Solana-styled counterparty refunds
+    // normally after reclaimRelease — the foreign leg never blocks reclaim
+    Terms memory aliceSolana = _aliceSolanaTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitFor(BOB, lock, bob, aliceSolana);
+
+    _warpToTakerReclaim();
+    uint256 bobBefore = mockERC20.balanceOf(BOB);
+
+    vm.recordLogs();
+    omnibus.reclaim(lock, bob, aliceSolana);
+
+    _assertLockState(lock, LockState.Spent);
+    assertEq(mockERC20.balanceOf(BOB) - bobBefore, DEFAULT_AMOUNT);
+
+    // Reclaimed.recipient is the bytes32 identifier (low-20-byte EVM address)
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    bool found = false;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IOmnibus.Reclaimed.selector) {
+        assertEq(logs[i].topics[2], _b32(BOB));
+        found = true;
+      }
+    }
+    assertTrue(found, 'Reclaimed event not emitted');
+  }
 }
