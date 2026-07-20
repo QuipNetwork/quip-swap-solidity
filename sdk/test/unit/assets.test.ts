@@ -9,15 +9,17 @@
  * Parallels the Foundry suites `test/TermsLib/behaviors/validateAsset.t.sol`
  * and `test/TermsLib/behaviors/totalNative.t.sol`.
  */
-import {zeroAddress} from 'viem'
 import type {Address} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative, validateAsset} from '../../src/assets.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {AssetType} from '../../src/types.js'
+import {ZERO_BYTES32, evmToBytes32} from '../../src/universalAddress.js'
 import type {Asset} from '../../src/types.js'
 
 const TOKEN: Address = '0x1000000000000000000000000000000000000001'
+// the universal (bytes32) form builders produce and validateAsset expects
+const TOKEN_B32 = evmToBytes32(TOKEN)
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -32,7 +34,7 @@ function codeOf(fn: () => unknown): string {
 describe('nativeAsset', () => {
   it('produces canonical fields: zero target, id 0', () => {
     const asset = nativeAsset(5n)
-    expect(asset).toEqual({assetType: AssetType.Native, target: zeroAddress, id: 0n, amount: 5n})
+    expect(asset).toEqual({assetType: AssetType.Native, target: ZERO_BYTES32, id: 0n, amount: 5n})
   })
 
   it('rejects zero amount (contract: ZeroAmount)', () => {
@@ -48,7 +50,7 @@ describe('nativeAsset', () => {
 describe('erc20Asset', () => {
   it('produces canonical fields: id MUST be 0n', () => {
     const asset = erc20Asset(TOKEN, 100n)
-    expect(asset).toEqual({assetType: AssetType.ERC20, target: TOKEN, id: 0n, amount: 100n})
+    expect(asset).toEqual({assetType: AssetType.ERC20, target: TOKEN_B32, id: 0n, amount: 100n})
   })
 
   it('rejects zero amount', () => {
@@ -56,7 +58,7 @@ describe('erc20Asset', () => {
   })
 
   it('rejects zero target (contract: InvalidERC20Asset)', () => {
-    expect(codeOf(() => erc20Asset(zeroAddress, 100n))).toBe('INVALID_ERC20_ASSET')
+    expect(codeOf(() => erc20Asset(ZERO_BYTES32, 100n))).toBe('INVALID_ERC20_ASSET')
   })
 })
 
@@ -75,14 +77,14 @@ describe('erc721Asset', () => {
   })
 
   it('rejects zero target (contract: InvalidERC721Asset)', () => {
-    expect(codeOf(() => erc721Asset(zeroAddress, 1n))).toBe('INVALID_ERC721_ASSET')
+    expect(codeOf(() => erc721Asset(ZERO_BYTES32, 1n))).toBe('INVALID_ERC721_ASSET')
   })
 })
 
 describe('erc1155Asset', () => {
   it('produces canonical fields', () => {
     const asset = erc1155Asset(TOKEN, 3n, 25n)
-    expect(asset).toEqual({assetType: AssetType.ERC1155, target: TOKEN, id: 3n, amount: 25n})
+    expect(asset).toEqual({assetType: AssetType.ERC1155, target: TOKEN_B32, id: 3n, amount: 25n})
   })
 
   it('ACCEPTS token id zero', () => {
@@ -94,7 +96,7 @@ describe('erc1155Asset', () => {
   })
 
   it('rejects zero target (contract: InvalidERC1155Asset)', () => {
-    expect(codeOf(() => erc1155Asset(zeroAddress, 1n, 1n))).toBe('INVALID_ERC1155_ASSET')
+    expect(codeOf(() => erc1155Asset(ZERO_BYTES32, 1n, 1n))).toBe('INVALID_ERC1155_ASSET')
   })
 })
 
@@ -102,35 +104,35 @@ describe('validateAsset (external objects)', () => {
   it('rejects zero amount for EVERY type including ERC-721', () => {
     // the universal on-chain rule: amount > 0 regardless of type
     for (const assetType of [AssetType.Native, AssetType.ERC20, AssetType.ERC721, AssetType.ERC1155]) {
-      const target = assetType === AssetType.Native ? zeroAddress : TOKEN
+      const target = assetType === AssetType.Native ? ZERO_BYTES32 : TOKEN_B32
       expect(codeOf(() => validateAsset({assetType, target, id: 0n, amount: 0n}))).toBe('ZERO_AMOUNT')
     }
   })
 
   it('rejects native with non-zero target or non-zero id (contract: InvalidNativeAsset)', () => {
-    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: TOKEN_B32, id: 0n, amount: 1n}))).toBe(
       'INVALID_NATIVE_ASSET',
     )
-    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: zeroAddress, id: 1n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: ZERO_BYTES32, id: 1n, amount: 1n}))).toBe(
       'INVALID_NATIVE_ASSET',
     )
   })
 
   it('rejects non-zero id for ERC-20 (contract: InvalidERC20Asset)', () => {
-    expect(codeOf(() => validateAsset({assetType: AssetType.ERC20, target: TOKEN, id: 1n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({assetType: AssetType.ERC20, target: TOKEN_B32, id: 1n, amount: 1n}))).toBe(
       'INVALID_ERC20_ASSET',
     )
   })
 
   it('accepts a contract-valid ERC-721 with amount != 1 (validation mirrors the contract, not the builder)', () => {
-    expect(() => validateAsset({assetType: AssetType.ERC721, target: TOKEN, id: 1n, amount: 5n})).not.toThrow()
+    expect(() => validateAsset({assetType: AssetType.ERC721, target: TOKEN_B32, id: 1n, amount: 5n})).not.toThrow()
   })
 
   it('rejects invalid enum values', () => {
-    expect(codeOf(() => validateAsset({assetType: 4 as AssetType, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({assetType: 4 as AssetType, target: TOKEN_B32, id: 0n, amount: 1n}))).toBe(
       'INVALID_ASSET_TYPE',
     )
-    expect(codeOf(() => validateAsset({assetType: -1 as AssetType, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({assetType: -1 as AssetType, target: TOKEN_B32, id: 0n, amount: 1n}))).toBe(
       'INVALID_ASSET_TYPE',
     )
   })

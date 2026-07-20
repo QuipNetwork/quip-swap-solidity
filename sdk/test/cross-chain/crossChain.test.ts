@@ -19,6 +19,7 @@ import {getAddress, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
+import {evmToBytes32} from '../../src/universalAddress.js'
 import {ZERO_WALLET_BINDING, buildKeyedSigner} from '../../src/commitAuth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {createOmnibusClient} from '../../src/client.js'
@@ -105,8 +106,8 @@ async function sharedSchedule(): Promise<SharedSchedule> {
     },
     aliceTerms: assets => ({
       chainId: BigInt(CHAIN_A_ID), // alice's leg lives on chain A
-      reclaimRecipient: ALICE_RECLAIM,
-      recipient: ALICE_RECIPIENT,
+      reclaimRecipient: evmToBytes32(ALICE_RECLAIM),
+      recipient: evmToBytes32(ALICE_RECIPIENT),
       commitmentDeadline: base + 1000n,
       claimDeadline: base + 3000n,
       reclaimRelease: base + 5000n,
@@ -115,8 +116,8 @@ async function sharedSchedule(): Promise<SharedSchedule> {
     }),
     bobTerms: assets => ({
       chainId: BigInt(CHAIN_B_ID), // bob's leg lives on chain B
-      reclaimRecipient: BOB_RECLAIM,
-      recipient: BOB_RECIPIENT,
+      reclaimRecipient: evmToBytes32(BOB_RECLAIM),
+      recipient: evmToBytes32(BOB_RECIPIENT),
       commitmentDeadline: base + 2000n,
       claimDeadline: base + 4000n,
       reclaimRelease: base + 6000n,
@@ -408,7 +409,7 @@ describe('cross-chain unhappy path', () => {
     })
     const result = await aliceOnA.waitForReceipt(await aliceOnA.reclaim({lock, party: alice, counterparty: bob}))
     expect(result.reclaims).toHaveLength(1)
-    expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
+    expect(result.reclaims[0]?.recipient).toBe(evmToBytes32(ALICE_RECLAIM))
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
     expect(
       await chainA.publicClient.readContract({

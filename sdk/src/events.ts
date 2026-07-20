@@ -4,7 +4,7 @@
  * ```solidity
  * event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
  * event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
- * event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
+ * event Reclaimed(address caller, bytes32 indexed lock, bytes32 indexed recipient);
  * event FeeUpdated(uint256 oldFee, uint256 newFee);
  * event FeesWithdrawn(address indexed to, uint256 amount);
  * ```
@@ -69,8 +69,13 @@ export interface ReclaimedEvent {
   readonly caller: Address
   /** The hashlock that was reclaimed (indexed topic). */
   readonly lock: Hex32
-  /** The `reclaimRecipient` that received this leg's assets (indexed topic). */
-  readonly recipient: Address
+  /**
+   * The `reclaimRecipient` that received this leg's assets (indexed topic),
+   * as its universal bytes32 form. Always EVM-narrowable (low 20 bytes) —
+   * reclaim settles locally and commit validated the field — so
+   * `bytes32ToEvm(recipient)` is safe.
+   */
+  readonly recipient: Hex32
   readonly blockNumber: bigint | null
   readonly transactionHash: Hex32 | null
   readonly logIndex: number | null
@@ -88,15 +93,15 @@ function toAssetType(value: number): AssetType {
 /** Shape of the Terms tuple as viem decodes it from the ABI. */
 interface DecodedTermsTuple {
   readonly chainId: bigint
-  readonly reclaimRecipient: Address
-  readonly recipient: Address
+  readonly reclaimRecipient: Hex32
+  readonly recipient: Hex32
   readonly commitmentDeadline: bigint
   readonly claimDeadline: bigint
   readonly reclaimRelease: bigint
   readonly optimistic: boolean
   readonly assets: readonly {
     readonly assetType: number
-    readonly target: Address
+    readonly target: Hex32
     readonly id: bigint
     readonly amount: bigint
   }[]

@@ -9,11 +9,24 @@
  * Parallels `test/TermsLib/behaviors/digestTerms.t.sol` and
  * `digestTermsCanonically.t.sol`.
  */
+import {toHex} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
+import {SOLANA_MAINNET_CHAIN_ID} from '../../src/chains.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import type {Terms} from '../../src/types.js'
-import {aliceTerms, BOB, bobTerms, CHAIN_A, FOUNDRY_LOCK, FOUNDRY_SECRET, withOverrides} from '../helpers/fixtures.js'
+import {evmToBytes32} from '../../src/universalAddress.js'
+import {
+  aliceTerms,
+  BOB,
+  bobTerms,
+  CHAIN_A,
+  FOUNDRY_LOCK,
+  FOUNDRY_SECRET,
+  SOLANA_MINT,
+  SOLANA_PUBKEY,
+  withOverrides,
+} from '../helpers/fixtures.js'
 
 const TOKEN = '0x1000000000000000000000000000000000000001' as const
 
@@ -27,8 +40,8 @@ describe('digestTerms', () => {
   it('every one of the eight Terms fields affects the digest', () => {
     const variants: Partial<Terms>[] = [
       {chainId: base.chainId + 1n},
-      {reclaimRecipient: BOB},
-      {recipient: BOB},
+      {reclaimRecipient: evmToBytes32(BOB)},
+      {recipient: evmToBytes32(BOB)},
       {commitmentDeadline: base.commitmentDeadline + 1n},
       {claimDeadline: base.claimDeadline + 1n},
       {reclaimRelease: base.reclaimRelease + 1n},
@@ -50,10 +63,10 @@ describe('digestTerms', () => {
     expect(digestTerms(withOverrides(base, {assets: [nativeAsset(10n), erc20Asset(TOKEN, 101n)]}))).not.toBe(baseline)
     // id sensitivity via ERC-1155-style raw asset (builders pin ERC-20 id to 0)
     const withId = withOverrides(base, {
-      assets: [nativeAsset(10n), {assetType: 3, target: TOKEN, id: 1n, amount: 100n}],
+      assets: [nativeAsset(10n), {assetType: 3, target: evmToBytes32(TOKEN), id: 1n, amount: 100n}],
     })
     const withOtherId = withOverrides(base, {
-      assets: [nativeAsset(10n), {assetType: 3, target: TOKEN, id: 2n, amount: 100n}],
+      assets: [nativeAsset(10n), {assetType: 3, target: evmToBytes32(TOKEN), id: 2n, amount: 100n}],
     })
     expect(digestTerms(withId)).not.toBe(digestTerms(withOtherId))
   })
@@ -83,6 +96,56 @@ describe('digestTermsCanonically', () => {
     const baseline = digestTermsCanonically(alice, bob)
     expect(digestTermsCanonically(withOverrides(alice, {chainId: alice.chainId + 1n}), bob)).not.toBe(baseline)
     expect(digestTermsCanonically(alice, withOverrides(bob, {chainId: bob.chainId + 1n}))).not.toBe(baseline)
+  })
+})
+
+describe('pinned digest vectors (Solidity ↔ SDK parity)', () => {
+  // Field-for-field mirrors of the fixtures in test/TermsLib/TermsLib.t.sol;
+  // the pinned digests are the SAME constants as EVM_VECTOR_DIGEST /
+  // SOLANA_VECTOR_DIGEST / CANONICAL_PAIR_DIGEST there. The pin is the
+  // absolute cross-implementation anchor: never change a fixture or pin on
+  // one side without the other — a mismatch is digest drift, not a test fix.
+
+  const evmVector: Terms = {
+    chainId: 31_337n,
+    reclaimRecipient: toHex(0xa11cen, {size: 32}),
+    recipient: toHex(0xb0bn, {size: 32}),
+    commitmentDeadline: 1000n,
+    claimDeadline: 2000n,
+    reclaimRelease: 3000n,
+    optimistic: false,
+    assets: [nativeAsset(10n ** 18n)],
+  }
+
+  const solanaVector: Terms = {
+    chainId: SOLANA_MAINNET_CHAIN_ID,
+    reclaimRecipient: SOLANA_PUBKEY,
+    recipient: toHex(0xaan, {size: 32}),
+    commitmentDeadline: 1500n,
+    claimDeadline: 2500n,
+    reclaimRelease: 3500n,
+    optimistic: false,
+    assets: [erc20Asset(SOLANA_MINT, 1_000_000_000n)],
+  }
+
+  it('reproduces the pinned all-EVM vector digest', () => {
+    expect(digestTerms(evmVector)).toBe('0xba4a8385b187ea45d0feb380b65b7532b94f11d9bb2008d4b78fa12e39fc0b79')
+  })
+
+  it('reproduces the pinned Solana-styled vector digest (high-bit bytes32 range)', () => {
+    expect(digestTerms(solanaVector)).toBe('0x8af3881416101f8354049a0f961f624ccc5b1759141357463856f5c0e0ee9528')
+  })
+
+  it('reproduces the pinned canonical pair digest, order-independently', () => {
+    const pinned = '0xbf1f3cf7a5b7fda84a14091f47f7b963c57a04d1bab8578927cfa6c10e09fbb7'
+    expect(digestTermsCanonically(evmVector, solanaVector)).toBe(pinned)
+    expect(digestTermsCanonically(solanaVector, evmVector)).toBe(pinned)
+  })
+
+  it('binds the foreign upper bits: a truncated pubkey digests differently', () => {
+    const truncatedMint = toHex(BigInt(SOLANA_MINT) & (2n ** 160n - 1n), {size: 32})
+    const truncated: Terms = {...solanaVector, assets: [erc20Asset(truncatedMint, 1_000_000_000n)]}
+    expect(digestTerms(truncated)).not.toBe(digestTerms(solanaVector))
   })
 })
 

@@ -32,15 +32,9 @@ const SECRET_2 = keccak256(toHex('second-secret')) as Hex32
 const LOCK_2 = generateLock(SECRET_2)
 
 describe('decodeCommitmentEvents (new event shape)', () => {
-  /** Decoded event addresses come back checksummed — normalize the fixture. */
-  function checksummedTerms(party: ReturnType<typeof aliceTerms>) {
-    return {
-      ...party,
-      reclaimRecipient: getAddress(party.reclaimRecipient),
-      recipient: getAddress(party.recipient),
-      assets: party.assets.map(a => ({...a, target: getAddress(a.target)})),
-    }
-  }
+  // identifier fields are bytes32: viem decodes them as raw lowercase hex (no
+  // address checksumming), and the fixtures are lowercase by construction —
+  // decoded terms round-trip verbatim, no normalization wrapper needed
 
   it('decodes lock (topic), party + signer (data), and sender (topic)', () => {
     const party = aliceTerms(CHAIN_A)
@@ -53,7 +47,7 @@ describe('decodeCommitmentEvents (new event shape)', () => {
     expect(event.lock).toBe(FOUNDRY_LOCK)
     expect(event.sender).toBe(SENDER)
     expect(event.signer.toLowerCase()).toBe(signer.toLowerCase())
-    expect(event.party).toEqual(checksummedTerms(party))
+    expect(event.party).toEqual(party)
   })
 
   it('decodes a commit whose signer identity differs from the sender', () => {
@@ -75,7 +69,7 @@ describe('decodeCommitmentEvents (new event shape)', () => {
     ])
     if (event === undefined) throw new Error('expected one Commitment event')
     expect(event.party.optimistic).toBe(true)
-    expect(event.party).toEqual(checksummedTerms(party))
+    expect(event.party).toEqual(party)
   })
 })
 

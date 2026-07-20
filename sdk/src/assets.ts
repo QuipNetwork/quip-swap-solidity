@@ -4,21 +4,30 @@
  * The validation rules transcribe `TermsLib.validateAsset` exactly; the one
  * deliberate divergence (ERC-721 amount canonicalization) is marked with
  * `SDK-STRICTER-THAN-CONTRACT` below.
+ *
+ * Targets are universal bytes32 identifiers: builders accept either a
+ * 20-byte EVM token address (widened to the low-20-byte form) or a full
+ * 32-byte identifier such as an SPL mint pubkey — see `universalAddress.ts`.
+ * Like the contract's `validateAsset`, validation here is chain-agnostic: a
+ * foreign (high-bit) target is structurally valid, because whether it must
+ * narrow to an EVM address depends on which chain escrows the leg (see
+ * `assertEvmLocalLeg`).
  */
-import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
 import {QuipSwapError} from './errors.js'
 import {AssetType} from './types.js'
-import type {Asset, Terms} from './types.js'
+import type {Asset, Hex32, Terms} from './types.js'
+import {ZERO_BYTES32, toUniversalAddress} from './universalAddress.js'
 
 /**
- * Builds a native-currency asset (ETH or the chain's equivalent).
+ * Builds a native-currency asset (ETH, SOL, or the chain's equivalent).
  *
  * Canonical fields enforced — mirrors the contract's native-asset rule:
- * `target` must be the zero address and `id` must be `0`, otherwise the
- * contract reverts with `InvalidNativeAsset`.
+ * `target` must be zero and `id` must be `0`, otherwise the contract
+ * reverts with `InvalidNativeAsset`.
  *
- * @param amount - Amount of native currency in wei; must be `> 0n`.
+ * @param amount - Amount of native currency in base units (wei/lamports);
+ *   must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: Native`.
  * @throws QuipSwapError `ZERO_AMOUNT` if `amount` is zero or negative.
  * @see TermsLib.validateAsset
@@ -35,29 +44,31 @@ export function nativeAsset(amount: bigint): Asset {
       details: {amount},
     })
   }
-  return Object.freeze({assetType: AssetType.Native, target: zeroAddress, id: 0n, amount})
+  return Object.freeze({assetType: AssetType.Native, target: ZERO_BYTES32, id: 0n, amount})
 }
 
 /**
- * Builds an ERC-20 asset.
+ * Builds an ERC-20-semantics asset (an ERC-20 token on EVM legs, an SPL
+ * fungible mint on SVM legs).
  *
  * The id is fixed at `0n`: the contract REJECTS a non-zero id for ERC-20
  * with `InvalidERC20Asset` (the id field is meaningless for fungible
  * tokens but is still hashed into the terms digest).
  *
- * @param target - The ERC-20 token contract address; must be non-zero.
+ * @param target - The token identifier: a 20-byte EVM contract address or a
+ *   32-byte identifier (e.g. an SPL mint pubkey as hex); must be non-zero.
  * @param amount - Token amount in the token's base units; must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: ERC20` and `id: 0n`.
- * @throws QuipSwapError `INVALID_ERC20_ASSET` if `target` is the zero address
- *   or not a valid address; `ZERO_AMOUNT` if `amount <= 0n`.
+ * @throws QuipSwapError `INVALID_ERC20_ASSET` if `target` is zero;
+ *   `INVALID_UNIVERSAL_ADDRESS` if malformed; `ZERO_AMOUNT` if `amount <= 0n`.
  * @see TermsLib.validateAsset
  * @example
  * ```ts
  * const usdc = erc20Asset('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', 1_000_000n)
  * ```
  */
-export function erc20Asset(target: Address, amount: bigint): Asset {
-  assertTokenTarget(target, 'INVALID_ERC20_ASSET', 'ERC-20')
+export function erc20Asset(target: Address | Hex32, amount: bigint): Asset {
+  const universal = normalizeTokenTarget(target, 'INVALID_ERC20_ASSET', 'ERC-20')
   if (amount <= 0n) {
     throw new QuipSwapError({
       code: 'ZERO_AMOUNT',
@@ -65,15 +76,16 @@ export function erc20Asset(target: Address, amount: bigint): Asset {
       details: {target, amount},
     })
   }
-  return Object.freeze({assetType: AssetType.ERC20, target, id: 0n, amount})
+  return Object.freeze({assetType: AssetType.ERC20, target: universal, id: 0n, amount})
 }
 
 /**
- * Builds an ERC-721 asset for one specific NFT.
+ * Builds an ERC-721-semantics asset for one specific NFT.
  *
  * Token id `0n` is explicitly VALID — do not pre-filter it out; the
  * contract permits id 0 for ERC-721 (see the comment in
- * `TermsLib.validateAsset`).
+ * `TermsLib.validateAsset`). On SVM legs the mint IS the NFT's identity, so
+ * the id is always `0n` there (see `chains.ts`).
  *
  * SDK-STRICTER-THAN-CONTRACT: the amount is canonicalized to `1n`. The
  * contract only enforces `amount != 0`, but the amount is hashed into the
@@ -85,11 +97,12 @@ export function erc20Asset(target: Address, amount: bigint): Asset {
  * ({@link validateAsset}) follows the contract and accepts any non-zero
  * amount.
  *
- * @param target - The ERC-721 token contract address; must be non-zero.
+ * @param target - The token identifier: a 20-byte EVM contract address or a
+ *   32-byte identifier (e.g. an NFT mint pubkey as hex); must be non-zero.
  * @param tokenId - The NFT's token id; `0n` is valid.
  * @returns A canonical, frozen `Asset` with `assetType: ERC721` and `amount: 1n`.
- * @throws QuipSwapError `INVALID_ERC721_ASSET` if `target` is the zero
- *   address or not a valid address.
+ * @throws QuipSwapError `INVALID_ERC721_ASSET` if `target` is zero or the
+ *   token id is negative; `INVALID_UNIVERSAL_ADDRESS` if malformed.
  * @see TermsLib.validateAsset
  * @example
  * ```ts
@@ -97,8 +110,8 @@ export function erc20Asset(target: Address, amount: bigint): Asset {
  * // punk.amount === 1n always
  * ```
  */
-export function erc721Asset(target: Address, tokenId: bigint): Asset {
-  assertTokenTarget(target, 'INVALID_ERC721_ASSET', 'ERC-721')
+export function erc721Asset(target: Address | Hex32, tokenId: bigint): Asset {
+  const universal = normalizeTokenTarget(target, 'INVALID_ERC721_ASSET', 'ERC-721')
   if (tokenId < 0n) {
     throw new QuipSwapError({
       code: 'INVALID_ERC721_ASSET',
@@ -106,19 +119,23 @@ export function erc721Asset(target: Address, tokenId: bigint): Asset {
       details: {target, tokenId},
     })
   }
-  return Object.freeze({assetType: AssetType.ERC721, target, id: tokenId, amount: 1n})
+  return Object.freeze({assetType: AssetType.ERC721, target: universal, id: tokenId, amount: 1n})
 }
 
 /**
- * Builds an ERC-1155 asset (a quantity of one token id).
+ * Builds an ERC-1155 asset (a quantity of one token id). EVM-only — Solana
+ * has no `(contract, id)` token dimension (see `chains.ts`), and
+ * `validateTerms` rejects ERC-1155 assets on SVM legs.
  *
  * Token id `0n` is explicitly VALID, mirroring the contract.
  *
- * @param target - The ERC-1155 token contract address; must be non-zero.
+ * @param target - The token identifier: a 20-byte EVM contract address or
+ *   its 32-byte universal form; must be non-zero.
  * @param tokenId - The token id; `0n` is valid.
  * @param amount - Quantity of the token id; must be `> 0n`.
  * @returns A canonical, frozen `Asset` with `assetType: ERC1155`.
- * @throws QuipSwapError `INVALID_ERC1155_ASSET` if `target` is invalid;
+ * @throws QuipSwapError `INVALID_ERC1155_ASSET` if `target` is zero or the
+ *   token id negative; `INVALID_UNIVERSAL_ADDRESS` if malformed;
  *   `ZERO_AMOUNT` if `amount <= 0n`.
  * @see TermsLib.validateAsset
  * @example
@@ -126,8 +143,8 @@ export function erc721Asset(target: Address, tokenId: bigint): Asset {
  * const gameItems = erc1155Asset('0x495f947276749Ce646f68AC8c248420045cb7b5e', 7n, 25n)
  * ```
  */
-export function erc1155Asset(target: Address, tokenId: bigint, amount: bigint): Asset {
-  assertTokenTarget(target, 'INVALID_ERC1155_ASSET', 'ERC-1155')
+export function erc1155Asset(target: Address | Hex32, tokenId: bigint, amount: bigint): Asset {
+  const universal = normalizeTokenTarget(target, 'INVALID_ERC1155_ASSET', 'ERC-1155')
   if (tokenId < 0n) {
     throw new QuipSwapError({
       code: 'INVALID_ERC1155_ASSET',
@@ -142,7 +159,7 @@ export function erc1155Asset(target: Address, tokenId: bigint, amount: bigint): 
       details: {target, tokenId, amount},
     })
   }
-  return Object.freeze({assetType: AssetType.ERC1155, target, id: tokenId, amount})
+  return Object.freeze({assetType: AssetType.ERC1155, target: universal, id: tokenId, amount})
 }
 
 /**
@@ -160,9 +177,12 @@ export function erc1155Asset(target: Address, tokenId: bigint, amount: bigint): 
  * if (isERC1155 && isZeroTarget) revert InvalidERC1155Asset();
  * ```
  *
- * Unlike {@link erc721Asset}, this accepts any non-zero ERC-721 amount,
- * matching the contract exactly (validation must not be stricter than the
- * contract for objects that may already exist in committed terms).
+ * Chain-agnostic like the contract: a foreign (high-bit) 32-byte target is
+ * structurally valid — locality is a separate, chain-aware check
+ * (`assertEvmLocalLeg`). Unlike {@link erc721Asset}, this accepts any
+ * non-zero ERC-721 amount, matching the contract exactly (validation must
+ * not be stricter than the contract for objects that may already exist in
+ * committed terms).
  *
  * @param asset - The asset to validate.
  * @throws QuipSwapError `ZERO_AMOUNT` | `INVALID_NATIVE_ASSET` |
@@ -196,15 +216,15 @@ export function validateAsset(asset: Asset): void {
       details: {asset},
     })
   }
-  if (!isAddress(asset.target, {strict: false})) {
+  if (!isUniversalValue(asset.target)) {
     throw new QuipSwapError({
       code: assetTypeErrorCode(asset.assetType),
-      message: `Asset target ${String(asset.target)} is not a valid address`,
+      message: `Asset target ${String(asset.target)} is not a 32-byte universal identifier`,
       details: {asset},
     })
   }
 
-  const isZeroTarget = asset.target.toLowerCase() === zeroAddress
+  const isZeroTarget = BigInt(asset.target) === 0n
   const isZeroId = asset.id === 0n
 
   if (asset.assetType === AssetType.Native && (!isZeroTarget || !isZeroId)) {
@@ -238,6 +258,11 @@ export function validateAsset(asset: Asset): void {
   }
 }
 
+/** True when the value is well-formed 32-byte hex (foreign high bits allowed). */
+function isUniversalValue(value: string): boolean {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value)
+}
+
 /** Maps an asset type to its type-specific validation error code. */
 function assetTypeErrorCode(
   assetType: AssetType,
@@ -254,19 +279,27 @@ function assetTypeErrorCode(
   }
 }
 
-/** Throws the given code when `target` is missing, malformed, or the zero address. */
-function assertTokenTarget(
-  target: Address,
+/**
+ * Normalizes a token target to its universal form, rejecting zero.
+ *
+ * @throws QuipSwapError with `code` when the target is zero;
+ *   `INVALID_UNIVERSAL_ADDRESS` when it is neither a 20-byte address nor
+ *   32-byte hex.
+ */
+function normalizeTokenTarget(
+  target: Address | Hex32,
   code: 'INVALID_ERC20_ASSET' | 'INVALID_ERC721_ASSET' | 'INVALID_ERC1155_ASSET',
   label: string,
-): void {
-  if (!isAddress(target, {strict: false}) || target.toLowerCase() === zeroAddress) {
+): Hex32 {
+  const universal = toUniversalAddress(target)
+  if (BigInt(universal) === 0n) {
     throw new QuipSwapError({
       code,
-      message: `${label} asset target must be a non-zero contract address`,
+      message: `${label} asset target must be a non-zero token identifier`,
       details: {target},
     })
   }
+  return universal
 }
 
 /**

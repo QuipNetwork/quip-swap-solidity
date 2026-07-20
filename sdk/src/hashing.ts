@@ -25,7 +25,7 @@ export const assetArrayAbiParameter = {
   type: 'tuple[]',
   components: [
     {name: 'assetType', type: 'uint8'},
-    {name: 'target', type: 'address'},
+    {name: 'target', type: 'bytes32'},
     {name: 'id', type: 'uint256'},
     {name: 'amount', type: 'uint256'},
   ],
@@ -48,8 +48,8 @@ export const termsAbiParameter = {
   type: 'tuple',
   components: [
     {name: 'chainId', type: 'uint256'},
-    {name: 'reclaimRecipient', type: 'address'},
-    {name: 'recipient', type: 'address'},
+    {name: 'reclaimRecipient', type: 'bytes32'},
+    {name: 'recipient', type: 'bytes32'},
     {name: 'commitmentDeadline', type: 'uint256'},
     {name: 'claimDeadline', type: 'uint256'},
     {name: 'reclaimRelease', type: 'uint256'},
@@ -66,8 +66,8 @@ export const termsAbiParameter = {
  */
 const termsDigestAbiParameters = [
   {name: 'chainId', type: 'uint256'},
-  {name: 'reclaimRecipient', type: 'address'},
-  {name: 'recipient', type: 'address'},
+  {name: 'reclaimRecipient', type: 'bytes32'},
+  {name: 'recipient', type: 'bytes32'},
   {name: 'commitmentDeadline', type: 'uint256'},
   {name: 'claimDeadline', type: 'uint256'},
   {name: 'reclaimRelease', type: 'uint256'},
@@ -93,6 +93,15 @@ const termsDigestAbiParameters = [
  * Standard (head/tail) ABI encoding of EIGHT top-level values — not packed
  * encoding, and not the encoding of a single `Terms` struct. The asset
  * order matters: reordering assets changes the digest.
+ *
+ * bytes32 addressing: `target`/`reclaimRecipient`/`recipient` are universal
+ * bytes32 identifiers (EVM addresses in the LOW 20 bytes). For EVM values
+ * the encoded bytes are IDENTICAL to the former `address` encoding —
+ * `abi.encode(address)` already produced the same left-padded word — so
+ * only foreign (high-bit) identifiers produce digests unreachable before
+ * the widening. Values must be full 32-byte hex; viem rejects a bare
+ * 20-byte address for a `bytes32` parameter rather than silently
+ * right-padding it (which would be the digest-breaking left-aligned form).
  *
  * @param terms - The side's terms.
  * @returns The 32-byte digest used for `posted` tracking and canonical ordering.

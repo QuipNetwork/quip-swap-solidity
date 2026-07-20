@@ -13,15 +13,35 @@
  *
  * NOT exported from the SDK package — test infrastructure only.
  */
+import {keccak256, stringToHex, toHex} from 'viem'
 import type {Address} from 'viem'
 import {nativeAsset} from '../../src/assets.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
+import {evmToBytes32} from '../../src/universalAddress.js'
 
 // well-known dummy actors (not real keys; never used for signing in unit tests)
 export const ALICE: Address = '0x00000000000000000000000000000000000a11ce'
 export const BOB: Address = '0x0000000000000000000000000000000000000b0b'
 export const ALICE_RECIPIENT: Address = '0x000000000000000000000000000000000000a1c1'
 export const BOB_RECIPIENT: Address = '0x000000000000000000000000000000000000b0b1'
+
+// universal (bytes32) forms — Terms/Asset identifier fields carry these
+export const ALICE_B32 = evmToBytes32(ALICE)
+export const BOB_B32 = evmToBytes32(BOB)
+export const ALICE_RECIPIENT_B32 = evmToBytes32(ALICE_RECIPIENT)
+export const BOB_RECIPIENT_B32 = evmToBytes32(BOB_RECIPIENT)
+
+/**
+ * Solana-style fixtures mirroring `test/TermsLib/TermsLib.t.sol` exactly —
+ * keccak-derived with the high bit forced so they can never narrow to an
+ * EVM address.
+ */
+export const SOLANA_PUBKEY: Hex32 = toHex(BigInt(keccak256(stringToHex('SOLANA_PUBKEY_FIXTURE'))) | (1n << 255n), {
+  size: 32,
+})
+export const SOLANA_MINT: Hex32 = toHex(BigInt(keccak256(stringToHex('SOLANA_MINT_FIXTURE'))) | (1n << 255n), {
+  size: 32,
+})
 
 // canonical interleaved schedule (Alice proposes), as in Omnibus.t.sol
 export const ALICE_COMMIT_DEADLINE = 1000n
@@ -59,8 +79,8 @@ export const BOB_DEFAULT_ASSETS = [nativeAsset(2n * 10n ** 18n)] as const
 export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEFAULT_ASSETS): Terms {
   return {
     chainId,
-    reclaimRecipient: ALICE,
-    recipient: ALICE_RECIPIENT,
+    reclaimRecipient: ALICE_B32,
+    recipient: ALICE_RECIPIENT_B32,
     commitmentDeadline: ALICE_COMMIT_DEADLINE,
     claimDeadline: ALICE_CLAIM_DEADLINE,
     reclaimRelease: ALICE_RECLAIM_RELEASE,
@@ -73,8 +93,8 @@ export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEF
 export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT_ASSETS): Terms {
   return {
     chainId,
-    reclaimRecipient: BOB,
-    recipient: BOB_RECIPIENT,
+    reclaimRecipient: BOB_B32,
+    recipient: BOB_RECIPIENT_B32,
     commitmentDeadline: BOB_COMMIT_DEADLINE,
     claimDeadline: BOB_CLAIM_DEADLINE,
     reclaimRelease: BOB_RECLAIM_RELEASE,

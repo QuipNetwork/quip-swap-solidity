@@ -26,10 +26,16 @@ export type QuipSwapErrorCode =
   | 'INVALID_ERC1155_ASSET'
   | 'INVALID_ASSET_TYPE'
   | 'EMPTY_ASSETS'
-  | 'ZERO_ADDRESS_RECIPIENT'
+  | 'ZERO_RECIPIENT'
   | 'ZERO_DEADLINE'
   | 'DISORDERED_DEADLINES'
   | 'ZERO_CHAIN_ID'
+  // universal (bytes32) addressing (mirrors TermsLib.toEvmAddress / validateLocalLeg)
+  | 'NOT_EVM_ADDRESS'
+  | 'INVALID_UNIVERSAL_ADDRESS'
+  // SVM-leg conventions (SDK-only; not contract-enforceable)
+  | 'AMOUNT_EXCEEDS_U64'
+  | 'UNSUPPORTED_SVM_ASSET'
   // pairing / window validation (mirrors TermsLib.validateTermPairing / enforceWithin)
   | 'INVALID_RANGE'
   | 'WINDOW_VIOLATED'

@@ -17,6 +17,7 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {QuipSwapError, wrapContractError} from './errors.js'
 import {AssetType} from './types.js'
 import type {Terms} from './types.js'
+import {bytes32ToEvm} from './universalAddress.js'
 
 /** Minimal ERC-20 surface used for approval planning. */
 const erc20Abi = [
@@ -216,14 +217,17 @@ export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPl
 
   for (const asset of terms.assets) {
     if (asset.assetType === AssetType.Native) continue
+    // approvals only apply to the locally-escrowed leg, whose targets are
+    // EVM by construction; a foreign (high-bit) target throws NOT_EVM_ADDRESS
+    const token = bytes32ToEvm(asset.target)
     if (asset.assetType === AssetType.ERC20) {
-      const key = asset.target.toLowerCase()
+      const key = token.toLowerCase()
       const existing = erc20Required.get(key)
-      erc20Required.set(key, {token: asset.target, amount: (existing?.amount ?? 0n) + asset.amount})
+      erc20Required.set(key, {token, amount: (existing?.amount ?? 0n) + asset.amount})
     } else if (asset.assetType === AssetType.ERC721) {
-      erc721Items.push({token: asset.target, tokenId: asset.id})
+      erc721Items.push({token, tokenId: asset.id})
     } else {
-      erc1155Tokens.set(asset.target.toLowerCase(), asset.target)
+      erc1155Tokens.set(token.toLowerCase(), token)
     }
   }
 

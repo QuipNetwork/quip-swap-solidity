@@ -14,6 +14,7 @@ import type {Address, Hex, Log} from 'viem'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {termsAbiParameter} from '../../src/hashing.js'
 import type {Hex32, Terms} from '../../src/types.js'
+import {toUniversalAddress} from '../../src/universalAddress.js'
 
 const BLOCK_HASH = `0x${'bb'.repeat(32)}` as Hex
 const TX_HASH = `0x${'cc'.repeat(32)}` as Hex
@@ -89,18 +90,19 @@ export function claimLog(args: {
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }
 
-/** Builds a `Reclaimed(address caller, bytes32 indexed lock, address indexed recipient)` log. */
+/** Builds a `Reclaimed(address caller, bytes32 indexed lock, bytes32 indexed recipient)` log. */
 export function reclaimedLog(args: {
   address: Address
   lock: Hex32
   caller: Address
-  recipient: Address
+  /** Accepts an EVM address (widened) or a 32-byte universal identifier. */
+  recipient: Address | Hex32
   logIndex?: number
 }): Log {
   const topics = encodeEventTopics({
     abi: omnibusAbi,
     eventName: 'Reclaimed',
-    args: {lock: args.lock, recipient: args.recipient},
+    args: {lock: args.lock, recipient: toUniversalAddress(args.recipient)},
   })
   const data = encodeAbiParameters([{name: 'caller', type: 'address'}], [args.caller])
   return baseLog(args.address, topics, data, args.logIndex ?? 0)

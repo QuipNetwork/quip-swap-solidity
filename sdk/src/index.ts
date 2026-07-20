@@ -25,8 +25,20 @@ export type {QuipSwapErrorCode, QuipSwapErrorDetails} from './errors.js'
 // asset builders + validation
 export {nativeAsset, erc20Asset, erc721Asset, erc1155Asset, validateAsset, totalNative} from './assets.js'
 
+// universal (bytes32) addressing
+export {ZERO_BYTES32, evmToBytes32, bytes32ToEvm, isEvmBytes32, toUniversalAddress} from './universalAddress.js'
+
+// chain identity + SVM-leg conventions
+export {
+  SOLANA_MAINNET_CHAIN_ID,
+  SOLANA_DEVNET_CHAIN_ID,
+  SVM_CHAIN_IDS,
+  U64_MAX,
+  isSvmChainId,
+} from './chains.js'
+
 // terms + pairing
-export {createTerms, validateTerms, validateTermPairing, proposedBy} from './terms.js'
+export {createTerms, validateTerms, validateTermPairing, proposedBy, assertEvmLocalLeg} from './terms.js'
 export type {CreateTermsArgs} from './terms.js'
 
 // windows

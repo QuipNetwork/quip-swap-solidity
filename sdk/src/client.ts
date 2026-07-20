@@ -28,7 +28,7 @@ import {prepareTx} from './gas.js'
 import type {TxOptions} from './gas.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
 import {assertHex32, digestTerms, digestTermsCanonically, generateLock} from './hashing.js'
-import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
+import {assertEvmLocalLeg, proposedBy, validateTermPairing, validateTerms} from './terms.js'
 import {waitForOmnibusReceipt} from './receipts.js'
 import type {OmnibusReceipt, WaitOptions} from './receipts.js'
 import {LockState} from './types.js'
@@ -771,6 +771,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
           details: {partyChainId: party.chainId, connectedChainId},
         })
       }
+
+      // 3b. universal-addressing preflight: every identifier THIS chain will
+      // dereference for this escrow must narrow to an EVM address, plus the
+      // SDK-only same-chain early catch on party.recipient (the contract
+      // defers that one to the counterparty's own commit)
+      assertEvmLocalLeg(party, counterparty)
 
       // 4. signer-blob shape preflight — the contract reverts MalformedSigner
       // at 20 bytes or fewer. Signature VALIDITY is left to the contract's

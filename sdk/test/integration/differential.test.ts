@@ -30,11 +30,13 @@ import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {validateTermPairing} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
+import {ZERO_BYTES32, evmToBytes32} from '../../src/universalAddress.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {enforceWithin} from '../../src/windows.js'
 import {connectChain, deployFixture, loadArtifact} from '../helpers/chain.js'
 import type {ChainContext, Fixture} from '../helpers/chain.js'
-import {aliceTerms, bobTerms, CHAIN_A, CHAIN_B, withOptimistic, withOverrides} from '../helpers/fixtures.js'
+import {SOLANA_MAINNET_CHAIN_ID} from '../../src/chains.js'
+import {aliceTerms, bobTerms, CHAIN_A, CHAIN_B, SOLANA_MINT, SOLANA_PUBKEY, withOptimistic, withOverrides} from '../helpers/fixtures.js'
 
 const RPC_URL = process.env['QUIP_SDK_RPC_URL']
 const CHAIN_ID = Number(process.env['QUIP_SDK_CHAIN_ID'] ?? '31337')
@@ -99,8 +101,17 @@ function rndIn(rng: () => bigint, max: bigint): bigint {
   return (rng() % max) + 1n
 }
 
-function rndAddress(rng: () => bigint): Address {
-  // compose 160 bits from three 64-bit draws; force non-zero via low byte
+function rndUniversal(rng: () => bigint): Hex32 {
+  // compose 160 bits from three 64-bit draws; force non-zero via low byte;
+  // every fourth draw sets foreign upper bits (a Solana-style pubkey) so the
+  // oracle comparison covers the range unreachable before the widening
+  const raw = ((rng() << 96n) ^ (rng() << 48n) ^ rng()) & ((1n << 160n) - 1n)
+  const foreign = rng() % 4n === 0n ? (((rng() << 200n) | (1n << 255n)) & ((1n << 256n) - 1n)) : 0n
+  return `0x${((raw | 1n) | foreign).toString(16).padStart(64, '0')}` as Hex32
+}
+
+/** Random non-zero EVM address (for fields that stay address-typed, e.g. verifiers). */
+function rndEvmAddress(rng: () => bigint): Address {
   const raw = ((rng() << 96n) ^ (rng() << 48n) ^ rng()) & ((1n << 160n) - 1n)
   return `0x${(raw | 1n).toString(16).padStart(40, '0')}` as Address
 }
@@ -109,15 +120,15 @@ function rndAsset(rng: () => bigint): Asset {
   const kind = Number(rng() % 4n) as AssetType
   switch (kind) {
     case AssetType.Native:
-      return {assetType: kind, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: rndIn(rng, 10n ** 24n)}
+      return {assetType: kind, target: ZERO_BYTES32, id: 0n, amount: rndIn(rng, 10n ** 24n)}
     case AssetType.ERC20:
-      return {assetType: kind, target: rndAddress(rng), id: 0n, amount: rndIn(rng, 10n ** 24n)}
+      return {assetType: kind, target: rndUniversal(rng), id: 0n, amount: rndIn(rng, 10n ** 24n)}
     case AssetType.ERC721:
       // amounts OTHER THAN 1 included on purpose: digests must be sensitive
       // to the amount, which is exactly why the SDK canonicalizes to 1n
-      return {assetType: kind, target: rndAddress(rng), id: rng() % 1000n, amount: rndIn(rng, 5n)}
+      return {assetType: kind, target: rndUniversal(rng), id: rng() % 1000n, amount: rndIn(rng, 5n)}
     default:
-      return {assetType: AssetType.ERC1155, target: rndAddress(rng), id: rng() % 1000n, amount: rndIn(rng, 10n ** 6n)}
+      return {assetType: AssetType.ERC1155, target: rndUniversal(rng), id: rng() % 1000n, amount: rndIn(rng, 10n ** 6n)}
   }
 }
 
@@ -126,8 +137,8 @@ function rndTerms(rng: () => bigint): Terms {
   const assetCount = Number(rng() % 3n) + 1
   return {
     chainId: rndIn(rng, 10n ** 6n),
-    reclaimRecipient: rndAddress(rng),
-    recipient: rndAddress(rng),
+    reclaimRecipient: rndUniversal(rng),
+    recipient: rndUniversal(rng),
     commitmentDeadline: commitment,
     claimDeadline: commitment + rndIn(rng, 10n ** 6n),
     reclaimRelease: commitment + 10n ** 6n + rndIn(rng, 10n ** 6n),
@@ -145,36 +156,43 @@ function fixedVectors(): Terms[] {
   const base = aliceTerms(CHAIN_A)
   return [
     // single assets of each type
-    withOverrides(base, {assets: [{assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 1n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC20, target: TOKEN, id: 0n, amount: 12_345n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 42n, amount: 1n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.Native, target: ZERO_BYTES32, id: 0n, amount: 1n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC20, target: evmToBytes32(TOKEN), id: 0n, amount: 12_345n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: evmToBytes32(TOKEN), id: 42n, amount: 1n}]}),
     // ERC-721 with amount != 1 — proves digest sensitivity, justifying SDK canonicalization
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 42n, amount: 7n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: TOKEN, id: 9n, amount: 100n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: evmToBytes32(TOKEN), id: 42n, amount: 7n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: evmToBytes32(TOKEN), id: 9n, amount: 100n}]}),
     // token id zero (valid for 721 and 1155)
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 0n, amount: 1n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: TOKEN, id: 0n, amount: 5n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: evmToBytes32(TOKEN), id: 0n, amount: 1n}]}),
+    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: evmToBytes32(TOKEN), id: 0n, amount: 5n}]}),
     // multiple assets, then the same pair reordered
     withOverrides(base, {
       assets: [
-        {assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 5n},
-        {assetType: AssetType.ERC20, target: OTHER_TOKEN, id: 0n, amount: 77n},
+        {assetType: AssetType.Native, target: ZERO_BYTES32, id: 0n, amount: 5n},
+        {assetType: AssetType.ERC20, target: evmToBytes32(OTHER_TOKEN), id: 0n, amount: 77n},
       ],
     }),
     withOverrides(base, {
       assets: [
-        {assetType: AssetType.ERC20, target: OTHER_TOKEN, id: 0n, amount: 77n},
-        {assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 5n},
+        {assetType: AssetType.ERC20, target: evmToBytes32(OTHER_TOKEN), id: 0n, amount: 77n},
+        {assetType: AssetType.Native, target: ZERO_BYTES32, id: 0n, amount: 5n},
       ],
     }),
     // different recipients
-    withOverrides(base, {recipient: '0x00000000000000000000000000000000000000fe'}),
-    withOverrides(base, {reclaimRecipient: '0x00000000000000000000000000000000000000fd'}),
+    withOverrides(base, {recipient: evmToBytes32('0x00000000000000000000000000000000000000fe')}),
+    withOverrides(base, {reclaimRecipient: evmToBytes32('0x00000000000000000000000000000000000000fd')}),
     // different chain ids (incl. cross-chain id)
     withOverrides(base, {chainId: CHAIN_B}),
     withOverrides(base, {chainId: 1n}),
     // a different timestamp schedule
     withOverrides(base, {commitmentDeadline: 10n, claimDeadline: 20n, reclaimRelease: 30n}),
+    // Solana-styled leg: foreign (high-bit) mint + reclaimRecipient — the
+    // bytes32 range unreachable before the widening
+    withOverrides(base, {
+      chainId: SOLANA_MAINNET_CHAIN_ID,
+      reclaimRecipient: SOLANA_PUBKEY,
+      assets: [{assetType: AssetType.ERC20, target: SOLANA_MINT, id: 0n, amount: 1_000_000_000n}],
+    }),
     bobTerms(CHAIN_A),
   ]
 }
@@ -313,9 +331,9 @@ describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
     // keyed ERC-7913 signer blobs (verifier ‖ key) of differing key lengths
     // built with buildKeyedSigner — the only shape the contract accepts
     const signers: Hex[] = [
-      buildKeyedSigner(rndAddress(rng), `0x01`), // 21-byte keyed blob (minimum valid)
-      buildKeyedSigner(rndAddress(rng), keccak256(`0x01`)), // 52-byte keyed blob
-      buildKeyedSigner(rndAddress(rng), `0xdeadbeef`), // 24-byte keyed blob
+      buildKeyedSigner(rndEvmAddress(rng), `0x01`), // 21-byte keyed blob (minimum valid)
+      buildKeyedSigner(rndEvmAddress(rng), keccak256(`0x01`)), // 52-byte keyed blob
+      buildKeyedSigner(rndEvmAddress(rng), `0xdeadbeef`), // 24-byte keyed blob
     ]
 
     // fixed pairs plus deterministic generated pairs (same PRNG pattern as

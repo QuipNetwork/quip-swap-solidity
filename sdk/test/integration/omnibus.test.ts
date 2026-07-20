@@ -19,6 +19,7 @@ import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
+import {evmToBytes32} from '../../src/universalAddress.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
 import {
@@ -101,8 +102,8 @@ async function freshSchedule(): Promise<Schedule> {
     anchors,
     aliceTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
       chainId,
-      reclaimRecipient: ALICE_RECLAIM,
-      recipient: ALICE_RECIPIENT,
+      reclaimRecipient: evmToBytes32(ALICE_RECLAIM),
+      recipient: evmToBytes32(ALICE_RECIPIENT),
       commitmentDeadline: base + 1000n,
       claimDeadline: base + 3000n,
       reclaimRelease: base + 5000n,
@@ -111,8 +112,8 @@ async function freshSchedule(): Promise<Schedule> {
     }),
     bobTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
       chainId,
-      reclaimRecipient: BOB_RECLAIM,
-      recipient: BOB_RECIPIENT,
+      reclaimRecipient: evmToBytes32(BOB_RECLAIM),
+      recipient: evmToBytes32(BOB_RECIPIENT),
       commitmentDeadline: base + 2000n,
       claimDeadline: base + 4000n,
       reclaimRelease: base + 6000n,
@@ -917,7 +918,7 @@ describe('reclaim flows', () => {
     // assets go to the reclaimRecipient, NOT the committer
     expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(reclaimBalanceBefore + NATIVE)
     expect(result.reclaims).toHaveLength(1)
-    expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
+    expect(result.reclaims[0]?.recipient).toBe(evmToBytes32(ALICE_RECLAIM))
   })
 
   it('dual-leg reclaim: both committed, nobody claimed — one reclaim returns BOTH legs (two Reclaimed events)', async () => {
@@ -1058,7 +1059,7 @@ describe('invalid operations', () => {
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
     // bob commits against MUTATED alice terms — canonical digest differs
-    const mutatedAlice: Terms = {...alice, recipient: BOB_RECIPIENT}
+    const mutatedAlice: Terms = {...alice, recipient: evmToBytes32(BOB_RECIPIENT)}
     await ctx.warpTo(s.anchors.takerCommit)
     try {
       await bobClient.commit({lock, party: bob, counterparty: mutatedAlice, auth: keyedAuth(ctx.bob.address)})

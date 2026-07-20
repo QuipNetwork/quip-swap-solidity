@@ -129,13 +129,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -169,8 +169,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -198,13 +198,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -238,8 +238,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -280,13 +280,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -320,8 +320,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -349,13 +349,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -389,8 +389,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -453,13 +453,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -493,8 +493,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -522,13 +522,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -562,8 +562,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -809,13 +809,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -849,8 +849,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -878,13 +878,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -918,8 +918,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -1108,13 +1108,13 @@ export const omnibusAbi = [
           },
           {
             "name": "reclaimRecipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "recipient",
-            "type": "address",
-            "internalType": "address"
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "commitmentDeadline",
@@ -1148,8 +1148,8 @@ export const omnibusAbi = [
               },
               {
                 "name": "target",
-                "type": "address",
-                "internalType": "address"
+                "type": "bytes32",
+                "internalType": "bytes32"
               },
               {
                 "name": "id",
@@ -1274,9 +1274,9 @@ export const omnibusAbi = [
       },
       {
         "name": "recipient",
-        "type": "address",
+        "type": "bytes32",
         "indexed": true,
-        "internalType": "address"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1377,6 +1377,17 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "NotEvmAddress",
+    "inputs": [
+      {
+        "name": "value",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "OptimismMismatch",
     "inputs": []
   },
@@ -1434,11 +1445,6 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
-    "name": "ZeroAddressRecipient",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ZeroAmount",
     "inputs": []
   },
@@ -1450,6 +1456,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroDeadline",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroRecipient",
     "inputs": []
   },
   {

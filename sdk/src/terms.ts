@@ -4,20 +4,32 @@
  * Transcribes `TermsLib.validateTerms`, `TermsLib.validateTermPairing`, and
  * `TermsLib.proposedByParty`.
  */
-import {isAddress, zeroAddress} from 'viem'
+import {isHex} from 'viem'
 import type {Address} from 'viem'
 import {validateAsset} from './assets.js'
+import {AssetType} from './types.js'
+import {U64_MAX, isSvmChainId} from './chains.js'
 import {QuipSwapError} from './errors.js'
-import type {Asset, Terms} from './types.js'
+import type {Asset, Hex32, Terms} from './types.js'
+import {bytes32ToEvm, toUniversalAddress} from './universalAddress.js'
 
-/** Input shape for {@link createTerms}; identical to {@link Terms}. */
+/** Input shape for {@link createTerms}; identical to {@link Terms} except
+ * recipients accept either form of address and are normalized. */
 export interface CreateTermsArgs {
   /** Chain id where this side's assets live; must be `> 0n`. */
   readonly chainId: bigint
-  /** Receives this side's own assets on reclaim; non-zero. */
-  readonly reclaimRecipient: Address
-  /** Receives the COUNTERPARTY's assets on claim; non-zero. */
-  readonly recipient: Address
+  /**
+   * Receives this side's own assets on reclaim; non-zero. Lives on THIS
+   * leg's chain. A 20-byte EVM address (widened automatically) or a 32-byte
+   * universal identifier.
+   */
+  readonly reclaimRecipient: Address | Hex32
+  /**
+   * Receives the COUNTERPARTY's assets on claim; non-zero. Lives on the
+   * COUNTERPARTY's chain — pass a Solana owner-wallet pubkey (32-byte hex)
+   * when the counterparty leg is on Solana.
+   */
+  readonly recipient: Address | Hex32
   /** Unix seconds; commitment forbidden at/after this instant; non-zero. */
   readonly commitmentDeadline: bigint
   /** Unix seconds; strictly after `commitmentDeadline`. */
@@ -63,8 +75,8 @@ export function createTerms(args: CreateTermsArgs): Terms {
   // defensive copy: never mutate or alias the caller's array
   const terms: Terms = Object.freeze({
     chainId: args.chainId,
-    reclaimRecipient: args.reclaimRecipient,
-    recipient: args.recipient,
+    reclaimRecipient: toUniversalAddress(args.reclaimRecipient),
+    recipient: toUniversalAddress(args.recipient),
     commitmentDeadline: args.commitmentDeadline,
     claimDeadline: args.claimDeadline,
     reclaimRelease: args.reclaimRelease,
@@ -82,7 +94,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  *
  * ```solidity
  * if (terms.assets.length == 0) revert EmptyAssets();
- * if (reclaimRecipient == 0 || recipient == 0) revert ZeroAddressRecipient();
+ * if (reclaimRecipient == 0 || recipient == 0) revert ZeroRecipient();
  * if (terms.commitmentDeadline == 0) revert ZeroDeadline();
  * if (!(commitmentDeadline < claimDeadline && claimDeadline < reclaimRelease))
  *   revert DisordedDeadlines();
@@ -97,7 +109,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  * reject the proposer's already-elapsed deadline during the taker's commit.
  *
  * @param terms - The terms to validate (e.g. parsed from JSON or an API).
- * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_ADDRESS_RECIPIENT` |
+ * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_RECIPIENT` |
  *   `ZERO_DEADLINE` | `DISORDERED_DEADLINES` | `ZERO_CHAIN_ID`, plus every
  *   asset-level code from {@link validateAsset}.
  * @see TermsLib.validateTerms
@@ -113,11 +125,11 @@ export function validateTerms(terms: Terms): void {
       message: 'Terms must contain at least one asset (contract: EmptyAssets)',
     })
   }
-  if (!isRecipientAddress(terms.reclaimRecipient) || !isRecipientAddress(terms.recipient)) {
+  if (!isRecipientValue(terms.reclaimRecipient) || !isRecipientValue(terms.recipient)) {
     throw new QuipSwapError({
-      code: 'ZERO_ADDRESS_RECIPIENT',
+      code: 'ZERO_RECIPIENT',
       message:
-        'Both recipient and reclaimRecipient must be valid non-zero addresses (contract: ZeroAddressRecipient)',
+        'Both recipient and reclaimRecipient must be non-zero 32-byte universal addresses (contract: ZeroRecipient)',
       details: {recipient: terms.recipient, reclaimRecipient: terms.reclaimRecipient},
     })
   }
@@ -149,11 +161,100 @@ export function validateTerms(terms: Terms): void {
     })
   }
   for (const asset of terms.assets) validateAsset(asset)
+  if (isSvmChainId(terms.chainId)) validateSvmLeg(terms)
 }
 
-/** True when the value is a well-formed, non-zero address. */
-function isRecipientAddress(value: Address): boolean {
-  return isAddress(value, {strict: false}) && value.toLowerCase() !== zeroAddress
+/** True when the value is well-formed 32-byte hex and non-zero. */
+function isRecipientValue(value: Hex32): boolean {
+  return isHex(value, {strict: true}) && value.length === 66 && BigInt(value) !== 0n
+}
+
+/**
+ * SDK-only conventions for legs on a known SVM chain (see `chains.ts`);
+ * NOT contract-enforceable — the EVM contract only hashes a foreign leg.
+ * A violating leg is HTLC-safe (it can never commit on Solana, so the other
+ * side reclaims) but parks the counterparty's funds until reclaimRelease,
+ * so the SDK rejects it before any terms are signed.
+ */
+function validateSvmLeg(terms: Terms): void {
+  for (const asset of terms.assets) {
+    if (asset.assetType === AssetType.ERC1155) {
+      throw new QuipSwapError({
+        code: 'UNSUPPORTED_SVM_ASSET',
+        message:
+          'ERC-1155-semantics assets are unsupported on SVM legs: Solana has no (contract, id) token dimension',
+        details: {chainId: terms.chainId, asset},
+      })
+    }
+    if (asset.assetType === AssetType.ERC721 && asset.id !== 0n) {
+      throw new QuipSwapError({
+        code: 'UNSUPPORTED_SVM_ASSET',
+        message:
+          'ERC-721-semantics assets on SVM legs must have id 0: the mint pubkey (target) IS the NFT identity',
+        details: {chainId: terms.chainId, asset},
+      })
+    }
+    if (asset.amount > U64_MAX) {
+      throw new QuipSwapError({
+        code: 'AMOUNT_EXCEEDS_U64',
+        message:
+          `Asset amount ${asset.amount} exceeds u64 max (${U64_MAX}); SPL token amounts are u64, so this ` +
+          'leg could never be committed on Solana',
+        details: {chainId: terms.chainId, asset},
+      })
+    }
+  }
+}
+
+/**
+ * Preflights the EVM-addressing constraints `Omnibus.commit` will enforce
+ * for a commit of `party` (the leg escrowed on the connected EVM chain)
+ * against `counterparty`.
+ *
+ * Mirrors the contract exactly, plus one SDK-only early catch:
+ * - `party.assets[].target` and `party.reclaimRecipient` must narrow
+ *   (contract: `validateLocalLeg`).
+ * - `counterparty.recipient` must narrow — whoever claims the party's
+ *   escrow is paid on THIS chain at that field.
+ * - `party.recipient` must narrow ONLY when the pairing is same-chain
+ *   (`counterparty.chainId === party.chainId`). The contract defers this to
+ *   the counterparty's own commit; checking it here stops the client from
+ *   locking funds into a same-chain pairing that can never settle. On a
+ *   cross-chain pairing `party.recipient` legitimately carries a foreign
+ *   pubkey and is NOT checked.
+ *
+ * @param party - The leg being committed on the connected (EVM) chain.
+ * @param counterparty - The other leg (may be on a non-EVM chain).
+ * @throws QuipSwapError `NOT_EVM_ADDRESS` naming the offending field
+ *   (contract: NotEvmAddress).
+ * @see TermsLib.validateLocalLeg, Omnibus.commit
+ */
+export function assertEvmLocalLeg(party: Terms, counterparty: Terms): void {
+  narrowField(party.reclaimRecipient, 'party.reclaimRecipient')
+  for (const [i, asset] of party.assets.entries()) {
+    if (asset.assetType !== AssetType.Native) narrowField(asset.target, `party.assets[${i}].target`)
+  }
+  narrowField(counterparty.recipient, 'counterparty.recipient')
+  if (counterparty.chainId === party.chainId) narrowField(party.recipient, 'party.recipient')
+}
+
+/** Narrows one field, rewrapping the error with the field name. */
+function narrowField(value: Hex32, field: string): void {
+  try {
+    bytes32ToEvm(value)
+  } catch (error) {
+    if (error instanceof QuipSwapError && error.code === 'NOT_EVM_ADDRESS') {
+      throw new QuipSwapError({
+        code: 'NOT_EVM_ADDRESS',
+        message:
+          `${field} (${value}) must be an EVM address (low 20 bytes) — it is dereferenced on this chain ` +
+          '(contract: NotEvmAddress)',
+        details: {field, value},
+        cause: error,
+      })
+    }
+    throw error
+  }
 }
 
 /**

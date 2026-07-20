@@ -6,7 +6,10 @@
  * timestamps, fees) is represented as `bigint` — never `number` — because
  * `uint256` exceeds `Number.MAX_SAFE_INTEGER`.
  */
-import type {Address, Hex} from 'viem'
+import type {Hex} from 'viem'
+
+/** A 32-byte hex value (`0x` + 64 hex chars), e.g. a secret, lock, digest, or universal address. */
+export type Hex32 = Hex
 
 /**
  * The type of asset in a swap leg.
@@ -69,8 +72,13 @@ export enum LockState {
 export interface Asset {
   /** The kind of asset; encoded as `uint8` in the ABI. */
   readonly assetType: AssetType
-  /** Token contract address; MUST be the zero address for {@link AssetType.Native}. */
-  readonly target: Address
+  /**
+   * Universal (bytes32) token identifier on the leg's own chain: MUST be
+   * zero for {@link AssetType.Native}; an EVM token address in the LOW 20
+   * bytes for EVM legs (see {@link evmToBytes32}); a full 32-byte
+   * identifier (e.g. an SPL mint pubkey) for non-EVM legs.
+   */
+  readonly target: Hex32
   /**
    * Token id; used by ERC-721 and ERC-1155 and MUST be `0n` for Native and
    * ERC-20 (the contract rejects a non-zero id for ERC-20 with
@@ -104,15 +112,19 @@ export interface Terms {
    */
   readonly chainId: bigint
   /**
-   * The address that receives this side's own assets back if the swap is
-   * reclaimed instead of claimed. Must be non-zero.
+   * Universal (bytes32) account that receives this side's own assets back
+   * if the swap is reclaimed instead of claimed. Lives on THIS leg's chain
+   * (an EVM address in the low 20 bytes when the leg is on an EVM chain; an
+   * owner wallet pubkey on SVM). Must be non-zero.
    */
-  readonly reclaimRecipient: Address
+  readonly reclaimRecipient: Hex32
   /**
-   * The address that receives the COUNTERPARTY's assets when the swap is
-   * claimed — not this side's own assets. Must be non-zero.
+   * Universal (bytes32) account that receives the COUNTERPARTY's assets
+   * when the swap is claimed — not this side's own assets. Lives on the
+   * COUNTERPARTY's chain: an EVM leg swapping against Solana carries a
+   * Solana owner-wallet pubkey here. Must be non-zero.
    */
-  readonly recipient: Address
+  readonly recipient: Hex32
   /**
    * Unix timestamp (seconds) at and after which this side may no longer
    * commit. Also the instant the counterparty-taker's commit window opens
@@ -142,9 +154,6 @@ export interface Terms {
   /** The assets this side escrows. Must be non-empty and each asset valid. */
   readonly assets: readonly Asset[]
 }
-
-/** A 32-byte hex value (`0x` + 64 hex chars), e.g. a secret, lock, or digest. */
-export type Hex32 = Hex
 
 /**
  * A freshly generated hashlock pair.

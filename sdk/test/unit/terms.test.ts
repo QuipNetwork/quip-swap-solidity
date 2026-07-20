@@ -9,14 +9,25 @@
  * Parallels `test/TermsLib/behaviors/validateTerms.t.sol` and
  * `test/TermsLib/behaviors/validateTermPairing.t.sol`.
  */
-import {zeroAddress} from 'viem'
 import {describe, expect, it} from 'vitest'
-import {nativeAsset} from '../../src/assets.js'
+import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset} from '../../src/assets.js'
+import {SOLANA_MAINNET_CHAIN_ID, U64_MAX} from '../../src/chains.js'
 import {QuipSwapError} from '../../src/errors.js'
-import {createTerms, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
+import {assertEvmLocalLeg, createTerms, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
+import {ZERO_BYTES32} from '../../src/universalAddress.js'
 import type {Asset} from '../../src/types.js'
-import {ALICE, aliceTerms, BOB, bobTerms, CHAIN_A, withOptimistic, withOverrides} from '../helpers/fixtures.js'
+import {
+  ALICE,
+  aliceTerms,
+  BOB,
+  bobTerms,
+  CHAIN_A,
+  SOLANA_MINT,
+  SOLANA_PUBKEY,
+  withOptimistic,
+  withOverrides,
+} from '../helpers/fixtures.js'
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -39,14 +50,14 @@ describe('validateTerms', () => {
     expect(codeOf(() => validateTerms(withOverrides(valid, {chainId: 0n})))).toBe('ZERO_CHAIN_ID')
   })
 
-  it('rejects zero reclaimRecipient (contract: ZeroAddressRecipient)', () => {
-    expect(codeOf(() => validateTerms(withOverrides(valid, {reclaimRecipient: zeroAddress})))).toBe(
-      'ZERO_ADDRESS_RECIPIENT',
+  it('rejects zero reclaimRecipient (contract: ZeroRecipient)', () => {
+    expect(codeOf(() => validateTerms(withOverrides(valid, {reclaimRecipient: ZERO_BYTES32})))).toBe(
+      'ZERO_RECIPIENT',
     )
   })
 
-  it('rejects zero recipient (contract: ZeroAddressRecipient)', () => {
-    expect(codeOf(() => validateTerms(withOverrides(valid, {recipient: zeroAddress})))).toBe('ZERO_ADDRESS_RECIPIENT')
+  it('rejects zero recipient (contract: ZeroRecipient)', () => {
+    expect(codeOf(() => validateTerms(withOverrides(valid, {recipient: ZERO_BYTES32})))).toBe('ZERO_RECIPIENT')
   })
 
   it('rejects zero commitmentDeadline (contract: ZeroDeadline)', () => {
@@ -79,7 +90,7 @@ describe('validateTerms', () => {
   })
 
   it('rejects invalid nested assets', () => {
-    const bad: Asset = {assetType: AssetType.ERC20, target: zeroAddress, id: 0n, amount: 1n}
+    const bad: Asset = {assetType: AssetType.ERC20, target: ZERO_BYTES32, id: 0n, amount: 1n}
     expect(codeOf(() => validateTerms(withOverrides(valid, {assets: [nativeAsset(1n), bad]})))).toBe(
       'INVALID_ERC20_ASSET',
     )
@@ -211,5 +222,86 @@ describe('proposedBy', () => {
   it('identifies the side with the smaller commitmentDeadline as proposer', () => {
     expect(proposedBy(alice, bob)).toBe('party')
     expect(proposedBy(bob, alice)).toBe('counterparty')
+  })
+})
+
+describe('validateTerms (SVM legs)', () => {
+  // an SVM leg mirroring the Solidity fixture: Solana chain id, foreign mint
+  // + reclaimRecipient (dereferenced only on Solana), EVM-narrowable recipient
+  const svmLeg = withOverrides(aliceTerms(SOLANA_MAINNET_CHAIN_ID), {
+    reclaimRecipient: SOLANA_PUBKEY,
+    assets: [erc20Asset(SOLANA_MINT, 1_000_000_000n)],
+  })
+
+  it('accepts a Solana-styled fungible leg', () => {
+    expect(() => validateTerms(svmLeg)).not.toThrow()
+  })
+
+  it('accepts a vanilla NFT leg (mint IS the identity: id 0, amount 1)', () => {
+    const nft = withOverrides(svmLeg, {assets: [erc721Asset(SOLANA_MINT, 0n)]})
+    expect(() => validateTerms(nft)).not.toThrow()
+  })
+
+  it('rejects ERC-1155-semantics assets (no (contract, id) dimension on Solana)', () => {
+    const bad = withOverrides(svmLeg, {assets: [erc1155Asset(SOLANA_MINT, 1n, 5n)]})
+    expect(codeOf(() => validateTerms(bad))).toBe('UNSUPPORTED_SVM_ASSET')
+  })
+
+  it('rejects NFT legs with a non-zero id (the mint is the identity)', () => {
+    const bad = withOverrides(svmLeg, {assets: [erc721Asset(SOLANA_MINT, 7n)]})
+    expect(codeOf(() => validateTerms(bad))).toBe('UNSUPPORTED_SVM_ASSET')
+  })
+
+  it('rejects amounts above u64 max (SPL amounts are u64)', () => {
+    const bad = withOverrides(svmLeg, {assets: [erc20Asset(SOLANA_MINT, U64_MAX + 1n)]})
+    expect(codeOf(() => validateTerms(bad))).toBe('AMOUNT_EXCEEDS_U64')
+    const ok = withOverrides(svmLeg, {assets: [erc20Asset(SOLANA_MINT, U64_MAX)]})
+    expect(() => validateTerms(ok)).not.toThrow()
+  })
+
+  it('applies no u64 bound to EVM legs', () => {
+    const evmLeg = withOverrides(aliceTerms(CHAIN_A), {assets: [nativeAsset(U64_MAX + 1n)]})
+    expect(() => validateTerms(evmLeg)).not.toThrow()
+  })
+})
+
+describe('assertEvmLocalLeg (commit preflight)', () => {
+  // cross-chain pairing: Alice's leg local (EVM), Bob's leg on Solana with a
+  // foreign mint/reclaimRecipient and an EVM recipient (paid on THIS chain)
+  const localLeg = aliceTerms(CHAIN_A)
+  const solanaLeg = withOverrides(bobTerms(SOLANA_MAINNET_CHAIN_ID), {
+    reclaimRecipient: SOLANA_PUBKEY,
+    assets: [erc20Asset(SOLANA_MINT, 1_000_000_000n)],
+  })
+
+  it('accepts the canonical cross-chain pairing', () => {
+    expect(() => assertEvmLocalLeg(localLeg, solanaLeg)).not.toThrow()
+  })
+
+  it('accepts a foreign recipient on the LOCAL leg (it receives on the Solana side)', () => {
+    const local = withOverrides(localLeg, {recipient: SOLANA_PUBKEY})
+    expect(() => assertEvmLocalLeg(local, solanaLeg)).not.toThrow()
+  })
+
+  it('rejects a foreign reclaimRecipient on the local leg (refunds pay out here)', () => {
+    const bad = withOverrides(localLeg, {reclaimRecipient: SOLANA_PUBKEY})
+    expect(codeOf(() => assertEvmLocalLeg(bad, solanaLeg))).toBe('NOT_EVM_ADDRESS')
+  })
+
+  it('rejects a foreign asset target on the local leg (escrow pulls here)', () => {
+    const bad = withOverrides(localLeg, {assets: [erc20Asset(SOLANA_MINT, 5n)]})
+    expect(codeOf(() => assertEvmLocalLeg(bad, solanaLeg))).toBe('NOT_EVM_ADDRESS')
+  })
+
+  it("rejects a foreign counterparty recipient (the local escrow's claim pays it here)", () => {
+    const bad = withOverrides(solanaLeg, {recipient: SOLANA_PUBKEY})
+    expect(codeOf(() => assertEvmLocalLeg(localLeg, bad))).toBe('NOT_EVM_ADDRESS')
+  })
+
+  it('same-chain early catch: a foreign party recipient is rejected before funds lock', () => {
+    // the contract defers this to the counterparty's own commit; the SDK
+    // fails fast so a doomed same-chain pairing never escrows anything
+    const bad = withOverrides(localLeg, {recipient: SOLANA_PUBKEY})
+    expect(codeOf(() => assertEvmLocalLeg(bad, bobTerms(CHAIN_A)))).toBe('NOT_EVM_ADDRESS')
   })
 })
