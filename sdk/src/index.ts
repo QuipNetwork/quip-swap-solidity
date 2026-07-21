@@ -61,6 +61,7 @@ export {generateSecret, secretToPair} from './secrets.js'
 // commit authorization (signer blobs + digest; the SDK never signs)
 export {
   COMMIT_DIGEST_TAG,
+  ZERO_WALLET_BINDING,
   buildKeyedSigner,
   assertSignerBlob,
   computeDomainSeparator,

@@ -20,7 +20,7 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {buildKeyedSigner} from '../../src/index.js'
+import {ZERO_WALLET_BINDING, buildKeyedSigner} from '../../src/index.js'
 import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -201,8 +201,13 @@ describe('commit orchestration', () => {
     expect(est.args[0]).toBe(FOUNDRY_LOCK)
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
-    // the CommitAuth struct rides along as the fourth argument
-    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
+    // the CommitAuth struct rides along as the fourth argument; the client
+    // fills the keyed route's ignored walletBinding with zero
+    expect(est.args[3]).toEqual({
+      signer: buildKeyedSigner(VERIFIER, SENDER),
+      signature: '0x',
+      walletBinding: ZERO_WALLET_BINDING,
+    })
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
     // the write carries the same function/args/value

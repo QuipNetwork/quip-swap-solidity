@@ -30,13 +30,29 @@ import type {Hex32, Terms} from './types.js'
 /**
  * Auth data for one commit, mirroring the Solidity `struct CommitAuth`
  * field-for-field. Identities attribute, they don't gate.
+ *
+ * Two routes, discriminated by `signature`:
+ * - non-empty: KEYED route — `signature` is verified over the commit digest
+ *   by the declared verifier; `walletBinding` is ignored (leave it unset).
+ * - empty: ATTESTED route — the verifier must have attested the composite
+ *   envelope over (`walletBinding`, commitDigest) earlier in the SAME
+ *   transaction, and the attestation binds the transaction sender.
  */
 export interface CommitAuth {
   /** The committing side's identity blob: `verifier(20) ‖ key` (see module docs). */
   readonly signer: Hex
-  /** Signature over {@link computeCommitDigest}, checked by the declared verifier. */
+  /** Signature over {@link computeCommitDigest}, checked by the declared verifier; EMPTY selects the attested route. */
   readonly signature: Hex
+  /**
+   * Attested route only: the wallet's half of the signed envelope (its own
+   * execution commitment; opaque to Omnibus). Ignored on the keyed route —
+   * the client encodes {@link ZERO_WALLET_BINDING} when omitted.
+   */
+  readonly walletBinding?: Hex32
 }
+
+/** The `walletBinding` value the client encodes on the keyed route (the contract ignores it there). */
+export const ZERO_WALLET_BINDING: Hex32 = `0x${'00'.repeat(32)}` as Hex32
 
 /**
  * The protocol tag bound into the commit-digest domain separator —

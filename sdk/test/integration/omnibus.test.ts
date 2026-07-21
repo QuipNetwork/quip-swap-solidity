@@ -21,7 +21,7 @@ import {planApprovals, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {COMMIT_DIGEST_TAG, buildKeyedSigner, computeCommitDigest, computeDomainSeparator} from '../../src/commitAuth.js'
+import {COMMIT_DIGEST_TAG, ZERO_WALLET_BINDING, buildKeyedSigner, computeCommitDigest, computeDomainSeparator} from '../../src/commitAuth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -141,7 +141,7 @@ async function rawCommit(
     address: fixture.omnibus,
     abi: omnibusAbi,
     functionName: 'commit',
-    args: [lock, toTuple(party), toTuple(counterparty), auth ?? keyedAuth(actor.address)],
+    args: [lock, toTuple(party), toTuple(counterparty), {walletBinding: ZERO_WALLET_BINDING, ...(auth ?? keyedAuth(actor.address))}],
     value,
     account: actor.account,
   })
@@ -177,9 +177,11 @@ function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
 /**
  * Keyed ERC-7913 auth for an actor: the fixture's AcceptAll VerifierMock is
  * the verifier and the actor's 20-byte address doubles as the key (40-byte
- * blob). The mock ignores signatures, so '0x' is fine.
+ * blob). The mock ignores signature CONTENT, but the signature must be
+ * NON-EMPTY — an empty signature selects the attested route, which the mock
+ * does not implement. 'envelope' matches the Foundry AuthHelper placeholder.
  */
-const keyedAuth = (addr: Address): CommitAuth => ({signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'})
+const keyedAuth = (addr: Address): CommitAuth => ({signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x656e76656c6f7065'})
 
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
@@ -724,7 +726,7 @@ describe('keyed ERC-7913 commit authorization', () => {
         lock,
         party: alice,
         counterparty: bob,
-        auth: {signer: keyedSigner, signature: '0x'},
+        auth: {signer: keyedSigner, signature: '0x656e76656c6f7065'},
       }),
     )
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Free)
