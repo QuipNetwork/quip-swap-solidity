@@ -1,5 +1,5 @@
 {
   "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical CREATE3 address derived from (CreateX, deployer EOA, salt) — predicted by `make verify-omnibus`; 'chains' lists chain ids where it is VERIFIED-deployed. Empty/placeholder until a real deployment is confirmed; while empty, the SDK resolves no built-in address and requires an override.",
-  "omnibusAddress": "0x0000000000000000000000000000000000000000",
-  "chains": []
+  "omnibusAddress": "0xf139E2a8CBbEA7191fA3C494483DED24B6d26238",
+  "chains": [84532]
 }
