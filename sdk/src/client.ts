@@ -21,7 +21,7 @@
 import {BaseError, InsufficientFundsError} from 'viem'
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
-import {assertSignerBlob} from './commitAuth.js'
+import {assertSignerBlob, ZERO_WALLET_BINDING} from './commitAuth.js'
 import type {CommitAuth} from './commitAuth.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
 import {prepareTx} from './gas.js'
@@ -821,7 +821,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         wallet,
         sender,
         functionName: 'commit',
-        args: [lock, toAbiTerms(party), toAbiTerms(counterparty), {signer: auth.signer, signature: auth.signature}],
+        args: [
+          lock,
+          toAbiTerms(party),
+          toAbiTerms(counterparty),
+          {signer: auth.signer, signature: auth.signature, walletBinding: auth.walletBinding ?? ZERO_WALLET_BINDING},
+        ],
         value,
         opts,
         context: 'commit',
