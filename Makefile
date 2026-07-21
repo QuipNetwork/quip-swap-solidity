@@ -84,6 +84,13 @@ deploy-dry: ## Dry run Omnibus deployment (no broadcast). Usage: make deploy-dry
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL)
 
+.PHONY: activate-verifier
+activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
+	forge script script/ActivateVerifier.s.sol \
+		--sig 'run(address)' $(VERIFIER) \
+		--rpc-url $(RPC_URL) \
+		--broadcast
+
 # ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
 .PHONY: deploy-base-sepolia
 deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
