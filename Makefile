@@ -58,7 +58,8 @@ clean: ## Clean build artifacts
 
 # ==============================================================================
 # Deployment (via the canonical CreateX factory, pre-deployed on every chain —
-# no per-chain bootstrap. env: DEPLOYER_PK, OMNIBUS_OWNER; verify-omnibus also
+# no per-chain bootstrap. env: DEPLOYER_PK, OMNIBUS_OWNER, WALLET_FACTORY (the
+# quip WalletFactory proxy gating the wallet commit route); verify-omnibus also
 # needs DEPLOYER_ADDRESS = the EOA of DEPLOYER_PK, since the CreateX salt is
 # permissioned to it and the predicted address depends on it.)
 #

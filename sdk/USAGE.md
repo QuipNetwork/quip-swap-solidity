@@ -64,7 +64,7 @@ const client = createOmnibusClient({address: omnibusAddress, publicClient, walle
 
 `createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient` — `args` is `{address, publicClient, walletClient?}`. The `walletClient` is optional: reads work without it; writes (`commit`/`claim`/`reclaim`/`admin.*`) throw `MISSING_WALLET_CLIENT` / `MISSING_ACCOUNT` if it (or its account) is absent.
 
-Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isVerifierActive(verifier)`, `getCommitDigest(lock, party, counterparty, signerHash)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`, `setVerifierActivity`).
+Useful reads on the client (all `Promise`-returning): `getVersion()`, `getCommitmentFee()`, `getMaxFee()`, `getAccruedFees()`, `getOwner()`, `getPendingOwner()`, `getLockState(lock)`, `getTermsHash(lock)`, `getPosted(lock, termsDigest)`, `isVerifierActive(verifier)`, `getWalletFactory()`, `isQuipWallet(account)`, `getCommitDigest(lock, party, counterparty, signerHash)`. Owner-only writes live under `client.admin` (`setCommitmentFee`, `withdrawFees`, `transferOwnership`, `acceptOwnership`, `setVerifierActivity`).
 
 ## 3. Core building blocks
 
@@ -157,11 +157,14 @@ await anyClient.claim({secret, party: plan.proposerTerms, counterparty: plan.tak
 
 ### Commit authorization (`auth`) and the funding model
 
-`commit` is **permissionless** — the contract authenticates the PAYLOAD, not the caller. Every commit carries a `CommitAuth {signer, signature}`:
+`commit` is **permissionless** — the contract authenticates the PAYLOAD, not the caller. Every commit carries a `CommitAuth {signer, signature}`; the `signer` is always an ERC-7913 keyed identity blob (`buildKeyedSigner(verifierAddress, key)`; blobs of 20 bytes or fewer, including bare addresses, revert `MalformedSigner`). The `signature` discriminates two routes:
 
-- **ERC-7913 keyed**: `auth.signer = buildKeyedSigner(verifierAddress, key)`; the verifier must be active on the contract (`isVerifierActive`). The identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})`; the `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**. Blobs of 20 bytes or fewer (including bare addresses) revert `MalformedSigner`.
+- **Non-empty — KEYED route**: the declared verifier must be active on the contract (`isVerifierActive`). The identity signs `computeCommitDigest({lock, party, counterparty, signer, omnibusAddress})`; the `signature` is the verifier-defined envelope, produced by the keyholder's own tooling — **the SDK never signs and never decodes envelopes**.
+- **Empty (`'0x'`) — WALLET route**: the transaction **sender** must be a wallet deployed by the quip `WalletFactory` (the contract checks `vaultIdOf(msg.sender) != 0` on its baked-in factory and reverts `NotQuipWallet` otherwise). No signature is verified; the wallet's own PQ-authenticated execute flow is the authorization. The client preflights this membership read and throws `NOT_QUIP_WALLET` before a transaction exists; `isQuipWallet(account)` exposes the same check directly.
 
-The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a relayer cannot tamper with terms in flight. It does NOT gate which identity may post a side — a client that requires the counterparty's agreed identity checks the `signer` field of the `Commitment` event off-chain before revealing the secret / committing the second leg.
+The keyed signature is a **soft guard**: it proves the declared identity endorsed exactly this payload (lock + both terms + chain + contract + identity), so a relayer cannot tamper with terms in flight. It does NOT gate which identity may post a side — a client that requires the counterparty's agreed identity checks the `signer` field of the `Commitment` event off-chain before revealing the secret / committing the second leg.
+
+> **⚠️ WALLET-ROUTE ATTRIBUTION IS UNPROVEN — do not trust it with funds.** On the wallet route even the soft guard is absent: the contract emits whatever `signer` blob the wallet supplied **without verifying it endorsed anything**. A quip wallet can post any identity blob it likes. If your flow gates on "the counterparty's agreed identity posted its side" (e.g. before revealing the secret or committing the second leg), a `Commitment` whose commit came in with an empty signature does NOT prove that identity agreed — treating it as proof lets a wallet-route commit impersonate your counterparty's identity and bait your leg. Either require your counterparty to use the keyed route, or independently verify the SENDER (`Commitment.sender`) is the counterparty's known wallet address before acting.
 
 > **FUNDING MODEL — read this twice.** The transaction **SENDER funds the committed leg + fee**: assets are pulled from `msg.sender` and `msg.value` must equal `totalNative(party) + commitmentFee`. The identity in `auth.signer` only *authorizes*. "Relayed" therefore means "the sender pays the party's leg" — a relayer submitting someone else's signed commit is donating the escrow unless it is compensated out-of-band.
 
@@ -342,7 +345,7 @@ try {
 }
 ```
 
-Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `InvalidCommitSignature`, `VerifierNotActive`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
+Any contract revert reaching the SDK is decoded generically as `code: 'CONTRACT_REVERT'` with `contractErrorName` set to the Solidity error (e.g. `WindowViolated`, `TermsMismatch`, `IncorrectNativeAmountReceived`, `InvalidCommitSignature`, `VerifierNotActive`, `NotQuipWallet`). **Caveat:** `contractErrorName` is only populated when the RPC returns revert data — a provider that strips it yields `code: 'GAS_ESTIMATION_FAILED'` with no name. Branch on `code` first; treat `contractErrorName` as best-effort detail.
 
 ## 9. What the SDK does NOT do
 
