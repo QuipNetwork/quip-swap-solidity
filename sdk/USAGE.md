@@ -27,13 +27,13 @@ The genuine fund-loss paths, loudest first. Each entry is terse — follow the l
 ## 1. Install
 
 ```bash
-bun add @quip.network/quip-swap-sdk viem
-# or: npm install @quip.network/quip-swap-sdk viem
+bun add @quip.network/quip-swap-sdk@beta viem
+# or: npm install @quip.network/quip-swap-sdk@beta viem
 ```
 
 `viem` (`^2.0.0`) is a **peer dependency** — your app brings its own copy.
 
-> **Placeholder package name.** `@quip.network/quip-swap-sdk` is the package's declared name (`package.json`), but it is **not yet published to a registry** (version `0.1.0`, `UNLICENSED`). Until it is, consume it from within this repo (`sdk/`, built with `bun run build`) or via your own workspace/link setup. See "Not yet available" in [`README.md`](README.md).
+> **Prerelease package.** `@quip.network/quip-swap-sdk` is published to npm as a PRERELEASE only (`0.1.0-beta.x`, license AGPL-3.0-or-later) under the `beta` dist-tag — install with `npm install @quip.network/quip-swap-sdk@beta` (a bare install may resolve an older `latest`). There is no stable release yet. See "Not yet available" in [`README.md`](README.md).
 
 ## 2. Bring your own clients (and why there is no `.env`)
 
