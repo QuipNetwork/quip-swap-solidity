@@ -7,6 +7,7 @@ import {Terms} from '../../src/TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
+import {WalletFactoryMock} from '../mocks/WalletFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
@@ -54,7 +55,7 @@ contract Omnibus_LockPoisoning is Test {
     // commit is permissionless; each caller authenticates with its own keyed
     // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
-    omnibus = new OmnibusHarness(address(this));
+    omnibus = new OmnibusHarness(address(this), address(new WalletFactoryMock()));
     omnibus.setVerifierActivity(address(verifier), true);
     lock = omnibus.exposed_generateLock(SECRET);
     vm.deal(ALICE, 100 ether);

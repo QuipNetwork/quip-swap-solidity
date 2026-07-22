@@ -35,10 +35,11 @@ contract Omnibus_HappyPath is OmnibusTest {
     // scenarios assert exact contract-balance accounting; drop the base pre-funding
     vm.deal(address(omnibus), 0);
 
-    // per-chain instances activate the same verifier as the base omnibus
-    omnibusA = new OmnibusHarness(address(this));
+    // per-chain instances activate the same verifier and trust the same
+    // wallet-factory double as the base omnibus
+    omnibusA = new OmnibusHarness(address(this), address(walletFactory));
     omnibusA.setVerifierActivity(address(verifierA), true);
-    omnibusB = new OmnibusHarness(address(this));
+    omnibusB = new OmnibusHarness(address(this), address(walletFactory));
     omnibusB.setVerifierActivity(address(verifierA), true);
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);
