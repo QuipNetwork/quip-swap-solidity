@@ -26,7 +26,7 @@ library Constants {
   ///         testnet deploys; the bare release (v1.0.0) is reserved for
   ///         mainnet. Each (EOA, entropy) pair maps to a distinct,
   ///         permanently-consumed address.
-  bytes11 internal constant OMNIBUS_SALT_ENTROPY = bytes11(keccak256('QUIP:Omnibus:v1.0.0-alpha.1'));
+  bytes11 internal constant OMNIBUS_SALT_ENTROPY = bytes11(keccak256('QUIP:Omnibus:v1.0.0-alpha.2'));
 
   /// @notice The raw CreateX salt for the Omnibus singleton, permissioned to
   ///         `deployer`: 20-byte EOA ‖ 0x00 (no cross-chain redeploy

@@ -3,8 +3,8 @@
  *
  * Two concerns:
  * - SHIPPED STATE (canonical CreateX address, NO verified chains): the
- *   registry is empty — the address in `address.json` holds the
- *   pre-wallet-route Omnibus, de-verified until the wallet-route redeploy —
+ *   registry is empty — `address.json` carries the PREDICTED wallet-route
+ *   Omnibus address, unverified until the redeploy is confirmed on-chain —
  *   so `resolveDeployment` throws `UNKNOWN_DEPLOYMENT` for EVERY chain
  *   without an override; an override still resolves and still validates.
  *   This pins the "no false defaults for unverified chains" guarantee.
@@ -32,10 +32,10 @@ function codeOf(fn: () => unknown): string {
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
-// The canonical Omnibus address shipped in src/address.json. Its `chains`
-// array is EMPTY: the address holds the pre-wallet-route Omnibus, de-verified
-// until the wallet-route redeploy lands at a new salted address.
-const SHIPPED_OMNIBUS: Address = '0xf139E2a8CBbEA7191fA3C494483DED24B6d26238'
+// The canonical Omnibus address shipped in src/address.json: the PREDICTED
+// wallet-route Omnibus (salt entropy v1.0.0-alpha.2). Its `chains` array is
+// EMPTY until the deployment is confirmed on-chain per network.
+const SHIPPED_OMNIBUS: Address = '0xf780Fc9C066D824bFF85758E381A3919B1817f09'
 const BASE_SEPOLIA = 84_532n
 
 describe('resolveDeployment — shipped state (no verified chains)', () => {

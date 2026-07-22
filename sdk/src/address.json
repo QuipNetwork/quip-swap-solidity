@@ -1,5 +1,5 @@
 {
-  "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical CREATE3 address derived from (CreateX, deployer EOA, salt) — predicted by `make verify-omnibus`; 'chains' lists chain ids where it is VERIFIED-deployed. While 'chains' is empty, the SDK resolves no built-in address and requires an override. 'chains' was emptied when the wallet commit route replaced the attested route (two-argument constructor, changed CommitAuth ABI): the address below holds the PRE-wallet-route Omnibus, which this SDK can no longer talk to. Re-verify and re-enable chains only after the wallet-route Omnibus is redeployed (with a bumped salt entropy, hence a NEW address).",
-  "omnibusAddress": "0xf139E2a8CBbEA7191fA3C494483DED24B6d26238",
+  "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical CREATE3 address derived from (CreateX, deployer EOA, salt) — predicted by `make verify-omnibus`; 'chains' lists chain ids where it is VERIFIED-deployed. While 'chains' is empty, the SDK resolves no built-in address and requires an override. The address below is the PREDICTED wallet-route Omnibus (salt entropy QUIP:Omnibus:v1.0.0-alpha.2, two-argument constructor) — not yet deployed anywhere. Add a chain id to 'chains' only after the deployment is confirmed on-chain for it.",
+  "omnibusAddress": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
   "chains": []
 }
