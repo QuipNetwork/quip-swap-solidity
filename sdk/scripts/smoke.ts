@@ -64,10 +64,12 @@ const CHAIN_B_ID = 31_338
 
 /**
  * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
- * (the address doubles as the key; the mock ignores signatures, so '0x').
+ * (the address doubles as the key; the mock ignores the signature BYTES, but
+ * the signature must be NON-EMPTY — an empty one selects the wallet route,
+ * which requires the sender to be a factory-deployed quip wallet).
  */
 function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
+  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x656e76656c6f7065'}
 }
 
 // distinct, checksummed recipients per flow/role so balance deltas are
