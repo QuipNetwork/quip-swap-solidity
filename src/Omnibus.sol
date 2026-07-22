@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from './interfaces/IOmnibus.sol';
+import {IWalletFactory} from './interfaces/IWalletFactory.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
@@ -10,9 +11,6 @@ import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IE
 import {
   IERC7913SignatureVerifier
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
-import {
-  IERC7913TransientAttestation
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913TransientAttestation.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -33,15 +31,11 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   bytes32 public constant COMMIT_DIGEST_TAG = keccak256('QUIP:Omnibus:commit');
 
   /// @inheritdoc IOmnibus
-  /// @dev no extra domain fields on purpose: the downstreamDigest half is
-  /// commitDigest, which already binds DOMAIN_SEPARATOR (tag + chainid +
-  /// address(this)), the lock, both terms, and the declared identity
-  bytes32 public constant ENVELOPE_TYPEHASH =
-    keccak256('ShrincsEnvelope(bytes32 walletBinding,bytes32 downstreamDigest)');
-
-  /// @inheritdoc IOmnibus
   /// @dev baked once at construction from the deploy-time chainid + address
   bytes32 public immutable DOMAIN_SEPARATOR;
+
+  /// @inheritdoc IOmnibus
+  IWalletFactory public immutable WALLET_FACTORY;
 
   /// @inheritdoc IOmnibus
   uint256 public commitmentFee;
@@ -61,10 +55,13 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// @inheritdoc IOmnibus
   mapping(address verifier => bool active) public verifierActive;
 
-  /// @notice initializes the contract with an owner; verifiers are activated
-  /// post-deploy via setVerifierActivity
+  /// @notice initializes the contract with an owner and the quip WalletFactory;
+  /// verifiers are activated post-deploy via setVerifierActivity
   /// @param initialOwner the address that will own the contract
-  constructor(address initialOwner) Ownable(initialOwner) {
+  /// @param walletFactory the quip WalletFactory proxy the wallet route trusts
+  constructor(address initialOwner, address walletFactory) Ownable(initialOwner) {
+    if (walletFactory == address(0)) revert ZeroFactory();
+    WALLET_FACTORY = IWalletFactory(walletFactory);
     DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
   }
 
@@ -332,44 +329,38 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     return keccak256(abi.encode(DOMAIN_SEPARATOR, lock, partyTerms, counterpartyTerms, signerHash));
   }
 
-  /// @notice enforces the declared ERC-7913 keyed identity endorsed the digest
+  /// @notice enforces the commit is authorized by the declared identity or by
+  /// quip-wallet membership
   /// @dev view-only; resolves to STATICCALLs — no reentrancy surface. There is no
-  /// membership check: identities attribute, they don't gate; the declared blob is
-  /// bound into the digest (signerHash ingredient) and into verification itself.
-  /// The ONLY accepted identity shape is ERC-7913 keyed: verifier(20 bytes) ‖ key —
-  /// the verifier must be owner-activated. Anything 20 bytes or shorter (including
-  /// a bare address) is MalformedSigner. Two routes past that shared gate:
-  /// - non-empty signature (KEYED): verify(key, digest, sig) must return its
-  ///   selector
-  /// - empty signature (ATTESTED): the verifier must hold a same-transaction
-  ///   attestation (IERC7913TransientAttestation shared spec) that the key signed
-  ///   keccak256(abi.encode(ENVELOPE_TYPEHASH, auth.walletBinding, digest)) —
-  ///   ONE identity signature covers the wallet's own execution AND this commit.
-  ///   wasVerified binds account == msg.sender, so only the wallet that attested
-  ///   can spend the attestation; intra-transaction reuse is dead on arrival at
-  ///   the lock state machine (TermsAlreadyPosted / InvalidLockAdvancement).
-  ///   A verifier without the attestation surface reverts here on its missing
-  ///   selector — that is the rejection, not a fallback trigger
-  /// @param auth the committing side's identity blob, signature (empty selects
-  /// the attested route), and walletBinding witness
-  /// @param digest the commit digest the identity must have endorsed
+  /// identity membership check: identities attribute, they don't gate; the declared
+  /// blob is bound into the digest (signerHash ingredient). The ONLY accepted
+  /// identity shape is ERC-7913 keyed: verifier(20 bytes) ‖ key. Anything 20 bytes
+  /// or shorter (including a bare address) is MalformedSigner. Two routes past
+  /// that shared shape gate:
+  /// - non-empty signature (KEYED): the declared verifier must be
+  ///   owner-activated and verify(key, digest, sig) must return its selector
+  /// - empty signature (WALLET): msg.sender must be a wallet deployed by the
+  ///   quip WalletFactory (vaultIdOf is write-once, non-zero iff
+  ///   factory-deployed). The digest is not re-verified here: a vetted wallet
+  ///   only reaches commit from its PQ-authenticated execute flow. The signer
+  ///   blob is shape-checked attribution only on this route — its verifier
+  ///   prefix is neither activity-checked nor consulted
+  /// @param auth the committing side's identity blob and signature (empty
+  /// selects the wallet route)
+  /// @param digest the commit digest the identity must have endorsed (keyed
+  /// route only)
   function _enforceCommitAuthorized(CommitAuth calldata auth, bytes32 digest) internal view {
     bytes calldata signer = auth.signer;
     if (signer.length <= 20) revert MalformedSigner();
-    // ERC-7913 keyed: verifier(20) ‖ key
-    address verifier = address(bytes20(signer[:20]));
-    if (!verifierActive[verifier]) revert VerifierNotActive();
 
     if (auth.signature.length == 0) {
-      // reconstruct the composite the wallet actually signed: its own half
-      // (walletBinding, opaque) ‖ commit half (the commit digest)
-      bytes32 envelopeHash = keccak256(abi.encode(ENVELOPE_TYPEHASH, auth.walletBinding, digest));
-      if (!IERC7913TransientAttestation(verifier).wasVerified(msg.sender, keccak256(signer[20:]), envelopeHash)) {
-        revert AttestationNotFound();
-      }
+      if (WALLET_FACTORY.vaultIdOf(msg.sender) == bytes32(0)) revert NotQuipWallet();
       return;
     }
 
+    // ERC-7913 keyed: verifier(20) ‖ key
+    address verifier = address(bytes20(signer[:20]));
+    if (!verifierActive[verifier]) revert VerifierNotActive();
     if (
       IERC7913SignatureVerifier(verifier).verify(signer[20:], digest, auth.signature)
         != IERC7913SignatureVerifier.verify.selector

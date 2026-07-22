@@ -26,22 +26,27 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *       --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --verify
  *
  * Environment:
- *   DEPLOYER_PK   - Operations wallet private key (broadcasting EOA; the salt
- *                   is permissioned to this EOA, so it pins the address)
- *   OMNIBUS_OWNER - Initial owner of the Omnibus (Ownable2Step)
+ *   DEPLOYER_PK    - Operations wallet private key (broadcasting EOA; the salt
+ *                    is permissioned to this EOA, so it pins the address)
+ *   OMNIBUS_OWNER  - Initial owner of the Omnibus (Ownable2Step)
+ *   WALLET_FACTORY - The quip WalletFactory proxy on this chain (baked as an
+ *                    immutable; gates the wallet commit route)
  */
 contract DeployOmnibus is Script {
   function run() external {
     uint256 privateKey = vm.envUint('DEPLOYER_PK');
     address omnibusOwner = vm.envAddress('OMNIBUS_OWNER');
+    address walletFactory = vm.envAddress('WALLET_FACTORY');
     address deployerEoa = vm.addr(privateKey);
 
     require(Constants.CREATEX.code.length > 0, 'CreateX not deployed on this chain');
     require(omnibusOwner != address(0), 'OMNIBUS_OWNER must be non-zero');
+    require(walletFactory != address(0), 'WALLET_FACTORY must be non-zero');
 
     address expectedAddr = Constants.predictOmnibus(deployerEoa);
     console.log('Deployer EOA:      ', deployerEoa);
     console.log('Omnibus owner:     ', omnibusOwner);
+    console.log('Wallet factory:    ', walletFactory);
     console.log('Expected Omnibus:  ', expectedAddr);
 
     if (expectedAddr.code.length > 0) {
@@ -49,7 +54,7 @@ contract DeployOmnibus is Script {
       return;
     }
 
-    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner));
+    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner, walletFactory));
 
     vm.startBroadcast(privateKey);
     address deployed = ICreateX(Constants.CREATEX).deployCreate3(Constants.omnibusSalt(deployerEoa), bytecode);
