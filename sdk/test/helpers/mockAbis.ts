@@ -48,6 +48,27 @@ export const erc20MockAbi = [
   },
 ] as const
 
+/** WalletFactoryMock surface: setWallet (register), vaultIdOf (membership read). */
+export const walletFactoryMockAbi = [
+  {
+    type: 'function',
+    name: 'setWallet',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {name: 'wallet', type: 'address'},
+      {name: 'vaultId', type: 'bytes32'},
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'vaultIdOf',
+    stateMutability: 'view',
+    inputs: [{name: 'wallet', type: 'address'}],
+    outputs: [{name: 'vaultId', type: 'bytes32'}],
+  },
+] as const
+
 /** ERC721Mock surface: mint, ownerOf, approve, setApprovalForAll. */
 export const erc721MockAbi = [
   {

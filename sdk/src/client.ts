@@ -18,7 +18,7 @@
  *   (`admin.*`) are exposed on separate namespaces so they cannot be
  *   confused.
  */
-import {BaseError, InsufficientFundsError} from 'viem'
+import {BaseError, InsufficientFundsError, size} from 'viem'
 import type {Address, Hash, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
 import {assertSignerBlob} from './commitAuth.js'
@@ -222,6 +222,26 @@ export interface OmnibusClient {
    * @see Omnibus.verifierActive
    */
   isVerifierActive(verifier: Address): Promise<boolean>
+  /**
+   * Reads the quip WalletFactory the wallet commit route trusts (baked
+   * immutably at construction).
+   *
+   * @returns The wallet factory address.
+   * @see Omnibus.WALLET_FACTORY
+   */
+  getWalletFactory(): Promise<Address>
+  /**
+   * Reads whether `account` is a wallet deployed by the contract's
+   * WalletFactory — the wallet commit route's membership check. An
+   * empty-signature commit succeeds only when the SENDER passes this check
+   * (`vaultIdOf(account) != 0`; the contract reverts `NotQuipWallet`
+   * otherwise).
+   *
+   * @param account - The address to test for factory membership.
+   * @returns `true` iff `account` was deployed by the wallet factory.
+   * @see IWalletFactory.vaultIdOf
+   */
+  isQuipWallet(account: Address): Promise<boolean>
   /**
    * Reads the contract's commit digest for the given inputs — the on-chain
    * counterpart of {@link computeCommitDigest} (which computes the same
@@ -430,6 +450,17 @@ function lockStateName(state: LockState): string {
  * const fee = await client.getCommitmentFee()
  * ```
  */
+/** Minimal IWalletFactory surface for the wallet-route membership read. */
+const walletFactoryAbi = [
+  {
+    type: 'function',
+    name: 'vaultIdOf',
+    stateMutability: 'view',
+    inputs: [{name: 'wallet', type: 'address'}],
+    outputs: [{name: 'vaultId', type: 'bytes32'}],
+  },
+] as const
+
 export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient {
   const {address, publicClient, walletClient} = args
   const contract = {address, abi: omnibusAbi} as const
@@ -444,6 +475,26 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       } as Parameters<PublicClient['readContract']>[0])) as T
     } catch (error) {
       throw wrapContractError(error, `Reading ${functionName}`)
+    }
+  }
+
+  /**
+   * The wallet commit route's membership check: `vaultIdOf(account) != 0` on
+   * the contract's baked WalletFactory (write-once registry, non-zero iff
+   * factory-deployed).
+   */
+  async function isQuipWallet(account: Address): Promise<boolean> {
+    const factory = await read<Address>('WALLET_FACTORY')
+    try {
+      const vaultId = await publicClient.readContract({
+        address: factory,
+        abi: walletFactoryAbi,
+        functionName: 'vaultIdOf',
+        args: [account],
+      })
+      return BigInt(vaultId) !== 0n
+    } catch (error) {
+      throw wrapContractError(error, 'Reading vaultIdOf on the wallet factory')
     }
   }
 
@@ -735,6 +786,8 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),
     isVerifierActive: (verifier: Address) => read('verifierActive', [verifier]),
+    getWalletFactory: () => read('WALLET_FACTORY'),
+    isQuipWallet,
     getCommitDigest: (lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32) => {
       assertHex32(lock, 'lock')
       assertHex32(signerHash, 'signerHash')
@@ -778,6 +831,20 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       // surfaces a would-be InvalidCommitSignature as a decoded revert.
       // NOTE the funding model: `sender` (not auth.signer) funds the leg + fee.
       assertSignerBlob(auth.signer)
+
+      // 4b. wallet-route preflight — an EMPTY signature selects the wallet
+      // route, where the contract requires the SENDER to be a factory-deployed
+      // quip wallet. Membership is a plain read, so catch it before estimation
+      if (size(auth.signature) === 0 && !(await isQuipWallet(sender))) {
+        throw new QuipSwapError({
+          code: 'NOT_QUIP_WALLET',
+          message:
+            `An empty auth.signature selects the wallet commit route, but the sender ${sender} is not a wallet ` +
+            'deployed by the WalletFactory (contract: NotQuipWallet). Provide a signature over the commit digest ' +
+            'for the keyed route, or send from a quip wallet',
+          details: {sender},
+        })
+      }
 
       // 5. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()

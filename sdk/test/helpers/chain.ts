@@ -3,10 +3,10 @@
  * control, and the standard contract fixture used by integration tests.
  *
  * Deployment order in {@link deployFixture}:
- * 1. Omnibus with the one-argument constructor (owner) — commit is
- *    PERMISSIONLESS, so no registry mock is needed; an AcceptAll ERC-7913
- *    VerifierMock is deployed and activated post-deploy via
- *    setVerifierActivity (owner action)
+ * 1. WalletFactoryMock (a settable registry backing the wallet commit
+ *    route), then Omnibus with the two-argument constructor
+ *    (owner, walletFactory); an AcceptAll ERC-7913 VerifierMock is deployed
+ *    and activated post-deploy via setVerifierActivity (owner action)
  * 2. mock tokens (ERC20 / ERC721 / ERC1155 / fee-on-transfer ERC20)
  * 3. harnesses (TermsLibHarness, OmnibusHarness) for differential tests
  *
@@ -159,6 +159,12 @@ export interface Fixture {
   readonly omnibus: Address
   /** AcceptAll ERC-7913 VerifierMock, activated on omnibus AND omnibusHarness. */
   readonly verifier: Address
+  /**
+   * WalletFactoryMock backing the wallet commit route on omnibus AND
+   * omnibusHarness: a settable registry — `setWallet(account, vaultId)`
+   * makes `account` pass the `vaultIdOf(msg.sender) != 0` membership check.
+   */
+  readonly walletFactory: Address
   readonly erc20: Address
   readonly erc721: Address
   readonly erc1155: Address
@@ -168,17 +174,21 @@ export interface Fixture {
 }
 
 /**
- * Deploys the standard fixture onto a chain. Commit is permissionless, so
- * no wallet registry exists — any funded account may commit.
+ * Deploys the standard fixture onto a chain. Commit is permissionless on the
+ * keyed route — any funded account may commit; the wallet route (empty
+ * signature) additionally requires the sender to be registered in the
+ * fixture's WalletFactoryMock.
  *
  * @param ctx - The chain context from {@link connectChain}.
  * @returns The deployed addresses.
  */
 export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
-  // 1. the one-argument constructor: (initialOwner); verifiers are activated
-  // post-deploy via setVerifierActivity (owner action)
+  // 1. the wallet-factory registry double, then the two-argument constructor:
+  // (initialOwner, walletFactory); verifiers are activated post-deploy via
+  // setVerifierActivity (owner action)
+  const walletFactory = await ctx.deploy(loadArtifact('WalletFactoryMock.sol', 'WalletFactoryMock'))
   const omnibusArtifact = loadArtifact('Omnibus.sol', 'Omnibus')
-  const omnibus = await ctx.deploy(omnibusArtifact, [ctx.deployer.address])
+  const omnibus = await ctx.deploy(omnibusArtifact, [ctx.deployer.address, walletFactory])
 
   // an AcceptAll ERC-7913 verifier mock backs the keyed commit route
   const verifier = await ctx.deploy(loadArtifact('VerifierMock.sol', 'VerifierMock'))
@@ -212,8 +222,9 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
   const termsLibHarness = await ctx.deploy(loadArtifact('TermsLibHarness.sol', 'TermsLibHarness'))
   const omnibusHarness = await ctx.deploy(loadArtifact('OmnibusHarness.sol', 'OmnibusHarness'), [
     ctx.deployer.address,
+    walletFactory,
   ])
   await activateVerifier(omnibusHarness)
 
-  return {omnibus, verifier, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
+  return {omnibus, verifier, walletFactory, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
 }
