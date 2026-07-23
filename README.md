@@ -1,6 +1,6 @@
 # Quip Swap
 
-Non-custodial, hashlocked same-chain and cross-chain swaps built around the **Omnibus** singleton contract, with ERC-7913 keyed commit authorization.
+Non-custodial, hashlocked same-chain and cross-chain swaps built around the **Omnibus** singleton contract, with ERC-7913 keyed commit authorization plus a factory-gated quip-wallet route.
 
 ## Repository layout
 
@@ -9,7 +9,8 @@ src/                  Production contracts (Omnibus, TermsLib, interfaces)
 test/                 Foundry test suite (behaviors, scenarios, attack tests,
                       harnesses, mocks, real-verifier integration)
 script/               Deployment scripts (Omnibus via CreateX CREATE3;
-                      constructor (address initialOwner) from OMNIBUS_OWNER)
+                      constructor (initialOwner, walletFactory) from
+                      OMNIBUS_OWNER + WALLET_FACTORY)
 sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 ```
 
@@ -17,8 +18,10 @@ sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 
 - `Omnibus` is a singleton (Ownable2Step, ERC-721/1155 receiver) holding hashlocked escrows.
 - A swap is two `Terms` (one per side), each with three lifecycle timestamps that **strictly interleave** across sides. The side with the earlier `commitmentDeadline` is the proposer and commits first.
-- All three entry points are **permissionless**. `commit` authenticates its PAYLOAD instead of its caller: every commit carries a `CommitAuth {signer, signature}` where `signer` is an ERC-7913 keyed identity — `verifier(20 bytes) ‖ key` — checked against an owner-managed active-verifier list; any blob of 20 bytes or fewer (including bare addresses) is rejected as malformed. The signature covers a raw tagged digest binding chainid, the Omnibus address, the lock, both sides' terms, and the identity itself.
-- The signature is a **soft guard**: it proves the declared identity endorsed exactly this payload; it does not gate WHICH identity may post a side. Clients that care who posted the counterpart side verify the `signer` blob from the `Commitment` event off-chain.
+- All three entry points are **permissionless**. `commit` authenticates its PAYLOAD instead of its caller: every commit carries a `CommitAuth {signer, signature}` where `signer` is an ERC-7913 keyed identity — `verifier(20 bytes) ‖ key`; any blob of 20 bytes or fewer (including bare addresses) is rejected as malformed. Two routes, discriminated by `signature`:
+  - **non-empty — KEYED route:** the declared verifier (checked against an owner-managed active-verifier list) verifies the signature over a raw tagged digest binding chainid, the Omnibus address, the lock, both sides' terms, and the identity itself.
+  - **empty — WALLET route:** `msg.sender` must be a wallet deployed by the quip `WalletFactory` (`vaultIdOf(msg.sender) != 0` on the factory baked in at construction; `NotQuipWallet` otherwise). No signature is verified — a vetted wallet only reaches `commit` from its PQ-authenticated execute flow, so factory membership stands in for the endorsement.
+- The keyed signature is a **soft guard**: it proves the declared identity endorsed exactly this payload; it does not gate WHICH identity may post a side. Clients that care who posted the counterpart side verify the `signer` blob from the `Commitment` event off-chain — **but on the wallet route the emitted `signer` is UNPROVEN attribution** (nothing verified it), so it must never be treated as an endorsement there.
 - **Funding model:** in every route the transaction SENDER funds the committed leg + fee; the identity only authorizes. "Relayed" means the sender pays.
 - `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are unchanged and identity-free — claim is secret-gated, reclaim recipients are terms-pinned.
 - All timing windows are half-open `[lower, upper)`.
@@ -62,4 +65,4 @@ make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
 
 ## Deployment
 
-Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.1`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains when the same EOA deploys, and unclaimable by anyone else. Commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `make activate-verifier` (calls `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`). Env: `DEPLOYER_PK`, `OMNIBUS_OWNER` (non-zero); `make verify-omnibus` additionally needs `DEPLOYER_ADDRESS` (the EOA of `DEPLOYER_PK`). Salt entropy follows semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.
+Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.1`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains when the same EOA deploys, and unclaimable by anyone else. Keyed commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `make activate-verifier` (calls `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`). The wallet route's `WalletFactory` proxy is baked as an immutable at construction. Env: `DEPLOYER_PK`, `OMNIBUS_OWNER`, `WALLET_FACTORY` (both non-zero); `make verify-omnibus` additionally needs `DEPLOYER_ADDRESS` (the EOA of `DEPLOYER_PK`). Salt entropy follows semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.

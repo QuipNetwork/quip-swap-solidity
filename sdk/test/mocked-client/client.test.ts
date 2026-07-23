@@ -20,7 +20,7 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {ZERO_WALLET_BINDING, buildKeyedSigner} from '../../src/index.js'
+import {buildKeyedSigner} from '../../src/index.js'
 import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
@@ -51,8 +51,12 @@ const BUFFERED_GAS = 120_000n // estimate * default 1.2 multiplier
 
 const alice = aliceTerms(CHAIN_A) // proposer (local on chain A)
 const bob = bobTerms(CHAIN_A) // taker, same chain
-/** Keyed ERC-7913 auth for the mocked wallet's sending account. */
-const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'}
+/** Keyed ERC-7913 auth for the mocked wallet's sending account (non-empty signature = keyed route). */
+const AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x656e76656c6f7065'}
+/** Wallet-route auth: the EMPTY signature makes the sender's factory membership the authorization. */
+const WALLET_AUTH: CommitAuth = {signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'}
+/** The mocked Omnibus's baked WalletFactory address. */
+const FACTORY: Address = '0x6660000000000000000000000000000000000666'
 
 /** A recorded call log shared by the mock public and wallet clients. */
 interface CallLog {
@@ -76,6 +80,7 @@ function setup(
     timestamp?: bigint
     fee?: bigint
     verifierIsActive?: boolean
+    senderIsQuipWallet?: boolean
     termsHash?: `0x${string}`
     posted?: boolean
     lockState?: LockState
@@ -90,6 +95,7 @@ function setup(
     timestamp = AT_PROPOSER_COMMIT,
     fee = 25n,
     verifierIsActive = true,
+    senderIsQuipWallet = false,
     posted = true,
     lockState = LockState.Committed,
     balance = 10n ** 24n,
@@ -114,6 +120,11 @@ function setup(
       switch (args.functionName) {
         case 'verifierActive':
           return verifierIsActive
+        case 'WALLET_FACTORY':
+          return FACTORY
+        case 'vaultIdOf':
+          // the wallet-route membership read, dispatched to FACTORY
+          return senderIsQuipWallet ? `0x${'11'.repeat(32)}` : `0x${'00'.repeat(32)}`
         case 'commitDigest':
           return COMMIT_DIGEST
         case 'commitmentFee':
@@ -201,12 +212,10 @@ describe('commit orchestration', () => {
     expect(est.args[0]).toBe(FOUNDRY_LOCK)
     expectAbiTerms(est.args[1], alice)
     expectAbiTerms(est.args[2], bob)
-    // the CommitAuth struct rides along as the fourth argument; the client
-    // fills the keyed route's ignored walletBinding with zero
+    // the CommitAuth struct rides along as the fourth argument, exactly as given
     expect(est.args[3]).toEqual({
       signer: buildKeyedSigner(VERIFIER, SENDER),
-      signature: '0x',
-      walletBinding: ZERO_WALLET_BINDING,
+      signature: '0x656e76656c6f7065',
     })
     // exact value: totalNative(alice) = 1 ether + fee 25 wei — never more, never less
     expect(est.value).toBe(10n ** 18n + 25n)
@@ -222,6 +231,37 @@ describe('commit orchestration', () => {
     expect(seq.indexOf('read:lockState')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('read:commitmentFee')).toBeLessThan(seq.indexOf('estimate:commit'))
     expect(seq.indexOf('estimate:commit')).toBeLessThan(seq.indexOf('write'))
+  })
+
+  it('keyed commits never consult the wallet factory', async () => {
+    await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
+    expect(mocks.log.sequence).not.toContain('read:WALLET_FACTORY')
+    expect(mocks.log.sequence).not.toContain('read:vaultIdOf')
+  })
+
+  it('wallet route: an empty signature from a non-wallet sender rejects NOT_QUIP_WALLET before estimation', async () => {
+    expect(
+      await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: WALLET_AUTH})),
+    ).toBe('NOT_QUIP_WALLET')
+    // membership WAS read; nothing was estimated or written
+    expect(mocks.log.sequence).toContain('read:WALLET_FACTORY')
+    expect(mocks.log.sequence).toContain('read:vaultIdOf')
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('wallet route: a registered wallet sender passes preflight and the empty signature rides through', async () => {
+    const registered = setup({lockState: LockState.Unused, senderIsQuipWallet: true})
+    const hash = await registered.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: WALLET_AUTH})
+    expect(hash).toBe(TX_HASH)
+    const est = registered.log.estimations[0] as {args: [unknown, unknown, unknown, unknown]}
+    expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
+  })
+
+  it('getWalletFactory returns the baked factory and isQuipWallet reflects vaultIdOf', async () => {
+    expect(await mocks.client.getWalletFactory()).toBe(FACTORY)
+    expect(await mocks.client.isQuipWallet(SENDER)).toBe(false)
+    expect(await setup({senderIsQuipWallet: true}).client.isQuipWallet(SENDER)).toBe(true)
   })
 
   it('rejects a malformed auth.signer with MALFORMED_SIGNER BEFORE any write', async () => {

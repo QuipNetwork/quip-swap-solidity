@@ -6,8 +6,11 @@
  * ONE cross-chain swap to completion THROUGH THE WORKFLOW LAYER
  * (`planSameChainSwap`, `getSameChainSwapStatus`, `validateCrossChainSchedule`,
  * `verifyRemoteCommitment`) against two real Anvil nodes, asserting the
- * happy path composes end-to-end. It is deliberately shallow on edge cases
- * (the integration suites own those) and broad on "does the real flow run".
+ * happy path composes end-to-end. Both commit-auth routes are smoked: the
+ * same-chain PROPOSER commit takes the WALLET route (empty signature,
+ * factory-registered sender), every other commit the KEYED route. It is
+ * deliberately shallow on edge cases (the integration suites own those) and
+ * broad on "does the real flow run".
  *
  * Lifecycle (process orchestration):
  *   1. `forge build` (artifacts may be stale).
@@ -42,16 +45,16 @@ import {
   nativeAsset,
   planApprovals,
   planSameChainSwap,
-  buildKeyedSigner,
   QuipSwapError,
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
 } from '../src/index.js'
-import type {CommitAuth, OmnibusClient} from '../src/index.js'
+import type {OmnibusClient} from '../src/index.js'
 import type {Terms} from '../src/index.js'
 import {startAnvil} from '../test/helpers/anvil.js'
 import type {AnvilInstance} from '../test/helpers/anvil.js'
+import {keyedAuth, registerWallet, walletAuth} from '../test/helpers/auth.js'
 import {connectChain, deployFixture} from '../test/helpers/chain.js'
 import type {ChainContext, Fixture} from '../test/helpers/chain.js'
 import {erc20MockAbi} from '../test/helpers/mockAbis.js'
@@ -61,14 +64,6 @@ const repoRoot = join(sdkRoot, '..')
 
 const CHAIN_A_ID = 31_337
 const CHAIN_B_ID = 31_338
-
-/**
- * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
- * (the address doubles as the key; the mock ignores signatures, so '0x').
- */
-function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
-}
 
 // distinct, checksummed recipients per flow/role so balance deltas are
 // unambiguous and decoded-event addresses compare byte-equal. A hex suffix
@@ -287,11 +282,33 @@ async function runSameChain(A: ChainContext, fixtureA: Fixture): Promise<void> {
     return `status ${status}`
   })
 
-  // step: proposer (Alice, native) commits → Free
-  await step(scope, 'proposer commits', async () => {
+  // step: the wallet route's preflight rejects an unregistered sender, then
+  // Alice registers as a quip wallet in the factory mock
+  await step(scope, 'wallet-route preflight rejects unregistered sender', async () => {
+    try {
+      await aliceClient.commit({
+        lock,
+        party: aliceTerms,
+        counterparty: bobTerms,
+        auth: walletAuth(fixtureA, A.alice.address),
+      })
+      assert(false, 'expected the wallet-route preflight to reject an unregistered sender')
+    } catch (error) {
+      assert(
+        error instanceof QuipSwapError && error.code === 'NOT_QUIP_WALLET',
+        `expected NOT_QUIP_WALLET, got ${String(error)}`,
+      )
+    }
+    await registerWallet(A, fixtureA, A.alice.address)
+    assert(await aliceClient.isQuipWallet(A.alice.address), 'Alice must be a quip wallet after registration')
+    return 'unregistered sender rejected, Alice registered'
+  })
+
+  // step: proposer (Alice, native) commits via the WALLET route → Free
+  await step(scope, 'proposer commits (wallet route)', async () => {
     const submitted = await ensureApprovals(A, fixtureA.omnibus, A.alice, aliceTerms)
     assert(submitted === 0, 'a native-only proposer leg should need no approvals')
-    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: keyedAuth(fixtureA, A.alice.address)})
+    const hash = await aliceClient.commit({lock, party: aliceTerms, counterparty: bobTerms, auth: walletAuth(fixtureA, A.alice.address)})
     await aliceClient.waitForReceipt(hash)
     const lockState = await aliceClient.getLockState(lock)
     assert(lockState === LockState.Free, `expected Free, got ${LockState[lockState]}`)

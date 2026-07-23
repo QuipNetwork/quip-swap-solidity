@@ -15,6 +15,11 @@ export const omnibusAbi = [
         "name": "initialOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "walletFactory",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -51,19 +56,6 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
-    "name": "ENVELOPE_TYPEHASH",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "MAX_FEE",
     "inputs": [],
     "outputs": [
@@ -84,6 +76,19 @@ export const omnibusAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "WALLET_FACTORY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IWalletFactory"
       }
     ],
     "stateMutability": "view"
@@ -400,11 +405,6 @@ export const omnibusAbi = [
             "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
-          },
-          {
-            "name": "walletBinding",
-            "type": "bytes32",
-            "internalType": "bytes32"
           }
         ]
       }
@@ -1257,11 +1257,6 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
-    "name": "AttestationNotFound",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },
@@ -1328,6 +1323,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "MalformedSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotQuipWallet",
     "inputs": []
   },
   {
@@ -1400,6 +1400,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroDeadline",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroFactory",
     "inputs": []
   },
   {

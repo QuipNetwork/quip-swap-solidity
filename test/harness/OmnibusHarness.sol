@@ -8,9 +8,10 @@ import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
 contract OmnibusHarness is Omnibus {
-  /// @notice initializes the harness with an owner
+  /// @notice initializes the harness with an owner and wallet factory
   /// @param initialOwner the address that will own the contract
-  constructor(address initialOwner) Omnibus(initialOwner) {}
+  /// @param walletFactory the wallet factory the wallet route trusts
+  constructor(address initialOwner, address walletFactory) Omnibus(initialOwner, walletFactory) {}
 
   /// @notice exposes _enforceCommitAuthorized (the identity router)
   function exposed_enforceCommitAuthorized(CommitAuth calldata auth, bytes32 digest) external view {

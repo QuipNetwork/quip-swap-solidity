@@ -38,6 +38,9 @@ export type QuipSwapErrorCode =
   // client preflight
   | 'CHAIN_ID_MISMATCH'
   | 'MALFORMED_SIGNER'
+  // wallet-route preflight: empty auth.signature with a sender that is not a
+  // factory-deployed quip wallet (mirrors the contract's NotQuipWallet)
+  | 'NOT_QUIP_WALLET'
   | 'MISSING_WALLET_CLIENT'
   | 'MISSING_ACCOUNT'
   | 'TERMS_NOT_ON_CHAIN'

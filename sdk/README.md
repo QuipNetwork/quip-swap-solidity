@@ -119,6 +119,6 @@ sdk/
 
 Stated honestly so nothing here is mistaken for shipped:
 
-- **Published package.** `@quip.network/quip-swap-sdk` (v`0.1.0`, `UNLICENSED`) is **not yet published to a registry** — install-from-npm does not work yet. Consume it from this repo (built `dist/`) or your own workspace link until it is.
+- **Stable release.** `@quip.network/quip-swap-sdk` is published to npm as a PRERELEASE only (`0.1.0-beta.x`, license AGPL-3.0-or-later) under the `beta` dist-tag: `npm install @quip.network/quip-swap-sdk@beta`. There is no stable (`1.x`) release yet.
 - **Deployment registry addresses.** Omnibus deploys via Create3 (one canonical address across all chains), so the SDK ships that address gated to the chains where it is verified, exposed through `resolveDeployment` / `createOmnibusClient`. 
 - **Packaging smoke test.** There is no automated `npm pack` / tarball-resolves-exports test; `bun run build` produces `dist/` but no suite imports the built artifact.

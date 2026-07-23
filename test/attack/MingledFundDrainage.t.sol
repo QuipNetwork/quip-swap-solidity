@@ -8,6 +8,7 @@ import {CommitAuth, IOmnibus, LockState} from '../../src/interfaces/IOmnibus.sol
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
+import {WalletFactoryMock} from '../mocks/WalletFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
@@ -55,7 +56,7 @@ contract Omnibus_MingledFundDrainage is Test {
     // commit is permissionless; each caller authenticates with its own keyed
     // ERC-7913 identity through an accept-all mock verifier
     verifier = new VerifierMock();
-    omnibus = new OmnibusHarness(address(this));
+    omnibus = new OmnibusHarness(address(this), address(new WalletFactoryMock()));
     omnibus.setVerifierActivity(address(verifier), true);
     usdc = new ERC20Mock('USD Coin', 'USDC', 6);
 

@@ -21,8 +21,8 @@
  * Derivation is deterministic, but the SDK ships a VERIFIED constant rather
  * than deriving the address at runtime: a CREATE3 address ignores init code,
  * so the contract actually sitting at the computed address must be confirmed
- * to be the correct one-argument-constructor Omnibus
- * (`constructor(address initialOwner)`) before it is
+ * to be the correct two-argument-constructor Omnibus
+ * (`constructor(address initialOwner, address walletFactory)`) before it is
  * trusted. A derived-but-unverified address is never returned.
  *
  * Until the canonical address is filled in and chains are enabled, the
