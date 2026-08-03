@@ -2,12 +2,13 @@
  * Deployment-resolution unit tests.
  *
  * Two concerns:
- * - SHIPPED STATE (canonical CreateX address + Base Sepolia verified): the
- *   registry resolves the canonical wallet-route Omnibus for chain 84532,
- *   while `resolveDeployment` still throws `UNKNOWN_DEPLOYMENT` for every
- *   other chain without an override; an override still resolves and still
- *   validates. This pins both the active deployment and the "no false
- *   defaults for unverified chains" guarantee.
+ * - SHIPPED STATE (canonical CreateX address + verified chains): the registry
+ *   resolves the SAME canonical wallet-route Omnibus for every verified chain
+ *   — Base mainnet (8453) and Base Sepolia (84532) — because the CREATE3 salt
+ *   is chain-invariant, while `resolveDeployment` still throws
+ *   `UNKNOWN_DEPLOYMENT` for every other chain without an override; an override
+ *   still resolves and still validates. This pins both the active deployments
+ *   and the "no false defaults for unverified chains" guarantee.
  * - MECHANISM (so enabling a chain later is safe): a LOCAL registry built the
  *   same way (canonical address + a verified-chain set) returns the canonical
  *   address for a listed chain and nothing for an unlisted one — exercised
@@ -34,21 +35,30 @@ function codeOf(fn: () => unknown): string {
 
 // The canonical Omnibus address + verified chains shipped in src/address.json:
 // the wallet-route Omnibus (salt entropy v1.0.0-alpha.2, CreateX CREATE3
-// deploy), verified on Base Sepolia.
+// deploy), verified on Base mainnet and Base Sepolia.
 const SHIPPED_OMNIBUS: Address = '0xf780Fc9C066D824bFF85758E381A3919B1817f09'
+const BASE_MAINNET = 8453n
 const BASE_SEPOLIA = 84_532n
+const VERIFIED_CHAINS = [BASE_MAINNET, BASE_SEPOLIA]
 
-describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
-  it('ships the canonical address with Base Sepolia in the verified registry', () => {
+describe('resolveDeployment — shipped state (Base mainnet + Base Sepolia verified)', () => {
+  it('ships the canonical address for exactly the verified chains', () => {
     expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
-    expect(knownDeployments.size).toBe(1)
-    expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
+    // Assert the exact membership, not just the count: a wrong chain id would
+    // otherwise slip through while the size still matched.
+    expect([...knownDeployments.keys()].sort()).toEqual([...VERIFIED_CHAINS].sort())
+  })
+
+  it('resolves the SAME address on every verified chain (CREATE3 is chain-invariant)', () => {
+    for (const chainId of VERIFIED_CHAINS) {
+      expect(resolveDeployment(chainId)).toEqual({chainId, omnibusAddress: SHIPPED_OMNIBUS})
+    }
   })
 
   it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
     expect(codeOf(() => resolveDeployment(11_155_420n))).toBe('UNKNOWN_DEPLOYMENT')
-    expect(codeOf(() => resolveDeployment(8453n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
+    expect(codeOf(() => resolveDeployment(42_161n))).toBe('UNKNOWN_DEPLOYMENT')
   })
 
   it('resolves a valid override', () => {
