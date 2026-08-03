@@ -3,7 +3,11 @@
 # ==============================================================================
 # Load .env file if it exists, and EXPORT every key into the environment so
 # child processes (forge, bun, …) see them — e.g. forge's vm.envAddress reads
-# DEPLOYER_ADDRESS / OMNIBUS_OWNER without any $(VAR) plumbing.
+# OMNIBUS_OWNER / WALLET_FACTORY without any $(VAR) plumbing.
+#
+# NOTE: forge loads .env too. Keep FOUNDRY_PROFILE OUT of it — a value there
+# would silently apply to `forge test` and `forge build` as well. The deploy
+# targets set the profile inline instead.
 # A missing .env is silently ignored (unscoped build/test need none of these).
 ifneq (,$(wildcard ./.env))
     include .env
@@ -40,6 +44,17 @@ test-v: ## Run tests with verbosity
 test-gas: ## Run tests with gas report
 	forge test --gas-report
 
+.PHONY: test-fork
+# The only test that executes the REAL CreateX bytecode, so it is the one gate
+# that can catch a wrong guard formula. Self-skips when API_URL_BASE_SEPOLIA is
+# unset (as in CI); the fork block is pinned, so it is cached after first run.
+test-fork: ## Validate the CreateX permissioned-salt guard against live factory bytecode (needs API_URL_BASE_SEPOLIA)
+	forge test --match-contract Constants_CreateXFork -vv
+
+.PHONY: build-prod
+build-prod: ## Build the deployment artifact with the prod profile (out-prod/, metadata stripped)
+	FOUNDRY_PROFILE=prod forge build --sizes
+
 .PHONY: coverage
 coverage: ## Generate coverage report
 	forge coverage
@@ -59,43 +74,99 @@ clean: ## Clean build artifacts
 # ==============================================================================
 # Deployment (via the canonical CreateX factory, pre-deployed on every chain —
 # no per-chain bootstrap. env: DEPLOYER_PK, OMNIBUS_OWNER, WALLET_FACTORY (the
-# quip WalletFactory proxy gating the wallet commit route); verify-omnibus also
-# needs DEPLOYER_ADDRESS = the EOA of DEPLOYER_PK, since the CreateX salt is
-# permissioned to it and the predicted address depends on it.)
+# quip WalletFactory proxy gating the wallet commit route).)
+#
+# The deployer EOA is COMPILED IN as Constants.DEPLOYER, not read from env: the
+# CreateX salt is permissioned to it, so it is part of the address. DEPLOYER_PK
+# must derive it — DeployOmnibus refuses to broadcast otherwise, because CreateX
+# would NOT revert on a wrong signer, it would silently deploy elsewhere.
+#
+# Every deploy path runs under FOUNDRY_PROFILE=prod (metadata-stripped artifact,
+# dedicated out-prod/ dir); the deploy script asserts the profile.
+#
+# Before ANY broadcast, run both free gates:
+#   make test-fork RPC=...             validates the guard against live CreateX
+#   make deploy-dry RPC=...            must print the address from the registry
+#   make deploy-dry-wrong-signer RPC=... must FAIL (proves the gate works)
 #
 # Per-chain deploy: Omnibus (make deploy). Verifier activation is separate:
 # post-deploy, the owner calls setVerifierActivity(verifier, true).
 # Local rehearsal: bare Anvil has no CreateX — use `make anvil-fork RPC=...`.
 # ==============================================================================
 
+# The deployment artifact's compiler settings are part of what ships, so every
+# deploy path pins the profile inline rather than relying on the ambient env.
+FOUNDRY_PROD := FOUNDRY_PROFILE=prod
+
+# A well-known PUBLIC key (Anvil account #0) used only to prove the signer gate
+# rejects a non-ops key. Never funded, never used for anything real.
+WRONG_PK := 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+
 .PHONY: anvil-fork
 anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SEPOLIA
 	anvil --fork-url $(RPC_URL)
 
 .PHONY: deploy
+# Recipe lines that carry $(DEPLOYER_PK) are prefixed with @ so make does not
+# echo the key into terminal scrollback / CI logs.
 deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
 		--verify
 
 .PHONY: deploy-dry
-deploy-dry: ## Dry run Omnibus deployment (no broadcast). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployOmnibus.s.sol \
-		--rpc-url $(RPC_URL)
+# Passes --private-key deliberately: it is what makes the rehearsal exercise the
+# SAME signer gates (and set the same tx.origin) as the real thing. Nothing is
+# sent without --broadcast.
+deploy-dry: ## Dry run Omnibus deployment (no broadcast; runs every pre-broadcast gate). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
+	@$(FOUNDRY_PROD) forge script script/DeployOmnibus.s.sol \
+		--rpc-url $(RPC_URL) \
+		--private-key $(DEPLOYER_PK)
+
+.PHONY: deploy-dry-wrong-signer
+# The negative rehearsal. Overriding DEPLOYER_PK is exactly what makes this
+# work: the derived sender is not Constants.DEPLOYER, so the script must abort
+# before broadcasting. Fails at the signer gate, ahead of any RPC-heavy work, so
+# it needs no funded account.
+deploy-dry-wrong-signer: ## Prove the signer gate works: the SAME command with a non-ops key MUST fail. Usage: make deploy-dry-wrong-signer RPC=API_URL_BASE_SEPOLIA
+	@echo 'Rehearsing with a public dev key - this MUST fail...'
+	@if $(FOUNDRY_PROD) DEPLOYER_PK=$(WRONG_PK) forge script script/DeployOmnibus.s.sol \
+		--rpc-url $(RPC_URL) --private-key $(WRONG_PK) >/dev/null 2>&1; then \
+		echo 'FAIL: the deploy script ACCEPTED a non-ops signer'; exit 1; \
+	else \
+		echo 'OK: the deploy script rejected a non-ops signer'; \
+	fi
 
 .PHONY: activate-verifier
-activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
+activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK; Omnibus address is derived, not passed). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
 	forge script script/ActivateVerifier.s.sol \
 		--sig 'run(address)' $(VERIFIER) \
 		--rpc-url $(RPC_URL) \
 		--broadcast
 
 # ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
+# EXPECTED_CHAIN_ID is pinned inline so a mistyped rpc alias aborts before
+# broadcasting rather than deploying to the wrong chain.
+.PHONY: deploy-base
+# MAINNET. Run the full gate sequence first — see the Deployment header above.
+deploy-base: ## Deploy Omnibus to Base MAINNET + broadcast + verify (reads env from .env)
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployOmnibus.s.sol \
+		--rpc-url base \
+		--private-key $(DEPLOYER_PK) \
+		--broadcast \
+		--verify
+
+.PHONY: deploy-base-dry
+deploy-base-dry: ## Dry run the Base MAINNET deployment (no broadcast; runs every pre-broadcast gate)
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployOmnibus.s.sol \
+		--rpc-url base \
+		--private-key $(DEPLOYER_PK)
+
 .PHONY: deploy-base-sepolia
 deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
-	forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=84532 forge script script/DeployOmnibus.s.sol \
 		--rpc-url base_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -103,7 +174,7 @@ deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (rea
 
 .PHONY: deploy-op-sepolia
 deploy-op-sepolia: ## Deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
-	forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=11155420 forge script script/DeployOmnibus.s.sol \
 		--rpc-url op_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -149,7 +220,7 @@ sdk-build: ## Build the publishable SDK bundle (dist/)
 # ==============================================================================
 
 .PHONY: check
-check: fmt-check build test sdk-typecheck sdk-test sdk-build sdk-test-integration ## Run all reasonable checks (Foundry + SDK; cross-chain excluded — run sdk-test-cross-chain separately)
+check: fmt-check build build-prod test test-fork sdk-typecheck sdk-test sdk-build sdk-test-integration ## Run all reasonable checks (Foundry + SDK; cross-chain excluded — run sdk-test-cross-chain separately)
 
 # ==============================================================================
 # Utilities
@@ -163,9 +234,14 @@ snapshot: ## Generate gas snapshot
 # usage:
 #   make verify-omnibus                      # uses sdk/src/address.json
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
-verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (CreateX, deployer EOA, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
+verify-omnibus: ## Compare an address.json against the predicted CREATE3 address (no RPC, no env; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
+
+.PHONY: verify-omnibus-base
+verify-omnibus-base: ## Same as verify-omnibus, pinned to the base mainnet rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
+	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base -v
 
 .PHONY: verify-omnibus-base-sepolia
 verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.

@@ -12,9 +12,9 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *      that enables keyed commit authorization through that verifier.
  *
  *      The verifier is passed as a script ARGUMENT (via `--sig`). The Omnibus
- *      address is never passed in: it is predictable, so the script computes
- *      it from (CreateX, DEPLOYER_ADDRESS, salt) — the same math DeployOmnibus
- *      uses.
+ *      address is never passed in: it is fully determined by (CreateX,
+ *      Constants.DEPLOYER, salt), all compiled in, so the script derives it
+ *      with the same math DeployOmnibus uses.
  *
  *      Idempotent: if the verifier is already active, logs and exits without
  *      broadcasting.
@@ -27,12 +27,11 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  * Environment:
  *   OMNIBUS_OWNER_PK - Private key of the Omnibus owner (broadcasting EOA;
  *                      setVerifierActivity is onlyOwner)
- *   DEPLOYER_ADDRESS - Deployer EOA, used to predict the Omnibus address
  */
 contract ActivateVerifier is Script {
   function run(address verifier) external {
     uint256 ownerPk = vm.envUint('OMNIBUS_OWNER_PK');
-    address omnibusAddr = Constants.predictOmnibus(vm.envAddress('DEPLOYER_ADDRESS'));
+    address omnibusAddr = Constants.predictOmnibus();
     Omnibus omnibus = Omnibus(payable(omnibusAddr));
 
     require(omnibusAddr.code.length > 0, 'Omnibus not deployed at predicted address');

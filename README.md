@@ -65,4 +65,23 @@ make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
 
 ## Deployment
 
-Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.1`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains when the same EOA deploys, and unclaimable by anyone else. Keyed commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `make activate-verifier` (calls `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`). The wallet route's `WalletFactory` proxy is baked as an immutable at construction. Env: `DEPLOYER_PK`, `OMNIBUS_OWNER`, `WALLET_FACTORY` (both non-zero); `make verify-omnibus` additionally needs `DEPLOYER_ADDRESS` (the EOA of `DEPLOYER_PK`). Salt entropy follows semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.
+Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.2`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains, and unclaimable by anyone else. Keyed commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `make activate-verifier` (calls `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`). The wallet route's `WalletFactory` proxy is baked as an immutable at construction. Env: `DEPLOYER_PK`, `OMNIBUS_OWNER`, `WALLET_FACTORY` (both non-zero). The salt entropy label is a **salt version, not a release gate**: it is deliberately identical on testnet and mainnet, because that is what gives the Omnibus one address on every chain. Bump it only for an intentional redeploy of *every* chain — a bump abandons the old address everywhere. Prior deployments persist at their old addresses.
+
+### Why the deploy script is all assertions
+
+A wrong caller **does not revert** inside CreateX. It fails the sender-prefix match, silently takes a different guard branch, and deploys *successfully* at an unrelated address. Every safety property below exists because that failure is silent:
+
+- **The deployer EOA is compiled in** (`Constants.DEPLOYER`), not read from the environment. A prediction derived from the live signer would follow a wrong key to its wrong address, and the post-deploy `deployed == expected` check would then **pass**. `DEPLOYER_PK` must derive it; the script aborts before broadcasting otherwise.
+- **Deploys run under `FOUNDRY_PROFILE=prod`** (metadata stripped, dedicated `out-prod/`), asserted by the script. Keep `FOUNDRY_PROFILE` out of `.env` — forge loads it, and a value there would apply to `forge test` too.
+- **An occupied address is checked semantically**, never skipped: a CREATE3 address ignores init code, so "has code" says nothing about what is there. The script reads the `WALLET_FACTORY` and `DOMAIN_SEPARATOR` immutables and reverts on a mismatch.
+- **Safe / multisig routing is not supported**, by construction. CreateX keys its guard off `msg.sender`, so a Safe-executed deploy lands at a completely different address. This design binds the address to an EOA key; that key is address-load-bearing, and losing it means those addresses are unreachable on any chain not yet deployed to.
+
+Two free gates must both pass before any broadcast:
+
+```shell
+make test-fork RPC=API_URL_BASE_SEPOLIA               # executes the REAL CreateX bytecode
+make deploy-dry RPC=API_URL_BASE_SEPOLIA              # must print the address in sdk/src/address.json
+make deploy-dry-wrong-signer RPC=API_URL_BASE_SEPOLIA # and confirm the negative: this MUST fail
+```
+
+If either disagrees with the registry, the salt construction is wrong — stop and fix it before spending gas. Recovery from a mistake is bumping the entropy label (new salt → new, unoccupied address); squatting cannot burn a salt, so this only ever covers your own errors.
