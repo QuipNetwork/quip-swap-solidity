@@ -156,4 +156,4 @@ export {
   wrapperMode, gateTerms, gateContextId, deriveCommitLock, tradeId, settlementLock, timingPolicyId,
   assetHash, commitPayloadHash, encodeAuthorizationNonceKey, encodeRegistryNonceKey, validateProtocolTerms,
 } from "./protocol.js"
-export type {SideTerms, ProtocolTerms, TimingPolicy, CommitPayloadArgs} from "./protocol.js"
+export type {SideTerms, ProtocolTerms, TimingPolicy, CommitPayloadArgs, VerifiedCommitAuthorization} from "./protocol.js"

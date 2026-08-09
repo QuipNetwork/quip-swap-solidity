@@ -115,6 +115,16 @@ export const assetHash = (side: SideTerms): Hex32 => keccak256(encodeAbiParamete
   [domains.assets, side.chainId, abiSide(side).assets],
 ))
 
+export interface VerifiedCommitAuthorization {
+  readonly payloadHash: Hex32
+  readonly wrapperCaller: Address
+  readonly authenticatedSubmitter: Address
+  readonly authenticatedSubmitterKeyVersion: bigint
+  readonly expectedSourceState: ExpectedSourceState
+  readonly actionNonce: Hex32
+  readonly expiry: bigint
+}
+
 export interface CommitPayloadArgs {
   readonly terms: ProtocolTerms; readonly party: boolean; readonly authorizationVerifier: Address
   readonly swapAddress: Address; readonly lock: Hex32; readonly expectedSourceState: ExpectedSourceState

@@ -113,3 +113,13 @@ struct CommitPayload {
   uint256 commitmentDeadline;
   uint256 expiry;
 }
+
+struct VerifiedCommitAuthorization {
+  bytes32 payloadHash;
+  address wrapperCaller;
+  address authenticatedSubmitter;
+  uint256 authenticatedSubmitterKeyVersion;
+  ExpectedSourceState expectedSourceState;
+  bytes32 actionNonce;
+  uint256 expiry;
+}
