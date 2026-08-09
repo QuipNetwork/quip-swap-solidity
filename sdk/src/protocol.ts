@@ -99,7 +99,7 @@ const domains = {
   terms: 'InterlockTerms-v1.1', gateContext: 'InterlockBobCommitGateContext-v1.1',
   bobCommitGate: 'InterlockBobCommitGate-v1.1', settlement: 'InterlockSettlementLock-v1.1',
   timing: 'InterlockTimingPolicy-v1.1', assets: 'InterlockAssets-v1.1', commit: 'InterlockCommit-v1.1',
-  registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1',
+  registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1', walletRotation: 'InterlockWalletKeyRotation-v1.1',
 } as const
 
 const abiSide = (side: SideTerms) => ({...side, assets: side.assets.map(asset => ({
@@ -139,6 +139,16 @@ export const assetHash = (side: SideTerms): Hex32 => keccak256(encodeAbiParamete
   [{type: 'string'}, {type: 'uint256'}, assetArrayAbiParameter],
   [domains.assets, side.chainId, abiSide(side).assets],
 ))
+
+export interface CommitAuthorizationRequest {
+  readonly receiver: Address
+  readonly terms: ProtocolTerms
+  readonly party: boolean
+  readonly lock: Hex32
+  readonly actionNonce: Hex32
+  readonly expiry: bigint
+  readonly commitData: Hex
+}
 
 export interface VerifiedCommitAuthorization {
   readonly payloadHash: Hex32
@@ -202,6 +212,17 @@ export function registryOperationDigest(chainId: bigint, registry: Address, requ
 export const keyPossessionDigest = (requestDigest: Hex32, role: KeyRole, key: Hex): Hex32 =>
   keccak256(encodeAbiParameters([{type: "string"}, {type: "bytes32"}, {type: "uint8"}, {type: "bytes32"}],
     [domains.possession, requestDigest, role, keccak256(key)]))
+
+export function walletRotationDigest(
+  chainId: bigint, wallet: Address, currentEpoch: bigint, currentKeyHash: Hex32,
+  newKey: Hex, nonce: Hex32, expiry: bigint,
+): Hex32 {
+  return keccak256(encodeAbiParameters([
+    {type: "string"}, {type: "uint256"}, {type: "address"}, {type: "uint256"}, {type: "bytes32"},
+    {type: "uint256"}, {type: "bytes32"}, {type: "bytes32"}, {type: "uint256"},
+  ], [domains.walletRotation, chainId, wallet, currentEpoch, currentKeyHash, currentEpoch + 1n,
+    keccak256(newKey), nonce, expiry]))
+}
 
 export const encodeRegistryNonceKey = (
   chainId: bigint, registry: Address, eoa: Address, keyRole: number, keyVersion: bigint, nonce: Hex32,

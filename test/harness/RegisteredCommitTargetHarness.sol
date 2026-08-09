@@ -15,7 +15,7 @@ contract RegisteredCommitTargetHarness is IRegisteredCommitTarget {
     reject = value;
   }
 
-  function completeRegisteredCommit(address eoa, bytes32 payloadHash, bytes calldata data) external {
+  function completeRegisteredCommit(address eoa, address, bytes32 payloadHash, bytes calldata data) external {
     if (reject) revert CommitRejected();
     registryCaller = msg.sender;
     registeredEOA = eoa;

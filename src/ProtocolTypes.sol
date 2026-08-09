@@ -124,6 +124,16 @@ struct VerifiedCommitAuthorization {
   uint256 expiry;
 }
 
+struct CommitAuthorizationRequest {
+  address receiver;
+  ProtocolTerms terms;
+  bool party;
+  bytes32 lock;
+  bytes32 actionNonce;
+  uint256 expiry;
+  bytes commitData;
+}
+
 struct PQIdentity {
   bytes activePQKey;
   uint256 activeKeyVersion;

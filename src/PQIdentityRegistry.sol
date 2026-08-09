@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {KeyedVerifier} from './KeyedVerifier.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {
   InitialRegistration,
@@ -92,7 +93,7 @@ contract PQIdentityRegistry {
     emit IdentityRegistered(request.eoa, 1, 1);
 
     try IRegisteredCommitTarget(request.commitTarget)
-      .completeRegisteredCommit(request.eoa, request.commitPayloadHash, commitData) {}
+      .completeRegisteredCommit(request.eoa, msg.sender, request.commitPayloadHash, commitData) {}
     catch {
       revert CommitCallbackFailed();
     }
@@ -288,19 +289,7 @@ contract PQIdentityRegistry {
   }
 
   function _requireKeySignature(bytes memory keyedVerifier, bytes32 digest, bytes calldata signature) private view {
-    address verifier;
-    assembly ('memory-safe') {
-      verifier := shr(96, mload(add(keyedVerifier, 32)))
-    }
-    bytes memory key = new bytes(keyedVerifier.length - 20);
-    for (uint256 i; i < key.length; ++i) {
-      key[i] = keyedVerifier[i + 20];
-    }
-    try IERC7913SignatureVerifier(verifier).verify(key, digest, signature) returns (bytes4 result) {
-      if (result != IERC7913SignatureVerifier.verify.selector) revert InvalidPQAuthorization();
-    } catch {
-      revert InvalidPQAuthorization();
-    }
+    if (!KeyedVerifier.isValid(keyedVerifier, digest, signature)) revert InvalidPQAuthorization();
   }
 
   function _validEOASignature(address signer, bytes32 digest, bytes calldata signature) private pure returns (bool) {

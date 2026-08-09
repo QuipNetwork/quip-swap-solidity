@@ -2,5 +2,10 @@
 pragma solidity 0.8.33;
 
 interface IRegisteredCommitTarget {
-  function completeRegisteredCommit(address eoa, bytes32 commitPayloadHash, bytes calldata commitData) external;
+  function completeRegisteredCommit(
+    address eoa,
+    address registrationCaller,
+    bytes32 commitPayloadHash,
+    bytes calldata commitData
+  ) external;
 }

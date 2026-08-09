@@ -1,7 +1,7 @@
 import {describe, expect, test} from 'vitest'
 import {
   KeyRole, RegistryActionTag, encodeRegistryNonceKey, keyPossessionDigest,
-  registrationDigest, registryOperationDigest,
+  registrationDigest, registryOperationDigest, walletRotationDigest,
 } from '../../src/protocol.js'
 import type {InitialRegistration, RegistryOperation} from '../../src/protocol.js'
 import {keccak256} from 'viem'
@@ -37,6 +37,13 @@ describe('v1.1 registry protocol hashing', () => {
     expect(keyPossessionDigest(digest, KeyRole.Active, rotation.newActivePQKey))
       .not.toBe(keyPossessionDigest(digest, KeyRole.Recovery, rotation.newActivePQKey))
   })
+  test("wallet rotation binds internal epoch and both key hashes", () => {
+    const currentHash = keccak256(activeKey)
+    const digest = walletRotationDigest(31337n, target, 1n, currentHash, recoveryKey, nonce, 2_000n)
+    expect(walletRotationDigest(31337n, target, 2n, currentHash, recoveryKey, nonce, 2_000n)).not.toBe(digest)
+    expect(walletRotationDigest(31337n, target, 1n, currentHash, activeKey, nonce, 2_000n)).not.toBe(digest)
+  })
+
   test('registry nonce keys are role and version scoped', () => {
     const key = keccak256(encodeRegistryNonceKey(31337n, registry, eoa, KeyRole.Active, 1n, nonce))
     expect(keccak256(encodeRegistryNonceKey(31337n, registry, eoa, KeyRole.Recovery, 1n, nonce))).not.toBe(key)
