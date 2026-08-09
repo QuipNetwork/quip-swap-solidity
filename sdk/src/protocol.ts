@@ -38,6 +38,30 @@ export interface ProtocolTerms {
   readonly counterpartySide: SideTerms
 }
 
+export interface InitialRegistration {
+  readonly eoa: Address
+  readonly activePQKey: Hex
+  readonly recoveryPQKey: Hex
+  readonly commitTarget: Address
+  readonly commitPayloadHash: Hex32
+  readonly operationNonce: Hex32
+  readonly expiry: bigint
+}
+
+export interface RegistryOperation {
+  readonly action: RegistryActionTag
+  readonly eoa: Address
+  readonly expectedActiveKeyVersion: bigint
+  readonly expectedRecoveryKeyVersion: bigint
+  readonly newActivePQKey: Hex
+  readonly newActiveKeyVersion: bigint
+  readonly newRecoveryPQKey: Hex
+  readonly newRecoveryKeyVersion: bigint
+  readonly operationNonce: Hex32
+  readonly expiry: bigint
+  readonly recoveryAuthorized: boolean
+}
+
 export interface TimingPolicy {
   readonly policyVersion: bigint
   readonly mode: WrapperMode
@@ -75,6 +99,7 @@ const domains = {
   terms: 'InterlockTerms-v1.1', gateContext: 'InterlockBobCommitGateContext-v1.1',
   bobCommitGate: 'InterlockBobCommitGate-v1.1', settlement: 'InterlockSettlementLock-v1.1',
   timing: 'InterlockTimingPolicy-v1.1', assets: 'InterlockAssets-v1.1', commit: 'InterlockCommit-v1.1',
+  registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1',
 } as const
 
 const abiSide = (side: SideTerms) => ({...side, assets: side.assets.map(asset => ({
@@ -150,6 +175,33 @@ export const encodeAuthorizationNonceKey = (
   [{type: 'uint256'}, {type: 'address'}, {type: 'address'}, {type: 'uint256'}, {type: 'bytes32'}],
   [chainId, verifier, principal, keyVersion, nonce],
 )
+
+export function registrationDigest(chainId: bigint, registry: Address, request: InitialRegistration): Hex32 {
+  return keccak256(encodeAbiParameters([
+    {type: "string"}, {type: "uint256"}, {type: "address"}, {type: "address"}, {type: "bytes32"},
+    {type: "bytes32"}, {type: "address"}, {type: "bytes32"}, {type: "bytes32"}, {type: "uint256"},
+  ], [domains.registration, chainId, registry, request.eoa, keccak256(request.activePQKey),
+    keccak256(request.recoveryPQKey), request.commitTarget, request.commitPayloadHash, request.operationNonce, request.expiry]))
+}
+
+export function registryOperationDigest(chainId: bigint, registry: Address, request: RegistryOperation): Hex32 {
+  return keccak256(encodeAbiParameters([{type: "string"}, {type: "tuple", components: [
+    {name: "action", type: "uint8"}, {name: "chainId", type: "uint256"}, {name: "registry", type: "address"},
+    {name: "eoa", type: "address"}, {name: "expectedActiveKeyVersion", type: "uint256"},
+    {name: "expectedRecoveryKeyVersion", type: "uint256"}, {name: "newActivePQKeyHash", type: "bytes32"},
+    {name: "newActiveKeyVersion", type: "uint256"}, {name: "newRecoveryPQKeyHash", type: "bytes32"},
+    {name: "newRecoveryKeyVersion", type: "uint256"}, {name: "operationNonce", type: "bytes32"},
+    {name: "expiry", type: "uint256"}, {name: "recoveryAuthorized", type: "bool"},
+  ]}], [domains.registry, {action: request.action, chainId, registry, eoa: request.eoa,
+    expectedActiveKeyVersion: request.expectedActiveKeyVersion, expectedRecoveryKeyVersion: request.expectedRecoveryKeyVersion,
+    newActivePQKeyHash: keccak256(request.newActivePQKey), newActiveKeyVersion: request.newActiveKeyVersion,
+    newRecoveryPQKeyHash: keccak256(request.newRecoveryPQKey), newRecoveryKeyVersion: request.newRecoveryKeyVersion,
+    operationNonce: request.operationNonce, expiry: request.expiry, recoveryAuthorized: request.recoveryAuthorized}]))
+}
+
+export const keyPossessionDigest = (requestDigest: Hex32, role: KeyRole, key: Hex): Hex32 =>
+  keccak256(encodeAbiParameters([{type: "string"}, {type: "bytes32"}, {type: "uint8"}, {type: "bytes32"}],
+    [domains.possession, requestDigest, role, keccak256(key)]))
 
 export const encodeRegistryNonceKey = (
   chainId: bigint, registry: Address, eoa: Address, keyRole: number, keyVersion: bigint, nonce: Hex32,

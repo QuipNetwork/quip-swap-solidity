@@ -154,6 +154,6 @@ export {
   AuthorizationMode, DelegationPolicy, WrapperMode, SideTag, ActionTag, RegistryActionTag, KeyRole,
   ExpectedSourceState, CrossChainLegState, SameChainState,
   wrapperMode, gateTerms, gateContextId, deriveCommitLock, tradeId, settlementLock, timingPolicyId,
-  assetHash, commitPayloadHash, encodeAuthorizationNonceKey, encodeRegistryNonceKey, validateProtocolTerms,
+  assetHash, commitPayloadHash, registrationDigest, registryOperationDigest, keyPossessionDigest, encodeAuthorizationNonceKey, encodeRegistryNonceKey, validateProtocolTerms,
 } from "./protocol.js"
-export type {SideTerms, ProtocolTerms, TimingPolicy, CommitPayloadArgs, VerifiedCommitAuthorization} from "./protocol.js"
+export type {SideTerms, ProtocolTerms, TimingPolicy, CommitPayloadArgs, VerifiedCommitAuthorization, InitialRegistration, RegistryOperation} from "./protocol.js"

@@ -123,3 +123,42 @@ struct VerifiedCommitAuthorization {
   bytes32 actionNonce;
   uint256 expiry;
 }
+
+struct PQIdentity {
+  bytes activePQKey;
+  uint256 activeKeyVersion;
+  bytes recoveryPQKey;
+  uint256 recoveryKeyVersion;
+  bool active;
+}
+
+struct InitialRegistration {
+  address eoa;
+  bytes activePQKey;
+  bytes recoveryPQKey;
+  address commitTarget;
+  bytes32 commitPayloadHash;
+  bytes32 operationNonce;
+  uint256 expiry;
+}
+
+struct RegistryAuthorization {
+  bytes eoaSignature;
+  bytes authorizingPQSignature;
+  bytes activeProofOfPossession;
+  bytes recoveryProofOfPossession;
+}
+
+struct RegistryOperation {
+  RegistryActionTag action;
+  address eoa;
+  uint256 expectedActiveKeyVersion;
+  uint256 expectedRecoveryKeyVersion;
+  bytes newActivePQKey;
+  uint256 newActiveKeyVersion;
+  bytes newRecoveryPQKey;
+  uint256 newRecoveryKeyVersion;
+  bytes32 operationNonce;
+  uint256 expiry;
+  bool recoveryAuthorized;
+}
