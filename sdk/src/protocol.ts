@@ -11,6 +11,8 @@ export enum ActionTag { Commit }
 export enum RegistryActionTag { RotateActive, RecoverActive, RotateRecovery, Revoke }
 export enum KeyRole { Active, Recovery }
 export enum ExpectedSourceState { Unused, PartyCommitted }
+export enum CrossChainLegState { Unused, Committed, Claimed, Reclaimed }
+export enum SameChainState { Unused, PartyCommitted, BothCommitted, Claimed, Reclaimed }
 
 export interface SideTerms {
   readonly chainId: bigint

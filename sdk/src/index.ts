@@ -152,7 +152,7 @@ export {omnibusAbi} from './generated/omnibusAbi.js'
 // v1.1 protocol primitives
 export {
   AuthorizationMode, DelegationPolicy, WrapperMode, SideTag, ActionTag, RegistryActionTag, KeyRole,
-  ExpectedSourceState,
+  ExpectedSourceState, CrossChainLegState, SameChainState,
   wrapperMode, gateTerms, gateContextId, deriveCommitLock, tradeId, settlementLock, timingPolicyId,
   assetHash, commitPayloadHash, encodeAuthorizationNonceKey, encodeRegistryNonceKey, validateProtocolTerms,
 } from "./protocol.js"

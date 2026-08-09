@@ -45,6 +45,21 @@ enum ExpectedSourceState {
   PartyCommitted
 }
 
+enum CrossChainLegState {
+  Unused,
+  Committed,
+  Claimed,
+  Reclaimed
+}
+
+enum SameChainState {
+  Unused,
+  PartyCommitted,
+  BothCommitted,
+  Claimed,
+  Reclaimed
+}
+
 struct SideTerms {
   uint256 chainId;
   Asset[] assets;
