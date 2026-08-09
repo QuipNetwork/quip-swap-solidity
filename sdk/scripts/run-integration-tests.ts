@@ -20,6 +20,7 @@
  * Developers never start Anvil manually for `bun run test:integration`.
  */
 import {spawnSync} from 'node:child_process'
+import {readdirSync} from 'node:fs'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {startAnvil} from '../test/helpers/anvil.js'
@@ -44,17 +45,28 @@ console.log(`[integration] anvil ready at ${anvil.rpcUrl} (chain ${anvil.chainId
 
 let exitCode = 1
 try {
-  // 3. the actual test run; env carries the node coordinates to the tests
-  const result = spawnSync('bunx', ['vitest', 'run', 'test/integration', ...vitestExtraArgs], {
-    cwd: sdkRoot,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      QUIP_SDK_RPC_URL: anvil.rpcUrl,
-      QUIP_SDK_CHAIN_ID: String(anvil.chainId),
-    },
-  })
-  exitCode = result.status ?? 1
+  // Vitest treats a positional directory as one filename filter here.
+  // Enumerate files so every integration suite is executed deterministically.
+  const files = readdirSync(join(sdkRoot, "test", "integration"))
+    .filter(file => file.endsWith(".test.ts"))
+    .sort()
+    .map(file => join("test", "integration", file))
+  exitCode = 0
+  for (const file of files) {
+    const result = spawnSync("bunx", ["vitest", "run", file, ...vitestExtraArgs], {
+      cwd: sdkRoot,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        QUIP_SDK_RPC_URL: anvil.rpcUrl,
+        QUIP_SDK_CHAIN_ID: String(anvil.chainId),
+      },
+    })
+    if (result.status !== 0) {
+      exitCode = result.status ?? 1
+      break
+    }
+  }
 } finally {
   // 4. teardown happens pass OR fail
   anvil.stop()

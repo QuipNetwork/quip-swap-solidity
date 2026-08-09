@@ -20,9 +20,9 @@
   "scripts": {
     "generate:abi": "bun run scripts/generate-abi.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run test/unit test/mocked-client",
-    "test:unit": "vitest run test/unit",
-    "test:mocked": "vitest run test/mocked-client",
+    "test": "bun run scripts/run-test-files.ts test/unit test/mocked-client",
+    "test:unit": "bun run scripts/run-test-files.ts test/unit",
+    "test:mocked": "bun run scripts/run-test-files.ts test/mocked-client",
     "test:integration": "bun run scripts/run-integration-tests.ts",
     "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
