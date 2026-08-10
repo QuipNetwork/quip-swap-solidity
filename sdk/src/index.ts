@@ -139,6 +139,8 @@ export {
 export {planSameChainSwap, getSameChainSwapStatus} from './workflows/sameChain.js'
 export type {SameChainSwapPlan, SameChainSwapStatus, SameChainSwapStatusReport} from './workflows/sameChain.js'
 export {validateCrossChainSchedule, verifyRemoteCommitment, deriveSharedLock} from './workflows/crossChain.js'
+export {TrustedCrossChainWorkflow, randomProtocolValue, submitWithFeeBumps} from './workflows/trustedCrossChain.js'
+export type {AliceCommitStatus, WorkflowStage, SideTermsTemplate, WorkflowArgs, PreparedAuthorization, WorkflowStatus, Inclusion, FinalClaimExecutor, RetryPolicy} from './workflows/trustedCrossChain.js'
 export type {
   ValidateCrossChainScheduleArgs,
   CrossChainSchedule,

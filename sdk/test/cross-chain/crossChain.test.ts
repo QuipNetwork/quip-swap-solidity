@@ -16,6 +16,7 @@
  * QUIP_SDK_CHAIN_A_RPC_URL / QUIP_SDK_CHAIN_B_RPC_URL).
  */
 import {getAddress, keccak256, toHex} from 'viem'
+import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
