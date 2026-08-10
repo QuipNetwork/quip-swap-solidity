@@ -130,6 +130,7 @@ struct CommitAuthorizationRequest {
   bool party;
   bytes32 lock;
   bytes32 actionNonce;
+  bytes32 bobCommitSecret;
   uint256 expiry;
   bytes commitData;
 }

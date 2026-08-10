@@ -43,7 +43,7 @@ library ProtocolHashing {
   }
 
   function gateTerms(ProtocolTerms memory terms) internal pure returns (ProtocolTerms memory projected) {
-    projected = terms;
+    projected = abi.decode(abi.encode(terms), (ProtocolTerms));
     projected.counterpartySide.commitLock = bytes32(0);
   }
 

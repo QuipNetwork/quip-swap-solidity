@@ -128,6 +128,30 @@ export const deriveCommitLock = (contextId: Hex32, bobCommitSecret: Hex32): Hex3
   keccak256(encodeAbiParameters([{type: 'string'}, {type: 'bytes32'}, {type: 'bytes32'}],
     [domains.bobCommitGate, contextId, bobCommitSecret]))
 
+export function validateCommitProgression(
+  terms: ProtocolTerms, party: boolean, bobCommitSecret: Hex32,
+): void {
+  const zero = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex32
+  if (terms.partySide.commitLock !== zero) throw new Error('Invalid progression terms')
+
+  if (wrapperMode(terms) === WrapperMode.SameChain) {
+    if (terms.counterpartySide.commitLock !== zero) throw new Error('Invalid progression terms')
+    if (bobCommitSecret !== zero) throw new Error('Unexpected Bob commit secret')
+    return
+  }
+
+  if (terms.counterpartySide.commitLock === zero) throw new Error('Invalid progression terms')
+  if (party) {
+    if (bobCommitSecret !== zero) throw new Error('Unexpected Bob commit secret')
+    return
+  }
+
+  if (bobCommitSecret === zero) throw new Error('Missing Bob commit secret')
+  if (deriveCommitLock(gateContextId(terms), bobCommitSecret) !== terms.counterpartySide.commitLock) {
+    throw new Error('Invalid Bob commit secret')
+  }
+}
+
 export const settlementLock = (trade: Hex32, secret: Hex32): Hex32 =>
   keccak256(encodeAbiParameters([{type: 'string'}, {type: 'bytes32'}, {type: 'bytes32'}],
     [domains.settlement, trade, secret]))
@@ -146,6 +170,7 @@ export interface CommitAuthorizationRequest {
   readonly party: boolean
   readonly lock: Hex32
   readonly actionNonce: Hex32
+  readonly bobCommitSecret: Hex32
   readonly expiry: bigint
   readonly commitData: Hex
 }

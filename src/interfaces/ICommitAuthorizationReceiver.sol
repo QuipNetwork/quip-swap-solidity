@@ -8,6 +8,7 @@ interface ICommitAuthorizationReceiver {
     ProtocolTerms calldata terms,
     bool party,
     bytes32 lock,
+    bytes32 bobCommitSecret,
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata commitData
   ) external;

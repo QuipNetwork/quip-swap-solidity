@@ -52,7 +52,9 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
 
   function _deliver(CommitAuthorizationRequest memory request, VerifiedCommitAuthorization memory evidence) private {
     ICommitAuthorizationReceiver(request.receiver)
-      .receiveAuthorizedCommit(request.terms, request.party, request.lock, evidence, request.commitData);
+      .receiveAuthorizedCommit(
+        request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
+      );
   }
 
   function _verify(

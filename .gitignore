@@ -1,3 +1,5 @@
+node_modules/
+
 # macOS / editor local config
 .DS_Store
 .obsidian/

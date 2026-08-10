@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {AuthorizationSubmitter} from '../../src/AuthorizationSubmitter.sol';
 import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
 import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
+import {ProgressionGate} from '../../src/ProgressionGate.sol';
 import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
 import {
   AuthorizationMode,
@@ -156,8 +157,7 @@ contract AuthorizationBoundariesTest is Test {
     CommitAuthorizationRequest memory request = _request(terms, keccak256('lazy-register'));
     bytes32 payloadHash = _payload(request, address(gateway));
     bytes memory signature = _pqSig(newcomerKey, payloadHash);
-    InitialRegistration memory registration =
-      _lazyRegistration(newcomer, newcomerKey, payloadHash, abi.encode(request, signature));
+    InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerKey, payloadHash);
     (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
     vm.prank(newcomer);
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, signature));
@@ -179,13 +179,33 @@ contract AuthorizationBoundariesTest is Test {
     assertEq(registry.identityOf(failingUser).activeKeyVersion, 0);
   }
 
+  function test_crossChainCounterpartyRequiresProgressionSecretAlongsideEveryDelegationPolicy() public {
+    bytes32 secret = keccak256('boundary-bob-secret');
+    for (uint8 i; i <= uint8(DelegationPolicy.SpecificDelegate); ++i) {
+      DelegationPolicy policy = DelegationPolicy(i);
+      CommitAuthorizationRequest memory request = _crossCounterpartyRequest(policy, bytes32(uint256(i + 10)), secret);
+      bytes memory signature = _signature(request, address(gateway));
+      address caller = policy == DelegationPolicy.SpecificDelegate ? broker : relayer;
+      request.bobCommitSecret = bytes32(0);
+      vm.expectRevert(ProgressionGate.MissingBobCommitSecret.selector);
+      _authorize(false, request, signature, caller);
+      request.bobCommitSecret = secret;
+      _authorize(false, request, signature, caller);
+    }
+  }
+
   function test_directCallCannotForgeEitherTrustedBoundary() public {
     ProtocolTerms memory walletTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
     CommitAuthorizationRequest memory request = _request(walletTerms, keccak256('forged'));
     bytes32 hash = _payload(request, address(wallet));
     vm.expectRevert();
     receiver.receiveAuthorizedCommit(
-      request.terms, true, LOCK, _evidence(hash, relayer, address(wallet), request.actionNonce, request.expiry), ''
+      request.terms,
+      true,
+      LOCK,
+      bytes32(0),
+      _evidence(hash, relayer, address(wallet), request.actionNonce, request.expiry),
+      ''
     );
   }
 
@@ -250,6 +270,27 @@ contract AuthorizationBoundariesTest is Test {
     else gateway.authorizeCommit(request, signature);
   }
 
+  function _crossCounterpartyRequest(
+    DelegationPolicy policy,
+    bytes32 nonce,
+    bytes32 secret
+  ) internal view returns (CommitAuthorizationRequest memory request) {
+    ProtocolTerms memory terms = _terms(address(0xA11CE), AuthorizationMode.RegisteredDirect, 1);
+    terms.partySide.chainId = block.chainid + 1;
+    terms.partySide.sideNonce = keccak256(abi.encode(nonce, 'party'));
+    terms.counterpartySide = _side(directUser, AuthorizationMode.RegisteredDirect, 1, address(0), 0);
+    terms.counterpartySide.sideNonce = keccak256(abi.encode(nonce, 'counterparty'));
+    terms.counterpartySide.delegationPolicy = policy;
+    if (policy == DelegationPolicy.SpecificDelegate) {
+      terms.counterpartySide.delegate = broker;
+      terms.counterpartySide.delegateKeyVersion = 1;
+    }
+    terms.counterpartySide.commitLock = ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), secret);
+    request = _request(terms, nonce);
+    request.party = false;
+    request.bobCommitSecret = secret;
+  }
+
   function _request(
     ProtocolTerms memory terms,
     bytes32 nonce
@@ -260,6 +301,7 @@ contract AuthorizationBoundariesTest is Test {
       party: true,
       lock: LOCK,
       actionNonce: nonce,
+      bobCommitSecret: bytes32(0),
       expiry: 2000,
       commitData: hex'c0ffee'
     });
@@ -336,8 +378,7 @@ contract AuthorizationBoundariesTest is Test {
   function _lazyRegistration(
     address eoa,
     bytes memory key,
-    bytes32 payloadHash,
-    bytes memory
+    bytes32 payloadHash
   ) internal view returns (InitialRegistration memory) {
     return InitialRegistration({
       eoa: eoa,

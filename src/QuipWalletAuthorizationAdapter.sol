@@ -46,7 +46,9 @@ contract QuipWalletAuthorizationAdapter {
   function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external {
     VerifiedCommitAuthorization memory evidence = _verify(request, signature, msg.sender);
     ICommitAuthorizationReceiver(request.receiver)
-      .receiveAuthorizedCommit(request.terms, request.party, request.lock, evidence, request.commitData);
+      .receiveAuthorizedCommit(
+        request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
+      );
   }
 
   function _verify(
