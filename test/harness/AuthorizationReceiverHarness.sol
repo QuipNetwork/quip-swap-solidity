@@ -27,7 +27,7 @@ contract AuthorizationReceiverHarness is ICommitAuthorizationReceiver {
     bytes32 bobCommitSecret,
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata commitData
-  ) external {
+  ) external payable {
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
       terms, party, directGateway, address(this), lock, msg.sender, evidence, block.timestamp
     );

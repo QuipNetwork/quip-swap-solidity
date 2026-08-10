@@ -51,8 +51,9 @@ contract PQIdentityRegistryTest is Test {
   function test_directInitialRegistrationAndCommitAreAtomic() public {
     InitialRegistration memory request = _registration();
     bytes32 digest = registry.registrationDigest(request);
+    vm.deal(eoa, 1 ether);
     vm.prank(eoa);
-    registry.registerAndCommit(
+    registry.registerAndCommit{value: 1 ether}(
       request,
       '',
       _pqSig(_possessionDigest(digest, KeyRole.Active, request.activePQKey)),
@@ -66,6 +67,7 @@ contract PQIdentityRegistryTest is Test {
     assertEq(target.registryCaller(), address(registry));
     assertEq(target.registeredEOA(), eoa);
     assertEq(target.commitPayloadHash(), request.commitPayloadHash);
+    assertEq(target.valueReceived(), 1 ether);
   }
 
   function test_relayedRegistrationRequiresNativeEOASignature() public {

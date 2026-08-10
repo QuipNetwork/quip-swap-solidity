@@ -66,7 +66,7 @@ contract PQIdentityRegistry {
     bytes calldata activeProof,
     bytes calldata recoveryProof,
     bytes calldata commitData
-  ) external {
+  ) external payable {
     if (request.eoa == address(0)) revert InvalidEOAAuthorization();
     if (request.commitTarget.code.length == 0) revert CommitCallbackFailed();
     if (identities[request.eoa].activeKeyVersion != 0) revert AlreadyRegistered();
@@ -92,8 +92,9 @@ contract PQIdentityRegistry {
     identity.active = true;
     emit IdentityRegistered(request.eoa, 1, 1);
 
-    try IRegisteredCommitTarget(request.commitTarget)
-      .completeRegisteredCommit(request.eoa, msg.sender, request.commitPayloadHash, commitData) {}
+    try IRegisteredCommitTarget(request.commitTarget).completeRegisteredCommit{value: msg.value}(
+      request.eoa, msg.sender, request.commitPayloadHash, commitData
+    ) {}
     catch {
       revert CommitCallbackFailed();
     }

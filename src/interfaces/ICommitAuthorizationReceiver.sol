@@ -11,5 +11,5 @@ interface ICommitAuthorizationReceiver {
     bytes32 bobCommitSecret,
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata commitData
-  ) external;
+  ) external payable;
 }

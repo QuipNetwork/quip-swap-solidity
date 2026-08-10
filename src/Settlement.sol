@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {AssetCustody} from './AssetCustody.sol';
 import {CrossChainStateMachine} from './CrossChainStateMachine.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {ProtocolTerms, SideTerms, TimingPolicy, WrapperMode} from './ProtocolTypes.sol';
 import {SameChainStateMachine} from './SameChainStateMachine.sol';
-import {TermsLib} from './TermsLib.sol';
 
 library Settlement {
+  using AssetCustody for AssetCustody.Layout;
   using CrossChainStateMachine for CrossChainStateMachine.Layout;
   using SameChainStateMachine for SameChainStateMachine.Layout;
 
@@ -19,6 +20,7 @@ library Settlement {
 
   function claimCrossChain(
     CrossChainStateMachine.Layout storage self,
+    AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
     TimingPolicy memory policy,
     bool party,
@@ -34,11 +36,12 @@ library Settlement {
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
     self.claim(trade, lock, ProtocolHashing.sideTag(party), trade, ProtocolHashing.assetHash(side));
-    _transfer(side, side.recipient);
+    custody.release(side, side.recipient);
   }
 
   function reclaimCrossChain(
     CrossChainStateMachine.Layout storage self,
+    AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
     TimingPolicy memory policy,
     bool party,
@@ -52,11 +55,12 @@ library Settlement {
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
     self.reclaim(trade, lock, ProtocolHashing.sideTag(party), trade, ProtocolHashing.assetHash(side));
-    _transfer(side, side.reclaimRecipient);
+    custody.release(side, side.reclaimRecipient);
   }
 
   function claimSameChain(
     SameChainStateMachine.Layout storage self,
+    AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
     TimingPolicy memory policy,
     bytes32 lock,
@@ -75,12 +79,13 @@ library Settlement {
     self.claim(
       trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
     );
-    _transfer(terms.partySide, terms.partySide.recipient);
-    _transfer(terms.counterpartySide, terms.counterpartySide.recipient);
+    custody.release(terms.partySide, terms.partySide.recipient);
+    custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
   }
 
   function reclaimSameChainParty(
     SameChainStateMachine.Layout storage self,
+    AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
     TimingPolicy memory policy,
     bytes32 lock,
@@ -94,11 +99,12 @@ library Settlement {
     self.reclaimParty(
       trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
     );
-    _transfer(terms.partySide, terms.partySide.reclaimRecipient);
+    custody.release(terms.partySide, terms.partySide.reclaimRecipient);
   }
 
   function reclaimSameChainBoth(
     SameChainStateMachine.Layout storage self,
+    AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
     TimingPolicy memory policy,
     bytes32 lock,
@@ -114,8 +120,8 @@ library Settlement {
     self.reclaimBoth(
       trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
     );
-    _transfer(terms.partySide, terms.partySide.reclaimRecipient);
-    _transfer(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+    custody.release(terms.partySide, terms.partySide.reclaimRecipient);
+    custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
   }
 
   function _validate(ProtocolTerms memory terms, TimingPolicy memory policy, WrapperMode expected) private pure {
@@ -136,12 +142,6 @@ library Settlement {
   function _requireSecret(ProtocolTerms memory terms, bytes32 lock, bytes32 secret) private pure {
     if (ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), secret) != lock) {
       revert InvalidSettlementSecret();
-    }
-  }
-
-  function _transfer(SideTerms memory side, address recipient) private {
-    for (uint256 i; i < side.assets.length; ++i) {
-      TermsLib.transferAsset(side.assets[i], address(this), recipient);
     }
   }
 }

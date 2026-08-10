@@ -7,5 +7,5 @@ interface IRegisteredCommitTarget {
     address registrationCaller,
     bytes32 commitPayloadHash,
     bytes calldata commitData
-  ) external;
+  ) external payable;
 }

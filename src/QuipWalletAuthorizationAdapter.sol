@@ -29,12 +29,15 @@ contract QuipWalletAuthorizationAdapter {
   error InvalidKey();
   error AuthorizationExpired();
   error RotationNonceAlreadyConsumed();
+  error ExecutionFailed();
 
   address public immutable OWNER;
   PQIdentityRegistry public immutable REGISTRY;
   bytes private activePQKey;
   uint256 public walletKeyEpoch = 1;
   mapping(bytes32 => bool) public consumedRotationNonces;
+
+  receive() external payable {}
 
   constructor(address owner, PQIdentityRegistry registry, bytes memory initialPQKey) {
     if (owner == address(0) || initialPQKey.length <= 20) revert InvalidKey();
@@ -43,12 +46,18 @@ contract QuipWalletAuthorizationAdapter {
     activePQKey = initialPQKey;
   }
 
-  function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external {
+  function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external payable {
     VerifiedCommitAuthorization memory evidence = _verify(request, signature, msg.sender);
-    ICommitAuthorizationReceiver(request.receiver)
-      .receiveAuthorizedCommit(
-        request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
-      );
+    ICommitAuthorizationReceiver(request.receiver).receiveAuthorizedCommit{value: msg.value}(
+      request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
+    );
+  }
+
+  function execute(address target, uint256 value, bytes calldata data) external returns (bytes memory result) {
+    if (msg.sender != OWNER) revert NotOwner();
+    bool success;
+    (success, result) = target.call{value: value}(data);
+    if (!success) revert ExecutionFailed();
   }
 
   function _verify(

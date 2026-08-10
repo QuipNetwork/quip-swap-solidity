@@ -30,7 +30,7 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
     REGISTRY = registry;
   }
 
-  function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external {
+  function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external payable {
     _deliver(request, _verify(request, signature, msg.sender));
   }
 
@@ -39,7 +39,7 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
     address registrationCaller,
     bytes32 registeredPayloadHash,
     bytes calldata commitData
-  ) external {
+  ) external payable {
     if (msg.sender != address(REGISTRY)) revert InvalidRegistryCaller();
     (CommitAuthorizationRequest memory request, bytes memory signature) =
       abi.decode(commitData, (CommitAuthorizationRequest, bytes));
@@ -51,10 +51,9 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
   }
 
   function _deliver(CommitAuthorizationRequest memory request, VerifiedCommitAuthorization memory evidence) private {
-    ICommitAuthorizationReceiver(request.receiver)
-      .receiveAuthorizedCommit(
-        request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
-      );
+    ICommitAuthorizationReceiver(request.receiver).receiveAuthorizedCommit{value: msg.value}(
+      request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
+    );
   }
 
   function _verify(

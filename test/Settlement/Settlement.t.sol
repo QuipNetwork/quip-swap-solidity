@@ -122,8 +122,8 @@ contract SettlementTest is Test {
   function test_crossChainAsymmetricClaimedReclaimedOutcomeRemainsLocallyPossible() public {
     uint256 partyChain = block.chainid;
     (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
-    partyToken.mint(address(harness), 10 ether);
-    counterpartyToken.mint(address(harness), 20 ether);
+    _fundSide(terms.partySide, partyToken, 10 ether);
+    _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
     harness.seedCrossChain(terms, true, lock);
     harness.seedCrossChain(terms, false, lock);
 
@@ -179,9 +179,11 @@ contract SettlementTest is Test {
 
   function test_sameChainFailedSecondPayoutRollsBackFirstPayoutAndState() public {
     (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
-    partyToken.mint(address(harness), 10 ether);
+    _fundSide(terms.partySide, partyToken, 10 ether);
+    _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
     harness.seedSameChainParty(terms, lock);
     harness.seedSameChainCounterparty(terms, lock);
+    counterpartyToken.burn(address(harness), 20 ether);
 
     vm.expectRevert();
     harness.claimSameChain(terms, policy, lock, SECRET);
@@ -193,7 +195,7 @@ contract SettlementTest is Test {
 
   function test_sameChainOneSidedReclaimReturnsOnlyPartyLeg() public {
     (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
-    partyToken.mint(address(harness), 10 ether);
+    _fundSide(terms.partySide, partyToken, 10 ether);
     harness.seedSameChainParty(terms, lock);
     vm.warp(terms.partySide.reclaimRelease);
 
@@ -207,7 +209,7 @@ contract SettlementTest is Test {
 
   function test_sameChainOneSidedReclaimRejectsBeforePartyRelease() public {
     (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
-    partyToken.mint(address(harness), 10 ether);
+    _fundSide(terms.partySide, partyToken, 10 ether);
     harness.seedSameChainParty(terms, lock);
     vm.warp(terms.partySide.reclaimRelease - 1);
 
@@ -246,18 +248,24 @@ contract SettlementTest is Test {
   }
 
   function _fundAndSeedCross(ProtocolTerms memory terms, bool party, bytes32 lock) internal {
-    if (party) partyToken.mint(address(harness), 10 ether);
-    else counterpartyToken.mint(address(harness), 20 ether);
+    if (party) _fundSide(terms.partySide, partyToken, 10 ether);
+    else _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
     harness.seedCrossChain(terms, party, lock);
   }
 
   function _fundAndSeedSame(ProtocolTerms memory terms, bytes32 lock, bool both) internal {
-    partyToken.mint(address(harness), 10 ether);
+    _fundSide(terms.partySide, partyToken, 10 ether);
     harness.seedSameChainParty(terms, lock);
     if (both) {
-      counterpartyToken.mint(address(harness), 20 ether);
+      _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
       harness.seedSameChainCounterparty(terms, lock);
     }
+  }
+
+  function _fundSide(SideTerms memory side, ERC20Mock token, uint256 amount) internal {
+    token.mint(side.principal, amount);
+    vm.prank(side.principal);
+    token.approve(address(harness), amount);
   }
 
   function _crossTerms(bool partyLocal)
