@@ -5,7 +5,7 @@ import type {CommitPayloadArgs, ProtocolTerms, SideTerms, TimingPolicy} from '..
 import type {Hex32} from '../types.js'
 const ZERO = `0x${'00'.repeat(32)}` as Hex32
 export type AliceCommitStatus = 'not-submitted' | 'pending' | 'included-non-final' | 'final'
-export type WorkflowStage = 'prepared' | 'alice-commit' | 'bob-enabled' | 'bob-committed' | 'reveal-final' | 'final-claim' | 'complete' | 'recovery'
+export type WorkflowStage = 'prepared' | 'alice-commit' | 'bob-enabled' | 'bob-commit-pending' | 'bob-committed' | 'reveal-final' | 'final-claim' | 'complete' | 'recovery'
 export type SideTermsTemplate = Omit<SideTerms, 'commitLock' | 'sideNonce'>
 export interface WorkflowArgs {
   policy: TimingPolicy; partySide: SideTermsTemplate; counterpartySide: SideTermsTemplate
@@ -26,16 +26,17 @@ export function randomProtocolValue(): Hex32 {
 export class TrustedCrossChainWorkflow {
   readonly terms: ProtocolTerms; readonly tradeId: Hex32; readonly lock: Hex32
   readonly partyAuthorization: PreparedAuthorization; readonly counterpartyAuthorization: PreparedAuthorization
-  private readonly secret: Hex32; private readonly bobSecret: Hex32; private readonly confirmations: bigint
+  readonly #secret: Hex32; readonly #bobSecret: Hex32; private readonly confirmations: bigint
   private readonly selected: Address; private alice: AliceCommitStatus = 'not-submitted'
-  private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private released = false
+  private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private released = false; private unsafeReorg = false
   constructor(args: WorkflowArgs) {
     if (args.requiredConfirmations < 1n) throw new Error('requiredConfirmations must be positive')
     const random = args.randomHex32 ?? randomProtocolValue
     const values = [random(), random(), random(), random(), random(), random()] as const
     if (values.some(value => value === ZERO)) throw new Error('protocol randomness must be nonzero')
+    if (new Set(values).size !== values.length) throw new Error('protocol randomness must be independent')
     const [secret, bobSecret, partyNonce, counterNonce, partyActionNonce, counterActionNonce] = values
-    this.secret = secret; this.bobSecret = bobSecret; this.confirmations = args.requiredConfirmations; this.selected = args.selectedBobSubmitter
+    this.#secret = secret; this.#bobSecret = bobSecret; this.confirmations = args.requiredConfirmations; this.selected = args.selectedBobSubmitter
     const gate: ProtocolTerms = {timingPolicyId: timingPolicyId(args.policy), partySide: {...args.partySide, commitLock: ZERO, sideNonce: partyNonce}, counterpartySide: {...args.counterpartySide, commitLock: ZERO, sideNonce: counterNonce}}
     this.terms = {...gate, counterpartySide: {...gate.counterpartySide, commitLock: deriveCommitLock(gateContextId(gate), bobSecret)}}
     validateProtocolTerms(this.terms, args.policy); this.assertSelected()
@@ -46,7 +47,7 @@ export class TrustedCrossChainWorkflow {
     this.counterpartyAuthorization = {payload: counter, payloadHash: commitPayloadHash(counter)}
   }
   status(now?: bigint): WorkflowStatus {
-    const warning = this.alice === 'pending' ? 'Alice commit is pending; Bob commit is disabled.' : this.alice === 'included-non-final' ? 'Alice commit is not final; Bob commit is disabled and may be reorganized.' : undefined
+    const warning = this.unsafeReorg ? 'Alice commit reorganized after progression disclosure; stop submission and recover if possible.' : this.stage === 'bob-commit-pending' ? 'Progression was released; awaiting Bob commit confirmation.' : this.alice === 'pending' ? 'Alice commit is pending; Bob commit is disabled.' : this.alice === 'included-non-final' ? 'Alice commit is not final; Bob commit is disabled and may be reorganized.' : undefined
     return {stage: this.stage, aliceCommit: this.alice, ...(warning ? {warning} : {}), bobCommitEnabled: this.alice === 'final' && !this.released, reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && this.stage !== 'complete'}
   }
   markAlicePending(): void { this.beforeRelease(); this.alice = 'pending'; this.inclusion = undefined; this.stage = 'alice-commit' }
@@ -54,19 +55,23 @@ export class TrustedCrossChainWorkflow {
     this.beforeRelease(); if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
     this.inclusion = inclusion; this.alice = head - inclusion.blockNumber + 1n >= this.confirmations ? 'final' : 'included-non-final'; this.stage = this.alice === 'final' ? 'bob-enabled' : 'alice-commit'
   }
-  rollbackAlice(blockHash: Hex32): void { this.beforeRelease(); if (this.inclusion?.blockHash === blockHash) { this.inclusion = undefined; this.alice = 'pending'; this.stage = 'alice-commit' } }
+  rollbackAlice(blockHash: Hex32): void {
+    if (this.inclusion?.blockHash !== blockHash) return
+    this.inclusion = undefined; this.alice = 'pending'
+    if (this.released) { this.unsafeReorg = true; this.stage = 'recovery' } else this.stage = 'alice-commit'
+  }
   releaseBobCommitSecret(submitter: Address): Hex32 {
     if (this.alice !== 'final') throw new Error('Alice commit is not final')
     if (submitter.toLowerCase() !== this.selected.toLowerCase()) throw new Error('submitter not selected')
-    this.beforeRelease(); this.released = true; return this.bobSecret
+    this.beforeRelease(); this.released = true; this.stage = 'bob-commit-pending'; return this.#bobSecret
   }
-  markBobCommitted(): void { if (!this.released) throw new Error('progression was not released'); this.stage = 'bob-committed' }
+  markBobCommitted(): void { if (!this.released) throw new Error('progression was not released'); if (this.unsafeReorg) throw new Error('Alice commit was reorganized after progression disclosure'); this.stage = 'bob-committed' }
   observeFinalReveal(): void { if (this.stage !== 'bob-committed') throw new Error('Bob is not committed'); this.stage = 'reveal-final' }
   async handoffFinalClaim(executors: readonly FinalClaimExecutor[]): Promise<Hex> {
     if (this.stage !== 'reveal-final') throw new Error('revealing claim is not final')
     const funded = executors.filter(executor => executor.funded)
     if (funded.length === 0) throw new Error('no funded final-claim executor')
-    const transactionHash = await Promise.any(funded.map(executor => executor.submit(this.secret)))
+    const transactionHash = await Promise.any(funded.map(executor => executor.submit(this.#secret)))
     this.stage = 'final-claim'; return transactionHash
   }
   markComplete(): void { this.stage = 'complete' }

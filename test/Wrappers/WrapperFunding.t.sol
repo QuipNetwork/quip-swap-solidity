@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {AssetCustody} from '../../src/AssetCustody.sol';
+import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
 import {CrossChainWrapper} from '../../src/CrossChainWrapper.sol';
 import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
 import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
@@ -20,9 +21,11 @@ import {
   WrapperMode
 } from '../../src/ProtocolTypes.sol';
 import {QuipWalletAuthorizationAdapter} from '../../src/QuipWalletAuthorizationAdapter.sol';
+import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
 import {SameChainWrapper} from '../../src/SameChainWrapper.sol';
 import {Asset, AssetType} from '../../src/TermsLib.sol';
 import {TimingPolicyRegistry} from '../../src/TimingPolicyRegistry.sol';
+import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
 import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
@@ -30,6 +33,7 @@ import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {ERC721Mock} from '../mocks/ERC721Mock.sol';
 import {FeeOnTransferERC20Mock} from '../mocks/FeeOnTransferERC20Mock.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
+import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract WrapperFundingTest is Test {
@@ -124,6 +128,73 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
   }
 
+  function test_failedRegisterAndCommitRollsBackIdentityCustodyStateAndAuthorizationNonce() public {
+    address newcomer = vm.addr(0xCA11);
+    bytes memory newcomerKey = _key('newcomer');
+    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
+    (ProtocolTerms memory terms, bytes32 lock) =
+      _crossTerms(newcomer, AuthorizationMode.RegisteredDirect, 1, assets, 77);
+    CommitAuthorizationRequest memory commitRequest = _request(address(cross), terms, true, lock, 77);
+    bytes32 payloadHash = ProtocolHashing.commitPayloadHash(
+      terms,
+      true,
+      address(gateway),
+      address(cross),
+      lock,
+      ProtocolHashing.expectedSourceState(true, WrapperMode.CrossChain),
+      commitRequest.actionNonce,
+      commitRequest.expiry
+    );
+    bytes memory commitSignature = _pqSig(newcomerKey, payloadHash);
+    InitialRegistration memory registration = InitialRegistration({
+      eoa: newcomer,
+      activePQKey: newcomerKey,
+      recoveryPQKey: _key('newcomer-recovery'),
+      commitTarget: address(gateway),
+      commitPayloadHash: payloadHash,
+      operationNonce: keccak256('newcomer-registration'),
+      expiry: 190
+    });
+    bytes32 registrationDigest = registry.registrationDigest(registration);
+    bytes memory activeProof = _pqSig(
+      newcomerKey,
+      keccak256(
+        abi.encode(
+          'InterlockKeyPossession-v1.1', registrationDigest, KeyRole.Active, keccak256(registration.activePQKey)
+        )
+      )
+    );
+    bytes memory recoveryProof = _pqSig(
+      registration.recoveryPQKey,
+      keccak256(
+        abi.encode(
+          'InterlockKeyPossession-v1.1', registrationDigest, KeyRole.Recovery, keccak256(registration.recoveryPQKey)
+        )
+      )
+    );
+    bytes memory commitData = abi.encode(commitRequest, commitSignature);
+    token.mint(newcomer, 10 ether);
+
+    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.prank(newcomer);
+    registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
+    assertEq(token.balanceOf(newcomer), 10 ether);
+    assertEq(token.balanceOf(address(cross)), 0);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+    vm.prank(newcomer);
+    token.approve(address(cross), 10 ether);
+    vm.prank(newcomer);
+    registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
+    assertEq(token.balanceOf(newcomer), 0);
+    assertEq(token.balanceOf(address(cross)), 10 ether);
+    assertEq(cross.reserved(assets[0]), 10 ether);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
   function test_walletPrincipalFundsTokenWhileRelayerOnlyTransports() public {
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory terms, bytes32 lock) =
@@ -199,6 +270,61 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
   }
 
+  function test_maliciousIncomingERC20BehaviorsRevertAtomicallyAndPermitRetry() public {
+    for (uint8 raw = 1; raw <= uint8(MaliciousERC20Mock.Behavior.ReturnFalse); ++raw) {
+      MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+      Asset[] memory assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10 ether);
+      uint256 nonce = 60 + raw;
+      (ProtocolTerms memory terms, bytes32 lock) =
+        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, nonce);
+      CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, nonce);
+      bytes memory signature = _signature(request, address(gateway), aliceKey);
+      malicious.mint(alice, 11 ether);
+      vm.prank(alice);
+      malicious.approve(address(cross), 10 ether);
+      malicious.setBehavior(MaliciousERC20Mock.Behavior(raw));
+
+      vm.expectRevert();
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.balanceOf(alice), 11 ether);
+      assertEq(malicious.balanceOf(address(cross)), 0);
+      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+      malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.balanceOf(address(cross)), 10 ether);
+      assertEq(cross.reserved(assets[0]), 10 ether);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    }
+  }
+
+  function test_maliciousNoOpPayoutRollsBackClaimStateAndReserve() public {
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10 ether);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 70);
+    malicious.mint(alice, 10 ether);
+    vm.prank(alice);
+    malicious.approve(address(cross), 10 ether);
+    _directCommit(terms, true, lock, 70, alice, aliceKey, bytes32(0));
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
+
+    vm.expectRevert(AssetCustody.UnexpectedAmountReceived.selector);
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(malicious.balanceOf(RECIPIENT), 0);
+    assertEq(malicious.balanceOf(address(cross)), 10 ether);
+    assertEq(cross.reserved(assets[0]), 10 ether);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(malicious.balanceOf(RECIPIENT), 10 ether);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+  }
+
   function test_reserveDeficitCannotDrainAnotherTrade() public {
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory first, bytes32 firstLock) =
@@ -239,6 +365,173 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
+  function test_nativeReclaimRecipientCannotReenterCrossChainWrapper() public {
+    ReentrantRecipient attacker = new ReentrantRecipient();
+    Asset[] memory assets = _oneAsset(AssetType.Native, address(0), 0, 1 ether);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 30);
+    terms.partySide.reclaimRecipient = address(attacker);
+    _rebindCross(terms);
+    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+    CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 30);
+    vm.deal(alice, 1 ether);
+    vm.prank(alice);
+    gateway.authorizeCommit{value: 1 ether}(request, _signature(request, address(gateway), aliceKey));
+    attacker.arm(address(cross), abi.encodeCall(cross.reclaim, (terms, true, lock)));
+
+    vm.warp(terms.partySide.reclaimRelease);
+    cross.reclaim(terms, true, lock);
+
+    assertTrue(attacker.reentered());
+    assertFalse(attacker.innerSucceeded());
+    assertEq(address(attacker).balance, 1 ether);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Reclaimed));
+  }
+
+  function test_nativeRecipientCannotReenterSameChainDualClaim() public {
+    ReentrantRecipient attacker = new ReentrantRecipient();
+    (ProtocolTerms memory terms, bytes32 lock) =
+      _sameChainNativeTerms(address(attacker), RECIPIENT, RECLAIMER, RECLAIMER);
+    _commitSameChainNative(terms, lock, 31);
+    attacker.arm(address(same), abi.encodeCall(same.claim, (terms, lock, SECRET)));
+
+    same.claim(terms, lock, SECRET);
+
+    assertTrue(attacker.reentered());
+    assertFalse(attacker.innerSucceeded());
+    assertEq(address(attacker).balance, 1 ether);
+    assertEq(RECIPIENT.balance, 2 ether);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function test_nativeReclaimRecipientCannotReenterSameChainDualReclaim() public {
+    ReentrantRecipient attacker = new ReentrantRecipient();
+    (ProtocolTerms memory terms, bytes32 lock) =
+      _sameChainNativeTerms(RECIPIENT, RECIPIENT, address(attacker), RECLAIMER);
+    _commitSameChainNative(terms, lock, 31);
+    attacker.arm(address(same), abi.encodeCall(same.reclaimBoth, (terms, lock)));
+
+    vm.warp(terms.counterpartySide.reclaimRelease);
+    same.reclaimBoth(terms, lock);
+
+    assertTrue(attacker.reentered());
+    assertFalse(attacker.innerSucceeded());
+    assertEq(address(attacker).balance, 1 ether);
+    assertEq(RECLAIMER.balance, 2 ether);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Reclaimed));
+  }
+
+  function test_pairedWrapperRejectsMissingSignedPolicyThenAcceptsExactPolicy() public {
+    TimingPolicyRegistry otherPolicies = new TimingPolicyRegistry(address(this));
+    TimingPolicy memory mismatched = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 11, 10);
+    otherPolicies.registerPolicy(ProtocolHashing.timingPolicyId(mismatched), mismatched);
+    CrossChainWrapper otherCross = new CrossChainWrapper(address(gateway), otherPolicies);
+    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 90);
+    CommitAuthorizationRequest memory request = _request(address(otherCross), terms, true, lock, 90);
+    bytes memory signature = _signature(request, address(gateway), aliceKey);
+    token.mint(alice, 10 ether);
+    vm.prank(alice);
+    token.approve(address(otherCross), 10 ether);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(ITimingPolicyRegistry.TimingPolicyNotRegistered.selector, terms.timingPolicyId)
+    );
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(token.balanceOf(alice), 10 ether);
+    assertEq(token.balanceOf(address(otherCross)), 0);
+    assertEq(uint8(otherCross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+    TimingPolicy memory exact = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 10, 10);
+    assertEq(ProtocolHashing.timingPolicyId(exact), terms.timingPolicyId);
+    otherPolicies.registerPolicy(terms.timingPolicyId, exact);
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(token.balanceOf(address(otherCross)), 10 ether);
+    assertEq(uint8(otherCross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_crossChainClaimReclaimWinnerMakesStateAndPayoutTerminal() public {
+    Asset[] memory assets = _oneAsset(AssetType.Native, address(0), 0, 1 ether);
+    (ProtocolTerms memory claimedTerms, bytes32 claimedLock) =
+      _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 80);
+    CommitAuthorizationRequest memory claimedRequest = _request(address(cross), claimedTerms, true, claimedLock, 80);
+    vm.deal(alice, 1 ether);
+    vm.prank(alice);
+    gateway.authorizeCommit{value: 1 ether}(claimedRequest, _signature(claimedRequest, address(gateway), aliceKey));
+    cross.claim(claimedTerms, true, claimedLock, SECRET);
+    uint256 paidAfterClaim = RECIPIENT.balance;
+    vm.warp(claimedTerms.partySide.reclaimRelease);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        CrossChainStateMachine.InvalidCrossChainState.selector, CrossChainLegState.Committed, CrossChainLegState.Claimed
+      )
+    );
+    cross.reclaim(claimedTerms, true, claimedLock);
+    assertEq(RECIPIENT.balance, paidAfterClaim);
+    assertEq(cross.reserved(assets[0]), 0);
+
+    vm.warp(100);
+    (ProtocolTerms memory reclaimedTerms, bytes32 reclaimedLock) =
+      _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 81);
+    CommitAuthorizationRequest memory reclaimedRequest =
+      _request(address(cross), reclaimedTerms, true, reclaimedLock, 81);
+    vm.deal(alice, 1 ether);
+    vm.prank(alice);
+    gateway.authorizeCommit{value: 1 ether}(reclaimedRequest, _signature(reclaimedRequest, address(gateway), aliceKey));
+    vm.warp(reclaimedTerms.partySide.reclaimRelease);
+    cross.reclaim(reclaimedTerms, true, reclaimedLock);
+    uint256 refundedAfterReclaim = RECLAIMER.balance;
+    vm.warp(100);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        CrossChainStateMachine.InvalidCrossChainState.selector,
+        CrossChainLegState.Committed,
+        CrossChainLegState.Reclaimed
+      )
+    );
+    cross.claim(reclaimedTerms, true, reclaimedLock, SECRET);
+    assertEq(RECLAIMER.balance, refundedAfterReclaim);
+    assertEq(cross.reserved(assets[0]), 0);
+  }
+
+  function test_sameChainClaimReclaimWinnerMakesStateAndBothPayoutsTerminal() public {
+    (ProtocolTerms memory claimedTerms, bytes32 claimedLock) =
+      _sameChainNativeTerms(RECIPIENT, RECIPIENT, RECLAIMER, RECLAIMER);
+    _commitSameChainNative(claimedTerms, claimedLock, 41);
+    same.claim(claimedTerms, claimedLock, SECRET);
+    uint256 paidAfterClaim = RECIPIENT.balance;
+    vm.warp(claimedTerms.counterpartySide.reclaimRelease);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.Claimed
+      )
+    );
+    same.reclaimBoth(claimedTerms, claimedLock);
+    assertEq(RECIPIENT.balance, paidAfterClaim);
+    assertEq(same.reserved(claimedTerms.partySide.assets[0]), 0);
+
+    vm.warp(100);
+    (ProtocolTerms memory reclaimedTerms, bytes32 reclaimedLock) =
+      _sameChainNativeTerms(RECIPIENT, RECIPIENT, RECLAIMER, RECLAIMER);
+    reclaimedTerms.partySide.sideNonce = bytes32(uint256(201));
+    reclaimedTerms.counterpartySide.sideNonce = bytes32(uint256(202));
+    reclaimedLock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(reclaimedTerms), SECRET);
+    _commitSameChainNative(reclaimedTerms, reclaimedLock, 51);
+    vm.warp(reclaimedTerms.counterpartySide.reclaimRelease);
+    same.reclaimBoth(reclaimedTerms, reclaimedLock);
+    uint256 refundedAfterReclaim = RECLAIMER.balance;
+    vm.warp(100);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.Reclaimed
+      )
+    );
+    same.claim(reclaimedTerms, reclaimedLock, SECRET);
+    assertEq(RECLAIMER.balance, refundedAfterReclaim);
+    assertEq(same.reserved(reclaimedTerms.partySide.assets[0]), 0);
+  }
+
   function test_sameChainProductionWrapperCommitsAndSettlesBothPrincipalFundedLegs() public {
     ERC20Mock bobToken = new ERC20Mock('Bob', 'BOB', 18);
     ProtocolTerms memory terms;
@@ -268,6 +561,40 @@ contract WrapperFundingTest is Test {
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
     assertEq(bobToken.balanceOf(RECIPIENT), 20 ether);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function _sameChainNativeTerms(
+    address partyRecipient,
+    address counterpartyRecipient,
+    address partyReclaimer,
+    address counterpartyReclaimer
+  ) internal returns (ProtocolTerms memory terms, bytes32 lock) {
+    terms.partySide = _side(
+      alice, AuthorizationMode.RegisteredDirect, 1, _oneAsset(AssetType.Native, address(0), 0, 1 ether), 31
+    );
+    terms.counterpartySide =
+      _side(bob, AuthorizationMode.RegisteredDirect, 1, _oneAsset(AssetType.Native, address(0), 0, 2 ether), 132);
+    terms.partySide.recipient = partyRecipient;
+    terms.counterpartySide.recipient = counterpartyRecipient;
+    terms.partySide.reclaimRecipient = partyReclaimer;
+    terms.counterpartySide.reclaimRecipient = counterpartyReclaimer;
+    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.SameChain, block.chainid, block.chainid, 0, 0);
+    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
+    if (!policies.isRegistered(terms.timingPolicyId)) policies.registerPolicy(terms.timingPolicyId, policy);
+    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+  }
+
+  function _commitSameChainNative(ProtocolTerms memory terms, bytes32 lock, uint256 nonceBase) internal {
+    vm.deal(alice, 1 ether);
+    vm.deal(bob, 2 ether);
+    CommitAuthorizationRequest memory partyRequest = _request(address(same), terms, true, lock, nonceBase);
+    vm.prank(alice);
+    gateway.authorizeCommit{value: 1 ether}(partyRequest, _signature(partyRequest, address(gateway), aliceKey));
+    CommitAuthorizationRequest memory counterpartyRequest = _request(address(same), terms, false, lock, nonceBase + 1);
+    vm.prank(bob);
+    gateway.authorizeCommit{value: 2 ether}(
+      counterpartyRequest, _signature(counterpartyRequest, address(gateway), bobKey)
+    );
   }
 
   function _directCommit(

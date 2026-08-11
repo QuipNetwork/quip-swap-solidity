@@ -52,6 +52,19 @@ contract SettlementTest is Test {
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
+  function test_leakedSettlementSecretClaimsPartyLegBeforeCounterpartyCommit() public {
+    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    _fundAndSeedCross(terms, true, lock);
+    assertEq(uint8(harness.crossState(terms, false, lock)), uint8(CrossChainLegState.Unused));
+
+    vm.prank(EXECUTOR);
+    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+
+    assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 10 ether);
+    assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+    assertEq(uint8(harness.crossState(terms, false, lock)), uint8(CrossChainLegState.Unused));
+  }
+
   function test_crossChainClaimRejectsWrongSecretAndExclusiveDeadlineWithoutEffects() public {
     (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
@@ -165,6 +178,23 @@ contract SettlementTest is Test {
     assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 10 ether);
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECIPIENT), 20 ether);
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function test_leakedSettlementSecretCannotClaimHalfCommittedSameChainTrade() public {
+    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    _fundAndSeedSame(terms, lock, false);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector,
+        SameChainState.BothCommitted,
+        SameChainState.PartyCommitted
+      )
+    );
+    harness.claimSameChain(terms, policy, lock, SECRET);
+
+    assertEq(partyToken.balanceOf(address(harness)), 10 ether);
+    assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.PartyCommitted));
   }
 
   function test_sameChainClaimUsesMinimumExclusiveDeadline() public {

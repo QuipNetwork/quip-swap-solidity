@@ -14,6 +14,9 @@ import {
   InitialRegistration,
   KeyRole,
   ProtocolTerms,
+  RegistryActionTag,
+  RegistryAuthorization,
+  RegistryOperation,
   SideTerms,
   VerifiedCommitAuthorization
 } from '../../src/ProtocolTypes.sol';
@@ -71,6 +74,58 @@ contract AuthorizationBoundariesTest is Test {
     gateway.authorizeCommit(directRequest, _signature(directRequest, address(gateway)));
     assertEq(receiver.lastSubmitter(), directUser);
     assertEq(receiver.commits(), 2);
+  }
+
+  function test_commitSignatureRejectsCrossDeploymentCrossChainAndCrossSideReplay() public {
+    ProtocolTerms memory terms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('replay-scope'));
+    bytes memory signature = _signature(request, address(gateway));
+
+    // A second gateway has the same registry and key, but a different signed verifier address.
+    PQAuthorizationGateway otherGateway = new PQAuthorizationGateway(registry);
+    vm.expectRevert(PQAuthorizationGateway.InvalidPQAuthorization.selector);
+    vm.prank(relayer);
+    otherGateway.authorizeCommit(request, signature);
+
+    // The unchanged authorization cannot execute on another chain.
+    uint256 originalChainId = block.chainid;
+    vm.chainId(originalChainId + 1);
+    vm.expectRevert(PQAuthorizationGateway.InvalidChain.selector);
+    vm.prank(relayer);
+    gateway.authorizeCommit(request, signature);
+    vm.chainId(originalChainId);
+
+    // Selecting the other side changes the signed SideTag and all side-specific bindings.
+    request.terms.counterpartySide = request.terms.partySide;
+    request.party = false;
+    vm.expectRevert(PQAuthorizationGateway.InvalidPQAuthorization.selector);
+    vm.prank(relayer);
+    gateway.authorizeCommit(request, signature);
+  }
+
+  function test_commitSignatureRejectsCrossActionRegistryReplay() public {
+    ProtocolTerms memory terms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory commitRequest = _request(terms, keccak256('cross-action'));
+    bytes memory commitSignature = _signature(commitRequest, address(gateway));
+
+    RegistryOperation memory operation = RegistryOperation({
+      action: RegistryActionTag.RotateRecovery,
+      eoa: directUser,
+      expectedActiveKeyVersion: 1,
+      expectedRecoveryKeyVersion: 1,
+      newActivePQKey: '',
+      newActiveKeyVersion: 0,
+      newRecoveryPQKey: _key('cross-action-recovery'),
+      newRecoveryKeyVersion: 2,
+      operationNonce: commitRequest.actionNonce,
+      expiry: commitRequest.expiry,
+      recoveryAuthorized: false
+    });
+    RegistryAuthorization memory authorization;
+    authorization.authorizingPQSignature = commitSignature;
+    vm.expectRevert(PQIdentityRegistry.InvalidPQAuthorization.selector);
+    vm.prank(directUser);
+    registry.execute(operation, authorization);
   }
 
   function test_bothPathsRejectBadSignatureExpiryReplayAndReceiverSubstitution() public {
@@ -143,6 +198,36 @@ contract AuthorizationBoundariesTest is Test {
     wallet.authorizeCommit(pending, oldPendingSignature);
     wallet.authorizeCommit(pending, _signature(pending, address(wallet)));
     assertEq(receiver.commits(), 2);
+  }
+
+  function test_directPrincipalRotationRejectsStaleCommitKeyVersion() public {
+    ProtocolTerms memory terms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory pending = _request(terms, keccak256('stale-direct'));
+    bytes memory staleSignature = _signature(pending, address(gateway));
+    bytes memory newKey = _key('direct-2');
+    _rotateActive(directUser, directPQKey, newKey);
+
+    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.prank(relayer);
+    gateway.authorizeCommit(pending, staleSignature);
+
+    directPQKey = newKey;
+    terms.partySide.principalKeyVersion = 2;
+    CommitAuthorizationRequest memory current = _request(terms, keccak256('current-direct'));
+    vm.prank(relayer);
+    gateway.authorizeCommit(current, _signature(current, address(gateway)));
+    assertEq(receiver.lastSubmitter(), directUser);
+  }
+
+  function test_specificDelegateRotationRejectsStaleBrokerVersion() public {
+    ProtocolTerms memory terms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory pending = _request(terms, keccak256('stale-broker'));
+    bytes memory signature = _signature(pending, address(gateway));
+    _rotateActive(broker, _key('broker'), _key('broker-2'));
+
+    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.prank(broker);
+    gateway.authorizeCommit(pending, signature);
   }
 
   function test_failedReceiverRollsBackSharedNonceForBothPaths() public {
@@ -373,6 +458,28 @@ contract AuthorizationBoundariesTest is Test {
       delegateKeyVersion: delegateVersion,
       sideNonce: keccak256(abi.encode(principal, mode))
     });
+  }
+
+  function _rotateActive(address eoa, bytes memory oldKey, bytes memory newKey) internal {
+    RegistryOperation memory request = RegistryOperation({
+      action: RegistryActionTag.RotateActive,
+      eoa: eoa,
+      expectedActiveKeyVersion: 1,
+      expectedRecoveryKeyVersion: 1,
+      newActivePQKey: newKey,
+      newActiveKeyVersion: 2,
+      newRecoveryPQKey: '',
+      newRecoveryKeyVersion: 0,
+      operationNonce: keccak256(abi.encode('rotate', eoa)),
+      expiry: 2000,
+      recoveryAuthorized: false
+    });
+    bytes32 digest = registry.operationDigest(request);
+    RegistryAuthorization memory authorization;
+    authorization.authorizingPQSignature = _pqSig(oldKey, digest);
+    authorization.activeProofOfPossession = _pqSig(newKey, registry.possessionDigest(digest, KeyRole.Active, newKey));
+    vm.prank(eoa);
+    registry.execute(request, authorization);
   }
 
   function _lazyRegistration(

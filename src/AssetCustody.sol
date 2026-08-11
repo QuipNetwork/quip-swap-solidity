@@ -51,7 +51,18 @@ library AssetCustody {
       Asset memory asset = side.assets[i];
       uint256 amount = asset.assetType == AssetType.ERC721 ? 1 : asset.amount;
       self.reserved[assetKey(asset)] -= amount;
-      TermsLib.transferAsset(asset, address(this), recipient);
+      if (asset.assetType == AssetType.ERC20 || asset.assetType == AssetType.ERC1155) {
+        uint256 beforeBalance = asset.assetType == AssetType.ERC1155
+          ? IERC1155(asset.target).balanceOf(recipient, asset.id)
+          : SafeTransferLib.balanceOf(asset.target, recipient);
+        TermsLib.transferAsset(asset, address(this), recipient);
+        uint256 afterBalance = asset.assetType == AssetType.ERC1155
+          ? IERC1155(asset.target).balanceOf(recipient, asset.id)
+          : SafeTransferLib.balanceOf(asset.target, recipient);
+        if (afterBalance - beforeBalance != amount) revert UnexpectedAmountReceived();
+      } else {
+        TermsLib.transferAsset(asset, address(this), recipient);
+      }
     }
   }
 

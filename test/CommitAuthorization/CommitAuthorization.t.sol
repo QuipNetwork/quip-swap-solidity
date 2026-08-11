@@ -100,6 +100,15 @@ contract CommitAuthorizationTest is Test {
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
   }
 
+  function test_rejectsPayloadAuthorizedForWrongVerifier() public {
+    ProtocolTerms memory terms = _crossChainTerms();
+    VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
+    evidence.payloadHash = ProtocolHashing.commitPayloadHash(
+      terms, false, RELAYER, address(harness), LOCK, evidence.expectedSourceState, NONCE, evidence.expiry
+    );
+    _expectInvalidPayload(terms, LOCK, evidence);
+  }
+
   function test_rejectsTermsLockNonceAndExpirySubstitution() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
@@ -192,6 +201,68 @@ contract CommitAuthorizationTest is Test {
     harness.commitAuthorized(terms, false, LOCK, bob, 0);
     assertTrue(harness.isConsumed(_nonceKey(terms.partySide, ALICE, NONCE)));
     assertTrue(harness.isConsumed(_nonceKey(terms.counterpartySide, GATEWAY, NONCE)));
+  }
+
+  function test_authorizationNonceKeyScopesEverySpecifiedField() public pure {
+    bytes32 base = keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_337, GATEWAY, BOB, 7, NONCE));
+    assertNotEq(base, keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_338, GATEWAY, BOB, 7, NONCE)));
+    assertNotEq(base, keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_337, RELAYER, BOB, 7, NONCE)));
+    assertNotEq(base, keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_337, GATEWAY, ALICE, 7, NONCE)));
+    assertNotEq(base, keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_337, GATEWAY, BOB, 8, NONCE)));
+    assertNotEq(
+      base, keccak256(ProtocolHashing.encodeAuthorizationNonceKey(31_337, GATEWAY, BOB, 7, bytes32(uint256(NONCE) + 1)))
+    );
+  }
+
+  function test_sameAuthorizationNonceCannotAuthorizeDifferentTrade() public {
+    ProtocolTerms memory first = _crossChainTerms();
+    VerifiedCommitAuthorization memory firstEvidence = _evidence(first, false, BOB, 7, NONCE, 2000);
+    vm.prank(GATEWAY);
+    harness.commitAuthorized(first, false, LOCK, firstEvidence, 0);
+
+    ProtocolTerms memory second = _crossChainTerms();
+    second.partySide.sideNonce = keccak256('fresh-party-run');
+    second.counterpartySide.sideNonce = keccak256('fresh-counterparty-run');
+    assertNotEq(ProtocolHashing.tradeId(first), ProtocolHashing.tradeId(second));
+    VerifiedCommitAuthorization memory secondEvidence = _evidence(second, false, BOB, 7, NONCE, 2000);
+    bytes32 nonceKey = _nonceKey(second.counterpartySide, GATEWAY, NONCE);
+    vm.expectRevert(abi.encodeWithSelector(CommitAuthorization.AuthorizationNonceAlreadyConsumed.selector, nonceKey));
+    vm.prank(GATEWAY);
+    harness.commitAuthorized(second, false, LOCK, secondEvidence, 0);
+    assertEq(harness.stateEffects(), 1);
+  }
+
+  function test_nonMonotonicAuthorizationNoncesAreAccepted() public {
+    ProtocolTerms memory first = _crossChainTerms();
+    bytes32 highNonce = bytes32(type(uint256).max);
+    vm.prank(GATEWAY);
+    harness.commitAuthorized(first, false, LOCK, _evidence(first, false, BOB, 7, highNonce, 2000), 0);
+
+    ProtocolTerms memory second = _crossChainTerms();
+    second.counterpartySide.sideNonce = keccak256('second-run');
+    bytes32 lowNonce = bytes32(uint256(1));
+    vm.prank(GATEWAY);
+    harness.commitAuthorized(second, false, LOCK, _evidence(second, false, BOB, 7, lowNonce, 2000), 0);
+    assertTrue(harness.isConsumed(_nonceKey(first.counterpartySide, GATEWAY, highNonce)));
+    assertTrue(harness.isConsumed(_nonceKey(second.counterpartySide, GATEWAY, lowNonce)));
+  }
+
+  function test_sideNoncesBindRunsButAreNotAuthorizationCounters() public pure {
+    ProtocolTerms memory original = _crossChainTerms();
+    ProtocolTerms memory changedParty = _crossChainTerms();
+    changedParty.partySide.sideNonce = keccak256('changed-party');
+    ProtocolTerms memory changedCounterparty = _crossChainTerms();
+    changedCounterparty.counterpartySide.sideNonce = keccak256('changed-counterparty');
+
+    assertNotEq(ProtocolHashing.tradeId(original), ProtocolHashing.tradeId(changedParty));
+    assertNotEq(ProtocolHashing.tradeId(original), ProtocolHashing.tradeId(changedCounterparty));
+    assertNotEq(ProtocolHashing.gateContextId(original), ProtocolHashing.gateContextId(changedParty));
+    assertNotEq(ProtocolHashing.gateContextId(original), ProtocolHashing.gateContextId(changedCounterparty));
+    // sideNonce is intentionally absent from the verifier-local authorization nonce key.
+    assertEq(
+      _nonceKey(original.counterpartySide, GATEWAY, NONCE),
+      _nonceKey(changedCounterparty.counterpartySide, GATEWAY, NONCE)
+    );
   }
 
   function test_stateFailureRollsBackEffectsAndNonceThenRetrySucceeds() public {

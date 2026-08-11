@@ -36,6 +36,23 @@ contract ProgressionGateTest is Test {
     harness.validate(other, false, SECRET);
   }
 
+  function test_reusedSecretOpensEveryTradeThatDeliberatelyUsesIt() public view {
+    ProtocolTerms memory first = _crossChainTerms(SECRET, keccak256('run-a'));
+    ProtocolTerms memory second = _crossChainTerms(SECRET, keccak256('run-b'));
+    assertNotEq(ProtocolHashing.gateContextId(first), ProtocolHashing.gateContextId(second));
+    assertNotEq(first.counterpartySide.commitLock, second.counterpartySide.commitLock);
+
+    // Trade binding prevents lock substitution, not unsafe preimage reuse.
+    harness.validate(first, false, SECRET);
+    harness.validate(second, false, SECRET);
+  }
+
+  function test_prematureDisclosureMakesCounterpartyGateImmediatelyUsable() public view {
+    ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('premature-disclosure'));
+    // ProgressionGate is intentionally stateless: finality is enforced by withholding this preimage off-chain.
+    harness.validate(terms, false, SECRET);
+  }
+
   function test_partyCommitRejectsPrematureOrExtraneousProgressionSecret() public {
     ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('run-a'));
     vm.expectRevert(ProgressionGate.UnexpectedBobCommitSecret.selector);

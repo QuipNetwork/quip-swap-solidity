@@ -193,6 +193,26 @@ contract TimingPolicyRegistryTest is Test {
     assertEq(ProtocolHashing.timingPolicyId(right), policyId);
   }
 
+  function test_pairedRegistriesWithDifferentPoliciesRejectTheOtherSignedIdentifier() public {
+    TimingPolicyRegistry other = new TimingPolicyRegistry(owner);
+    TimingPolicy memory expected = _crossChainPolicy();
+    bytes32 expectedId = _register(expected);
+    TimingPolicy memory different = _crossChainPolicy();
+    different.counterpartyToPartyDelay += 1;
+    bytes32 differentId = ProtocolHashing.timingPolicyId(different);
+    vm.prank(owner);
+    other.registerPolicy(differentId, different);
+
+    _assertPolicyEq(
+      registry.resolvePolicyForRoute(
+        expectedId, WrapperMode.CrossChain, expected.partyChainId, expected.counterpartyChainId
+      ),
+      expected
+    );
+    vm.expectRevert(abi.encodeWithSelector(ITimingPolicyRegistry.TimingPolicyNotRegistered.selector, expectedId));
+    other.resolvePolicyForRoute(expectedId, WrapperMode.CrossChain, expected.partyChainId, expected.counterpartyChainId);
+  }
+
   function _crossChainPolicy() internal pure returns (TimingPolicy memory) {
     return TimingPolicy({
       policyVersion: 1,
