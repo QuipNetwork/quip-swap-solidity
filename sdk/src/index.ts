@@ -44,7 +44,7 @@ export type {
   RegistryOperation,
 } from './protocol.js'
 
-export {TrustedCrossChainWorkflow, randomProtocolValue, submitWithFeeBumps} from './workflows/trustedCrossChain.js'
+export {TrustedCrossChainWorkflow, prepareTrustedCrossChainWorkflow, randomProtocolValue, submitWithFeeBumps} from './workflows/trustedCrossChain.js'
 export type {
   AliceCommitStatus,
   WorkflowStage,
@@ -55,6 +55,7 @@ export type {
   Inclusion,
   FinalClaimExecutor,
   RetryPolicy,
+  PreparedTrustedWorkflow,
 } from './workflows/trustedCrossChain.js'
 
 export {createProtocolClient} from './protocolClient.js'
@@ -137,6 +138,13 @@ export {
   savePartyWorkflowState,
   restorePartyWorkflowState,
 } from './clientPersistence.js'
+export {prepareTradeCommand, applyPartyCommand, cliWorkflowCommands} from './cliCommands.js'
+export type {
+  BobProgressionTransfer,
+  PrepareTradeCommandArgs,
+  PreparedPartyStates,
+  AppliedPartyCommand,
+} from './cliCommands.js'
 export type {
   SecretStateMode,
   AliceSecretState,

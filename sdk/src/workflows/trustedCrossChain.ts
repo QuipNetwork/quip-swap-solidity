@@ -17,10 +17,23 @@ export interface PreparedAuthorization {payload: CommitPayloadArgs; payloadHash:
 export interface Inclusion {transactionHash: Hex; blockNumber: bigint; blockHash: Hex32}
 export interface FinalClaimExecutor {funded: boolean; submit: (secret: Hex32) => Promise<Hex>}
 export interface WorkflowStatus {stage: WorkflowStage; aliceCommit: AliceCommitStatus; warning?: string; bobCommitEnabled: boolean; reclaimRecommended: boolean}
+export interface PreparedTrustedWorkflow {
+  readonly workflow: TrustedCrossChainWorkflow
+  readonly settlementSecret: Hex32
+  readonly bobCommitSecret: Hex32
+}
 export function randomProtocolValue(): Hex32 {
   let value: Hex32
   do { const bytes = new Uint8Array(32); globalThis.crypto.getRandomValues(bytes); value = ('0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')) as Hex32 } while (value === ZERO)
   return value
+}
+/** Creates a workflow while returning its initial secret material to its owning client boundary. */
+export function prepareTrustedCrossChainWorkflow(args: WorkflowArgs): PreparedTrustedWorkflow {
+  const random = args.randomHex32 ?? randomProtocolValue
+  const values = Array.from({length: 6}, () => random())
+  let index = 0
+  const workflow = new TrustedCrossChainWorkflow({...args, randomHex32: () => values[index++] as Hex32})
+  return {workflow, settlementSecret: values[0] as Hex32, bobCommitSecret: values[1] as Hex32}
 }
 /** Finality-aware coordinator. Neither secret is present in status or logging surfaces. */
 export class TrustedCrossChainWorkflow {

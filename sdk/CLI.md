@@ -10,7 +10,8 @@ quip-swap <alice|bob> <command> --state-dir <party-directory> [--input <json-fil
 `--state-dir` always names only the selected party's directory. Structured command
 inputs come from a JSON file or standard input (`--input -`). Secrets are never
 accepted as command-line arguments. `--json` emits exactly one JSON object to stdout;
-operator diagnostics go to stderr. Task 14.8.4 will implement the executable.
+operator diagnostics go to stderr. The trusted-workflow command layer is implemented;
+the operator-facing formatter and executable assembly follow in the remaining demo tasks.
 
 The commands are `prepare-trade`, `status`, `mark-alice-pending`,
 `mark-alice-included-non-final`, `mark-alice-final`, `release-bob-secret`,
