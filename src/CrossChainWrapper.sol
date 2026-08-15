@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {AssetCustody} from './AssetCustody.sol';
+import {AssetSupport} from './AssetSupport.sol';
 import {CommitAuthorization} from './CommitAuthorization.sol';
 import {CrossChainStateMachine} from './CrossChainStateMachine.sol';
 import {ProgressionGate} from './ProgressionGate.sol';
@@ -17,6 +18,7 @@ import {
 } from './ProtocolTypes.sol';
 import {Settlement} from './Settlement.sol';
 import {Asset} from './TermsLib.sol';
+import {IAssetSupportRegistry} from './interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from './interfaces/ICommitAuthorizationReceiver.sol';
 import {ITimingPolicyRegistry} from './interfaces/ITimingPolicyRegistry.sol';
 import {ERC1155Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/utils/ERC1155Holder.sol';
@@ -25,6 +27,7 @@ import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Reentran
 
 contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   using AssetCustody for AssetCustody.Layout;
+  using AssetSupport for SideTerms;
   using CommitAuthorization for CommitAuthorization.Layout;
   using CrossChainStateMachine for CrossChainStateMachine.Layout;
   using Settlement for CrossChainStateMachine.Layout;
@@ -40,15 +43,19 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
 
   address public immutable DIRECT_GATEWAY;
   ITimingPolicyRegistry public immutable TIMING_POLICIES;
+  IAssetSupportRegistry public immutable ASSET_SUPPORT;
 
   CommitAuthorization.Layout private authorizations;
   CrossChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
 
-  constructor(address directGateway, ITimingPolicyRegistry timingPolicies) {
-    if (directGateway == address(0) || address(timingPolicies) == address(0)) revert ZeroConfiguration();
+  constructor(address directGateway, ITimingPolicyRegistry timingPolicies, IAssetSupportRegistry assetSupport) {
+    if (directGateway == address(0) || address(timingPolicies) == address(0) || address(assetSupport) == address(0)) {
+      revert ZeroConfiguration();
+    }
     DIRECT_GATEWAY = directGateway;
     TIMING_POLICIES = timingPolicies;
+    ASSET_SUPPORT = assetSupport;
   }
 
   function receiveAuthorizedCommit(
@@ -62,6 +69,7 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     _policy(terms);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
+    side.requireSupported(ASSET_SUPPORT);
     CommitAuthorization.PreparedAuthorization memory prepared =
       authorizations.validate(terms, party, DIRECT_GATEWAY, address(this), lock, msg.sender, evidence, block.timestamp);
     ProgressionGate.validate(terms, party, bobCommitSecret);

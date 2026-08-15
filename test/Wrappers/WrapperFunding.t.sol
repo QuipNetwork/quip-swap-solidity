@@ -2,6 +2,8 @@
 pragma solidity 0.8.33;
 
 import {AssetCustody} from '../../src/AssetCustody.sol';
+import {AssetSupport} from '../../src/AssetSupport.sol';
+import {AssetSupportRegistry} from '../../src/AssetSupportRegistry.sol';
 import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
 import {CrossChainWrapper} from '../../src/CrossChainWrapper.sol';
 import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
@@ -59,6 +61,7 @@ contract WrapperFundingTest is Test {
   PQIdentityRegistry internal registry;
   PQAuthorizationGateway internal gateway;
   TimingPolicyRegistry internal policies;
+  AssetSupportRegistry internal assetSupport;
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
   QuipWalletAuthorizationAdapter internal wallet;
@@ -82,8 +85,9 @@ contract WrapperFundingTest is Test {
     _register(broker, brokerKey);
     gateway = new PQAuthorizationGateway(registry);
     policies = new TimingPolicyRegistry(address(this));
-    cross = new CrossChainWrapper(address(gateway), policies);
-    same = new SameChainWrapper(address(gateway), policies);
+    assetSupport = new AssetSupportRegistry(address(this));
+    cross = new CrossChainWrapper(address(gateway), policies, assetSupport);
+    same = new SameChainWrapper(address(gateway), policies, assetSupport);
     wallet = new QuipWalletAuthorizationAdapter(address(this), registry, walletKey);
     token = new ERC20Mock('Token', 'TOK', 18);
   }
@@ -269,6 +273,61 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+  }
+
+  function test_unapprovedAssetIsRejectedBeforeCustodyAndCanBeEnabled() public {
+    ERC20Mock unsupported = new ERC20Mock('Unsupported', 'NO', 18);
+    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(unsupported), 0, 10 ether);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 67);
+    assetSupport.setAssetSupport(AssetType.ERC20, address(unsupported), false);
+    unsupported.mint(alice, 10 ether);
+    vm.prank(alice);
+    unsupported.approve(address(cross), 10 ether);
+    CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 67);
+    bytes memory signature = _signature(request, address(gateway), aliceKey);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(AssetSupport.UnsupportedAsset.selector, AssetType.ERC20, address(unsupported))
+    );
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(unsupported.balanceOf(alice), 10 ether);
+    assertEq(unsupported.balanceOf(address(cross)), 0);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+    assetSupport.setAssetSupport(AssetType.ERC20, address(unsupported), true);
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(unsupported.balanceOf(address(cross)), 10 ether);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_assetSupportIsTypeScopedAndDelistingDoesNotStrandEscrow() public {
+    ERC721Mock nft = new ERC721Mock('Scoped', 'SCOPE');
+    Asset[] memory assets = _oneAsset(AssetType.ERC721, address(nft), 12, 1);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 68);
+    assetSupport.setAssetSupport(AssetType.ERC721, address(nft), false);
+    assetSupport.setAssetSupport(AssetType.ERC20, address(nft), true);
+    nft.mint(alice, 12);
+    vm.prank(alice);
+    nft.approve(address(cross), 12);
+    CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 68);
+    bytes memory signature = _signature(request, address(gateway), aliceKey);
+
+    vm.expectRevert(abi.encodeWithSelector(AssetSupport.UnsupportedAsset.selector, AssetType.ERC721, address(nft)));
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+
+    assetSupport.setAssetSupport(AssetType.ERC721, address(nft), true);
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assetSupport.setAssetSupport(AssetType.ERC721, address(nft), false);
+    cross.claim(terms, true, lock, SECRET);
+
+    assertEq(nft.ownerOf(12), RECIPIENT);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
   function test_maliciousIncomingERC20BehaviorsRevertAtomicallyAndPermitRetry() public {
@@ -556,7 +615,7 @@ contract WrapperFundingTest is Test {
     TimingPolicyRegistry otherPolicies = new TimingPolicyRegistry(address(this));
     TimingPolicy memory mismatched = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 11, 10);
     otherPolicies.registerPolicy(ProtocolHashing.timingPolicyId(mismatched), mismatched);
-    CrossChainWrapper otherCross = new CrossChainWrapper(address(gateway), otherPolicies);
+    CrossChainWrapper otherCross = new CrossChainWrapper(address(gateway), otherPolicies, assetSupport);
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 90);
     CommitAuthorizationRequest memory request = _request(address(otherCross), terms, true, lock, 90);
@@ -788,7 +847,8 @@ contract WrapperFundingTest is Test {
     uint256 version,
     Asset[] memory assets,
     uint256 nonce
-  ) internal view returns (SideTerms memory side) {
+  ) internal returns (SideTerms memory side) {
+    _supportAssets(assets);
     side.chainId = block.chainid;
     side.assets = assets;
     side.principal = principal;
@@ -805,6 +865,14 @@ contract WrapperFundingTest is Test {
       side.commitmentDeadline = 220;
       side.claimDeadline = 320;
       side.reclaimRelease = 520;
+    }
+  }
+
+  function _supportAssets(Asset[] memory assets) internal {
+    for (uint256 i; i < assets.length; ++i) {
+      if (assets[i].assetType != AssetType.Native) {
+        assetSupport.setAssetSupport(assets[i].assetType, assets[i].target, true);
+      }
     }
   }
 
