@@ -145,6 +145,13 @@ export type {
   PreparedPartyStates,
   AppliedPartyCommand,
 } from './cliCommands.js'
+export {
+  trustedClientStatus,
+  trustedClientCliOutput,
+  formatTrustedClientStatus,
+  assertRedactedOutput,
+} from './cliOutput.js'
+export type {TrustedClientStatusResult} from './cliOutput.js'
 export type {
   SecretStateMode,
   AliceSecretState,

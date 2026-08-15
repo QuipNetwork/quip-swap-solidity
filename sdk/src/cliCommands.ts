@@ -15,6 +15,7 @@ export interface BobProgressionTransfer {
   readonly from: Address
   readonly to: Address
   readonly bobCommitSecret: Hex32
+  readonly aliceCommit: {readonly status: 'final'; readonly inclusion?: PersistedInclusion}
 }
 
 export interface PrepareTradeCommandArgs {
@@ -111,14 +112,14 @@ export function applyPartyCommand(
       requireAlice(pair.publicState, pair.secretState)
       if (publicState.aliceCommit.status !== 'final') throw new Error('Alice commit is not final')
       if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
-      transfer = {schema: 'quip-swap-bob-progression.v1', tradeId: publicState.tradeId, from: input.aliceAddress, to: publicState.selected.bobSubmitter, bobCommitSecret: (pair.secretState as AliceSecretState).bobCommitSecret}
+      transfer = {schema: 'quip-swap-bob-progression.v1', tradeId: publicState.tradeId, from: input.aliceAddress, to: publicState.selected.bobSubmitter, bobCommitSecret: (pair.secretState as AliceSecretState).bobCommitSecret, aliceCommit: (pair.publicState as AliceClientState).aliceCommit as {status: 'final'; inclusion?: PersistedInclusion}}
       pair.publicState = {...pair.publicState, stage: 'bob-commit-pending', progression: {released: true, releasedTo: transfer.to}}
       break
     case 'submit-bob-commit':
       requireBob(pair.publicState, pair.secretState)
       validateTransfer(pair.publicState as BobClientState, input.transfer)
       pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
-      pair.publicState = {...pair.publicState, stage: 'bob-committed', progression: {received: true, receivedFrom: input.transfer.from}}
+      pair.publicState = {...pair.publicState, stage: 'bob-committed', aliceCommit: input.transfer.aliceCommit, progression: {received: true, receivedFrom: input.transfer.from}}
       break
     case 'observe-reveal':
       requireBob(pair.publicState, pair.secretState)
@@ -131,7 +132,7 @@ export function applyPartyCommand(
       requireBob(pair.publicState, pair.secretState)
       if (publicState.stage !== 'reveal-final') throw new Error('revealing claim is not final')
       if (!publicState.selected.finalClaimExecutors.some(value => value.toLowerCase() === input.executor.toLowerCase())) throw new Error('executor not selected')
-      pair.publicState = {...pair.publicState, stage: 'final-claim'}
+      pair.publicState = {...pair.publicState, stage: 'final-claim', selected: {...pair.publicState.selected, finalClaimExecutor: input.executor}}
       break
     case 'mark-complete':
       pair.publicState = {...pair.publicState, stage: 'complete'}
@@ -153,6 +154,7 @@ function requireBob(publicState: ClientState, secretState: PartySecretState): as
 }
 function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer): void {
   if (transfer.schema !== 'quip-swap-bob-progression.v1' || transfer.tradeId !== state.tradeId) throw new Error('invalid progression transfer')
+  if (transfer.aliceCommit.status !== 'final') throw new Error('progression transfer lacks final Alice commit')
   if (transfer.to.toLowerCase() !== state.selected.bobSubmitter.toLowerCase()) throw new Error('progression transfer has wrong recipient')
   if (deriveCommitLock(state.derived.gateContextId, transfer.bobCommitSecret) !== state.terms.counterpartySide.commitLock) throw new Error('progression transfer has wrong preimage')
 }

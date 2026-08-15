@@ -58,6 +58,7 @@ interface ClientStateBase {
   readonly selected: {
     readonly bobSubmitter: Address
     readonly finalClaimExecutors: readonly Address[]
+    readonly finalClaimExecutor?: Address
   }
   readonly stage: WorkflowStage
   readonly aliceCommit: {
@@ -232,6 +233,12 @@ export function validateClientState(value: unknown): asserts value is ClientStat
   address(value['selected']['bobSubmitter'], 'selected.bobSubmitter')
   if (!Array.isArray(value['selected']['finalClaimExecutors'])) throw new Error('finalClaimExecutors must be an array')
   for (const executor of value['selected']['finalClaimExecutors']) address(executor, 'finalClaimExecutor')
+  if (value['selected']['finalClaimExecutor'] !== undefined) {
+    address(value['selected']['finalClaimExecutor'], 'selected.finalClaimExecutor')
+    if (!(value['selected']['finalClaimExecutors'] as unknown[]).includes(value['selected']['finalClaimExecutor'])) {
+      throw new Error('selected final-claim executor is not configured')
+    }
+  }
   const stages = ['prepared', 'alice-commit', 'bob-enabled', 'bob-commit-pending', 'bob-committed', 'reveal-final', 'final-claim', 'complete', 'recovery']
   if (!stages.includes(value['stage'] as string)) throw new Error('invalid workflow stage')
   record(value['aliceCommit'], 'aliceCommit')
