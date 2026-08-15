@@ -11,6 +11,7 @@ import {
   RegistryAuthorization,
   RegistryOperation
 } from './ProtocolTypes.sol';
+import {IProfiledPQVerifier} from './interfaces/IProfiledPQVerifier.sol';
 import {IRegisteredCommitTarget} from './interfaces/IRegisteredCommitTarget.sol';
 import {
   IERC7913SignatureVerifier
@@ -21,11 +22,14 @@ contract PQIdentityRegistry {
   string internal constant REGISTRY_DOMAIN = 'InterlockRegistry-v1.1';
   string internal constant POSSESSION_DOMAIN = 'InterlockKeyPossession-v1.1';
   uint256 internal constant SECP256K1_HALF_ORDER = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
+  bytes32 public constant EXPECTED_VERIFIER_VERSION = keccak256('quip.shrincs-verifier.v1');
+  bytes32 public constant EXPECTED_VERIFIER_PROFILE = keccak256('shrincs-256s-keccak');
 
   error AlreadyRegistered();
   error IdentityNotRegistered();
   error IdentityNotActive();
   error InvalidKey();
+  error InvalidVerifier();
   error InvalidVersion();
   error InvalidOperationShape();
   error InvalidEOAAuthorization();
@@ -59,6 +63,24 @@ contract PQIdentityRegistry {
 
   mapping(address => PQIdentity) private identities;
   mapping(bytes32 => bool) private consumedNonces;
+  address public immutable TRUSTED_VERIFIER;
+  bytes32 public immutable TRUSTED_VERIFIER_CODEHASH;
+
+  constructor(address trustedVerifier) {
+    if (trustedVerifier.code.length == 0) revert InvalidVerifier();
+    try IProfiledPQVerifier(trustedVerifier).VERSION_TAG() returns (bytes32 version) {
+      if (version != EXPECTED_VERIFIER_VERSION) revert InvalidVerifier();
+    } catch {
+      revert InvalidVerifier();
+    }
+    try IProfiledPQVerifier(trustedVerifier).PROFILE_TAG() returns (bytes32 profile) {
+      if (profile != EXPECTED_VERIFIER_PROFILE) revert InvalidVerifier();
+    } catch {
+      revert InvalidVerifier();
+    }
+    TRUSTED_VERIFIER = trustedVerifier;
+    TRUSTED_VERIFIER_CODEHASH = trustedVerifier.codehash;
+  }
 
   function registerAndCommit(
     InitialRegistration calldata request,
@@ -151,6 +173,13 @@ contract PQIdentityRegistry {
 
   function isRegistryNonceConsumed(bytes32 nonceKey) external view returns (bool) {
     return consumedNonces[nonceKey];
+  }
+
+  function isTrustedKey(bytes memory key) public view returns (bool) {
+    if (key.length != 52 || TRUSTED_VERIFIER.codehash != TRUSTED_VERIFIER_CODEHASH) return false;
+    address verifier;
+    assembly ('memory-safe') { verifier := shr(96, mload(add(key, 32))) }
+    return verifier == TRUSTED_VERIFIER;
   }
 
   function registrationDigest(InitialRegistration calldata request) public view returns (bytes32) {
@@ -285,8 +314,8 @@ contract PQIdentityRegistry {
     if (current == type(uint256).max || proposed != current + 1) revert InvalidVersion();
   }
 
-  function _validateKey(bytes calldata key) private pure {
-    if (key.length <= 20) revert InvalidKey();
+  function _validateKey(bytes calldata key) private view {
+    if (!isTrustedKey(key)) revert InvalidKey();
   }
 
   function _requireKeySignature(bytes memory keyedVerifier, bytes32 digest, bytes calldata signature) private view {

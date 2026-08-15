@@ -19,7 +19,7 @@ import {ICommitAuthorizationReceiver} from './interfaces/ICommitAuthorizationRec
 
 /// @notice Prototype implementation of the deployable wallet-mode principal boundary.
 /// @dev The wallet stores its ERC-7913 keyed verifier and public key together as
-///      `verifier address || verifier-specific key bytes`. Commit authorization is
+///      `verifier address || 32-byte SHRINCS commitment`. Commit authorization is
 ///      always checked against that wallet-owned key state before the exact signed
 ///      request is forwarded atomically to its named receiver. Selecting and pinning
 ///      the production verifier implementation is a separate deployment decision.
@@ -46,7 +46,7 @@ contract QuipWallet {
   receive() external payable {}
 
   constructor(address owner, PQIdentityRegistry registry, bytes memory initialPQKey) {
-    if (owner == address(0) || initialPQKey.length <= 20) revert InvalidKey();
+    if (owner == address(0) || !registry.isTrustedKey(initialPQKey)) revert InvalidKey();
     OWNER = owner;
     REGISTRY = registry;
     activePQKey = initialPQKey;
@@ -100,7 +100,7 @@ contract QuipWallet {
     bytes calldata newKeyProof
   ) external {
     if (msg.sender != OWNER) revert NotOwner();
-    if (newPQKey.length <= 20) revert InvalidKey();
+    if (!REGISTRY.isTrustedKey(newPQKey)) revert InvalidKey();
     if (block.timestamp >= expiry) revert AuthorizationExpired();
     if (consumedRotationNonces[rotationNonce]) revert RotationNonceAlreadyConsumed();
     bytes32 digest = rotationDigest(newPQKey, rotationNonce, expiry);

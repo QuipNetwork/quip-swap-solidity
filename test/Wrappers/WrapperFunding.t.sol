@@ -74,7 +74,7 @@ contract WrapperFundingTest is Test {
     bob = vm.addr(BOB_PRIVATE);
     broker = vm.addr(BROKER_PRIVATE);
     verifier = new KeyBoundVerifierMock();
-    registry = new PQIdentityRegistry();
+    registry = new PQIdentityRegistry(address(verifier));
     registrationTarget = new RegisteredCommitTargetHarness();
     aliceKey = _key('alice');
     bobKey = _key('bob');
@@ -938,7 +938,7 @@ contract WrapperFundingTest is Test {
   }
 
   function _key(string memory label) internal view returns (bytes memory) {
-    return abi.encodePacked(address(verifier), bytes(label));
+    return abi.encodePacked(address(verifier), keccak256(bytes(label)));
   }
 
   function _pqSig(bytes memory keyedVerifier, bytes32 digest) internal pure returns (bytes memory) {

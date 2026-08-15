@@ -1,6 +1,69 @@
 /** AUTO-GENERATED from out/PQIdentityRegistry.sol/PQIdentityRegistry.json. */
 export const pqIdentityRegistryAbi = [
   {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "trustedVerifier",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "EXPECTED_VERIFIER_PROFILE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "EXPECTED_VERIFIER_VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "TRUSTED_VERIFIER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "TRUSTED_VERIFIER_CODEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "function",
     "name": "activeKey",
     "inputs": [
@@ -175,6 +238,25 @@ export const pqIdentityRegistryAbi = [
         "name": "nonceKey",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isTrustedKey",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -627,6 +709,11 @@ export const pqIdentityRegistryAbi = [
   {
     "type": "error",
     "name": "InvalidPQAuthorization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidVerifier",
     "inputs": []
   },
   {

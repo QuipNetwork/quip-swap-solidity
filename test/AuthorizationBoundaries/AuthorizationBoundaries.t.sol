@@ -49,8 +49,8 @@ contract AuthorizationBoundariesTest is Test {
     directUser = vm.addr(DIRECT_KEY);
     broker = vm.addr(BROKER_KEY);
     vm.warp(1000);
-    registry = new PQIdentityRegistry();
     verifier = new KeyBoundVerifierMock();
+    registry = new PQIdentityRegistry(address(verifier));
     directPQKey = _key('direct');
     walletPQKey = _key('wallet-1');
     registrationTarget = new RegisteredCommitTargetHarness();
@@ -670,7 +670,7 @@ contract AuthorizationBoundariesTest is Test {
   }
 
   function _key(string memory label) internal view returns (bytes memory) {
-    return abi.encodePacked(address(verifier), bytes(label));
+    return abi.encodePacked(address(verifier), keccak256(bytes(label)));
   }
 
   function _pqSig(bytes memory keyedVerifier, bytes32 digest) internal pure returns (bytes memory) {

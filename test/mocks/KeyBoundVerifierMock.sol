@@ -6,6 +6,9 @@ import {
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 
 contract KeyBoundVerifierMock is IERC7913SignatureVerifier {
+  bytes32 public constant VERSION_TAG = keccak256('quip.shrincs-verifier.v1');
+  bytes32 public constant PROFILE_TAG = keccak256('shrincs-256s-keccak');
+
   function verify(bytes calldata key, bytes32 digest, bytes calldata signature) external pure returns (bytes4) {
     if (keccak256(signature) == keccak256(abi.encode(key, digest))) {
       return IERC7913SignatureVerifier.verify.selector;

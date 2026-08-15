@@ -12,7 +12,13 @@ import {
 } from '../../src/ProtocolTypes.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {DigestVerifierMock} from '../mocks/DigestVerifierMock.sol';
+import {SHRINCS256sKeccak} from '@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
+
+contract WrongProfileVerifier {
+  bytes32 public constant VERSION_TAG = keccak256('quip.shrincs-verifier.v1');
+  bytes32 public constant PROFILE_TAG = keccak256('shrincs-128s-q20-keccak');
+}
 
 contract PQIdentityRegistryTest is Test {
   string internal constant REGISTRY_DOMAIN = 'InterlockRegistry-v1.1';
@@ -43,8 +49,8 @@ contract PQIdentityRegistryTest is Test {
   function setUp() public {
     eoa = vm.addr(EOA_KEY);
     vm.warp(1000);
-    registry = new PQIdentityRegistry();
     verifier = new DigestVerifierMock();
+    registry = new PQIdentityRegistry(address(verifier));
     target = new RegisteredCommitTargetHarness();
   }
 
@@ -68,6 +74,38 @@ contract PQIdentityRegistryTest is Test {
     assertEq(target.registeredEOA(), eoa);
     assertEq(target.commitPayloadHash(), request.commitPayloadHash);
     assertEq(target.valueReceived(), 1 ether);
+  }
+
+  function test_registryPinsV10Shrincs256sKeccakProfileAndDeploymentCode() public {
+    SHRINCS256sKeccak shrincs = new SHRINCS256sKeccak();
+    PQIdentityRegistry pinned = new PQIdentityRegistry(address(shrincs));
+    assertEq(pinned.TRUSTED_VERIFIER(), address(shrincs));
+    assertEq(pinned.TRUSTED_VERIFIER_CODEHASH(), address(shrincs).codehash);
+    assertEq(pinned.EXPECTED_VERIFIER_VERSION(), keccak256('quip.shrincs-verifier.v1'));
+    assertEq(pinned.EXPECTED_VERIFIER_PROFILE(), keccak256('shrincs-256s-keccak'));
+    assertTrue(pinned.isTrustedKey(abi.encodePacked(address(shrincs), bytes32(uint256(1)))));
+  }
+
+  function test_registryRejectsMissingOrWrongVerifierProfile() public {
+    vm.expectRevert(PQIdentityRegistry.InvalidVerifier.selector);
+    new PQIdentityRegistry(address(0));
+    WrongProfileVerifier wrongProfile = new WrongProfileVerifier();
+    vm.expectRevert(PQIdentityRegistry.InvalidVerifier.selector);
+    new PQIdentityRegistry(address(wrongProfile));
+  }
+
+  function test_registrationRejectsWrongVerifierPrefixAndNonCommitmentKeyLength() public {
+    InitialRegistration memory request = _registration();
+    DigestVerifierMock otherVerifier = new DigestVerifierMock();
+    request.activePQKey = abi.encodePacked(address(otherVerifier), keccak256('other'));
+    vm.expectRevert(PQIdentityRegistry.InvalidKey.selector);
+    vm.prank(eoa);
+    registry.registerAndCommit(request, '', '', '', '');
+
+    request.activePQKey = abi.encodePacked(address(verifier), bytes31(uint248(1)));
+    vm.expectRevert(PQIdentityRegistry.InvalidKey.selector);
+    vm.prank(eoa);
+    registry.registerAndCommit(request, '', '', '', '');
   }
 
   function test_relayedRegistrationRequiresNativeEOASignature() public {
@@ -328,7 +366,7 @@ contract PQIdentityRegistryTest is Test {
   }
 
   function _key(string memory label) internal view returns (bytes memory) {
-    return abi.encodePacked(address(verifier), bytes(label));
+    return abi.encodePacked(address(verifier), keccak256(bytes(label)));
   }
 
   function _operationDigest(RegistryOperation memory request) internal view returns (bytes32) {
