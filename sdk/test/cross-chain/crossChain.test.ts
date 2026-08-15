@@ -27,11 +27,21 @@ import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {extractSecretFromClaims} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
+import {crossChainWrapperAbi} from '../../src/generated/crossChainWrapperAbi.js'
+import {pqAuthorizationGatewayAbi} from '../../src/generated/pqAuthorizationGatewayAbi.js'
+import {pqIdentityRegistryAbi} from '../../src/generated/pqIdentityRegistryAbi.js'
+import {timingPolicyRegistryAbi} from '../../src/generated/timingPolicyRegistryAbi.js'
 import {generateLock} from '../../src/hashing.js'
+import {
+  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
+  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
+  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
+  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
+} from '../../src/prototypeTiming.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
-import {connectChain, deployFixture} from '../helpers/chain.js'
+import {connectChain, deployFixture, loadArtifact} from '../helpers/chain.js'
 import type {ChainContext, Fixture} from '../helpers/chain.js'
 import {erc20MockAbi} from '../helpers/mockAbis.js'
 
@@ -53,6 +63,66 @@ let chainA: ChainContext
 let chainB: ChainContext
 let fixtureA: Fixture
 let fixtureB: Fixture
+let deploymentA: PrototypeDeployment
+let deploymentB: PrototypeDeployment
+
+interface PrototypeDeployment {
+  readonly assetSupportRegistry: Address
+  readonly timingPolicyRegistry: Address
+  readonly identityRegistry: Address
+  readonly authorizationGateway: Address
+  readonly crossChainWrapper: Address
+  readonly sameChainWrapper: Address
+  readonly verifier: Address
+}
+
+async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> {
+  const verifier = await ctx.deploy(loadArtifact('KeyBoundVerifierMock.sol', 'KeyBoundVerifierMock'))
+  const assetSupportRegistry = await ctx.deploy(loadArtifact('AssetSupportRegistry.sol', 'AssetSupportRegistry'), [
+    ctx.deployer.address,
+  ])
+  const timingPolicyRegistry = await ctx.deploy(loadArtifact('TimingPolicyRegistry.sol', 'TimingPolicyRegistry'), [
+    ctx.deployer.address,
+  ])
+  const identityRegistry = await ctx.deploy(loadArtifact('PQIdentityRegistry.sol', 'PQIdentityRegistry'), [verifier])
+  const authorizationGateway = await ctx.deploy(
+    loadArtifact('PQAuthorizationGateway.sol', 'PQAuthorizationGateway'),
+    [identityRegistry],
+  )
+  const crossChainWrapper = await ctx.deploy(loadArtifact('CrossChainWrapper.sol', 'CrossChainWrapper'), [
+    authorizationGateway,
+    timingPolicyRegistry,
+    assetSupportRegistry,
+  ])
+  const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
+    authorizationGateway,
+    timingPolicyRegistry,
+    assetSupportRegistry,
+  ])
+  for (const [policyId, policy] of [
+    [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY],
+    [OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY],
+  ] as const) {
+    const hash = await ctx.deployer.walletClient.writeContract({
+      address: timingPolicyRegistry,
+      abi: timingPolicyRegistryAbi,
+      functionName: 'registerPolicy',
+      args: [policyId, policy],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash})
+  }
+  return {
+    verifier,
+    assetSupportRegistry,
+    timingPolicyRegistry,
+    identityRegistry,
+    authorizationGateway,
+    crossChainWrapper,
+    sameChainWrapper,
+  }
+}
 
 // keyedAuth comes from the shared helper — each commit must use ITS OWN
 // chain's fixture verifier, so every call site passes its chain's fixture
@@ -125,6 +195,7 @@ async function warpBoth(timestamp: bigint): Promise<void> {
 beforeAll(async () => {
   chainA = connectChain(RPC_A, CHAIN_A_ID)
   chainB = connectChain(RPC_B, CHAIN_B_ID)
+  ;[deploymentA, deploymentB] = await Promise.all([deployPrototype(chainA), deployPrototype(chainB)])
   ;[fixtureA, fixtureB] = await Promise.all([deployFixture(chainA), deployFixture(chainB)])
 
   aliceOnA = createOmnibusClient({
@@ -172,6 +243,46 @@ beforeAll(async () => {
     })
     await ctx.publicClient.waitForTransactionReceipt({hash})
   }
+})
+
+describe('v1.1 deployment smoke', () => {
+  it('reproduces the same address graph and immutable configuration on both chains', async () => {
+    expect(deploymentB).toEqual(deploymentA)
+    for (const [ctx, deployment] of [
+      [chainA, deploymentA],
+      [chainB, deploymentB],
+    ] as const) {
+      expect(
+        await ctx.publicClient.readContract({
+          address: deployment.identityRegistry,
+          abi: pqIdentityRegistryAbi,
+          functionName: 'TRUSTED_VERIFIER',
+        }),
+      ).toBe(deployment.verifier)
+      expect(
+        await ctx.publicClient.readContract({
+          address: deployment.authorizationGateway,
+          abi: pqAuthorizationGatewayAbi,
+          functionName: 'REGISTRY',
+        }),
+      ).toBe(deployment.identityRegistry)
+      expect(
+        await ctx.publicClient.readContract({
+          address: deployment.crossChainWrapper,
+          abi: crossChainWrapperAbi,
+          functionName: 'DIRECT_GATEWAY',
+        }),
+      ).toBe(deployment.authorizationGateway)
+      expect(
+        await ctx.publicClient.readContract({
+          address: deployment.timingPolicyRegistry,
+          abi: timingPolicyRegistryAbi,
+          functionName: 'isRegistered',
+          args: [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID],
+        }),
+      ).toBe(true)
+    }
+  })
 })
 
 describe('cross-chain happy path', () => {

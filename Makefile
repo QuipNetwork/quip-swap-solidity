@@ -109,6 +109,18 @@ legacy-deploy-omnibus-op-sepolia: ## LEGACY: deploy Omnibus to OP Sepolia + broa
 		--broadcast \
 		--verify
 
+.PHONY: deploy-protocol
+deploy-protocol: ## Deploy the v1.1 prototype through CreateX. Usage: make deploy-protocol RPC=API_URL_BASE_SEPOLIA
+	forge script script/DeployProtocol.s.sol:DeployProtocol \
+		--rpc-url $(RPC_URL) \
+		--private-key $(DEPLOYER_PK) \
+		--broadcast
+
+.PHONY: deploy-protocol-dry
+deploy-protocol-dry: ## Simulate the v1.1 prototype deployment without broadcasting
+	forge script script/DeployProtocol.s.sol:DeployProtocol \
+		--rpc-url $(RPC_URL)
+
 # ==============================================================================
 # TypeScript SDK (sdk/)
 # ==============================================================================

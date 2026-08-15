@@ -84,6 +84,52 @@ export type {
   PrototypeChainOperatingProfile,
   PrototypeOperatingProfile,
 } from './prototypeOperations.js'
+export {
+  PROTOTYPE_DEPLOYMENT_VERSION,
+  CANONICAL_CREATEX,
+  prototypeComponents,
+  predictPrototypeAddresses,
+  prototypeDeploymentVectorHash,
+  buildPrototypeDeploymentManifest,
+} from './prototypeDeployment.js'
+export type {
+  PrototypeComponent,
+  PrototypeDeploymentAddresses,
+  PrototypeDeploymentManifest,
+} from './prototypeDeployment.js'
+export {
+  CLI_SCHEMA_VERSION,
+  cliCommandSpecs,
+  cliCommandSpec,
+  cliSuccess,
+  cliFailure,
+} from './cliSurface.js'
+export type {
+  ClientParty,
+  CliCommand,
+  CliCommandSpec,
+  CliJson,
+  CliSuccessOutput,
+  CliFailureOutput,
+  CliOutput,
+} from './cliSurface.js'
+export {
+  CLIENT_STATE_SCHEMA,
+  persistProtocolTerms,
+  serializeClientState,
+  parseClientState,
+  clientStatesEqual,
+  validateClientState,
+} from './clientState.js'
+export type {
+  PersistedAsset,
+  PersistedSideTerms,
+  PersistedProtocolTerms,
+  PersistedInclusion,
+  AliceClientState,
+  BobClientState,
+  ClientState,
+} from './clientState.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 export {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
