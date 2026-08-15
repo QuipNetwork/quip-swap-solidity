@@ -29,3 +29,14 @@ Every command returns the `quip-swap-cli.v1` envelope defined in `cliSurface.ts`
 
 Big integers, hashes, addresses, and transaction identifiers are encoded as strings.
 No normal result or error field may contain a secret preimage.
+
+Each party directory publishes matched public and secret generations through an
+atomically replaced `current` pointer. Generation files are created with mode `0600`;
+the containing directories use mode `0700`. Alice initially owns both preimages.
+Bob's file may acquire the progression preimage only through `release-bob-secret`
+and the settlement preimage only after a finalized revealing claim. Restoration
+recomputes `TradeID`, `GateContextID`, settlement `Lock`, and `commitLock` before
+accepting the state. The prototype files are intentionally not encrypted.
+
+Deterministic fixed preimages require `unsafe-demo` mode, are accepted only for local
+chain IDs `31337` and `31338`, and are explicitly marked as public test secrets.

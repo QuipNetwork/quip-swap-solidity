@@ -119,6 +119,41 @@ export const persistProtocolTerms = (terms: ProtocolTerms): PersistedProtocolTer
   counterpartySide: persistSide(terms.counterpartySide),
 })
 
+const restoreAsset = (asset: PersistedAsset): Asset => ({
+  assetType: asset.assetType,
+  target: asset.target,
+  id: BigInt(asset.id),
+  amount: BigInt(asset.amount),
+}) as Asset
+const restoreSide = (side: PersistedSideTerms): SideTerms => ({
+  chainId: BigInt(side.chainId),
+  assets: side.assets.map(restoreAsset),
+  principal: side.principal,
+  authorizationMode: side.authorizationMode,
+  principalKeyVersion: BigInt(side.principalKeyVersion),
+  reclaimRecipient: side.reclaimRecipient,
+  recipient: side.recipient,
+  commitmentDeadline: BigInt(side.commitmentDeadline),
+  claimDeadline: BigInt(side.claimDeadline),
+  reclaimRelease: BigInt(side.reclaimRelease),
+  commitLock: side.commitLock,
+  delegationPolicy: side.delegationPolicy,
+  delegate: side.delegate,
+  delegateKeyVersion: BigInt(side.delegateKeyVersion),
+  sideNonce: side.sideNonce,
+}) as SideTerms
+
+export function restoreProtocolTerms(terms: PersistedProtocolTerms): ProtocolTerms {
+  side(terms.partySide, 'terms.partySide')
+  side(terms.counterpartySide, 'terms.counterpartySide')
+  hex(terms.timingPolicyId, 32, 'terms.timingPolicyId')
+  return {
+    timingPolicyId: terms.timingPolicyId,
+    partySide: restoreSide(terms.partySide),
+    counterpartySide: restoreSide(terms.counterpartySide),
+  }
+}
+
 export function serializeClientState(state: ClientState): string {
   validateClientState(state)
   return `${JSON.stringify(state, null, 2)}\n`

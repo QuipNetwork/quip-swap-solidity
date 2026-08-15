@@ -116,6 +116,7 @@ export type {
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
+  restoreProtocolTerms,
   serializeClientState,
   parseClientState,
   clientStatesEqual,
@@ -130,6 +131,19 @@ export type {
   BobClientState,
   ClientState,
 } from './clientState.js'
+export {
+  SECRET_STATE_SCHEMA,
+  validatePartyWorkflowState,
+  savePartyWorkflowState,
+  restorePartyWorkflowState,
+} from './clientPersistence.js'
+export type {
+  SecretStateMode,
+  AliceSecretState,
+  BobSecretState,
+  PartySecretState,
+  RestoredPartyWorkflowState,
+} from './clientPersistence.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 export {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
