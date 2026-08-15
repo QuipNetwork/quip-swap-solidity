@@ -31,6 +31,20 @@ bun install --frozen-lockfile
 cd ..
 ```
 
+The Solidity dependencies must already exist under `dependencies/`. Dependency
+installation and ordinary demo builds are deliberately separate: maintainers
+use the canonical `foundry.toml` and `soldeer.lock` when installing or updating
+dependencies, while the demo uses `config/demo/foundry.toml`. The demo
+configuration contains the same compiler settings and remappings but no
+`[dependencies]` table, so `forge build` does not enter Soldeer's dependency
+hash/update path.
+
+If `dependencies/` is absent, install it once with a current Foundry release:
+
+```sh
+forge soldeer install
+```
+
 ## Run the full demo
 
 From the repository root:
@@ -39,6 +53,13 @@ From the repository root:
 cd sdk
 bun run demo:full
 cd ..
+```
+
+No manual edits or moves of `foundry.toml` or `soldeer.lock` are required. The
+runner automatically builds with:
+
+```sh
+forge build --root "$PWD" --config-path config/demo/foundry.toml
 ```
 
 The default artifact is:
@@ -56,7 +77,18 @@ bun run demo:full ../demo-artifacts/replay.json
 cd ..
 ```
 
-The runner prints a single JSON summary after success. Expect:
+During execution, the runner prints build and chain-start messages followed by
+16 numbered protocol steps, for example:
+
+```text
+[demo 01/16] Deploying and funding both local protocol environments
+[demo 02/16] Preparing terms, secrets, locks, and exact commit authorizations
+...
+[demo 16/16] Marking both clients complete and validating final custody and payouts
+```
+
+Progress is written to standard output in green. After success, the runner
+writes one machine-readable JSON summary as the final output line. Expect:
 
 - `schema` equal to `quip-swap-full-demo.v1`;
 - one nonzero `tradeId`;
@@ -141,8 +173,13 @@ cd ..
 
 ## Failure and recovery
 
-- **Build fails:** stop. Fix `forge build`; no chains or artifact should be
-  treated as a completed run.
+- **Build fails:** stop. From the repository root, reproduce it with
+  `forge build --root "$PWD" --config-path config/demo/foundry.toml`; no chains
+  or artifact should be treated as a completed run.
+- **Soldeer reports `StripPrefixError`:** verify that the runner contains the
+  demo `--config-path` build argument and that `config/demo/foundry.toml` has no
+  `[dependencies]` section. Do not edit the canonical dependency files merely
+  to run the demo.
 - **A local chain cannot start:** ensure `anvil` is on `PATH` and local process
   creation is permitted. The runner uses free ports; no fixed RPC port is
   required.
@@ -176,7 +213,7 @@ older artifact at the same path must not be mistaken for the failed run.
 Before handing the prototype to another operator, run:
 
 ```sh
-forge build
+forge build --root "$PWD" --config-path config/demo/foundry.toml
 cd sdk
 bun run typecheck
 bun run test

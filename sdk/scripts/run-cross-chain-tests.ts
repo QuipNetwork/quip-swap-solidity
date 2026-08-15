@@ -27,7 +27,7 @@ const repoRoot = join(sdkRoot, '..')
 
 // 1. fresh artifacts
 console.log('[cross-chain] forge build ...')
-const build = spawnSync('forge', ['build'], {cwd: repoRoot, stdio: 'inherit'})
+const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})
 if (build.status !== 0) {
   console.error('[cross-chain] forge build failed; aborting')
   process.exit(build.status ?? 1)

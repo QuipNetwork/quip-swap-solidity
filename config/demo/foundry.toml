@@ -1,0 +1,36 @@
+# Offline demo/test configuration. Dependencies must already be installed under
+# dependencies/. Keeping this file free of [dependencies] prevents ordinary demo
+# builds from invoking Soldeer's dependency hash/update path.
+
+[fmt]
+line_length = 120
+tab_width = 2
+bracket_spacing = false
+int_types = 'long'
+quote_style = 'single'
+number_underscore = 'thousands'
+multiline_func_header = 'params_first_multi'
+sort_imports = true
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib", "dependencies"]
+solc_version = '0.8.33'
+evm_version = 'prague'
+optimizer_runs = 10_000
+ignored_warnings_from = ["dependencies/"]
+gas_limit = "18446744073709551615"
+memory_limit = 268_435_456
+fs_permissions = [{access = "read", path = "./"}]
+additional_compiler_profiles = [{name = "via-ir", via_ir = true}]
+compilation_restrictions = [
+  {paths = "dependencies/@quip.network-hashsigs-solidity-0.2.0/contracts/UXMSS.sol", via_ir = true},
+]
+
+[lint]
+exclude_lints = ["mixed-case-function", "mixed-case-variable"]
+
+[profile.optimized]
+via_ir = true
+out = 'out-via-ir'

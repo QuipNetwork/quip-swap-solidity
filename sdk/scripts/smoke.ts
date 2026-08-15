@@ -553,7 +553,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 async function main(): Promise<void> {
   // 1. fresh artifacts (mirrors the integration runner)
   console.log('[smoke] forge build ...')
-  const build = spawnSync('forge', ['build'], {cwd: repoRoot, stdio: 'inherit'})
+  const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})
   if (build.status !== 0) {
     throw new Error('forge build failed; cannot run the smoke test')
   }

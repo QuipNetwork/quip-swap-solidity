@@ -33,7 +33,7 @@ const vitestExtraArgs = process.argv.slice(2)
 
 // 1. fresh artifacts — fail loudly if forge is unavailable or the build breaks
 console.log('[integration] forge build ...')
-const build = spawnSync('forge', ['build'], {cwd: repoRoot, stdio: 'inherit'})
+const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})
 if (build.status !== 0) {
   console.error('[integration] forge build failed; aborting')
   process.exit(build.status ?? 1)

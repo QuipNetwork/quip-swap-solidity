@@ -56,11 +56,22 @@ export interface FullDemoArtifact {
   readonly negativeControls: NegativeControlArtifact
 }
 
+export interface FullDemoProgress {
+  readonly step: number
+  readonly total: number
+  readonly message: string
+}
+
 export async function runFullDemo(
   chainA: ChainContext,
   chainB: ChainContext,
   load: (solFile: string, contract: string) => FoundryArtifact,
+  onProgress?: (progress: FullDemoProgress) => void,
 ): Promise<FullDemoArtifact> {
+  const total = 16
+  let step = 0
+  const progress = (message: string) => onProgress?.({step: ++step, total, message})
+  progress('Deploying and funding both local protocol environments')
   const deployment = await bootstrapDemoEnvironment(chainA, chainB, load)
   await Promise.all([chainA.warpTo(4_000_000_000n), chainB.warpTo(4_000_000_000n)])
   const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
@@ -69,6 +80,7 @@ export async function runFullDemo(
   const partySide = sideTemplate(chainA, chainB.bob.address, deployment.chains[0].funding.token, 10n * 10n ** 18n, now + 100n, now + 1_000n, now + 1_400n)
   const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 1_100n, now + 1_300n)
   const randomness: ProtocolRandomness = {settlementSecret: fixed(1), bobCommitSecret: fixed(2), partySideNonce: fixed(3), counterpartySideNonce: fixed(4), partyActionNonce: fixed(5), counterpartyActionNonce: fixed(6)}
+  progress('Preparing terms, secrets, locks, and exact commit authorizations')
   const prepared = prepareTradeCommand({workflow: {policy: localPolicy, partySide, counterpartySide, partyVerifier: deployment.chains[0].addresses.authorizationGateway, counterpartyVerifier: deployment.chains[1].addresses.authorizationGateway, partyWrapper: deployment.chains[0].addresses.crossChainWrapper, counterpartyWrapper: deployment.chains[1].addresses.crossChainWrapper, partyExpiry: now + 500n, counterpartyExpiry: now + 600n, requiredConfirmations: 3n, selectedBobSubmitter: chainB.bob.address, randomness}, finalClaimExecutors: [chainA.charlie.address], secretMode: 'unsafe-demo'})
   let alice = prepared.alice
   let bob = prepared.bob
@@ -95,6 +107,7 @@ export async function runFullDemo(
   const snapshotA = () => readCrossChainSettlementSnapshot({publicClient: chainA.publicClient, chainId: 31_337, wrapper: addressesA.crossChainWrapper, terms, party: true, lock, holdings: holdingsA})
   const snapshotB = () => readCrossChainSettlementSnapshot({publicClient: chainB.publicClient, chainId: 31_338, wrapper: addressesB.crossChainWrapper, terms, party: false, lock, holdings: holdingsB})
 
+  progress('Submitting and recording Alice commit on chain 31337')
   const aliceBefore = await snapshotA()
   const aliceRequest = request(alicePrepared, ZERO32)
   const aliceSignature = pqSignature(aliceKey, alicePrepared.payloadHash)
@@ -104,15 +117,20 @@ export async function runFullDemo(
   authorization.record({side: 'alice', prepared: alicePrepared, signatureVerifier: deployment.chains[0].trustedVerifier, authenticatedSubmitter: chainA.alice.address}, {status: 'accepted', transactionHash: aliceHash})
   settlement.record({action: 'alice-commit', receipt: aliceReceipt, addresses: addressesA, before: aliceBefore, after: aliceAfter, progressionGate: 'not-required'})
 
+  progress('Recording Alice commit as pending; Bob remains disabled')
   alice = applied(alice, {command: 'mark-alice-pending'}); recordClient('pending', alice.publicState)
+  progress('Recording Alice commit as included but non-final')
   const aliceInclusion = inclusion(aliceReceipt)
   alice = applied(alice, {command: 'mark-alice-included-non-final', inclusion: aliceInclusion}); recordClient('included-non-final', alice.publicState)
+  progress('Mining the required confirmations and marking Alice commit final')
   await chainA.testClient.mine({blocks: 2})
   alice = applied(alice, {command: 'mark-alice-final', inclusion: aliceInclusion}); recordClient('final', alice.publicState)
+  progress("Releasing BobCommitSecret into Bob's selected client boundary")
   const released = applyPartyCommand(alice.publicState, alice.secretState, {command: 'release-bob-secret', aliceAddress: chainA.alice.address})
   if (released.transfer === undefined) throw new Error('progression transfer missing')
   alice = {publicState: released.publicState as typeof alice.publicState, secretState: released.secretState as typeof alice.secretState}; recordClient('secret-release', alice.publicState)
 
+  progress("Submitting Bob's PQ-authorized, secret-gated commit on chain 31338")
   const bobBefore = await snapshotB()
   const bobRequest = request(bobPrepared, randomness.bobCommitSecret)
   const bobSignature = pqSignature(bobKey, bobPrepared.payloadHash)
@@ -123,25 +141,33 @@ export async function runFullDemo(
   settlement.record({action: 'bob-commit', receipt: bobReceipt, addresses: addressesB, before: bobBefore, after: bobAfter, progressionGate: 'bob-secret-accepted'})
   bob = applied(bob, {command: 'submit-bob-commit', transfer: released.transfer, transactionHash: bobHash}); recordClient('bob-commit', bob.publicState)
 
+  progress('Negative control: rejecting a disallowed commit submitter')
   await runBobNegative(negatives, 'commit-disallowed-submitter', chainB, addressesB, snapshotB, terms, lock, fixed(7), randomness.bobCommitSecret, bobKey, chainB.charlie.address, now + 700n)
+  progress('Negative control: rejecting Bob commit without BobCommitSecret')
   await runBobNegative(negatives, 'bob-commit-missing-secret', chainB, addressesB, snapshotB, terms, lock, fixed(8), ZERO32, bobKey, chainB.bob.address, now + 700n)
+  progress('Negative control: rejecting Bob commit with the wrong secret')
   await runBobNegative(negatives, 'bob-commit-wrong-secret', chainB, addressesB, snapshotB, terms, lock, fixed(9), fixed(99), bobKey, chainB.bob.address, now + 700n)
 
+  progress("Submitting Alice's revealing claim on Bob's chain")
   const revealBefore = await snapshotB()
   const aliceOnB = createProtocolClient({addresses: addressesB, publicClient: chainB.publicClient, walletClient: chainB.alice.walletClient})
   const revealHash = await aliceOnB.claimCrossChain(terms, false, lock, randomness.settlementSecret)
   const revealReceipt = await receipt(chainB, revealHash)
   settlement.record({action: 'revealing-claim', receipt: revealReceipt, addresses: addressesB, before: revealBefore, after: await snapshotB(), progressionGate: 'not-applicable'})
+  progress("Finalizing the revealing claim and handing Secret to Bob's client")
   await chainB.testClient.mine({blocks: 2})
   bob = applied(bob, {command: 'observe-reveal', settlementSecret: randomness.settlementSecret, inclusion: inclusion(revealReceipt)}); recordClient('revealing-claim-final', bob.publicState)
 
+  progress('Negative control: rejecting the final claim with the wrong Secret')
   await negatives.execute({scenario: 'final-claim-wrong-secret', snapshot: snapshotA, attempt: async () => { await chainA.publicClient.simulateContract({address: addressesA.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'claim', args: [terms, true, lock, fixed(100)], account: chainA.charlie.address}) }})
+  progress("Submitting the permissionless final claim on Alice's chain")
   const finalBefore = await snapshotA()
   const executor = createProtocolClient({addresses: addressesA, publicClient: chainA.publicClient, walletClient: chainA.charlie.walletClient})
   const finalHash = await executor.claimCrossChain(terms, true, lock, randomness.settlementSecret)
   const finalReceipt = await receipt(chainA, finalHash)
   settlement.record({action: 'final-claim', receipt: finalReceipt, addresses: addressesA, before: finalBefore, after: await snapshotA(), progressionGate: 'not-applicable'})
   bob = applied(bob, {command: 'handoff-final-claim', executor: chainA.charlie.address, transactionHash: finalHash}); recordClient('final-claim-handoff', bob.publicState)
+  progress('Marking both clients complete and validating final custody and payouts')
   alice = applied(alice, {command: 'mark-complete'}); bob = applied(bob, {command: 'mark-complete'}); recordClient('completion', alice.publicState); recordClient('completion', bob.publicState)
 
   const artifact: FullDemoArtifact = {schema: FULL_DEMO_SCHEMA, publicTestSecrets: true, deployment, tradeId: alice.publicState.tradeId, terms: alice.publicState.terms, lock, deterministicSecrets: {settlementSecret: randomness.settlementSecret, bobCommitSecret: randomness.bobCommitSecret}, clientTrace, authorizationTrace: authorization.artifact(), settlementTrace: settlement.artifact(), negativeControls: negatives.artifact({requireAll: true})}

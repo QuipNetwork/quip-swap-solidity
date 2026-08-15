@@ -1,0 +1,987 @@
+{
+  "schema": "quip-swap-full-demo.v1",
+  "publicTestSecrets": true,
+  "deployment": {
+    "schema": "quip-swap-demo-deployment.v1",
+    "deploymentVersion": "v1.1.0-alpha.1",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "identityRegistration": "lazy-on-first-commit",
+    "canonicalPolicyIds": [
+      "0x1ee9b9cb7c626df1fee290070d48dc1f19b47991d75be30996346a834b7dcd16",
+      "0xba5adf7667106e30cb64d5fcdb632377bfe871cea99f5da8b567f8c9ccec4d77"
+    ],
+    "chains": [
+      {
+        "chainId": 31337,
+        "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "addresses": {
+          "assetSupportRegistry": "0x4b94ABcb1Acf2256530b397b9eD9ECEa35F0bc08",
+          "timingPolicyRegistry": "0xe9DB892f5e6F2a0D06A32832C8189d39e776411B",
+          "identityRegistry": "0x2aBA0601Fd2159d6d0Ed3c0313fC24f2cb064d13",
+          "authorizationGateway": "0xa52C96Ac89d4A9fc358aE6F4b27cfF072B4bF777",
+          "crossChainWrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "sameChainWrapper": "0x03C2A43d3968811324283492b2474957E72B3661"
+        },
+        "localSameChainPolicyId": "0xf9de76bd1f3b5700472406ddb6c6482681b2a89b0231d5e8721d758de63ec2d5",
+        "localCrossChainPolicyId": "0xe1b21cd2da66204e7aec0edab2b666a53cb3a96ebadcdcbc6bec27323f36281c",
+        "funding": {
+          "assetType": "ERC20",
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "owner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "amount": "10000000000000000000",
+          "balance": "10000000000000000000",
+          "allowance": "10000000000000000000"
+        }
+      },
+      {
+        "chainId": 31338,
+        "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "addresses": {
+          "assetSupportRegistry": "0x4b94ABcb1Acf2256530b397b9eD9ECEa35F0bc08",
+          "timingPolicyRegistry": "0xe9DB892f5e6F2a0D06A32832C8189d39e776411B",
+          "identityRegistry": "0x2aBA0601Fd2159d6d0Ed3c0313fC24f2cb064d13",
+          "authorizationGateway": "0xa52C96Ac89d4A9fc358aE6F4b27cfF072B4bF777",
+          "crossChainWrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "sameChainWrapper": "0x03C2A43d3968811324283492b2474957E72B3661"
+        },
+        "localSameChainPolicyId": "0x0e9d2800dd05d814d2a0e587669147eeeb3e48226d1becfdb7477ac125a0bd6e",
+        "localCrossChainPolicyId": "0xe1b21cd2da66204e7aec0edab2b666a53cb3a96ebadcdcbc6bec27323f36281c",
+        "funding": {
+          "assetType": "ERC20",
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "owner": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "amount": "20000000000000000000",
+          "balance": "20000000000000000000",
+          "allowance": "20000000000000000000"
+        }
+      }
+    ]
+  },
+  "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+  "terms": {
+    "timingPolicyId": "0xe1b21cd2da66204e7aec0edab2b666a53cb3a96ebadcdcbc6bec27323f36281c",
+    "partySide": {
+      "chainId": "31337",
+      "assets": [
+        {
+          "assetType": 1,
+          "target": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "id": "0",
+          "amount": "10000000000000000000"
+        }
+      ],
+      "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "authorizationMode": 1,
+      "principalKeyVersion": "1",
+      "reclaimRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "commitmentDeadline": "4000000110",
+      "claimDeadline": "4000001010",
+      "reclaimRelease": "4000001410",
+      "commitLock": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "delegationPolicy": 0,
+      "delegate": "0x0000000000000000000000000000000000000000",
+      "delegateKeyVersion": "0",
+      "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000003"
+    },
+    "counterpartySide": {
+      "chainId": "31338",
+      "assets": [
+        {
+          "assetType": 1,
+          "target": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "id": "0",
+          "amount": "20000000000000000000"
+        }
+      ],
+      "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "authorizationMode": 1,
+      "principalKeyVersion": "1",
+      "reclaimRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "commitmentDeadline": "4000000210",
+      "claimDeadline": "4000001110",
+      "reclaimRelease": "4000001310",
+      "commitLock": "0xb543f650856eb251fb3910f9c83d4cdec94c66b69e3bd8151f9f8bd6f15453c2",
+      "delegationPolicy": 0,
+      "delegate": "0x0000000000000000000000000000000000000000",
+      "delegateKeyVersion": "0",
+      "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000004"
+    }
+  },
+  "lock": "0x097bc8fc72714864cef4a0aa3c7e2f2c39d09885c9275a8e3fe45cb3e1761239",
+  "deterministicSecrets": {
+    "settlementSecret": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "bobCommitSecret": "0x0000000000000000000000000000000000000000000000000000000000000002"
+  },
+  "clientTrace": [
+    {
+      "sequence": 1,
+      "step": "prepare",
+      "party": "alice",
+      "status": {
+        "workflowStage": "prepared",
+        "aliceCommitStatus": "not-submitted",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 2,
+      "step": "prepare",
+      "party": "bob",
+      "status": {
+        "workflowStage": "prepared",
+        "aliceCommitStatus": "not-submitted",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 3,
+      "step": "pending",
+      "party": "alice",
+      "status": {
+        "workflowStage": "alice-commit",
+        "aliceCommitStatus": "pending",
+        "bobCommitEnabled": false,
+        "warning": "Alice commit is pending; Bob commit is disabled.",
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 4,
+      "step": "included-non-final",
+      "party": "alice",
+      "status": {
+        "workflowStage": "alice-commit",
+        "aliceCommitStatus": "included-non-final",
+        "bobCommitEnabled": false,
+        "warning": "Alice commit is included but not final; Bob commit is disabled and may be reorganized.",
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 5,
+      "step": "final",
+      "party": "alice",
+      "status": {
+        "workflowStage": "bob-enabled",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": true,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 6,
+      "step": "secret-release",
+      "party": "alice",
+      "status": {
+        "workflowStage": "bob-commit-pending",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": "Progression was released; awaiting Bob commit confirmation.",
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 7,
+      "step": "bob-commit",
+      "party": "bob",
+      "status": {
+        "workflowStage": "bob-committed",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 8,
+      "step": "revealing-claim-final",
+      "party": "bob",
+      "status": {
+        "workflowStage": "reveal-final",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 9,
+      "step": "final-claim-handoff",
+      "party": "bob",
+      "status": {
+        "workflowStage": "final-claim",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 10,
+      "step": "completion",
+      "party": "alice",
+      "status": {
+        "workflowStage": "complete",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": null,
+        "recoveryActive": false
+      }
+    },
+    {
+      "sequence": 11,
+      "step": "completion",
+      "party": "bob",
+      "status": {
+        "workflowStage": "complete",
+        "aliceCommitStatus": "final",
+        "bobCommitEnabled": false,
+        "warning": null,
+        "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "finalClaimExecutorCandidates": [
+          "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ],
+        "selectedFinalClaimExecutor": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+        "recoveryActive": false
+      }
+    }
+  ],
+  "authorizationTrace": {
+    "schema": "quip-swap-authorization-trace.v1",
+    "records": [
+      {
+        "sequence": 1,
+        "side": "alice",
+        "chainId": "31337",
+        "authorizationMode": "registered-direct",
+        "signatureVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "wallet": null,
+        "gateway": "0xa52C96Ac89d4A9fc358aE6F4b27cfF072B4bF777",
+        "commitPayloadHash": "0x13722da83929d2a578552d8b549a3b2a5199782b123cf682c51213449f362a04",
+        "authenticatedSubmitter": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
+        "expiry": "4000000510",
+        "status": "accepted",
+        "transactionHash": "0x4ba2ab72508109d694a1a7a73f6f0730e862f0d060975eab57ccc2cca9f4a245",
+        "errorName": null
+      },
+      {
+        "sequence": 2,
+        "side": "bob",
+        "chainId": "31338",
+        "authorizationMode": "registered-direct",
+        "signatureVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "wallet": null,
+        "gateway": "0xa52C96Ac89d4A9fc358aE6F4b27cfF072B4bF777",
+        "commitPayloadHash": "0x69dec4cd2312cbcd4cceb45e7afdf259a2ef2c8b9d99279295a0527c9a2bf6b7",
+        "authenticatedSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
+        "expiry": "4000000610",
+        "status": "accepted",
+        "transactionHash": "0x4be764c19922e05c6d78d7ec4578c8ed606d8a40ac6a59680eff8a2b60143d50",
+        "errorName": null
+      }
+    ]
+  },
+  "settlementTrace": {
+    "schema": "quip-swap-settlement-trace.v1",
+    "transactions": [
+      {
+        "sequence": 1,
+        "action": "alice-commit",
+        "chainId": 31337,
+        "transactionHash": "0x4ba2ab72508109d694a1a7a73f6f0730e862f0d060975eab57ccc2cca9f4a245",
+        "blockNumber": "18",
+        "progressionGate": "not-required",
+        "before": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Unused",
+          "stateCode": 0,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "0"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "10000000000000000000"
+            }
+          ]
+        },
+        "events": [
+          {
+            "source": "identityRegistry",
+            "address": "0x2aba0601fd2159d6d0ed3c0313fc24f2cb064d13",
+            "eventName": "IdentityRegistered",
+            "args": {
+              "eoa": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "activeKeyVersion": "1",
+              "recoveryKeyVersion": "1"
+            },
+            "logIndex": 0
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "AuthorizationNonceConsumed",
+            "args": {
+              "nonceKey": "0xb400cbd076400290028ae4b93c78a1139c9c2b18f2d01ef27ba61feabccb2674",
+              "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
+              "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            },
+            "logIndex": 2
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "Committed",
+            "args": {
+              "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+              "lock": "0x097bc8fc72714864cef4a0aa3c7e2f2c39d09885c9275a8e3fe45cb3e1761239",
+              "side": 0,
+              "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            },
+            "logIndex": 3
+          }
+        ]
+      },
+      {
+        "sequence": 2,
+        "action": "bob-commit",
+        "chainId": 31338,
+        "transactionHash": "0x4be764c19922e05c6d78d7ec4578c8ed606d8a40ac6a59680eff8a2b60143d50",
+        "blockNumber": "18",
+        "progressionGate": "bob-secret-accepted",
+        "before": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Unused",
+          "stateCode": 0,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "0"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        },
+        "events": [
+          {
+            "source": "identityRegistry",
+            "address": "0x2aba0601fd2159d6d0ed3c0313fc24f2cb064d13",
+            "eventName": "IdentityRegistered",
+            "args": {
+              "eoa": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "activeKeyVersion": "1",
+              "recoveryKeyVersion": "1"
+            },
+            "logIndex": 0
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "AuthorizationNonceConsumed",
+            "args": {
+              "nonceKey": "0xe827b86942cf3dce2cbb5f2df26987c48ad65f9f820995a2da247c2d6aa16c1a",
+              "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
+              "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+            },
+            "logIndex": 2
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "Committed",
+            "args": {
+              "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+              "lock": "0x097bc8fc72714864cef4a0aa3c7e2f2c39d09885c9275a8e3fe45cb3e1761239",
+              "side": 1,
+              "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+            },
+            "logIndex": 3
+          }
+        ]
+      },
+      {
+        "sequence": 3,
+        "action": "revealing-claim",
+        "chainId": 31338,
+        "transactionHash": "0xd8d951e45217353f7389bd24c4afab5310b0245691a5ac7fa0f62ed51d2d5c0b",
+        "blockNumber": "19",
+        "progressionGate": "not-applicable",
+        "before": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "0"
+            }
+          ]
+        },
+        "events": [
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "Claimed",
+            "args": {
+              "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+              "lock": "0x097bc8fc72714864cef4a0aa3c7e2f2c39d09885c9275a8e3fe45cb3e1761239",
+              "side": 1
+            },
+            "logIndex": 1
+          }
+        ]
+      },
+      {
+        "sequence": 4,
+        "action": "final-claim",
+        "chainId": 31337,
+        "transactionHash": "0x9c3e0d8c6a2be67b9285f93a0660977bb54e54e8bc455b3d5577adc874078c72",
+        "blockNumber": "21",
+        "progressionGate": "not-applicable",
+        "before": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "10000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "0"
+            }
+          ]
+        },
+        "events": [
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "Claimed",
+            "args": {
+              "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+              "lock": "0x097bc8fc72714864cef4a0aa3c7e2f2c39d09885c9275a8e3fe45cb3e1761239",
+              "side": 0
+            },
+            "logIndex": 1
+          }
+        ]
+      }
+    ],
+    "finalSnapshots": [
+      {
+        "chainId": 31337,
+        "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+        "state": "Claimed",
+        "stateCode": 2,
+        "holdings": [
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "balance": "0"
+          },
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "balance": "10000000000000000000"
+          },
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+            "balance": "0"
+          }
+        ]
+      },
+      {
+        "chainId": 31338,
+        "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+        "state": "Claimed",
+        "stateCode": 2,
+        "holdings": [
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "balance": "0"
+          },
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "balance": "20000000000000000000"
+          },
+          {
+            "assetType": "erc20",
+            "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+            "balance": "0"
+          }
+        ]
+      }
+    ]
+  },
+  "negativeControls": {
+    "schema": "quip-swap-negative-controls.v1",
+    "records": [
+      {
+        "sequence": 1,
+        "scenario": "commit-disallowed-submitter",
+        "errorName": "InvalidTransportSubmitter",
+        "reverted": true,
+        "stateUnchanged": true,
+        "before": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        }
+      },
+      {
+        "sequence": 2,
+        "scenario": "bob-commit-missing-secret",
+        "errorName": "MissingBobCommitSecret",
+        "reverted": true,
+        "stateUnchanged": true,
+        "before": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        }
+      },
+      {
+        "sequence": 3,
+        "scenario": "bob-commit-wrong-secret",
+        "errorName": "InvalidBobCommitSecret",
+        "reverted": true,
+        "stateUnchanged": true,
+        "before": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31338,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "20000000000000000000"
+            }
+          ]
+        }
+      },
+      {
+        "sequence": 4,
+        "scenario": "final-claim-wrong-secret",
+        "errorName": "InvalidSettlementSecret",
+        "reverted": true,
+        "stateUnchanged": true,
+        "before": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "10000000000000000000"
+            }
+          ]
+        },
+        "after": {
+          "chainId": 31337,
+          "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "state": "Committed",
+          "stateCode": 1,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+              "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+              "balance": "10000000000000000000"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
