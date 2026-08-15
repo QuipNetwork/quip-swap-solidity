@@ -1,4 +1,4 @@
-import {concatHex, encodeAbiParameters, encodeFunctionData, getAddress, sliceHex} from 'viem'
+import {concatHex, encodeAbiParameters, encodeFunctionData, getAddress, keccak256, sliceHex, stringToHex} from 'viem'
 import type {Address, Hash, Hex, TransactionReceipt} from 'viem'
 import {
   AssetType,
@@ -14,7 +14,9 @@ import {
   pqAuthorizationGatewayAbi,
   prepareTradeCommand,
   registrationDigest,
+  settlementLock as importedSettlementLock,
   timingPolicyId,
+  tradeId as importedTradeId,
   trustedClientStatus,
 } from '../src/index.js'
 import type {ClientState, CommitAuthorizationRequest, Hex32, InitialRegistration, PartySecretState, ProtocolRandomness, SideTermsTemplate, TimingPolicy} from '../src/index.js'
@@ -143,14 +145,14 @@ export async function runFullDemo(
   alice = applied(alice, {command: 'mark-complete'}); bob = applied(bob, {command: 'mark-complete'}); recordClient('completion', alice.publicState); recordClient('completion', bob.publicState)
 
   const artifact: FullDemoArtifact = {schema: FULL_DEMO_SCHEMA, publicTestSecrets: true, deployment, tradeId: alice.publicState.tradeId, terms: alice.publicState.terms, lock, deterministicSecrets: {settlementSecret: randomness.settlementSecret, bobCommitSecret: randomness.bobCommitSecret}, clientTrace, authorizationTrace: authorization.artifact(), settlementTrace: settlement.artifact(), negativeControls: negatives.artifact({requireAll: true})}
-  assertComplete(artifact, chainA, chainB)
+  validateFullDemoArtifact(artifact)
   return artifact
 }
 
 function sideTemplate(ctx: ChainContext, recipient: Address, token: Address, amount: bigint, commitmentDeadline: bigint, claimDeadline: bigint, reclaimRelease: bigint): SideTermsTemplate {
   return {chainId: BigInt(ctx.chainId), assets: [{assetType: AssetType.ERC20, target: token, id: 0n, amount}], principal: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n, reclaimRecipient: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, recipient, commitmentDeadline, claimDeadline, reclaimRelease, delegationPolicy: DelegationPolicy.NotAllowed, delegate: ZERO_ADDRESS, delegateKeyVersion: 0n}
 }
-function restoreTerms(state: ClientState) { return {timingPolicyId: state.terms.timingPolicyId, partySide: restoreSide(state.terms.partySide), counterpartySide: restoreSide(state.terms.counterpartySide)} }
+function restoreTerms(state: {readonly terms: ClientState['terms']}) { return {timingPolicyId: state.terms.timingPolicyId, partySide: restoreSide(state.terms.partySide), counterpartySide: restoreSide(state.terms.counterpartySide)} }
 function restoreSide(side: ClientState['terms']['partySide']) { return {...side, chainId: BigInt(side.chainId), principalKeyVersion: BigInt(side.principalKeyVersion), commitmentDeadline: BigInt(side.commitmentDeadline), claimDeadline: BigInt(side.claimDeadline), reclaimRelease: BigInt(side.reclaimRelease), delegateKeyVersion: BigInt(side.delegateKeyVersion), assets: side.assets.map(asset => ({...asset, id: BigInt(asset.id), amount: BigInt(asset.amount)}))} }
 function preparedAuthorization(terms: ReturnType<typeof restoreTerms>, party: boolean, authorizationVerifier: Address, swapAddress: Address, lock: Hex32, actionNonce: Hex32, expiry: bigint) { const payload = {terms, party, authorizationVerifier, swapAddress, lock, expectedSourceState: 0, actionNonce, expiry} as const; return {payload, payloadHash: commitPayloadHash(payload)} }
 function request(prepared: ReturnType<typeof preparedAuthorization>, bobCommitSecret: Hex32): CommitAuthorizationRequest { return {receiver: prepared.payload.swapAddress, terms: prepared.payload.terms, party: prepared.payload.party, lock: prepared.payload.lock, actionNonce: prepared.payload.actionNonce, bobCommitSecret, expiry: prepared.payload.expiry, commitData: '0x'} }
@@ -163,5 +165,35 @@ function applied<P extends {publicState: ClientState; secretState: PartySecretSt
 function tracked(token: Address, principal: Address, recipient: Address, wrapper: Address): readonly TrackedHolding[] { return [{assetType: 'erc20', token, account: principal}, {assetType: 'erc20', token, account: recipient}, {assetType: 'erc20', token, account: wrapper}] }
 async function latestTime(a: ChainContext, b: ChainContext): Promise<bigint> { const [left, right] = await Promise.all([a.now(), b.now()]); return (left > right ? left : right) + 10n }
 async function runBobNegative(recorder: NegativeControlRecorder, scenario: NegativeControlScenario, ctx: ChainContext, addresses: DemoDeploymentArtifact['chains'][number]['addresses'], snapshot: () => Promise<CrossChainSettlementSnapshot>, terms: ReturnType<typeof restoreTerms>, lock: Hex32, actionNonce: Hex32, bobCommitSecret: Hex32, key: Hex, caller: Address, expiry: bigint): Promise<void> { const prepared = preparedAuthorization(terms, false, addresses.authorizationGateway, addresses.crossChainWrapper, lock, actionNonce, expiry); const req = request(prepared, bobCommitSecret); const signature = pqSignature(key, prepared.payloadHash); await recorder.execute({scenario, snapshot, attempt: async () => { await ctx.publicClient.simulateContract({address: addresses.authorizationGateway, abi: [...pqAuthorizationGatewayAbi, ...crossChainWrapperAbi], functionName: 'authorizeCommit', args: [req, signature], account: caller} as never) }}) }
-function assertComplete(artifact: FullDemoArtifact, a: ChainContext, b: ChainContext): void { const [left, right] = artifact.settlementTrace.finalSnapshots; if (artifact.authorizationTrace.records.length !== 2 || artifact.settlementTrace.transactions.length !== 4 || artifact.negativeControls.records.length !== 4 || left?.state !== 'Claimed' || right?.state !== 'Claimed') throw new Error('full demo trace is incomplete'); const balances = (snapshot: CrossChainSettlementSnapshot | undefined) => snapshot?.holdings.map(holding => 'balance' in holding ? holding.balance : null); if (JSON.stringify(balances(left)) !== JSON.stringify(['0', (10n * 10n ** 18n).toString(), '0']) || JSON.stringify(balances(right)) !== JSON.stringify(['0', (20n * 10n ** 18n).toString(), '0'])) throw new Error('full demo final balances mismatch'); if (artifact.clientTrace.at(-1)?.status.workflowStage !== 'complete' || a.chainId !== 31_337 || b.chainId !== 31_338) throw new Error('full demo did not complete') }
+export function validateFullDemoArtifact(artifact: FullDemoArtifact): void {
+  const expectedSteps = ['prepare:alice', 'prepare:bob', 'pending:alice', 'included-non-final:alice', 'final:alice', 'secret-release:alice', 'bob-commit:bob', 'revealing-claim-final:bob', 'final-claim-handoff:bob', 'completion:alice', 'completion:bob']
+  const expectedActions = ['alice-commit', 'bob-commit', 'revealing-claim', 'final-claim']
+  const expectedNegative = ['commit-disallowed-submitter', 'bob-commit-missing-secret', 'bob-commit-wrong-secret', 'final-claim-wrong-secret']
+  const terms = restoreTerms({terms: artifact.terms})
+  if (artifact.schema !== FULL_DEMO_SCHEMA || artifact.publicTestSecrets !== true || artifact.deployment.chains.map(chain => chain.chainId).join(',') !== '31337,31338') throw new Error('invalid full demo envelope')
+  if (tradeIdentity(terms) !== artifact.tradeId || settlementIdentity(artifact.tradeId, artifact.deterministicSecrets.settlementSecret) !== artifact.lock) throw new Error('full demo terms or secret binding mismatch')
+  if (artifact.clientTrace.map(entry => `${entry.step}:${entry.party}`).join('|') !== expectedSteps.join('|') || artifact.clientTrace.at(-1)?.status.workflowStage !== 'complete') throw new Error('full demo client trace is incomplete')
+  if (JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.settlementSecret) || JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.bobCommitSecret)) throw new Error('full demo operator trace exposes secrets')
+  if (artifact.authorizationTrace.records.map(record => `${record.side}:${record.status}`).join('|') !== 'alice:accepted|bob:accepted') throw new Error('full demo authorization trace is incomplete')
+  if (artifact.settlementTrace.transactions.map(record => record.action).join('|') !== expectedActions.join('|')) throw new Error('full demo settlement trace is incomplete')
+  if (artifact.negativeControls.records.map(record => record.scenario).join('|') !== expectedNegative.join('|') || artifact.negativeControls.records.some(record => !record.reverted || !record.stateUnchanged || JSON.stringify(record.before) !== JSON.stringify(record.after))) throw new Error('full demo negative controls are incomplete')
+  const [left, right] = artifact.settlementTrace.finalSnapshots
+  const balances = (snapshot: CrossChainSettlementSnapshot | undefined) => snapshot?.holdings.map(holding => 'balance' in holding ? holding.balance : null)
+  if (left?.state !== 'Claimed' || right?.state !== 'Claimed' || JSON.stringify(balances(left)) !== JSON.stringify(['0', (10n * 10n ** 18n).toString(), '0']) || JSON.stringify(balances(right)) !== JSON.stringify(['0', (20n * 10n ** 18n).toString(), '0'])) throw new Error('full demo final state or balances mismatch')
+}
+
+export function fullDemoLogicalFingerprint(artifact: FullDemoArtifact): Hex32 {
+  validateFullDemoArtifact(artifact)
+  const logical = {
+    client: artifact.clientTrace.map(entry => ({step: entry.step, party: entry.party, stage: entry.status.workflowStage, aliceCommit: entry.status.aliceCommitStatus, bobEnabled: entry.status.bobCommitEnabled})),
+    authorization: artifact.authorizationTrace.records.map(record => ({side: record.side, mode: record.authorizationMode, status: record.status})),
+    settlement: artifact.settlementTrace.transactions.map(record => ({action: record.action, chainId: record.chainId, gate: record.progressionGate, before: record.before.state, after: record.after.state, events: record.events.map(event => event.eventName)})),
+    negatives: artifact.negativeControls.records.map(record => ({scenario: record.scenario, errorName: record.errorName, unchanged: record.stateUnchanged})),
+    final: artifact.settlementTrace.finalSnapshots.map(snapshot => ({chainId: snapshot.chainId, state: snapshot.state, holdings: snapshot.holdings.map(holding => 'balance' in holding ? holding.balance : 'owner' in holding ? holding.owner : null)})),
+  }
+  return keccak256(stringToHex(JSON.stringify(logical)))
+}
+
+function tradeIdentity(terms: ReturnType<typeof restoreTerms>): Hex32 { return importedTradeId(terms) }
+function settlementIdentity(trade: Hex32, secret: Hex32): Hex32 { return importedSettlementLock(trade, secret) }
 export function serializeFullDemo(artifact: FullDemoArtifact): string { return `${JSON.stringify(artifact, null, 2)}\n` }

@@ -24,7 +24,12 @@ import {
 } from '../../scripts/demo-environment.js'
 import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
 import {readCrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
-import {runFullDemo, serializeFullDemo} from '../../scripts/full-demo.js'
+import {
+  fullDemoLogicalFingerprint,
+  runFullDemo,
+  serializeFullDemo,
+  validateFullDemoArtifact,
+} from '../../scripts/full-demo.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -262,10 +267,38 @@ beforeAll(async () => {
 describe('v1.1 deployment smoke', () => {
   it('runs the complete deterministic v1.1 demo and emits one combined artifact', async () => {
     const artifact = await runFullDemo(chainA, chainB, loadArtifact)
+    expect(() => validateFullDemoArtifact(artifact)).not.toThrow()
     expect(artifact.settlementTrace.finalSnapshots.map(snapshot => snapshot.state)).toEqual(['Claimed', 'Claimed'])
     expect(artifact.authorizationTrace.records).toHaveLength(2)
     expect(artifact.negativeControls.records).toHaveLength(4)
     expect(artifact.clientTrace.at(-1)?.status.workflowStage).toBe('complete')
+    expect(artifact.negativeControls.records.every(record => record.stateUnchanged && record.reverted)).toBe(true)
+    const operatorTrace = JSON.stringify(artifact.clientTrace)
+    expect(operatorTrace).not.toContain(artifact.deterministicSecrets.settlementSecret)
+    expect(operatorTrace).not.toContain(artifact.deterministicSecrets.bobCommitSecret)
+
+    const replay = {
+      ...artifact,
+      authorizationTrace: {
+        ...artifact.authorizationTrace,
+        records: artifact.authorizationTrace.records.map((record, index) =>
+          index === 0 ? {...record, transactionHash: `0x${'11'.repeat(32)}` as const} : record,
+        ),
+      },
+      settlementTrace: {
+        ...artifact.settlementTrace,
+        transactions: artifact.settlementTrace.transactions.map((record, index) =>
+          index === 0 ? {...record, transactionHash: `0x${'22'.repeat(32)}` as const} : record,
+        ),
+      },
+    }
+    expect(fullDemoLogicalFingerprint(replay)).toBe(fullDemoLogicalFingerprint(artifact))
+
+    const incomplete = {
+      ...artifact,
+      settlementTrace: {...artifact.settlementTrace, transactions: artifact.settlementTrace.transactions.slice(0, -1)},
+    }
+    expect(() => validateFullDemoArtifact(incomplete)).toThrow('settlement trace is incomplete')
     expect(serializeFullDemo(artifact)).toContain('quip-swap-full-demo.v1')
   })
 
