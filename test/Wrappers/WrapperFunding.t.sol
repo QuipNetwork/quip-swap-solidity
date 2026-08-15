@@ -34,6 +34,7 @@ import {ERC721Mock} from '../mocks/ERC721Mock.sol';
 import {FeeOnTransferERC20Mock} from '../mocks/FeeOnTransferERC20Mock.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
+import {MaliciousERC721Mock} from '../mocks/MaliciousERC721Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract WrapperFundingTest is Test {
@@ -323,6 +324,137 @@ contract WrapperFundingTest is Test {
     assertEq(malicious.balanceOf(RECIPIENT), 10 ether);
     assertEq(cross.reserved(assets[0]), 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+  }
+
+  function test_maliciousNoOpERC721CollectionRollsBackAndPermitsRetry() public {
+    MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+    Asset[] memory assets = _oneAsset(AssetType.ERC721, address(malicious), 7, 1);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 71);
+    CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 71);
+    bytes memory signature = _signature(request, address(gateway), aliceKey);
+    malicious.mint(alice, 7);
+    vm.prank(alice);
+    malicious.approve(address(cross), 7);
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
+
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, address(cross), alice));
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(malicious.ownerOf(7), alice);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+    vm.prank(alice);
+    gateway.authorizeCommit(request, signature);
+    assertEq(malicious.ownerOf(7), address(cross));
+    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_duplicateERC721ReferencesCannotCreateMultipleReserves() public {
+    ERC721Mock nft = new ERC721Mock('NFT', 'NFT');
+    Asset[] memory assets = new Asset[](2);
+    assets[0] = Asset({assetType: AssetType.ERC721, target: address(nft), id: 11, amount: 1});
+    assets[1] = assets[0];
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 76);
+    nft.mint(alice, 11);
+    vm.prank(alice);
+    nft.approve(address(cross), 11);
+    CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 76);
+
+    vm.expectRevert();
+    vm.prank(alice);
+    gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
+    assertEq(nft.ownerOf(11), alice);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+  }
+
+  function test_maliciousNoOpERC721ClaimRollsBackAndPermitsRetry() public {
+    MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+    Asset[] memory assets = _oneAsset(AssetType.ERC721, address(malicious), 8, 1);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 72);
+    malicious.mint(alice, 8);
+    vm.prank(alice);
+    malicious.approve(address(cross), 8);
+    _directCommit(terms, true, lock, 72, alice, aliceKey, bytes32(0));
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
+
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, address(cross)));
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(malicious.ownerOf(8), address(cross));
+    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(malicious.ownerOf(8), RECIPIENT);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+  }
+
+  function test_maliciousNoOpERC721ReclaimRollsBackAndPermitsRetry() public {
+    MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+    Asset[] memory assets = _oneAsset(AssetType.ERC721, address(malicious), 9, 1);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 73);
+    malicious.mint(alice, 9);
+    vm.prank(alice);
+    malicious.approve(address(cross), 9);
+    _directCommit(terms, true, lock, 73, alice, aliceKey, bytes32(0));
+    vm.warp(terms.partySide.reclaimRelease);
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
+
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECLAIMER, address(cross)));
+    cross.reclaim(terms, true, lock);
+    assertEq(malicious.ownerOf(9), address(cross));
+    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+    cross.reclaim(terms, true, lock);
+    assertEq(malicious.ownerOf(9), RECLAIMER);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Reclaimed));
+  }
+
+  function test_sameChainSecondERC721PayoutFailureRollsBackBothLegs() public {
+    MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+    Asset[] memory partyAssets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
+    Asset[] memory counterpartyAssets = _oneAsset(AssetType.ERC721, address(malicious), 10, 1);
+    ProtocolTerms memory terms;
+    terms.partySide = _side(alice, AuthorizationMode.RegisteredDirect, 1, partyAssets, 74);
+    terms.counterpartySide = _side(bob, AuthorizationMode.RegisteredDirect, 1, counterpartyAssets, 174);
+    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.SameChain, block.chainid, block.chainid, 0, 0);
+    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
+    policies.registerPolicy(terms.timingPolicyId, policy);
+    bytes32 lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+    token.mint(alice, 10 ether);
+    malicious.mint(bob, 10);
+    vm.prank(alice);
+    token.approve(address(same), 10 ether);
+    vm.prank(bob);
+    malicious.approve(address(same), 10);
+    _directCommitTo(address(same), terms, true, lock, 74, alice, aliceKey, bytes32(0));
+    _directCommitTo(address(same), terms, false, lock, 75, bob, bobKey, bytes32(0));
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
+
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, address(same)));
+    same.claim(terms, lock, SECRET);
+    assertEq(token.balanceOf(RECIPIENT), 0);
+    assertEq(token.balanceOf(address(same)), 10 ether);
+    assertEq(malicious.ownerOf(10), address(same));
+    assertEq(same.reserved(partyAssets[0]), 10 ether);
+    assertEq(same.reserved(counterpartyAssets[0]), 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+
+    malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+    same.claim(terms, lock, SECRET);
+    assertEq(token.balanceOf(RECIPIENT), 10 ether);
+    assertEq(malicious.ownerOf(10), RECIPIENT);
+    assertEq(same.reserved(partyAssets[0]), 0);
+    assertEq(same.reserved(counterpartyAssets[0]), 0);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
   }
 
   function test_reserveDeficitCannotDrainAnotherTrade() public {

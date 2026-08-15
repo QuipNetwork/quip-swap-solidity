@@ -10,6 +10,7 @@ import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 library AssetCustody {
   error IncorrectNativeAmount();
   error UnexpectedAmountReceived();
+  error UnexpectedERC721Owner(address expected, address actual);
   error InsufficientReservedBalance();
 
   struct Layout {
@@ -26,6 +27,7 @@ library AssetCustody {
         self.reserved[key] += asset.amount;
       } else if (asset.assetType == AssetType.ERC721) {
         TermsLib.transferAsset(asset, side.principal, address(this));
+        _requireERC721Owner(asset, address(this));
         self.reserved[key] += 1;
       } else {
         uint256 beforeBalance = _balance(asset);
@@ -60,6 +62,9 @@ library AssetCustody {
           ? IERC1155(asset.target).balanceOf(recipient, asset.id)
           : SafeTransferLib.balanceOf(asset.target, recipient);
         if (afterBalance - beforeBalance != amount) revert UnexpectedAmountReceived();
+      } else if (asset.assetType == AssetType.ERC721) {
+        TermsLib.transferAsset(asset, address(this), recipient);
+        _requireERC721Owner(asset, recipient);
       } else {
         TermsLib.transferAsset(asset, address(this), recipient);
       }
@@ -72,6 +77,14 @@ library AssetCustody {
 
   function assetKey(Asset memory asset) internal pure returns (bytes32) {
     return keccak256(abi.encode(asset.assetType, asset.target, asset.id));
+  }
+
+  function _requireERC721Owner(Asset memory asset, address expected) private view {
+    try IERC721(asset.target).ownerOf(asset.id) returns (address actual) {
+      if (actual != expected) revert UnexpectedERC721Owner(expected, actual);
+    } catch {
+      revert UnexpectedERC721Owner(expected, address(0));
+    }
   }
 
   function _balance(Asset memory asset) private view returns (uint256) {
