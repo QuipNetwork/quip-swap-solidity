@@ -6,6 +6,7 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 
 import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
 import {TimingPolicy, WrapperMode} from '../../src/ProtocolTypes.sol';
+import {PrototypeTimingPolicies} from '../../src/PrototypeTimingPolicies.sol';
 import {TimingPolicyRegistry} from '../../src/TimingPolicyRegistry.sol';
 import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
 import {TimingPolicyConsumerHarness} from '../harness/TimingPolicyConsumerHarness.sol';
@@ -28,6 +29,23 @@ contract TimingPolicyRegistryTest is Test {
 
     assertTrue(registry.isRegistered(policyId));
     _assertPolicyEq(registry.resolvePolicy(policyId), policy);
+  }
+
+  function test_registersCanonicalPrototypePoliciesForEitherPartyOrdering() public {
+    TimingPolicy memory baseToOp = PrototypeTimingPolicies.baseSepoliaToOpSepolia();
+    TimingPolicy memory opToBase = PrototypeTimingPolicies.opSepoliaToBaseSepolia();
+    bytes32 baseToOpId = _register(baseToOp);
+    bytes32 opToBaseId = _register(opToBase);
+
+    assertTrue(baseToOpId != opToBaseId);
+    assertEq(baseToOp.partyChainId, 84_532);
+    assertEq(baseToOp.counterpartyChainId, 11_155_420);
+    assertEq(opToBase.partyChainId, 11_155_420);
+    assertEq(opToBase.counterpartyChainId, 84_532);
+    assertEq(registry.finalClaimDelay(baseToOpId, 84_532, 11_155_420), 30 minutes);
+    assertEq(registry.finalClaimDelay(baseToOpId, 11_155_420, 84_532), 30 minutes);
+    assertEq(registry.finalClaimDelay(opToBaseId, 11_155_420, 84_532), 30 minutes);
+    assertEq(registry.finalClaimDelay(opToBaseId, 84_532, 11_155_420), 30 minutes);
   }
 
   function test_registerEmitsCanonicalPolicy() public {

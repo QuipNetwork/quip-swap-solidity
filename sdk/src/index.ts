@@ -66,6 +66,15 @@ export type {
 } from './protocolClient.js'
 export {decodeProtocolEvents, waitForProtocolReceipt} from './protocolEvents.js'
 export type {ProtocolEventSource, ProtocolEvent} from './protocolEvents.js'
+export {
+  BASE_SEPOLIA_CHAIN_ID,
+  OP_SEPOLIA_CHAIN_ID,
+  PROTOTYPE_FINAL_CLAIM_DELAY,
+  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
+  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
+  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
+  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
+} from './prototypeTiming.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 export {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
