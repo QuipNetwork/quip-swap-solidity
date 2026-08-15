@@ -45,6 +45,7 @@ export interface DemoChainDeployment {
   readonly trustedVerifier: Address
   readonly addresses: Readonly<Record<(typeof prototypeComponents)[number], Address>>
   readonly localSameChainPolicyId: Hex
+  readonly localCrossChainPolicyId: Hex
   readonly funding: DemoAssetSetup
 }
 
@@ -105,14 +106,15 @@ async function bootstrapChain(
     if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
   }
   const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.SameChain, partyChainId: BigInt(ctx.chainId), counterpartyChainId: BigInt(ctx.chainId), partyToCounterpartyDelay: 0n, counterpartyToPartyDelay: 0n}
-  const policies = [[BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY], [OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY], [timingPolicyId(localPolicy), localPolicy]] as const
+  const localCrossPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
+  const policies = [[BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY], [OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY], [timingPolicyId(localPolicy), localPolicy], [timingPolicyId(localCrossPolicy), localCrossPolicy]] as const
   for (const [policyId, policy] of policies) {
     const hash = await ctx.deployer.walletClient.writeContract({address: addresses.timingPolicyRegistry, abi: timingPolicyRegistryAbi, functionName: 'registerPolicy', args: [policyId, policy], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
     await ctx.publicClient.waitForTransactionReceipt({hash})
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
   const funding = await setupDemoFunding(ctx, addresses, principal, amount, load)
-  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, localSameChainPolicyId: timingPolicyId(localPolicy), funding}
+  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, localSameChainPolicyId: timingPolicyId(localPolicy), localCrossChainPolicyId: timingPolicyId(localCrossPolicy), funding}
 }
 
 async function setupDemoFunding(

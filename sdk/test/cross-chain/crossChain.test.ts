@@ -24,6 +24,7 @@ import {
 } from '../../scripts/demo-environment.js'
 import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
 import {readCrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
+import {runFullDemo, serializeFullDemo} from '../../scripts/full-demo.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -259,6 +260,15 @@ beforeAll(async () => {
 })
 
 describe('v1.1 deployment smoke', () => {
+  it('runs the complete deterministic v1.1 demo and emits one combined artifact', async () => {
+    const artifact = await runFullDemo(chainA, chainB, loadArtifact)
+    expect(artifact.settlementTrace.finalSnapshots.map(snapshot => snapshot.state)).toEqual(['Claimed', 'Claimed'])
+    expect(artifact.authorizationTrace.records).toHaveLength(2)
+    expect(artifact.negativeControls.records).toHaveLength(4)
+    expect(artifact.clientTrace.at(-1)?.status.workflowStage).toBe('complete')
+    expect(serializeFullDemo(artifact)).toContain('quip-swap-full-demo.v1')
+  })
+
   it('emits the deterministic two-chain CREATE3 bootstrap artifact', () => {
     expect(demoDeployment.schema).toBe('quip-swap-demo-deployment.v1')
     expect(demoDeployment.identityRegistration).toBe('lazy-on-first-commit')

@@ -30,6 +30,7 @@
     "test:integration": "bun run scripts/run-integration-tests.ts",
     "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
+    "demo:full": "bun run scripts/run-full-demo.ts",
     "smoke": "bun run scripts/smoke.ts",
     "build": "tsup",
     "check": "bun run typecheck && bun run test && bun run build"
