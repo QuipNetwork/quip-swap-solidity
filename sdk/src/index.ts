@@ -75,6 +75,15 @@ export {
   BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
 } from './prototypeTiming.js'
+export {
+  PROTOTYPE_OPERATING_PROFILE,
+  PROTOTYPE_RETRY_POLICY,
+  prototypeConfirmations,
+} from './prototypeOperations.js'
+export type {
+  PrototypeChainOperatingProfile,
+  PrototypeOperatingProfile,
+} from './prototypeOperations.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 export {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
