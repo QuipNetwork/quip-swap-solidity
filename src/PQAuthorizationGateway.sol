@@ -8,6 +8,7 @@ import {ProtocolHashing} from './ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
+  DelegationPolicy,
   ExpectedSourceState,
   SideTerms,
   VerifiedCommitAuthorization
@@ -21,7 +22,7 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
   error InvalidPQAuthorization();
   error AuthorizationExpired();
   error InvalidRegistryCaller();
-  error InvalidRegisteredPrincipal();
+  error InvalidRegisteredSubmitter();
   error RegistrationPayloadMismatch();
 
   PQIdentityRegistry public immutable REGISTRY;
@@ -36,7 +37,7 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
 
   function completeRegisteredCommit(
     address eoa,
-    address registrationCaller,
+    address,
     bytes32 registeredPayloadHash,
     bytes calldata commitData
   ) external payable {
@@ -44,8 +45,10 @@ contract PQAuthorizationGateway is IRegisteredCommitTarget {
     (CommitAuthorizationRequest memory request, bytes memory signature) =
       abi.decode(commitData, (CommitAuthorizationRequest, bytes));
     SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
-    if (side.principal != eoa) revert InvalidRegisteredPrincipal();
-    VerifiedCommitAuthorization memory evidence = _verify(request, signature, registrationCaller);
+    if (eoa != side.principal && (side.delegationPolicy != DelegationPolicy.SpecificDelegate || eoa != side.delegate)) {
+      revert InvalidRegisteredSubmitter();
+    }
+    VerifiedCommitAuthorization memory evidence = _verify(request, signature, eoa);
     if (evidence.payloadHash != registeredPayloadHash) revert RegistrationPayloadMismatch();
     _deliver(request, evidence);
   }

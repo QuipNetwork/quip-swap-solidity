@@ -322,6 +322,90 @@ contract AuthorizationBoundariesTest is Test {
     assertEq(registry.identityOf(failingUser).activeKeyVersion, 0);
   }
 
+  function test_atomicLazyBrokerRegistrationPreservesPrincipalAuthorization() public {
+    uint256 newcomerKey = 0xB012;
+    address newcomer = vm.addr(newcomerKey);
+    bytes memory newcomerPQKey = _key('new-broker');
+    ProtocolTerms memory terms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    terms.partySide.delegate = newcomer;
+    terms.partySide.delegateKeyVersion = 1;
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('lazy-broker'));
+    bytes32 payloadHash = _payload(request, address(gateway));
+    bytes memory principalSignature = _pqSig(directPQKey, payloadHash);
+    InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
+    (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
+
+    vm.prank(relayer);
+    registry.registerAndCommit(
+      registration,
+      _eoaSig(newcomerKey, registry.registrationDigest(registration)),
+      activeProof,
+      recoveryProof,
+      abi.encode(request, principalSignature)
+    );
+
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
+    assertEq(receiver.lastSubmitter(), newcomer);
+    assertEq(receiver.commits(), 1);
+  }
+
+  function test_failedLazyBrokerCommitRollsBackRegistrationAndAuthorizationNonce() public {
+    uint256 newcomerKey = 0xFA12;
+    address newcomer = vm.addr(newcomerKey);
+    bytes memory newcomerPQKey = _key('failing-broker');
+    ProtocolTerms memory terms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    terms.partySide.delegate = newcomer;
+    terms.partySide.delegateKeyVersion = 1;
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('failed-lazy-broker'));
+    request.commitData = 'fail';
+    bytes32 payloadHash = _payload(request, address(gateway));
+    bytes memory principalSignature = _pqSig(directPQKey, payloadHash);
+    InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
+    (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
+
+    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.prank(newcomer);
+    registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, principalSignature));
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
+    assertEq(receiver.commits(), 0);
+
+    request.commitData = 'retry';
+    vm.prank(newcomer);
+    registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, principalSignature));
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
+    assertEq(receiver.lastSubmitter(), newcomer);
+    assertEq(receiver.commits(), 1);
+  }
+
+  function test_lazyBrokerRegistrationRejectsNonDelegateAndNonPrincipalSignature() public {
+    address newcomer = vm.addr(0xBAD1);
+    bytes memory newcomerPQKey = _key('wrong-broker');
+    ProtocolTerms memory terms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('wrong-lazy-broker'));
+    bytes32 payloadHash = _payload(request, address(gateway));
+    InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
+    (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
+
+    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.prank(newcomer);
+    registry.registerAndCommit(
+      registration, '', activeProof, recoveryProof, abi.encode(request, _pqSig(directPQKey, payloadHash))
+    );
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
+
+    terms.partySide.delegate = newcomer;
+    request = _request(terms, keccak256('wrong-principal-signature'));
+    payloadHash = _payload(request, address(gateway));
+    registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
+    (activeProof, recoveryProof) = _registrationProofs(registration);
+    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.prank(newcomer);
+    registry.registerAndCommit(
+      registration, '', activeProof, recoveryProof, abi.encode(request, _pqSig(newcomerPQKey, payloadHash))
+    );
+    assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
+  }
+
   function test_crossChainCounterpartyRequiresProgressionSecretAlongsideEveryDelegationPolicy() public {
     bytes32 secret = keccak256('boundary-bob-secret');
     for (uint8 i; i <= uint8(DelegationPolicy.SpecificDelegate); ++i) {
@@ -601,6 +685,11 @@ contract AuthorizationBoundariesTest is Test {
       key[i] = keyedVerifier[i + 20];
     }
     return abi.encode(key, digest);
+  }
+
+  function _eoaSig(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory) {
+    (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+    return abi.encodePacked(r, s, v);
   }
 
   function _evidence(
