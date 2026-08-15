@@ -41,3 +41,7 @@ accepting the state. The prototype files are intentionally not encrypted.
 
 Deterministic fixed preimages require `unsafe-demo` mode, are accepted only for local
 chain IDs `31337` and `31338`, and are explicitly marked as public test secrets.
+The demo supplies one named `ProtocolRandomness` object so settlement secret,
+progression secret, both side nonces, and both action nonces cannot be confused by
+positional ordering. Outside this mode the workflow generates six fresh independent
+nonzero values.

@@ -7,11 +7,23 @@ const ZERO = `0x${'00'.repeat(32)}` as Hex32
 export type AliceCommitStatus = 'not-submitted' | 'pending' | 'included-non-final' | 'final'
 export type WorkflowStage = 'prepared' | 'alice-commit' | 'bob-enabled' | 'bob-commit-pending' | 'bob-committed' | 'reveal-final' | 'final-claim' | 'complete' | 'recovery'
 export type SideTermsTemplate = Omit<SideTerms, 'commitLock' | 'sideNonce'>
+export interface ProtocolRandomness {
+  readonly settlementSecret: Hex32
+  readonly bobCommitSecret: Hex32
+  readonly partySideNonce: Hex32
+  readonly counterpartySideNonce: Hex32
+  readonly partyActionNonce: Hex32
+  readonly counterpartyActionNonce: Hex32
+}
 export interface WorkflowArgs {
   policy: TimingPolicy; partySide: SideTermsTemplate; counterpartySide: SideTermsTemplate
   partyVerifier: Address; counterpartyVerifier: Address; partyWrapper: Address; counterpartyWrapper: Address
   partyExpiry: bigint; counterpartyExpiry: bigint; requiredConfirmations: bigint
-  selectedBobSubmitter: Address; randomHex32?: () => Hex32
+  selectedBobSubmitter: Address
+  /** Explicit named injection for the unsafe deterministic local demo. */
+  randomness?: ProtocolRandomness
+  /** Low-level test hook retained for existing SDK tests; prefer `randomness`. */
+  randomHex32?: () => Hex32
 }
 export interface PreparedAuthorization {payload: CommitPayloadArgs; payloadHash: Hex32}
 export interface Inclusion {transactionHash: Hex; blockNumber: bigint; blockHash: Hex32}
@@ -29,11 +41,18 @@ export function randomProtocolValue(): Hex32 {
 }
 /** Creates a workflow while returning its initial secret material to its owning client boundary. */
 export function prepareTrustedCrossChainWorkflow(args: WorkflowArgs): PreparedTrustedWorkflow {
+  if (args.randomness !== undefined) {
+    const workflow = new TrustedCrossChainWorkflow(args)
+    return {workflow, settlementSecret: args.randomness.settlementSecret, bobCommitSecret: args.randomness.bobCommitSecret}
+  }
   const random = args.randomHex32 ?? randomProtocolValue
-  const values = Array.from({length: 6}, () => random())
-  let index = 0
-  const workflow = new TrustedCrossChainWorkflow({...args, randomHex32: () => values[index++] as Hex32})
-  return {workflow, settlementSecret: values[0] as Hex32, bobCommitSecret: values[1] as Hex32}
+  const randomness: ProtocolRandomness = {
+    settlementSecret: random(), bobCommitSecret: random(), partySideNonce: random(),
+    counterpartySideNonce: random(), partyActionNonce: random(), counterpartyActionNonce: random(),
+  }
+  const {randomHex32: _randomHex32, ...baseArgs} = args
+  const workflow = new TrustedCrossChainWorkflow({...baseArgs, randomness})
+  return {workflow, settlementSecret: randomness.settlementSecret, bobCommitSecret: randomness.bobCommitSecret}
 }
 /** Finality-aware coordinator. Neither secret is present in status or logging surfaces. */
 export class TrustedCrossChainWorkflow {
@@ -44,8 +63,13 @@ export class TrustedCrossChainWorkflow {
   private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private released = false; private unsafeReorg = false
   constructor(args: WorkflowArgs) {
     if (args.requiredConfirmations < 1n) throw new Error('requiredConfirmations must be positive')
+    if (args.randomness !== undefined && args.randomHex32 !== undefined) throw new Error('choose named randomness or randomHex32, not both')
     const random = args.randomHex32 ?? randomProtocolValue
-    const values = [random(), random(), random(), random(), random(), random()] as const
+    const values = args.randomness === undefined
+      ? [random(), random(), random(), random(), random(), random()] as const
+      : [args.randomness.settlementSecret, args.randomness.bobCommitSecret, args.randomness.partySideNonce,
+          args.randomness.counterpartySideNonce, args.randomness.partyActionNonce,
+          args.randomness.counterpartyActionNonce] as const
     if (values.some(value => value === ZERO)) throw new Error('protocol randomness must be nonzero')
     if (new Set(values).size !== values.length) throw new Error('protocol randomness must be independent')
     const [secret, bobSecret, partyNonce, counterNonce, partyActionNonce, counterActionNonce] = values

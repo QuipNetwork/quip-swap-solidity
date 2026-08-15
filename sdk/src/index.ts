@@ -56,6 +56,7 @@ export type {
   FinalClaimExecutor,
   RetryPolicy,
   PreparedTrustedWorkflow,
+  ProtocolRandomness,
 } from './workflows/trustedCrossChain.js'
 
 export {createProtocolClient} from './protocolClient.js'

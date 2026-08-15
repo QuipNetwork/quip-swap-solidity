@@ -30,9 +30,12 @@ export interface PreparedPartyStates {
 }
 
 export function prepareTradeCommand(args: PrepareTradeCommandArgs): PreparedPartyStates {
+  const mode = args.secretMode ?? 'prototype-local'
+  if (args.workflow.randomness !== undefined && mode !== 'unsafe-demo') {
+    throw new Error('named deterministic randomness requires unsafe-demo mode')
+  }
   const prepared = prepareTrustedCrossChainWorkflow(args.workflow)
   const flow = prepared.workflow
-  const mode = args.secretMode ?? 'prototype-local'
   const common = {
     schema: CLIENT_STATE_SCHEMA,
     generation: 1,
