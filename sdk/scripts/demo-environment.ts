@@ -6,12 +6,14 @@ import {
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
   PROTOTYPE_DEPLOYMENT_VERSION,
+  AssetType,
   WrapperMode,
   predictPrototypeAddresses,
   prototypeComponents,
   prototypeDeploymentSalt,
   timingPolicyId,
 } from '../src/index.js'
+import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from '../src/generated/crossChainWrapperAbi.js'
 import {pqAuthorizationGatewayAbi} from '../src/generated/pqAuthorizationGatewayAbi.js'
 import {pqIdentityRegistryAbi} from '../src/generated/pqIdentityRegistryAbi.js'
@@ -19,8 +21,23 @@ import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
 import {timingPolicyRegistryAbi} from '../src/generated/timingPolicyRegistryAbi.js'
 import type {TimingPolicy} from '../src/index.js'
 import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
+import {erc20MockAbi} from '../test/helpers/mockAbis.js'
 
 const createXAbi = [{type: 'function', name: 'deployCreate3', stateMutability: 'payable', inputs: [{name: 'salt', type: 'bytes32'}, {name: 'initCode', type: 'bytes'}], outputs: [{name: 'deployed', type: 'address'}]}] as const
+
+export const DEMO_ALICE_AMOUNT = 10n * 10n ** 18n
+export const DEMO_BOB_AMOUNT = 20n * 10n ** 18n
+
+export interface DemoAssetSetup {
+  readonly assetType: 'ERC20'
+  readonly token: Address
+  readonly principal: Address
+  readonly owner: Address
+  readonly wrapper: Address
+  readonly amount: string
+  readonly balance: string
+  readonly allowance: string
+}
 
 export interface DemoChainDeployment {
   readonly chainId: number
@@ -28,6 +45,7 @@ export interface DemoChainDeployment {
   readonly trustedVerifier: Address
   readonly addresses: Readonly<Record<(typeof prototypeComponents)[number], Address>>
   readonly localSameChainPolicyId: Hex
+  readonly funding: DemoAssetSetup
 }
 
 export interface DemoDeploymentArtifact {
@@ -46,7 +64,10 @@ export async function bootstrapDemoEnvironment(
 ): Promise<DemoDeploymentArtifact> {
   if (chainA.chainId !== 31_337 || chainB.chainId !== 31_338) throw new Error('demo requires chain IDs 31337 and 31338')
   if (chainA.deployer.address !== chainB.deployer.address) throw new Error('demo chains require the same deployer')
-  const [left, right] = await Promise.all([bootstrapChain(chainA, load), bootstrapChain(chainB, load)])
+  const [left, right] = await Promise.all([
+    bootstrapChain(chainA, chainA.alice.address, DEMO_ALICE_AMOUNT, load),
+    bootstrapChain(chainB, chainB.bob.address, DEMO_BOB_AMOUNT, load),
+  ])
   if (JSON.stringify(left.addresses) !== JSON.stringify(right.addresses)) throw new Error('two-chain address graphs differ')
   return {
     schema: 'quip-swap-demo-deployment.v1',
@@ -60,6 +81,8 @@ export async function bootstrapDemoEnvironment(
 
 async function bootstrapChain(
   ctx: ChainContext,
+  principal: Address,
+  amount: bigint,
   load: (solFile: string, contract: string) => FoundryArtifact,
 ): Promise<DemoChainDeployment> {
   const createX = await ctx.deploy(load('CreateXMock.sol', 'CreateXMock'))
@@ -88,7 +111,32 @@ async function bootstrapChain(
     await ctx.publicClient.waitForTransactionReceipt({hash})
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
-  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, localSameChainPolicyId: timingPolicyId(localPolicy)}
+  const funding = await setupDemoFunding(ctx, addresses, principal, amount, load)
+  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, localSameChainPolicyId: timingPolicyId(localPolicy), funding}
+}
+
+async function setupDemoFunding(
+  ctx: ChainContext,
+  addresses: DemoChainDeployment['addresses'],
+  principal: Address,
+  amount: bigint,
+  load: (solFile: string, contract: string) => FoundryArtifact,
+): Promise<DemoAssetSetup> {
+  const token = await ctx.deploy(load('ERC20Mock.sol', 'ERC20Mock'), ['DemoToken', 'DEMO', 18])
+  let hash = await ctx.deployer.walletClient.writeContract({address: addresses.assetSupportRegistry, abi: assetSupportRegistryAbi, functionName: 'setAssetSupport', args: [AssetType.ERC20, token, true], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
+  await ctx.publicClient.waitForTransactionReceipt({hash})
+  const actor = principal === ctx.alice.address ? ctx.alice : principal === ctx.bob.address ? ctx.bob : undefined
+  if (actor === undefined) throw new Error('demo funding principal is not a configured actor')
+  hash = await actor.walletClient.writeContract({address: token, abi: erc20MockAbi, functionName: 'mint', args: [principal, amount], chain: ctx.publicClient.chain ?? null, account: actor.account})
+  await ctx.publicClient.waitForTransactionReceipt({hash})
+  hash = await actor.walletClient.writeContract({address: token, abi: erc20MockAbi, functionName: 'approve', args: [addresses.crossChainWrapper, amount], chain: ctx.publicClient.chain ?? null, account: actor.account})
+  await ctx.publicClient.waitForTransactionReceipt({hash})
+  const [balance, allowance] = await Promise.all([
+    ctx.publicClient.readContract({address: token, abi: erc20MockAbi, functionName: 'balanceOf', args: [principal]}),
+    ctx.publicClient.readContract({address: token, abi: erc20MockAbi, functionName: 'allowance', args: [principal, addresses.crossChainWrapper]}),
+  ])
+  if (balance !== amount || allowance !== amount) throw new Error('demo funding or approval mismatch')
+  return {assetType: 'ERC20', token, principal, owner: principal, wrapper: addresses.crossChainWrapper, amount: amount.toString(), balance: balance.toString(), allowance: allowance.toString()}
 }
 
 async function verifyGraph(ctx: ChainContext, addresses: DemoChainDeployment['addresses'], verifier: Address): Promise<void> {

@@ -16,7 +16,12 @@
  * QUIP_SDK_CHAIN_A_RPC_URL / QUIP_SDK_CHAIN_B_RPC_URL).
  */
 import {getAddress, keccak256, toHex} from 'viem'
-import {bootstrapDemoEnvironment, serializeDemoDeploymentArtifact} from '../../scripts/demo-environment.js'
+import {
+  DEMO_ALICE_AMOUNT,
+  DEMO_BOB_AMOUNT,
+  bootstrapDemoEnvironment,
+  serializeDemoDeploymentArtifact,
+} from '../../scripts/demo-environment.js'
 import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
@@ -29,6 +34,7 @@ import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {extractSecretFromClaims} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
+import {assetSupportRegistryAbi} from '../../src/generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from '../../src/generated/crossChainWrapperAbi.js'
 import {pqAuthorizationGatewayAbi} from '../../src/generated/pqAuthorizationGatewayAbi.js'
 import {pqIdentityRegistryAbi} from '../../src/generated/pqIdentityRegistryAbi.js'
@@ -40,7 +46,7 @@ import {
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
 } from '../../src/prototypeTiming.js'
-import {LockState} from '../../src/types.js'
+import {AssetType, LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
 import {connectChain, deployFixture, loadArtifact} from '../helpers/chain.js'
@@ -256,6 +262,39 @@ describe('v1.1 deployment smoke', () => {
     expect(demoDeployment.chains.map(chain => chain.chainId)).toEqual([31337, 31338])
     expect(demoDeployment.chains[0].addresses).toEqual(demoDeployment.chains[1].addresses)
     expect(serializeDemoDeploymentArtifact(demoDeployment)).toContain('crossChainWrapper')
+  })
+
+  it('records deterministic principal funding and exact wrapper approvals', async () => {
+    for (const [ctx, chain, principal, amount] of [
+      [chainA, demoDeployment.chains[0], chainA.alice.address, DEMO_ALICE_AMOUNT],
+      [chainB, demoDeployment.chains[1], chainB.bob.address, DEMO_BOB_AMOUNT],
+    ] as const) {
+      expect(chain.funding).toMatchObject({
+        assetType: 'ERC20',
+        principal,
+        owner: principal,
+        wrapper: chain.addresses.crossChainWrapper,
+        amount: amount.toString(),
+        balance: amount.toString(),
+        allowance: amount.toString(),
+      })
+      expect(
+        await ctx.publicClient.readContract({
+          address: chain.addresses.assetSupportRegistry,
+          abi: assetSupportRegistryAbi,
+          functionName: 'isSupported',
+          args: [AssetType.ERC20, chain.funding.token],
+        }),
+      ).toBe(true)
+      expect(
+        await ctx.publicClient.readContract({
+          address: chain.funding.token,
+          abi: erc20MockAbi,
+          functionName: 'allowance',
+          args: [principal, chain.addresses.sameChainWrapper],
+        }),
+      ).toBe(0n)
+    }
   })
 
   it('reproduces the same address graph and immutable configuration on both chains', async () => {
