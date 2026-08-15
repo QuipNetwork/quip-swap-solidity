@@ -4,10 +4,12 @@ pragma solidity 0.8.33;
 import {AssetCustody} from '../../src/AssetCustody.sol';
 import {AssetSupport} from '../../src/AssetSupport.sol';
 import {AssetSupportRegistry} from '../../src/AssetSupportRegistry.sol';
+import {AuthorizationSubmitter} from '../../src/AuthorizationSubmitter.sol';
 import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
 import {CrossChainWrapper} from '../../src/CrossChainWrapper.sol';
 import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
 import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
+import {ProgressionGate} from '../../src/ProgressionGate.sol';
 import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
 import {
   AuthorizationMode,
@@ -25,6 +27,7 @@ import {
 import {QuipWallet} from '../../src/QuipWallet.sol';
 import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
 import {SameChainWrapper} from '../../src/SameChainWrapper.sol';
+import {Settlement} from '../../src/Settlement.sol';
 import {Asset, AssetType} from '../../src/TermsLib.sol';
 import {TimingPolicyRegistry} from '../../src/TimingPolicyRegistry.sol';
 import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
@@ -111,6 +114,57 @@ contract WrapperFundingTest is Test {
     assertEq(token.balanceOf(address(cross)), 10 ether);
     assertEq(token.balanceOf(broker), 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_allDemoInvalidActionsRevertAtomicallyInOneSession() public {
+    uint256 partyChainId = block.chainid;
+    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 91);
+
+    token.mint(alice, 10 ether);
+    vm.prank(alice);
+    token.approve(address(cross), 10 ether);
+    _directCommit(terms, true, lock, 91, alice, aliceKey, bytes32(0));
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(token.balanceOf(address(cross)), 10 ether);
+
+    vm.chainId(terms.counterpartySide.chainId);
+    vm.deal(bob, 1);
+    vm.deal(broker, 1);
+    CommitAuthorizationRequest memory bobRequest = _request(address(cross), terms, false, lock, 902);
+    bytes memory bobSignature = _signature(bobRequest, address(gateway), bobKey);
+
+    bobRequest.bobCommitSecret = BOB_COMMIT_SECRET;
+    vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
+    vm.prank(broker);
+    gateway.authorizeCommit{value: 1}(bobRequest, bobSignature);
+
+    bobRequest.bobCommitSecret = bytes32(0);
+    vm.expectRevert(ProgressionGate.MissingBobCommitSecret.selector);
+    vm.prank(bob);
+    gateway.authorizeCommit{value: 1}(bobRequest, bobSignature);
+
+    bobRequest.bobCommitSecret = keccak256('wrong-bob-commit-secret');
+    vm.expectRevert(ProgressionGate.InvalidBobCommitSecret.selector);
+    vm.prank(bob);
+    gateway.authorizeCommit{value: 1}(bobRequest, bobSignature);
+
+    assertEq(uint8(cross.state(terms, false, lock)), uint8(CrossChainLegState.Unused));
+    assertEq(address(cross).balance, 0);
+    assertEq(bob.balance, 1);
+
+    bobRequest.bobCommitSecret = BOB_COMMIT_SECRET;
+    vm.prank(bob);
+    gateway.authorizeCommit{value: 1}(bobRequest, bobSignature);
+    assertEq(uint8(cross.state(terms, false, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(address(cross).balance, 1);
+
+    vm.chainId(partyChainId);
+    vm.expectRevert(Settlement.InvalidSettlementSecret.selector);
+    cross.claim(terms, true, lock, keccak256('wrong-final-claim-secret'));
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(token.balanceOf(address(cross)), 10 ether);
+    assertEq(token.balanceOf(RECIPIENT), 0);
   }
 
   function test_brokerApprovalCannotReplacePrincipalApproval() public {

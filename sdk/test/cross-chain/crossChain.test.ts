@@ -23,6 +23,7 @@ import {
   serializeDemoDeploymentArtifact,
 } from '../../scripts/demo-environment.js'
 import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
+import {readCrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -40,6 +41,8 @@ import {pqAuthorizationGatewayAbi} from '../../src/generated/pqAuthorizationGate
 import {pqIdentityRegistryAbi} from '../../src/generated/pqIdentityRegistryAbi.js'
 import {timingPolicyRegistryAbi} from '../../src/generated/timingPolicyRegistryAbi.js'
 import {generateLock} from '../../src/hashing.js'
+import {AuthorizationMode, DelegationPolicy} from '../../src/protocol.js'
+import type {ProtocolTerms} from '../../src/protocol.js'
 import {
   BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
   BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
@@ -295,6 +298,34 @@ describe('v1.1 deployment smoke', () => {
         }),
       ).toBe(0n)
     }
+  })
+
+  it('reads live wrapper-state and balance snapshots for both demo legs', async () => {
+    const zeroAddress = getAddress('0x0000000000000000000000000000000000000000')
+    const zero32 = `0x${'00'.repeat(32)}` as Hex32
+    const terms: ProtocolTerms = {
+      timingPolicyId: `0x${'11'.repeat(32)}` as Hex32,
+      partySide: {
+        chainId: 31337n, assets: [{assetType: AssetType.ERC20, target: demoDeployment.chains[0].funding.token, id: 0n, amount: DEMO_ALICE_AMOUNT}],
+        principal: chainA.alice.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n,
+        reclaimRecipient: chainA.alice.address, recipient: chainB.bob.address, commitmentDeadline: 100n, claimDeadline: 200n, reclaimRelease: 300n,
+        commitLock: zero32, delegationPolicy: DelegationPolicy.NotAllowed, delegate: zeroAddress, delegateKeyVersion: 0n, sideNonce: `0x${'22'.repeat(32)}` as Hex32,
+      },
+      counterpartySide: {
+        chainId: 31338n, assets: [{assetType: AssetType.ERC20, target: demoDeployment.chains[1].funding.token, id: 0n, amount: DEMO_BOB_AMOUNT}],
+        principal: chainB.bob.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n,
+        reclaimRecipient: chainB.bob.address, recipient: chainA.alice.address, commitmentDeadline: 150n, claimDeadline: 250n, reclaimRelease: 350n,
+        commitLock: `0x${'33'.repeat(32)}` as Hex32, delegationPolicy: DelegationPolicy.NotAllowed, delegate: zeroAddress, delegateKeyVersion: 0n, sideNonce: `0x${'44'.repeat(32)}` as Hex32,
+      },
+    }
+    const lock = `0x${'55'.repeat(32)}` as Hex32
+    const [alice, bob] = await Promise.all([
+      readCrossChainSettlementSnapshot({publicClient: chainA.publicClient, chainId: 31337, wrapper: demoDeployment.chains[0].addresses.crossChainWrapper, terms, party: true, lock, holdings: [{assetType: 'erc20', token: demoDeployment.chains[0].funding.token, account: chainA.alice.address}, {assetType: 'erc20', token: demoDeployment.chains[0].funding.token, account: demoDeployment.chains[0].addresses.crossChainWrapper}]}),
+      readCrossChainSettlementSnapshot({publicClient: chainB.publicClient, chainId: 31338, wrapper: demoDeployment.chains[1].addresses.crossChainWrapper, terms, party: false, lock, holdings: [{assetType: 'erc20', token: demoDeployment.chains[1].funding.token, account: chainB.bob.address}, {assetType: 'erc20', token: demoDeployment.chains[1].funding.token, account: demoDeployment.chains[1].addresses.crossChainWrapper}]}),
+    ])
+    expect([alice.state, bob.state]).toEqual(['Unused', 'Unused'])
+    expect(alice.holdings.map(holding => 'balance' in holding ? holding.balance : null)).toEqual([DEMO_ALICE_AMOUNT.toString(), '0'])
+    expect(bob.holdings.map(holding => 'balance' in holding ? holding.balance : null)).toEqual([DEMO_BOB_AMOUNT.toString(), '0'])
   })
 
   it('reproduces the same address graph and immutable configuration on both chains', async () => {
