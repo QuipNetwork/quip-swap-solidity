@@ -14,7 +14,8 @@ out/
 /broadcast/**/dry-run/
 
 # Docs
-docs/
+docs/*
+!docs/operator-runbook.md
 
 # Dotenv file
 .env
