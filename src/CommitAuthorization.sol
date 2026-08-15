@@ -87,8 +87,13 @@ library CommitAuthorization {
       if (submitter != side.principal) revert InvalidAuthenticatedSubmitter();
       if (submitterKeyVersion != side.principalKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
     } else if (side.delegationPolicy == DelegationPolicy.SpecificDelegate) {
-      if (submitter != side.delegate) revert InvalidAuthenticatedSubmitter();
-      if (submitterKeyVersion != side.delegateKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
+      if (submitter == side.principal) {
+        if (submitterKeyVersion != side.principalKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
+      } else if (submitter == side.delegate) {
+        if (submitterKeyVersion != side.delegateKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
+      } else {
+        revert InvalidAuthenticatedSubmitter();
+      }
     }
   }
 }

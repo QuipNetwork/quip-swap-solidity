@@ -108,4 +108,32 @@ describe('trusted cross-chain workflow', () => {
     expect(result).toBe('mined'); expect(bumps).toEqual([100n, 120n, 140n])
     const flow = workflow(); flow.enterRecovery(); expect(flow.status(500n).reclaimRecommended).toBe(true)
   })
+  it('allows Bob or the named delegate under specific delegation', () => {
+    const make = (selectedBobSubmitter: Address): TrustedCrossChainWorkflow => {
+      let n = 1
+      const counterpartySide = {
+        ...side(false),
+        delegationPolicy: DelegationPolicy.SpecificDelegate,
+        delegate: EXECUTOR,
+        delegateKeyVersion: 1n,
+      }
+      return new TrustedCrossChainWorkflow({
+        policy,
+        partySide: side(true),
+        counterpartySide,
+        partyVerifier: VERIFIER,
+        counterpartyVerifier: VERIFIER,
+        partyWrapper: WRAPPER,
+        counterpartyWrapper: WRAPPER,
+        partyExpiry: 90n,
+        counterpartyExpiry: 190n,
+        requiredConfirmations: 3n,
+        selectedBobSubmitter,
+        randomHex32: () => `0x${(n++).toString(16).padStart(64, '0')}` as Hex32,
+      })
+    }
+    expect(() => make(BOB)).not.toThrow()
+    expect(() => make(EXECUTOR)).not.toThrow()
+    expect(() => make(ALICE)).toThrow('Bob or the delegate')
+  })
 })

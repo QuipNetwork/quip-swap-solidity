@@ -63,16 +63,18 @@ contract AuthorizationBoundariesTest is Test {
 
   function test_walletAndGatewayProduceIdenticalSharedAdmissionSemantics() public {
     ProtocolTerms memory walletTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    walletTerms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory walletRequest = _request(walletTerms, keccak256('wallet-nonce'));
     vm.prank(relayer);
     wallet.authorizeCommit(walletRequest, _signature(walletRequest, address(wallet)));
-    assertEq(receiver.lastSubmitter(), address(wallet));
+    assertEq(receiver.lastSubmitter(), relayer);
 
     ProtocolTerms memory directTerms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    directTerms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory directRequest = _request(directTerms, keccak256('direct-nonce'));
     vm.prank(relayer);
     gateway.authorizeCommit(directRequest, _signature(directRequest, address(gateway)));
-    assertEq(receiver.lastSubmitter(), directUser);
+    assertEq(receiver.lastSubmitter(), relayer);
     assertEq(receiver.commits(), 2);
   }
 
@@ -133,6 +135,61 @@ contract AuthorizationBoundariesTest is Test {
     _assertCommonRejections(false);
   }
 
+  function test_notAllowedRequiresActualPrincipalTransportOnBothPaths() public {
+    ProtocolTerms memory walletTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    CommitAuthorizationRequest memory walletRequest = _request(walletTerms, keccak256('wallet-principal-only'));
+    bytes memory walletSignature = _signature(walletRequest, address(wallet));
+    vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
+    vm.prank(relayer);
+    wallet.authorizeCommit(walletRequest, walletSignature);
+    vm.prank(owner);
+    wallet.execute(
+      address(wallet),
+      0,
+      abi.encodeCall(QuipWalletAuthorizationAdapter.authorizeCommit, (walletRequest, walletSignature))
+    );
+    assertEq(receiver.lastSubmitter(), address(wallet));
+
+    ProtocolTerms memory directTerms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory directRequest = _request(directTerms, keccak256('direct-principal-only'));
+    bytes memory directSignature = _signature(directRequest, address(gateway));
+    vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
+    vm.prank(relayer);
+    gateway.authorizeCommit(directRequest, directSignature);
+    vm.prank(directUser);
+    gateway.authorizeCommit(directRequest, directSignature);
+    assertEq(receiver.lastSubmitter(), directUser);
+  }
+
+  function test_specificDelegateAllowsPrincipalOrRegisteredDelegateOnBothPaths() public {
+    ProtocolTerms memory walletTerms = _specificTerms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    CommitAuthorizationRequest memory walletPrincipal = _request(walletTerms, keccak256('wallet-specific-principal'));
+    bytes memory walletPrincipalSignature = _signature(walletPrincipal, address(wallet));
+    vm.prank(owner);
+    wallet.execute(
+      address(wallet),
+      0,
+      abi.encodeCall(QuipWalletAuthorizationAdapter.authorizeCommit, (walletPrincipal, walletPrincipalSignature))
+    );
+    assertEq(receiver.lastSubmitter(), address(wallet));
+
+    CommitAuthorizationRequest memory walletDelegate = _request(walletTerms, keccak256('wallet-specific-delegate'));
+    vm.prank(broker);
+    wallet.authorizeCommit(walletDelegate, _signature(walletDelegate, address(wallet)));
+    assertEq(receiver.lastSubmitter(), broker);
+
+    ProtocolTerms memory directTerms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory directPrincipal = _request(directTerms, keccak256('direct-specific-principal'));
+    vm.prank(directUser);
+    gateway.authorizeCommit(directPrincipal, _signature(directPrincipal, address(gateway)));
+    assertEq(receiver.lastSubmitter(), directUser);
+
+    CommitAuthorizationRequest memory directDelegate = _request(directTerms, keccak256('direct-specific-delegate'));
+    vm.prank(broker);
+    gateway.authorizeCommit(directDelegate, _signature(directDelegate, address(gateway)));
+    assertEq(receiver.lastSubmitter(), broker);
+  }
+
   function test_specificDelegateUsesRegisteredActualTransportOnBothPaths() public {
     ProtocolTerms memory walletTerms = _specificTerms(address(wallet), AuthorizationMode.QuipWallet, 0);
     CommitAuthorizationRequest memory walletRequest = _request(walletTerms, keccak256('wallet-delegate'));
@@ -173,6 +230,7 @@ contract AuthorizationBoundariesTest is Test {
 
   function test_walletRotationInvalidatesPendingOldKeyAuthorizationButNotCommittedState() public {
     ProtocolTerms memory terms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory committed = _request(terms, keccak256('committed'));
     bytes memory committedSignature = _signature(committed, address(wallet));
     wallet.authorizeCommit(committed, committedSignature);
@@ -208,13 +266,13 @@ contract AuthorizationBoundariesTest is Test {
     _rotateActive(directUser, directPQKey, newKey);
 
     vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
-    vm.prank(relayer);
+    vm.prank(directUser);
     gateway.authorizeCommit(pending, staleSignature);
 
     directPQKey = newKey;
     terms.partySide.principalKeyVersion = 2;
     CommitAuthorizationRequest memory current = _request(terms, keccak256('current-direct'));
-    vm.prank(relayer);
+    vm.prank(directUser);
     gateway.authorizeCommit(current, _signature(current, address(gateway)));
     assertEq(receiver.lastSubmitter(), directUser);
   }
@@ -270,7 +328,9 @@ contract AuthorizationBoundariesTest is Test {
       DelegationPolicy policy = DelegationPolicy(i);
       CommitAuthorizationRequest memory request = _crossCounterpartyRequest(policy, bytes32(uint256(i + 10)), secret);
       bytes memory signature = _signature(request, address(gateway));
-      address caller = policy == DelegationPolicy.SpecificDelegate ? broker : relayer;
+      address caller = policy == DelegationPolicy.NotAllowed
+        ? directUser
+        : policy == DelegationPolicy.SpecificDelegate ? broker : relayer;
       request.bobCommitSecret = bytes32(0);
       vm.expectRevert(ProgressionGate.MissingBobCommitSecret.selector);
       _authorize(false, request, signature, caller);
@@ -300,6 +360,7 @@ contract AuthorizationBoundariesTest is Test {
     uint256 version = walletPath ? 0 : 1;
     address boundary = walletPath ? address(wallet) : address(gateway);
     ProtocolTerms memory terms = _terms(principal, mode, version);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory request = _request(terms, keccak256(abi.encode(walletPath, 'common')));
 
     vm.expectRevert();
@@ -335,6 +396,7 @@ contract AuthorizationBoundariesTest is Test {
     AuthorizationMode mode = walletPath ? AuthorizationMode.QuipWallet : AuthorizationMode.RegisteredDirect;
     address boundary = walletPath ? address(wallet) : address(gateway);
     ProtocolTerms memory terms = _terms(principal, mode, walletPath ? 0 : 1);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory request = _request(terms, keccak256(abi.encode(walletPath, 'rollback')));
     request.commitData = 'fail';
     bytes memory signature = _signature(request, boundary);

@@ -80,7 +80,10 @@ export class TrustedCrossChainWorkflow {
   private assertSelected(): void {
     const side = this.terms.counterpartySide; const selected = this.selected.toLowerCase()
     if (side.delegationPolicy === DelegationPolicy.NotAllowed && selected !== side.principal.toLowerCase()) throw new Error('selected submitter must be Bob')
-    if (side.delegationPolicy === DelegationPolicy.SpecificDelegate && selected !== side.delegate.toLowerCase()) throw new Error('selected submitter must be the delegate')
+    if (side.delegationPolicy === DelegationPolicy.SpecificDelegate &&
+        selected !== side.principal.toLowerCase() && selected !== side.delegate.toLowerCase()) {
+      throw new Error('selected submitter must be Bob or the delegate')
+    }
   }
 }
 export interface RetryPolicy {attempts: number; feeBump: (attempt: number) => bigint}
