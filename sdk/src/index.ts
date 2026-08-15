@@ -90,6 +90,7 @@ export {
   PROTOTYPE_DEPLOYMENT_VERSION,
   CANONICAL_CREATEX,
   prototypeComponents,
+  prototypeDeploymentSalt,
   predictPrototypeAddresses,
   prototypeDeploymentVectorHash,
   buildPrototypeDeploymentManifest,

@@ -16,6 +16,8 @@
  * QUIP_SDK_CHAIN_A_RPC_URL / QUIP_SDK_CHAIN_B_RPC_URL).
  */
 import {getAddress, keccak256, toHex} from 'viem'
+import {bootstrapDemoEnvironment, serializeDemoDeploymentArtifact} from '../../scripts/demo-environment.js'
+import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -65,6 +67,7 @@ let fixtureA: Fixture
 let fixtureB: Fixture
 let deploymentA: PrototypeDeployment
 let deploymentB: PrototypeDeployment
+let demoDeployment: DemoDeploymentArtifact
 
 interface PrototypeDeployment {
   readonly assetSupportRegistry: Address
@@ -196,6 +199,7 @@ beforeAll(async () => {
   chainA = connectChain(RPC_A, CHAIN_A_ID)
   chainB = connectChain(RPC_B, CHAIN_B_ID)
   ;[deploymentA, deploymentB] = await Promise.all([deployPrototype(chainA), deployPrototype(chainB)])
+  demoDeployment = await bootstrapDemoEnvironment(chainA, chainB, loadArtifact)
   ;[fixtureA, fixtureB] = await Promise.all([deployFixture(chainA), deployFixture(chainB)])
 
   aliceOnA = createOmnibusClient({
@@ -246,6 +250,14 @@ beforeAll(async () => {
 })
 
 describe('v1.1 deployment smoke', () => {
+  it('emits the deterministic two-chain CREATE3 bootstrap artifact', () => {
+    expect(demoDeployment.schema).toBe('quip-swap-demo-deployment.v1')
+    expect(demoDeployment.identityRegistration).toBe('lazy-on-first-commit')
+    expect(demoDeployment.chains.map(chain => chain.chainId)).toEqual([31337, 31338])
+    expect(demoDeployment.chains[0].addresses).toEqual(demoDeployment.chains[1].addresses)
+    expect(serializeDemoDeploymentArtifact(demoDeployment)).toContain('crossChainWrapper')
+  })
+
   it('reproduces the same address graph and immutable configuration on both chains', async () => {
     expect(deploymentB).toEqual(deploymentA)
     for (const [ctx, deployment] of [

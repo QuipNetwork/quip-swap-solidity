@@ -45,7 +45,7 @@ export interface PrototypeDeploymentManifest {
   readonly vectorHash: Hex32
 }
 
-function componentSalt(deployer: Address, index: number): Hex32 {
+export function prototypeDeploymentSalt(deployer: Address, index: number): Hex32 {
   const entropy = keccak256(concat([stringToHex(`QUIP:Swap:${PROTOTYPE_DEPLOYMENT_VERSION}:`), toHex(index, {size: 1})]))
     .slice(2, 24) as string
   return concat([deployer, '0x00', `0x${entropy}`]) as Hex32
@@ -56,7 +56,7 @@ export function predictPrototypeAddresses(
   createX: Address = CANONICAL_CREATEX,
 ): PrototypeDeploymentAddresses {
   const entries = prototypeComponents.map((component, index) => {
-    const rawSalt = componentSalt(deployer, index)
+    const rawSalt = prototypeDeploymentSalt(deployer, index)
     const guardedSalt = keccak256(concat([pad(deployer, {size: 32}), rawSalt]))
     const proxy = getCreate2Address({from: createX, salt: guardedSalt, bytecodeHash: CREATE3_PROXY_INITCODE_HASH})
     return [component, getContractAddress({from: proxy, nonce: 1n})] as const
