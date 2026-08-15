@@ -13,7 +13,7 @@ import {
   computeCommitDigest,
   computeDomainSeparator,
   digestTerms,
-} from '../../src/index.js'
+} from '../../src/legacy.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {aliceTerms, bobTerms} from '../helpers/fixtures.js'
 

@@ -3,11 +3,10 @@ import {defineConfig} from 'tsup'
 /**
  * Build configuration for the publishable SDK bundle.
  *
- * Only `src/index.ts` is built: test utilities, Anvil runners, and the ABI
- * generation script are intentionally excluded from the published package.
+ * Current protocol and explicitly isolated legacy entry points are built.
  */
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: ['src/index.ts', 'src/legacy.ts'],
   format: ['esm'],
   dts: true,
   sourcemap: true,

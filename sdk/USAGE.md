@@ -1,3 +1,5 @@
+> **Legacy Omnibus documentation.** New integrations use the package root and `sdk/README.md`.
+
 # Quip Swap SDK — Usage
 
 Task-oriented guide to integrating the Quip Swap SDK into a dapp or backend. For build/test/repo orientation see [`README.md`](README.md); for protocol theory see the root [`../README.md`](../README.md), [`../ARCHITECTURE.md`](../ARCHITECTURE.md), and [`../QUIP_LIFECYCLE.md`](../QUIP_LIFECYCLE.md).

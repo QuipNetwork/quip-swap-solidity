@@ -22,7 +22,7 @@ import {
   TimingPolicy,
   WrapperMode
 } from '../../src/ProtocolTypes.sol';
-import {QuipWalletAuthorizationAdapter} from '../../src/QuipWalletAuthorizationAdapter.sol';
+import {QuipWallet} from '../../src/QuipWallet.sol';
 import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
 import {SameChainWrapper} from '../../src/SameChainWrapper.sol';
 import {Asset, AssetType} from '../../src/TermsLib.sol';
@@ -64,7 +64,7 @@ contract WrapperFundingTest is Test {
   AssetSupportRegistry internal assetSupport;
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
-  QuipWalletAuthorizationAdapter internal wallet;
+  QuipWallet internal wallet;
   RegisteredCommitTargetHarness internal registrationTarget;
   ERC20Mock internal token;
 
@@ -88,7 +88,7 @@ contract WrapperFundingTest is Test {
     assetSupport = new AssetSupportRegistry(address(this));
     cross = new CrossChainWrapper(address(gateway), policies, assetSupport);
     same = new SameChainWrapper(address(gateway), policies, assetSupport);
-    wallet = new QuipWalletAuthorizationAdapter(address(this), registry, walletKey);
+    wallet = new QuipWallet(address(this), registry, walletKey);
     token = new ERC20Mock('Token', 'TOK', 18);
   }
 

@@ -1,68 +1,44 @@
 # Quip Swap
 
-Non-custodial, hashlocked same-chain and cross-chain swaps built around the **Omnibus** singleton contract, with ERC-7913 keyed commit authorization plus a factory-gated quip-wallet route.
+This branch contains the current multi-contract protocol prototype:
 
-## Repository layout
+- asset-support and timing-policy registries;
+- direct-user and broker PQ identity registration;
+- the direct authorization gateway and QuipWallet authorization boundary;
+- separate cross-chain and same-chain wrappers; and
+- the trusted-client workflow in the TypeScript SDK.
 
-```text
-src/                  Production contracts (Omnibus, TermsLib, interfaces)
-test/                 Foundry test suite (behaviors, scenarios, attack tests,
-                      harnesses, mocks, real-verifier integration)
-script/               Deployment scripts (Omnibus via CreateX CREATE3;
-                      constructor (initialOwner, walletFactory) from
-                      OMNIBUS_OWNER + WALLET_FACTORY)
-sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
-```
+The previous Omnibus implementation remains only for comparison and regression
+testing. It is not the current integration or deployment surface.
 
-## Protocol summary
+## Build and test
 
-- `Omnibus` is a singleton (Ownable2Step, ERC-721/1155 receiver) holding hashlocked escrows.
-- A swap is two `Terms` (one per side), each with three lifecycle timestamps that **strictly interleave** across sides. The side with the earlier `commitmentDeadline` is the proposer and commits first.
-- All three entry points are **permissionless**. `commit` authenticates its PAYLOAD instead of its caller: every commit carries a `CommitAuth {signer, signature}` where `signer` is an ERC-7913 keyed identity — `verifier(20 bytes) ‖ key`; any blob of 20 bytes or fewer (including bare addresses) is rejected as malformed. Two routes, discriminated by `signature`:
-  - **non-empty — KEYED route:** the declared verifier (checked against an owner-managed active-verifier list) verifies the signature over a raw tagged digest binding chainid, the Omnibus address, the lock, both sides' terms, and the identity itself.
-  - **empty — WALLET route:** `msg.sender` must be a wallet deployed by the quip `WalletFactory` (`vaultIdOf(msg.sender) != 0` on the factory baked in at construction; `NotQuipWallet` otherwise). No signature is verified — a vetted wallet only reaches `commit` from its PQ-authenticated execute flow, so factory membership stands in for the endorsement.
-- The keyed signature is a **soft guard**: it proves the declared identity endorsed exactly this payload; it does not gate WHICH identity may post a side. Clients that care who posted the counterpart side verify the `signer` blob from the `Commitment` event off-chain — **but on the wallet route the emitted `signer` is UNPROVEN attribution** (nothing verified it), so it must never be treated as an endorsement there.
-- **Funding model:** in every route the transaction SENDER funds the committed leg + fee; the identity only authorizes. "Relayed" means the sender pays.
-- `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are unchanged and identity-free — claim is secret-gated, reclaim recipients are terms-pinned.
-- All timing windows are half-open `[lower, upper)`.
+    forge build
+    forge test
+    forge fmt --check
+    make sdk-generate
+    make sdk-typecheck
+    make sdk-test
+    make sdk-build
 
-## Smart contracts (Foundry)
+## SDK surfaces
 
-```shell
-forge build       # build contracts
-forge test        # run the Solidity test suite
-forge fmt --check # check formatting
-```
+The package root exports the current protocol types, hashing, ABIs, transaction
+helpers, event helpers, and trusted workflow. For example:
 
-Or via make: `make build`, `make test`, `make fmt-check`, `make coverage`. Run `make help` for everything.
+    import {createProtocolClient, crossChainWrapperAbi} from '@quip.network/quip-swap-sdk'
 
-## TypeScript SDK
+The old Omnibus SDK is explicitly isolated:
 
-The `sdk/` directory contains a publishable TypeScript SDK providing typed access to Omnibus — asset/terms builders, Solidity-exact hashing, secret generation, a preflighted client, approval planning, event decoding, and same-chain / cross-chain workflow helpers.
+    import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
 
-> Use client-bound receipt helpers or pass the Omnibus address when decoding receipts (`client.waitForReceipt(hash)` or `waitForOmnibusReceipt(..., {address})`); the raw `decode*Events` decoders are low-level and expect pre-scoped logs.
+Current protocol deployment scripts are deferred to the deployment-prototype
+step. Existing Omnibus scripts are legacy utilities and must not deploy the
+current protocol.
 
-```shell
-make sdk-install            # bun install
-make sdk-generate           # forge build + generate the ABI
-make sdk-typecheck          # strict tsc
-make sdk-test               # unit + mocked-client tests (no chain)
-make sdk-test-integration   # single-chain Anvil integration + Solidity/TS
-                            # differential tests (starts its own Anvil)
-make sdk-test-cross-chain   # two-chain end-to-end tests (slower; two Anvils)
-make sdk-build              # build the dist/ bundle
-```
+## Asset support
 
-See [`sdk/README.md`](sdk/README.md) for the full SDK guide (timing model, commit authorization, cross-chain coordination, buffer selection, error handling).
-
-## Full verification
-
-```shell
-make check   # fmt-check + forge build + forge test + SDK typecheck/tests/build
-             # + single-chain integration tests
-             # (cross-chain E2E excluded for speed: make sdk-test-cross-chain)
-```
-
-## Deployment
-
-Per-chain deploy is a single step: **`make deploy`** — Omnibus deploys through the canonical [CreateX](https://github.com/pcaversaccio/createx) factory (pre-deployed on essentially every EVM chain; no per-chain bootstrap) via CREATE3. The salt is CreateX-permissioned to the ops EOA (entropy `QUIP:Omnibus:v1.0.0-alpha.1`), so the address is a function of (CreateX, deployer EOA, salt): independent of constructor args, identical across chains when the same EOA deploys, and unclaimable by anyone else. Keyed commit authorization uses an ERC-7913 verifier; verifier deployment is a separate concern, and activation is a post-deploy owner action: `make activate-verifier` (calls `setVerifierActivity(verifier, true)`, checked via `verifierActive(verifier)`). The wallet route's `WalletFactory` proxy is baked as an immutable at construction. Env: `DEPLOYER_PK`, `OMNIBUS_OWNER`, `WALLET_FACTORY` (both non-zero); `make verify-omnibus` additionally needs `DEPLOYER_ADDRESS` (the EOA of `DEPLOYER_PK`). Salt entropy follows semver: prerelease suffixes (`-alpha.N`, `-beta.N`, `-rc.N`) are testnet deploys; the bare release (`v1.0.0`) is reserved for mainnet. Prior deployments persist at their old addresses.
+Native assets need no configuration. Token contracts must be enabled in the
+shared AssetSupportRegistry for their exact asset type before a new commit.
+Approval asserts standard exact balance or ownership behavior. Delisting blocks
+future commits only and does not affect claims or reclaims of existing escrow.

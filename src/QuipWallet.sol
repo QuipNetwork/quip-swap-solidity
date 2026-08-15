@@ -17,7 +17,13 @@ import {
 } from './ProtocolTypes.sol';
 import {ICommitAuthorizationReceiver} from './interfaces/ICommitAuthorizationReceiver.sol';
 
-contract QuipWalletAuthorizationAdapter {
+/// @notice Prototype implementation of the deployable wallet-mode principal boundary.
+/// @dev The wallet stores its ERC-7913 keyed verifier and public key together as
+///      `verifier address || verifier-specific key bytes`. Commit authorization is
+///      always checked against that wallet-owned key state before the exact signed
+///      request is forwarded atomically to its named receiver. Selecting and pinning
+///      the production verifier implementation is a separate deployment decision.
+contract QuipWallet {
   string internal constant ROTATION_DOMAIN = 'InterlockWalletKeyRotation-v1.1';
   string internal constant POSSESSION_DOMAIN = 'InterlockKeyPossession-v1.1';
 

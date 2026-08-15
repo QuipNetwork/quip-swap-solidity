@@ -49,9 +49,9 @@ import {
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
-} from '../src/index.js'
-import type {OmnibusClient} from '../src/index.js'
-import type {Terms} from '../src/index.js'
+} from '../src/legacy.js'
+import type {OmnibusClient} from '../src/legacy.js'
+import type {Terms} from '../src/legacy.js'
 import {startAnvil} from '../test/helpers/anvil.js'
 import type {AnvilInstance} from '../test/helpers/anvil.js'
 import {keyedAuth, registerWallet, walletAuth} from '../test/helpers/auth.js'

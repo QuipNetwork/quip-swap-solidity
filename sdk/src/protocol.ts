@@ -48,6 +48,14 @@ export interface InitialRegistration {
   readonly expiry: bigint
 }
 
+export interface PQIdentity {
+  readonly activePQKey: Hex
+  readonly activeKeyVersion: bigint
+  readonly recoveryPQKey: Hex
+  readonly recoveryKeyVersion: bigint
+  readonly active: boolean
+}
+
 export interface RegistryOperation {
   readonly action: RegistryActionTag
   readonly eoa: Address
@@ -60,6 +68,13 @@ export interface RegistryOperation {
   readonly operationNonce: Hex32
   readonly expiry: bigint
   readonly recoveryAuthorized: boolean
+}
+
+export interface RegistryAuthorization {
+  readonly eoaSignature: Hex
+  readonly authorizingPQSignature: Hex
+  readonly activeProofOfPossession: Hex
+  readonly recoveryProofOfPossession: Hex
 }
 
 export interface TimingPolicy {

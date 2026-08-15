@@ -63,7 +63,7 @@ clean: ## Clean build artifacts
 # needs DEPLOYER_ADDRESS = the EOA of DEPLOYER_PK, since the CreateX salt is
 # permissioned to it and the predicted address depends on it.)
 #
-# Per-chain deploy: Omnibus (make deploy). Verifier activation is separate:
+# Legacy per-chain Omnibus deploy: make legacy-deploy-omnibus. Verifier activation is separate:
 # post-deploy, the owner calls setVerifierActivity(verifier, true).
 # Local rehearsal: bare Anvil has no CreateX — use `make anvil-fork RPC=...`.
 # ==============================================================================
@@ -72,37 +72,37 @@ clean: ## Clean build artifacts
 anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SEPOLIA
 	anvil --fork-url $(RPC_URL)
 
-.PHONY: deploy
-deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
+.PHONY: legacy-deploy-omnibus
+legacy-deploy-omnibus: ## LEGACY: deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make legacy-deploy-omnibus RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
 		--verify
 
-.PHONY: deploy-dry
-deploy-dry: ## Dry run Omnibus deployment (no broadcast). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
+.PHONY: legacy-deploy-omnibus-dry
+legacy-deploy-omnibus-dry: ## LEGACY: dry run Omnibus deployment (no broadcast). Usage: make legacy-deploy-omnibus-dry RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL)
 
-.PHONY: activate-verifier
-activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
+.PHONY: legacy-activate-omnibus-verifier
+legacy-activate-omnibus-verifier: ## LEGACY: activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
 	forge script script/ActivateVerifier.s.sol \
 		--sig 'run(address)' $(VERIFIER) \
 		--rpc-url $(RPC_URL) \
 		--broadcast
 
 # ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
-.PHONY: deploy-base-sepolia
-deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
+.PHONY: legacy-deploy-omnibus-base-sepolia
+legacy-deploy-omnibus-base-sepolia: ## LEGACY: deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url base_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
 		--verify
 
-.PHONY: deploy-op-sepolia
-deploy-op-sepolia: ## Deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
+.PHONY: legacy-deploy-omnibus-op-sepolia
+legacy-deploy-omnibus-op-sepolia: ## LEGACY: deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url op_sepolia \
 		--private-key $(DEPLOYER_PK) \
@@ -121,7 +121,7 @@ sdk-install: ## Install SDK dependencies (bun)
 	cd sdk && bun install
 
 .PHONY: sdk-generate
-sdk-generate: build ## Generate the Omnibus ABI from Foundry artifacts
+sdk-generate: build ## Generate current protocol and legacy Omnibus ABIs from Foundry artifacts
 	cd sdk && bun run generate:abi
 
 .PHONY: sdk-typecheck

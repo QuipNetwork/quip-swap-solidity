@@ -20,7 +20,7 @@ import {
   SideTerms,
   VerifiedCommitAuthorization
 } from '../../src/ProtocolTypes.sol';
-import {QuipWalletAuthorizationAdapter} from '../../src/QuipWalletAuthorizationAdapter.sol';
+import {QuipWallet} from '../../src/QuipWallet.sol';
 import {Asset, AssetType} from '../../src/TermsLib.sol';
 import {AuthorizationReceiverHarness} from '../harness/AuthorizationReceiverHarness.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
@@ -38,7 +38,7 @@ contract AuthorizationBoundariesTest is Test {
 
   PQIdentityRegistry internal registry;
   PQAuthorizationGateway internal gateway;
-  QuipWalletAuthorizationAdapter internal wallet;
+  QuipWallet internal wallet;
   AuthorizationReceiverHarness internal receiver;
   RegisteredCommitTargetHarness internal registrationTarget;
   KeyBoundVerifierMock internal verifier;
@@ -58,7 +58,7 @@ contract AuthorizationBoundariesTest is Test {
     _register(broker, _key('broker'));
     gateway = new PQAuthorizationGateway(registry);
     receiver = new AuthorizationReceiverHarness(address(gateway));
-    wallet = new QuipWalletAuthorizationAdapter(owner, registry, walletPQKey);
+    wallet = new QuipWallet(owner, registry, walletPQKey);
   }
 
   function test_walletAndGatewayProduceIdenticalSharedAdmissionSemantics() public {
@@ -143,11 +143,7 @@ contract AuthorizationBoundariesTest is Test {
     vm.prank(relayer);
     wallet.authorizeCommit(walletRequest, walletSignature);
     vm.prank(owner);
-    wallet.execute(
-      address(wallet),
-      0,
-      abi.encodeCall(QuipWalletAuthorizationAdapter.authorizeCommit, (walletRequest, walletSignature))
-    );
+    wallet.execute(address(wallet), 0, abi.encodeCall(QuipWallet.authorizeCommit, (walletRequest, walletSignature)));
     assertEq(receiver.lastSubmitter(), address(wallet));
 
     ProtocolTerms memory directTerms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
@@ -167,9 +163,7 @@ contract AuthorizationBoundariesTest is Test {
     bytes memory walletPrincipalSignature = _signature(walletPrincipal, address(wallet));
     vm.prank(owner);
     wallet.execute(
-      address(wallet),
-      0,
-      abi.encodeCall(QuipWalletAuthorizationAdapter.authorizeCommit, (walletPrincipal, walletPrincipalSignature))
+      address(wallet), 0, abi.encodeCall(QuipWallet.authorizeCommit, (walletPrincipal, walletPrincipalSignature))
     );
     assertEq(receiver.lastSubmitter(), address(wallet));
 
@@ -252,7 +246,7 @@ contract AuthorizationBoundariesTest is Test {
     assertEq(wallet.walletKeyEpoch(), 2);
     assertEq(receiver.commits(), 1);
 
-    vm.expectRevert(QuipWalletAuthorizationAdapter.InvalidPQAuthorization.selector);
+    vm.expectRevert(QuipWallet.InvalidPQAuthorization.selector);
     wallet.authorizeCommit(pending, oldPendingSignature);
     wallet.authorizeCommit(pending, _signature(pending, address(wallet)));
     assertEq(receiver.commits(), 2);
@@ -453,7 +447,7 @@ contract AuthorizationBoundariesTest is Test {
     expired.expiry = block.timestamp;
     bytes memory expiredSignature = _signature(expired, boundary);
     if (walletPath) {
-      vm.expectRevert(QuipWalletAuthorizationAdapter.AuthorizationExpired.selector);
+      vm.expectRevert(QuipWallet.AuthorizationExpired.selector);
       vm.prank(relayer);
       wallet.authorizeCommit(expired, expiredSignature);
     } else {
