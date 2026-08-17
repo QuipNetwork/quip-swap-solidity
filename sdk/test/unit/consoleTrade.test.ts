@@ -8,6 +8,8 @@ import {
   PREPARE_TRADE_INPUT_SCHEMA,
   PUBLIC_OFFER_SCHEMA,
   TRADE_ACCEPTANCE_SCHEMA,
+  ALICE_COMMIT_INPUT_SCHEMA,
+  CrossChainLegState,
   WrapperMode,
   acceptConsoleTrade,
   initializePartyWorkspace,
@@ -16,8 +18,10 @@ import {
   prepareConsoleTrade,
   importConsoleOffer,
   timingPolicyId,
+  submitAliceCommit,
+  restoreWorkspaceWorkflowState,
 } from '../../src/index.js'
-import type {Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -80,6 +84,44 @@ describe('console trade offer exchange', () => {
     try {
       await expect(prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({...JSON.parse(input), settlementSecret: H(1)})})).rejects.toThrow('forbidden')
       expect(await inspectPartyWorkspace(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).toMatchObject({tradeId: null, generation: 0})
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+})
+
+describe('console Alice commit', () => {
+  it('requires exact Bob acceptance, journals once, and reconciles retry without resubmission', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const transactionHash = H(800)
+      let submissions = 0
+      const boundary: AliceCommitBoundary = {
+        state: async () => CrossChainLegState.Unused,
+        transaction: async hash => hash === transactionHash ? 'pending' : 'missing',
+        submit: async args => { submissions += 1; expect(args.payloadHash).toBe(offer.bobState.derived.partyCommitPayloadHash); return transactionHash },
+      }
+      const commitInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
+      const first = await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary})
+      expect(first).toMatchObject({transactionHash, lifecycle: 'pending', reused: false})
+      expect(submissions).toBe(1)
+      expect(JSON.parse(await readFile(join(value.aliceRoot, 'journal', 'alice-commit.json'), 'utf8'))).toMatchObject({tradeId: offer.tradeId, transactionHash})
+      expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.aliceCommit.status).toBe('pending')
+      const retry = await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary})
+      expect(retry).toMatchObject({transactionHash, lifecycle: 'pending', reused: true})
+      expect(submissions).toBe(1)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('rejects mismatched acceptance and untracked used on-chain state without funding', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      let submissions = 0
+      const boundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Committed, transaction: async () => 'missing', submit: async () => { submissions += 1; return H(801) }}
+      const makeInput = (tradeId: Hex32) => JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId, bob: B}})
+      await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(H(99)), boundary})).rejects.toThrow('does not match')
+      await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(offer.tradeId), boundary})).rejects.toThrow('already used on-chain')
+      expect(submissions).toBe(0)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 })

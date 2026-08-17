@@ -30,12 +30,12 @@ interface PrepareInput {
   readonly counterpartyAuthorizationExpiry: string
 }
 
-interface RuntimeConfig {
+export interface ConsoleRuntimeConfig {
   readonly identity: Awaited<ReturnType<typeof loadConsoleConfigIdentity>>
   readonly requiredConfirmations: bigint
   readonly policy: TimingPolicy
   readonly actors: {readonly alice: Address; readonly bob: Address; readonly executor: Address}
-  readonly chains: readonly [{readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address}, {readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address}]
+  readonly chains: readonly [{readonly chainId: 31337; readonly rpcUrl: string; readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address; readonly trustedVerifier: Address; readonly addresses: Record<string, Address>}, {readonly chainId: 31338; readonly rpcUrl: string; readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address; readonly trustedVerifier: Address; readonly addresses: Record<string, Address>}]
 }
 
 export interface PublicTradeOffer {
@@ -64,7 +64,7 @@ function address(value: unknown, label: string): Address {
   return value as Address
 }
 
-async function runtimeConfig(path: string, party: 'alice' | 'bob'): Promise<RuntimeConfig> {
+export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'bob'): Promise<ConsoleRuntimeConfig> {
   const identity = await loadConsoleConfigIdentity(path)
   if (identity.localParty !== party) throw new Error('console configuration belongs to the other party')
   const value = record(JSON.parse(await readFile(path, 'utf8')), 'console config')
@@ -74,13 +74,16 @@ async function runtimeConfig(path: string, party: 'alice' | 'bob'): Promise<Runt
   const actors = record(value['actors'], 'actors')
   const deployment = record(value['deployment'], 'deployment')
   const deployedChains = deployment['chains'] as unknown[]
-  const chain = (index: number) => {
+  const configuredChains = value['chains'] as unknown[]
+  const chain = (index: 0 | 1) => {
     const deployed = record(deployedChains[index], `deployment chain ${index}`)
     const addresses = record(deployed['addresses'], 'deployment addresses')
     const funding = record(deployed['funding'], 'deployment funding')
-    return {token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: address(addresses['authorizationGateway'], 'authorization gateway'), wrapper: address(addresses['crossChainWrapper'], 'cross-chain wrapper')}
+    const configured = record(configuredChains[index], `configured chain ${index}`)
+    const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
+    return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['authorizationGateway']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
   }
-  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, chains: [chain(0), chain(1)]}
+  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
 }
 
 function parsePrepareInput(serialized: string): PrepareInput {
@@ -95,10 +98,10 @@ function side(args: {chainId: bigint; token: Address; amount: bigint; principal:
   return {chainId: args.chainId, assets: [{assetType: AssetType.ERC20, target: args.token, id: 0n, amount: args.amount}], principal: args.principal, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n, reclaimRecipient: args.principal, recipient: args.recipient, commitmentDeadline: args.commitment, claimDeadline: args.claim, reclaimRelease: args.reclaim, delegationPolicy: DelegationPolicy.NotAllowed, delegate: ZERO_ADDRESS, delegateKeyVersion: 0n}
 }
 
-const expected = (config: RuntimeConfig) => ({party: config.identity.localParty, networkId: config.identity.networkId, configDigest: config.identity.digest} as const)
+const expected = (config: ConsoleRuntimeConfig) => ({party: config.identity.localParty, networkId: config.identity.networkId, configDigest: config.identity.digest} as const)
 
 export async function prepareConsoleTrade(args: {readonly workspace: string; readonly configPath: string; readonly input: string}): Promise<PublicTradeOffer> {
-  const config = await runtimeConfig(args.configPath, 'alice')
+  const config = await loadConsoleRuntimeConfig(args.configPath, 'alice')
   const input = parsePrepareInput(args.input)
   const prepared = prepareTradeCommand({workflow: {policy: config.policy, partySide: side({chainId: 31337n, token: config.chains[0].token, amount: config.chains[0].amount, principal: config.actors.alice, recipient: config.actors.bob, commitment: decimal(input.partyCommitmentDeadline, 'partyCommitmentDeadline'), claim: decimal(input.partyClaimDeadline, 'partyClaimDeadline'), reclaim: decimal(input.partyReclaimRelease, 'partyReclaimRelease')}), counterpartySide: side({chainId: 31338n, token: config.chains[1].token, amount: config.chains[1].amount, principal: config.actors.bob, recipient: config.actors.alice, commitment: decimal(input.counterpartyCommitmentDeadline, 'counterpartyCommitmentDeadline'), claim: decimal(input.counterpartyClaimDeadline, 'counterpartyClaimDeadline'), reclaim: decimal(input.counterpartyReclaimRelease, 'counterpartyReclaimRelease')}), partyVerifier: config.chains[0].verifier, counterpartyVerifier: config.chains[1].verifier, partyWrapper: config.chains[0].wrapper, counterpartyWrapper: config.chains[1].wrapper, partyExpiry: decimal(input.partyAuthorizationExpiry, 'partyAuthorizationExpiry'), counterpartyExpiry: decimal(input.counterpartyAuthorizationExpiry, 'counterpartyAuthorizationExpiry'), requiredConfirmations: config.requiredConfirmations, selectedBobSubmitter: config.actors.bob}, finalClaimExecutors: [config.actors.executor]})
   const offer: PublicTradeOffer = {schema: PUBLIC_OFFER_SCHEMA, networkId: config.identity.networkId, tradeId: prepared.alice.publicState.tradeId, bobState: prepared.bob.publicState, authorizationEvidence: prepared.authorizationEvidence}
@@ -108,13 +111,13 @@ export async function prepareConsoleTrade(args: {readonly workspace: string; rea
   return offer
 }
 
-function authorization(terms: ProtocolTerms, party: boolean, config: RuntimeConfig, lock: Hex32, nonce: Hex32, expiry: bigint): PreparedAuthorization {
+function authorization(terms: ProtocolTerms, party: boolean, config: ConsoleRuntimeConfig, lock: Hex32, nonce: Hex32, expiry: bigint): PreparedAuthorization {
   const index = party ? 0 : 1
   const payload = {terms, party, authorizationVerifier: config.chains[index].verifier, swapAddress: config.chains[index].wrapper, lock, expectedSourceState: ExpectedSourceState.Unused, actionNonce: nonce, expiry}
   return {payload, payloadHash: commitPayloadHash(payload)}
 }
 
-function parseOffer(serialized: string): PublicTradeOffer {
+export function parseConsoleOffer(serialized: string): PublicTradeOffer {
   if (/settlementSecret|bobCommitSecret|privateKey|signature/i.test(serialized)) throw new Error('offer contains forbidden sensitive material')
   const value = record(JSON.parse(serialized), 'public offer')
   if (value['schema'] !== PUBLIC_OFFER_SCHEMA || typeof value['networkId'] !== 'string' || typeof value['tradeId'] !== 'string' || !HEX32.test(value['tradeId'])) throw new Error('invalid public offer envelope')
@@ -126,8 +129,8 @@ function parseOffer(serialized: string): PublicTradeOffer {
 }
 
 export async function importConsoleOffer(args: {readonly workspace: string; readonly configPath: string; readonly input: string}): Promise<PublicTradeOffer> {
-  const config = await runtimeConfig(args.configPath, 'bob')
-  const offer = parseOffer(args.input)
+  const config = await loadConsoleRuntimeConfig(args.configPath, 'bob')
+  const offer = parseConsoleOffer(args.input)
   if (offer.networkId !== config.identity.networkId || offer.bobState.party !== 'bob' || offer.tradeId !== offer.bobState.tradeId || offer.bobState.stage !== 'prepared' || offer.bobState.generation !== 1 || offer.bobState.sequence !== 1 || offer.bobState.progression.received) throw new Error('offer state envelope mismatch')
   const terms = restoreProtocolTerms(offer.bobState.terms)
   validateProtocolTerms(terms, config.policy)
@@ -145,7 +148,7 @@ export async function importConsoleOffer(args: {readonly workspace: string; read
 }
 
 export async function acceptConsoleTrade(args: {readonly workspace: string; readonly configPath: string}): Promise<{readonly schema: typeof TRADE_ACCEPTANCE_SCHEMA; readonly networkId: string; readonly tradeId: Hex32; readonly bob: Address}> {
-  const config = await runtimeConfig(args.configPath, 'bob')
+  const config = await loadConsoleRuntimeConfig(args.configPath, 'bob')
   const restored = await restoreWorkspaceWorkflowState(args.workspace, expected(config))
   if (restored.publicState.party !== 'bob') throw new Error('accept-trade requires Bob state')
   const acceptance = {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: config.identity.networkId, tradeId: restored.publicState.tradeId, bob: config.actors.bob}

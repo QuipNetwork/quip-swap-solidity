@@ -147,8 +147,7 @@ export async function withWorkspaceMutation<T>(root: string, action: () => Promi
   }
 }
 
-export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
-  await withWorkspaceMutation(args.root, async () => {
+async function saveWorkspaceWorkflowStateLocked(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
     const manifest = await inspectPartyWorkspace(args.root, args.expected)
     validatePartyWorkflowState(args.publicState, args.secretState)
     if (args.publicState.party !== manifest.party) throw new Error('state party does not match workspace')
@@ -163,7 +162,23 @@ export async function saveWorkspaceWorkflowState(args: {readonly root: string; r
     }
     const next: WorkspaceManifest = {...manifest, tradeId: args.publicState.tradeId, generation: args.publicState.generation}
     await atomicWrite(join(resolve(args.root), 'workspace.json'), `${JSON.stringify(next, null, 2)}\n`)
-  })
+}
+
+export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
+  await withWorkspaceMutation(args.root, () => saveWorkspaceWorkflowStateLocked(args))
+}
+
+/** Use only from an action already protected by withWorkspaceMutation. */
+export async function publishLockedWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
+  await saveWorkspaceWorkflowStateLocked(args)
+}
+
+/** Immutable action journal entry; duplicate action IDs are rejected. */
+export async function writeLockedWorkspaceJournal(root: string, actionId: string, contents: string): Promise<void> {
+  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(actionId)) throw new Error('invalid journal action identifier')
+  const path = join(resolve(root), 'journal', `${actionId}.json`)
+  const handle = await open(path, 'wx', 0o600)
+  try { await handle.writeFile(contents, 'utf8'); await handle.sync() } finally { await handle.close() }
 }
 
 export async function acceptWorkspaceTrade(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly acceptance: string}): Promise<WorkspaceManifest> {

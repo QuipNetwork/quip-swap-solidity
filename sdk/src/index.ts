@@ -139,6 +139,8 @@ export {
   saveWorkspaceWorkflowState,
   restoreWorkspaceWorkflowState,
   acceptWorkspaceTrade,
+  publishLockedWorkspaceWorkflowState,
+  writeLockedWorkspaceJournal,
 } from './consoleWorkspace.js'
 export type {ConsoleConfigIdentity, WorkspaceManifest, WorkspaceExpectation} from './consoleWorkspace.js'
 export {
@@ -148,8 +150,17 @@ export {
   prepareConsoleTrade,
   importConsoleOffer,
   acceptConsoleTrade,
+  loadConsoleRuntimeConfig,
+  parseConsoleOffer,
 } from './consoleTrade.js'
-export type {PublicTradeOffer} from './consoleTrade.js'
+export type {PublicTradeOffer, ConsoleRuntimeConfig} from './consoleTrade.js'
+export {
+  ALICE_COMMIT_INPUT_SCHEMA,
+  ALICE_COMMIT_JOURNAL_SCHEMA,
+  createLocalAliceCommitBoundary,
+  submitAliceCommit,
+} from './consoleCommit.js'
+export type {AliceCommitPreview, AliceCommitBoundary} from './consoleCommit.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,

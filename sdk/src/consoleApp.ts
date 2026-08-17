@@ -10,6 +10,7 @@ import {
 import type {CliCommand, CliExitCode, ClientParty} from './cliSurface.js'
 import {initializePartyWorkspace, inspectPartyWorkspace, loadConsoleConfigIdentity} from './consoleWorkspace.js'
 import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './consoleTrade.js'
+import {submitAliceCommit} from './consoleCommit.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -171,6 +172,31 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : `${command} failed`
       const output = cliFailure({command, party, sequence: 0, code: command === 'prepare-trade' ? 'PREPARE_FAILED' : command === 'import-offer' ? 'OFFER_IMPORT_FAILED' : 'ACCEPTANCE_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'submit-alice-commit') {
+    try {
+      if (io.stdin === undefined) throw new Error('submit-alice-commit requires Bob acceptance and confirmation JSON on standard input')
+      const result = await submitAliceCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin(), ...(!json ? {onPreview: view => io.stdout([
+        `Alice funding preview for chain ${view.chainId}`,
+        `Wrapper: ${view.wrapper}`,
+        `Principal: ${view.principal}`,
+        `Recipient: ${view.recipient}`,
+        `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`,
+        `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`,
+        `Authorization: ${view.authorizationMode}; expires ${view.authorizationExpiry}`,
+        '',
+      ].join('\n'))} : {})})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 2, tradeId: result.tradeId, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ authorization and publicly known Anvil Alice key are active.']}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} Alice commit ${result.transactionHash} (${result.lifecycle}).\n`)
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Alice commit failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE
