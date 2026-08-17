@@ -29,8 +29,10 @@ import {
   observeBobCommit,
   REVEALING_CLAIM_INPUT_SCHEMA,
   submitRevealingClaim,
+  observeReveal,
+  submitFinalClaim,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, RevealObservationBoundary, FinalClaimBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -204,6 +206,23 @@ describe('console Alice commit', () => {
       expect(JSON.stringify(reveal)).not.toMatch(/settlementSecret|bobCommitSecret/i)
       expect((await submitRevealingClaim({workspace: value.aliceRoot, configPath: value.aliceConfig, input: revealInput, boundary: revealBoundary})).reused).toBe(true)
       expect(claims).toBe(1)
+      const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
+      if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
+      const revealInclusion = {transactionHash: revealHash, blockNumber: '41', blockHash: H(825)}
+      const nonFinalReveal: RevealObservationBoundary = {inspect: async () => ({lifecycle: 'included-non-final', observedHead: '41', confirmations: '1', inclusion: revealInclusion, secret: aliceSecrets.settlementSecret})}
+      expect(await observeReveal({workspace: value.bobRoot, configPath: value.bobConfig, boundary: nonFinalReveal})).toMatchObject({lifecycle: 'included-non-final', finalClaimEnabled: false})
+      const finalReveal: RevealObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '43', confirmations: '3', inclusion: revealInclusion, secret: aliceSecrets.settlementSecret})}
+      const observedReveal = await observeReveal({workspace: value.bobRoot, configPath: value.bobConfig, boundary: finalReveal})
+      expect(observedReveal).toMatchObject({lifecycle: 'final', finalClaimEnabled: true})
+      expect(JSON.stringify(observedReveal)).not.toMatch(/settlementSecret|bobCommitSecret/i)
+      const finalHash = H(826)
+      let finalClaims = 0
+      const finalBoundary: FinalClaimBoundary = {state: async () => CrossChainLegState.Committed, transaction: async hash => hash === finalHash ? 'pending' : 'missing', submit: async args => {finalClaims += 1; expect(args.secret).toBe(aliceSecrets.settlementSecret); return finalHash}}
+      const finalClaim = await submitFinalClaim({workspace: value.bobRoot, configPath: value.bobConfig, boundary: finalBoundary, executor: B})
+      expect(finalClaim).toMatchObject({transactionHash: finalHash, lifecycle: 'pending', reused: false, preview: {recipient: B, successPathDelay: 'none'}})
+      expect(JSON.stringify(finalClaim)).not.toMatch(/settlementSecret|bobCommitSecret/i)
+      expect((await submitFinalClaim({workspace: value.bobRoot, configPath: value.bobConfig, boundary: finalBoundary, executor: B})).reused).toBe(true)
+      expect(finalClaims).toBe(1)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 

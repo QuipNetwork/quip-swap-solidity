@@ -15,6 +15,7 @@ import {observeAliceCommit} from './consoleObservation.js'
 import {importBobCommitSecret, releaseBobCommitSecret} from './consoleProgression.js'
 import {observeBobCommit, submitBobCommit} from './consoleBobCommit.js'
 import {submitRevealingClaim} from './consoleReveal.js'
+import {observeReveal, submitFinalClaim} from './consoleFinalClaim.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -289,6 +290,36 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'revealing claim failed'
       const output = cliFailure({command, party, sequence: 0, code: 'REVEALING_CLAIM_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'observe-reveal') {
+    try {
+      const result = await observeReveal({workspace: parsed.options.stateRoot, configPath: parsed.options.config})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: result.warning === undefined ? [] : [result.warning]}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {io.stdout(`Revealing claim ${result.transactionHash}: ${result.lifecycle} (${result.confirmations}/${result.requiredConfirmations} confirmations).\n`); if (result.warning !== undefined) io.stderr(`WARNING: ${result.warning}\n`)}
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'reveal observation failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'REVEAL_OBSERVATION_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'submit-final-claim') {
+    try {
+      const result = await submitFinalClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!json ? {onPreview: view => io.stdout([`Final claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Success-path delay: ${view.successPathDelay}`, ''].join('\n'))} : {})})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: []}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} permissionless final claim ${result.transactionHash} (${result.lifecycle}).\n`)
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'final claim failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'FINAL_CLAIM_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

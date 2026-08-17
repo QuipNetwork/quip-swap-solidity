@@ -191,6 +191,15 @@ export {
 } from './consoleReveal.js'
 export type {RevealingClaimPreview, RevealingClaimBoundary} from './consoleReveal.js'
 export {
+  REVEAL_OBSERVATION_SCHEMA,
+  FINAL_CLAIM_JOURNAL_SCHEMA,
+  createLocalRevealObservationBoundary,
+  createLocalFinalClaimBoundary,
+  observeReveal,
+  submitFinalClaim,
+} from './consoleFinalClaim.js'
+export type {RevealLifecycle, RevealObservation, RevealObservationBoundary, FinalClaimPreview, FinalClaimBoundary} from './consoleFinalClaim.js'
+export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
   restoreProtocolTerms,

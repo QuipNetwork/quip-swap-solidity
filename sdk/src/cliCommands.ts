@@ -87,6 +87,7 @@ type CommandInput =
   | {readonly command: 'import-bob-secret'; readonly transfer: BobProgressionTransfer}
   | {readonly command: 'mark-bob-commit-pending'}
   | {readonly command: 'mark-bob-committed'}
+  | {readonly command: 'record-observation'}
   | {readonly command: 'submit-bob-commit'; readonly transfer: BobProgressionTransfer; readonly transactionHash: Hex}
   | {readonly command: 'observe-reveal'; readonly settlementSecret: Hex32; readonly inclusion: PersistedInclusion}
   | {readonly command: 'handoff-final-claim'; readonly executor: Address; readonly transactionHash: Hex}
@@ -114,6 +115,8 @@ export function applyPartyCommand(
   let pair = next(publicState, secretState)
   let transfer: BobProgressionTransfer | undefined
   switch (input.command) {
+    case 'record-observation':
+      break
     case 'mark-alice-pending':
       requireProgressionNotReleased(pair.publicState)
       pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}}
