@@ -32,8 +32,9 @@ import {
   observeReveal,
   submitFinalClaim,
   getConsoleStatus,
+  submitReclaim,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, RevealObservationBoundary, FinalClaimBoundary, ConsoleLegStatus, ConsoleStatusBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, RevealObservationBoundary, FinalClaimBoundary, ConsoleLegStatus, ConsoleStatusBoundary, ReclaimBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -209,6 +210,8 @@ describe('console Alice commit', () => {
       expect(bob.publicState).toMatchObject({stage: 'bob-enabled', progression: {received: true}})
       expect(bob.secretState).toHaveProperty('bobCommitSecret')
       await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})).rejects.toThrow(/already received|progression/)
+      await expect(observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: reorganized})).resolves.toMatchObject({lifecycle: 'reorganized', bobCommitEnabled: false})
+      expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'recovery', recovery: {active: true}})
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 
@@ -277,6 +280,51 @@ describe('console Alice commit', () => {
       const makeInput = (tradeId: Hex32) => JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId, bob: B}})
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(H(99)), boundary})).rejects.toThrow('does not match')
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(offer.tradeId), boundary})).rejects.toThrow('already used on-chain')
+      expect(submissions).toBe(0)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+})
+
+describe('console reclaim and recovery', () => {
+  it('reclaims only an eligible committed leg to the signed recipient and reconciles a mined replacement', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const hash = H(900)
+      let state = CrossChainLegState.Committed
+      let lifecycle: 'pending' | 'dropped' | 'reverted' | 'replaced' = 'pending'
+      let submissions = 0
+      const boundary: ReclaimBoundary = {
+        state: async () => state,
+        timestamp: async () => 1400n,
+        transaction: async () => ({lifecycle, ...(lifecycle === 'replaced' ? {replacementHash: H(902)} : {})}),
+        submit: async args => {submissions += 1; expect(args.party).toBe(true); expect(args.terms.partySide.reclaimRecipient).toBe(A); return {hash, nonce: 4, submittedAtBlock: 30n}},
+      }
+      const first = await submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})
+      expect(first).toMatchObject({tradeId: offer.tradeId, transactionHash: hash, lifecycle: 'pending', reused: false, preview: {reclaimRecipient: A, authorization: 'permissionless'}})
+      lifecycle = 'dropped'
+      await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).resolves.toMatchObject({lifecycle: 'dropped', reused: true})
+      lifecycle = 'reverted'
+      await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).resolves.toMatchObject({lifecycle: 'reverted', reused: true})
+      lifecycle = 'replaced'
+      await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).resolves.toMatchObject({transactionHash: H(902), lifecycle: 'replaced', reused: true})
+      state = CrossChainLegState.Reclaimed
+      const reconciled = await submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})
+      expect(reconciled).toMatchObject({transactionHash: H(902), lifecycle: 'already-mined', reused: true})
+      expect(submissions).toBe(1)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('refuses wrong state and an early reclaim without submitting', async () => {
+    const value = await fixture()
+    try {
+      await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      let state = CrossChainLegState.Unused
+      let submissions = 0
+      const boundary: ReclaimBoundary = {state: async () => state, timestamp: async () => 1399n, transaction: async () => ({lifecycle: 'dropped'}), submit: async () => {submissions += 1; return {hash: H(901), nonce: 1, submittedAtBlock: 1n}}}
+      await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).rejects.toThrow('exact Committed')
+      state = CrossChainLegState.Committed
+      await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).rejects.toThrow('not enabled')
       expect(submissions).toBe(0)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })

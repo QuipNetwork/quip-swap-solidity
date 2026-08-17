@@ -17,6 +17,7 @@ import {observeBobCommit, submitBobCommit} from './consoleBobCommit.js'
 import {submitRevealingClaim} from './consoleReveal.js'
 import {observeReveal, submitFinalClaim} from './consoleFinalClaim.js'
 import {getConsoleStatus} from './consoleStatus.js'
+import {enterConsoleRecovery, submitReclaim} from './consoleReclaim.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -359,6 +360,38 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'status failed'
       const output = cliFailure({command, party, sequence: 0, code: 'STATUS_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'reclaim') {
+    try {
+      const result = await submitReclaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!json ? {onPreview: view => io.stdout([`Reclaim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed reclaim recipient: ${view.reclaimRecipient}`, `Reclaim release: ${view.reclaimRelease}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token}`).join(', ')}`, ''].join('\n'))} : {})})
+      const warnings = result.lifecycle === 'dropped' || result.lifecycle === 'replaced' || result.lifecycle === 'reverted' ? [`Recorded reclaim is ${result.lifecycle}; it was not resubmitted. Inspect the chain and recover explicitly.`] : []
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} permissionless reclaim ${result.transactionHash} (${result.lifecycle}).\n`); for (const warning of warnings) io.stderr(`WARNING: ${warning}\n`)}
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'reclaim failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'RECLAIM_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'enter-recovery') {
+    try {
+      if (io.stdin === undefined) throw new Error('enter-recovery requires recovery JSON on standard input')
+      const result = await enterConsoleRecovery({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: ['Recovery mode stops normal progression; inspect both chains and reclaim eligible legs.']}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {io.stdout(`Entered recovery for ${result.tradeId}: ${result.reason}\n`); io.stderr(`WARNING: ${output.warnings[0]}\n`)}
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'enter recovery failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'RECOVERY_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

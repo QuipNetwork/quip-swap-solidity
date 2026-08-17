@@ -128,7 +128,16 @@ export async function observeAliceCommit(args: {readonly workspace: string; read
     const observed = await (args.boundary ?? createLocalAliceObservationBoundary({...config, identity})).inspect({reference, terms: restored.terms, lock: restored.publicState.derived.settlementLock, requiredConfirmations: config.requiredConfirmations, principal: config.actors.alice})
     const final = observed.lifecycle === 'final'
     const observation: AliceCommitObservation = {schema: ALICE_COMMIT_OBSERVATION_SCHEMA, networkId: identity.networkId, tradeId: restored.publicState.tradeId, chainId: 31337, wrapper: config.chains[0].wrapper, transactionHash: reference.transactionHash, ...observed, requiredConfirmations: config.requiredConfirmations.toString(), bobCommitEnabled: final, ...(!final ? {warning: observed.lifecycle === 'included-non-final' ? `Alice commit is not final; ${observed.confirmations}/${config.requiredConfirmations} confirmations.` : `Alice commit is ${observed.lifecycle}; Bob commit remains disabled.`} : {})}
-    const command = final ? {command: 'mark-alice-final' as const, inclusion: observed.inclusion!} : observed.lifecycle === 'included-non-final' ? {command: 'mark-alice-included-non-final' as const, inclusion: observed.inclusion!} : {command: 'mark-alice-pending' as const}
+    const progressionDisclosed = restored.publicState.party === 'alice'
+      ? restored.publicState.progression.released
+      : restored.publicState.progression.received
+    const command = final
+      ? {command: 'mark-alice-final' as const, inclusion: observed.inclusion!}
+      : progressionDisclosed
+        ? {command: 'enter-recovery' as const, reason: `Alice commit became ${observed.lifecycle} after progression disclosure; stop Bob submission and reclaim eligible committed legs.`}
+        : observed.lifecycle === 'included-non-final'
+          ? {command: 'mark-alice-included-non-final' as const, inclusion: observed.inclusion!}
+          : {command: 'mark-alice-pending' as const}
     const next = applyPartyCommand(restored.publicState, restored.secretState, command)
     await publishLockedWorkspaceWorkflowState({root: args.workspace, expected: {...expected, tradeId: restored.publicState.tradeId, generation: restored.publicState.generation}, publicState: next.publicState, secretState: next.secretState, publicArtifacts: {'alice-commit-observation.json': `${JSON.stringify(observation, null, 2)}\n`}})
     return observation

@@ -201,6 +201,8 @@ export {
 export type {RevealLifecycle, RevealObservation, RevealObservationBoundary, FinalClaimPreview, FinalClaimBoundary} from './consoleFinalClaim.js'
 export {CONSOLE_STATUS_SCHEMA, createLocalConsoleStatusBoundary, getConsoleStatus} from './consoleStatus.js'
 export type {ConsoleBalance, ConsoleLegState, ConsoleLegStatus, ConsoleStatusBoundary, ConsoleStatusReport} from './consoleStatus.js'
+export {RECLAIM_JOURNAL_SCHEMA, RECOVERY_INPUT_SCHEMA, submitReclaim, enterConsoleRecovery} from './consoleReclaim.js'
+export type {ReclaimTransactionLifecycle, ReclaimTransactionStatus, ReclaimPreview, ReclaimBoundary} from './consoleReclaim.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
