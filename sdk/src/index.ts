@@ -184,6 +184,13 @@ export {
 } from './consoleBobCommit.js'
 export type {BobCommitPreview, BobCommitBoundary, BobCommitLifecycle, BobCommitObservation, BobCommitObservationBoundary} from './consoleBobCommit.js'
 export {
+  REVEALING_CLAIM_INPUT_SCHEMA,
+  REVEALING_CLAIM_REFERENCE_SCHEMA,
+  createLocalRevealingClaimBoundary,
+  submitRevealingClaim,
+} from './consoleReveal.js'
+export type {RevealingClaimPreview, RevealingClaimBoundary} from './consoleReveal.js'
+export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
   restoreProtocolTerms,

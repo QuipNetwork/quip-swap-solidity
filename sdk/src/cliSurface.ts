@@ -127,7 +127,7 @@ export const cliCommandSpecs: readonly CliCommandSpec[] = [
     command: 'submit-revealing-claim',
     parties: ['alice'],
     mutatesState: true,
-    input: 'none',
+    input: 'stdin-json',
     description: 'Claim Bob\'s leg and reveal the settlement secret on-chain.',
   },
   {

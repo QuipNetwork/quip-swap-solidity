@@ -27,8 +27,10 @@ import {
   BOB_COMMIT_INPUT_SCHEMA,
   submitBobCommit,
   observeBobCommit,
+  REVEALING_CLAIM_INPUT_SCHEMA,
+  submitRevealingClaim,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -193,6 +195,15 @@ describe('console Alice commit', () => {
       expect(await observeBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: committed})).toMatchObject({lifecycle: 'committed', aliceClaimEnabled: true})
       expect(await observeBobCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: committed})).toMatchObject({lifecycle: 'committed', aliceClaimEnabled: true})
       expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.stage).toBe('bob-committed')
+      const revealHash = H(824)
+      let claims = 0
+      const revealBoundary: RevealingClaimBoundary = {state: async () => CrossChainLegState.Committed, transaction: async hash => hash === revealHash ? 'pending' : 'missing', submit: async args => {claims += 1; expect(args.secret).not.toBe(H(0)); return {hash: revealHash, nonce: 13, submittedAtBlock: 41n}}}
+      const revealInput = JSON.stringify({schema: REVEALING_CLAIM_INPUT_SCHEMA, confirmed: true})
+      const reveal = await submitRevealingClaim({workspace: value.aliceRoot, configPath: value.aliceConfig, input: revealInput, boundary: revealBoundary})
+      expect(reveal).toMatchObject({transactionHash: revealHash, lifecycle: 'pending', reused: false, preview: {recipient: A}})
+      expect(JSON.stringify(reveal)).not.toMatch(/settlementSecret|bobCommitSecret/i)
+      expect((await submitRevealingClaim({workspace: value.aliceRoot, configPath: value.aliceConfig, input: revealInput, boundary: revealBoundary})).reused).toBe(true)
+      expect(claims).toBe(1)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 
