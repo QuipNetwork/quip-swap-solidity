@@ -128,7 +128,7 @@ export {
   runConsole,
   consoleContract,
 } from './consoleApp.js'
-export type {ConsoleOptions, ConsoleIo, ConsoleParseResult} from './consoleApp.js'
+export type {ConsoleOptions, ConsoleIo, ConsoleDependencies, ConsoleParseResult} from './consoleApp.js'
 export {
   WORKSPACE_SCHEMA,
   CONSOLE_CONFIG_SCHEMA,

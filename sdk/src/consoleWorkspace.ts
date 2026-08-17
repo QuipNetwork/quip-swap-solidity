@@ -14,6 +14,7 @@ export const CONSOLE_CONFIG_SCHEMA = 'quip-swap-console-config.v1' as const
 export interface ConsoleConfigIdentity {
   readonly schema: typeof CONSOLE_CONFIG_SCHEMA
   readonly networkId: string
+  readonly localParty: ClientParty
   readonly digest: string
   readonly source: string
 }
@@ -36,6 +37,7 @@ export interface WorkspaceExpectation {
 }
 
 const HEX32 = /^0x[0-9a-fA-F]{64}$/
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const generationName = (generation: number) => generation.toString(10).padStart(12, '0')
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -52,7 +54,31 @@ export async function loadConsoleConfigIdentity(path: string): Promise<ConsoleCo
   }
   if (parsed['schema'] !== CONSOLE_CONFIG_SCHEMA) throw new Error('unsupported console config schema')
   if (typeof parsed['networkId'] !== 'string' || parsed['networkId'].trim() === '') throw new Error('invalid console networkId')
-  return {schema: CONSOLE_CONFIG_SCHEMA, networkId: parsed['networkId'], digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, source}
+  if (parsed['localParty'] !== 'alice' && parsed['localParty'] !== 'bob') throw new Error('invalid console config party')
+  if (parsed['prototype'] !== true || parsed['mockVerifier'] !== true) throw new Error('console config must identify the local mock prototype')
+  if (!Number.isSafeInteger(parsed['requiredConfirmations']) || (parsed['requiredConfirmations'] as number) < 1) throw new Error('invalid console confirmation policy')
+  if (!Array.isArray(parsed['chains']) || parsed['chains'].length !== 2) throw new Error('console config requires two chains')
+  for (const [index, chainId] of [31337, 31338].entries()) {
+    const chain = object(parsed['chains'][index], `console chain ${chainId}`)
+    if (chain['chainId'] !== chainId || typeof chain['rpcUrl'] !== 'string') throw new Error(`invalid console chain ${chainId}`)
+    const url = new URL(chain['rpcUrl'])
+    if (url.protocol !== 'http:' || (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') || url.username !== '' || url.password !== '') throw new Error(`console chain ${chainId} is not local`)
+  }
+  const actors = object(parsed['actors'], 'console actors')
+  for (const field of ['alice', 'bob', 'permissionlessExecutor']) if (typeof actors[field] !== 'string' || !ADDRESS.test(actors[field])) throw new Error(`invalid console actor ${field}`)
+  const timing = object(parsed['timingPolicy'], 'console timing policy')
+  if (timing['policyVersion'] !== '1' || timing['mode'] !== 'CrossChain' || timing['partyChainId'] !== '31337' || timing['counterpartyChainId'] !== '31338' || typeof timing['partyToCounterpartyDelay'] !== 'string' || typeof timing['counterpartyToPartyDelay'] !== 'string' || typeof timing['timingPolicyId'] !== 'string' || !HEX32.test(timing['timingPolicyId'])) throw new Error('invalid console timing policy')
+  const exchange = object(parsed['artifactExchange'], 'console artifact exchange')
+  if (typeof exchange['directory'] !== 'string' || exchange['directory'] === '') throw new Error('invalid artifact exchange directory')
+  const deployment = object(parsed['deployment'], 'console deployment')
+  if (deployment['schema'] !== 'quip-swap-demo-deployment.v1' || !Array.isArray(deployment['chains']) || deployment['chains'].length !== 2) throw new Error('invalid console deployment')
+  for (const [index, chainId] of [31337, 31338].entries()) {
+    const chain = object(deployment['chains'][index], `deployment chain ${chainId}`)
+    if (chain['chainId'] !== chainId || typeof chain['trustedVerifier'] !== 'string' || !ADDRESS.test(chain['trustedVerifier'])) throw new Error(`invalid deployment chain ${chainId}`)
+    const addresses = object(chain['addresses'], `deployment addresses ${chainId}`)
+    for (const field of ['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper']) if (typeof addresses[field] !== 'string' || !ADDRESS.test(addresses[field])) throw new Error(`invalid deployment address ${field}`)
+  }
+  return {schema: CONSOLE_CONFIG_SCHEMA, networkId: parsed['networkId'], localParty: parsed['localParty'], digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, source}
 }
 
 function parseManifest(text: string): WorkspaceManifest {
@@ -87,6 +113,7 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 
 export async function initializePartyWorkspace(args: {readonly root: string; readonly party: ClientParty; readonly config: ConsoleConfigIdentity}): Promise<WorkspaceManifest> {
   const root = resolve(args.root)
+  if (args.config.localParty !== args.party) throw new Error('console configuration party does not match workspace')
   const manifest: WorkspaceManifest = {schema: WORKSPACE_SCHEMA, party: args.party, networkId: args.config.networkId, configDigest: args.config.digest, tradeId: null, generation: 0}
   try { await mkdir(root, {mode: 0o700}) } catch (error) { throw new Error('workspace path already exists or cannot be created', {cause: error}) }
   try {

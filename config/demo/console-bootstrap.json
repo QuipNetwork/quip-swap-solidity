@@ -1,0 +1,11 @@
+{
+  "schema": "quip-swap-local-bootstrap.v1",
+  "networkId": "quip-swap-local-31337-31338",
+  "prototype": true,
+  "mockVerifier": true,
+  "requiredConfirmations": 3,
+  "chains": [
+    {"chainId": 31337, "rpcUrl": "http://127.0.0.1:8545"},
+    {"chainId": 31338, "rpcUrl": "http://127.0.0.1:8546"}
+  ]
+}

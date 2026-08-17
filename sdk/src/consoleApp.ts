@@ -26,6 +26,10 @@ export interface ConsoleIo {
   readonly stderr: (text: string) => void
 }
 
+export interface ConsoleDependencies {
+  readonly bootstrapLocal?: (args: {readonly profile: string; readonly outputDirectory: string}) => Promise<{readonly networkId: string; readonly aliceConfig: string; readonly bobConfig: string; readonly startedPids: readonly number[]}>
+}
+
 export type ConsoleParseResult =
   | {readonly kind: 'help'}
   | {readonly kind: 'version'}
@@ -87,7 +91,7 @@ export function parseConsoleArgs(args: readonly string[]): ConsoleParseResult {
   return {kind: 'command', options: {command: command as CliCommand, party, stateRoot, config, json}}
 }
 
-export async function runConsole(args: readonly string[], io: ConsoleIo): Promise<CliExitCode> {
+export async function runConsole(args: readonly string[], io: ConsoleIo, dependencies: ConsoleDependencies = {}): Promise<CliExitCode> {
   let parsed: ConsoleParseResult
   try {
     parsed = parseConsoleArgs(args)
@@ -101,6 +105,25 @@ export async function runConsole(args: readonly string[], io: ConsoleIo): Promis
   const {command, party, json} = parsed.options
   const spec = cliCommandSpec(command)
   const wrongParty = !spec.parties.includes(party)
+  if (!wrongParty && command === 'bootstrap-local') {
+    try {
+      if (dependencies.bootstrapLocal === undefined) throw new Error('local bootstrap is unavailable in this SDK context')
+      const result = await dependencies.bootstrapLocal({profile: parsed.options.config, outputDirectory: parsed.options.stateRoot})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ verifier and publicly known Anvil accounts are active.']}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {
+        io.stdout(`Local prototype ready: ${result.networkId}\nAlice config: ${result.aliceConfig}\nBob config: ${result.bobConfig}\n`)
+        io.stderr('WARNING: LOCAL PROTOTYPE ONLY; mock PQ verifier and public Anvil accounts are active.\n')
+      }
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'local bootstrap failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'BOOTSTRAP_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
   if (!wrongParty && command === 'init') {
     try {
       const config = await loadConsoleConfigIdentity(parsed.options.config)
