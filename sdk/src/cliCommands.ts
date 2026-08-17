@@ -26,6 +26,12 @@ export interface PrepareTradeCommandArgs {
 export interface PreparedPartyStates {
   readonly alice: {readonly publicState: AliceClientState; readonly secretState: AliceSecretState}
   readonly bob: {readonly publicState: BobClientState; readonly secretState: BobSecretState}
+  readonly authorizationEvidence: {
+    readonly partyActionNonce: Hex32
+    readonly counterpartyActionNonce: Hex32
+    readonly partyExpiry: string
+    readonly counterpartyExpiry: string
+  }
 }
 
 export function prepareTradeCommand(args: PrepareTradeCommandArgs): PreparedPartyStates {
@@ -59,7 +65,16 @@ export function prepareTradeCommand(args: PrepareTradeCommandArgs): PreparedPart
   const bobSecret: BobSecretState = {schema: SECRET_STATE_SCHEMA, party: 'bob', generation: 1, tradeId: flow.tradeId, mode, publicTestSecrets: marker}
   validatePartyWorkflowState(alicePublic, aliceSecret)
   validatePartyWorkflowState(bobPublic, bobSecret)
-  return {alice: {publicState: alicePublic, secretState: aliceSecret}, bob: {publicState: bobPublic, secretState: bobSecret}}
+  return {
+    alice: {publicState: alicePublic, secretState: aliceSecret},
+    bob: {publicState: bobPublic, secretState: bobSecret},
+    authorizationEvidence: {
+      partyActionNonce: flow.partyAuthorization.payload.actionNonce,
+      counterpartyActionNonce: flow.counterpartyAuthorization.payload.actionNonce,
+      partyExpiry: flow.partyAuthorization.payload.expiry.toString(10),
+      counterpartyExpiry: flow.counterpartyAuthorization.payload.expiry.toString(10),
+    },
+  }
 }
 
 type CommandInput =

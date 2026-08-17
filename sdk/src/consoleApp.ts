@@ -9,6 +9,7 @@ import {
 } from './cliSurface.js'
 import type {CliCommand, CliExitCode, ClientParty} from './cliSurface.js'
 import {initializePartyWorkspace, inspectPartyWorkspace, loadConsoleConfigIdentity} from './consoleWorkspace.js'
+import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './consoleTrade.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -24,6 +25,7 @@ export interface ConsoleOptions {
 export interface ConsoleIo {
   readonly stdout: (text: string) => void
   readonly stderr: (text: string) => void
+  readonly stdin?: () => Promise<string>
 }
 
 export interface ConsoleDependencies {
@@ -144,6 +146,31 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'workspace initialization failed'
       const output = cliFailure({command, party, sequence: 0, code: 'WORKSPACE_INIT_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && (command === 'prepare-trade' || command === 'import-offer' || command === 'accept-trade')) {
+    try {
+      let result: unknown
+      if (command === 'prepare-trade') {
+        if (io.stdin === undefined) throw new Error('prepare-trade requires JSON on standard input')
+        result = await prepareConsoleTrade({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+      } else if (command === 'import-offer') {
+        if (io.stdin === undefined) throw new Error('import-offer requires the public offer on standard input')
+        result = await importConsoleOffer({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+      } else result = await acceptConsoleTrade({workspace: parsed.options.stateRoot, configPath: parsed.options.config})
+      const tradeId = (result as {tradeId: string}).tradeId
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 1, tradeId, ok: true as const, result, warnings: []}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else if (command === 'prepare-trade') io.stdout(`Prepared trade ${tradeId}. Public offer: ${parsed.options.stateRoot}/public/offer.json\n`)
+      else if (command === 'import-offer') io.stdout(`Imported and verified trade ${tradeId}. Run accept-trade after reviewing its terms.\n`)
+      else io.stdout(`Accepted trade ${tradeId}. Public acceptance: ${parsed.options.stateRoot}/public/acceptance.json\n`)
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `${command} failed`
+      const output = cliFailure({command, party, sequence: 0, code: command === 'prepare-trade' ? 'PREPARE_FAILED' : command === 'import-offer' ? 'OFFER_IMPORT_FAILED' : 'ACCEPTANCE_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

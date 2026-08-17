@@ -138,8 +138,18 @@ export {
   withWorkspaceMutation,
   saveWorkspaceWorkflowState,
   restoreWorkspaceWorkflowState,
+  acceptWorkspaceTrade,
 } from './consoleWorkspace.js'
 export type {ConsoleConfigIdentity, WorkspaceManifest, WorkspaceExpectation} from './consoleWorkspace.js'
+export {
+  PREPARE_TRADE_INPUT_SCHEMA,
+  PUBLIC_OFFER_SCHEMA,
+  TRADE_ACCEPTANCE_SCHEMA,
+  prepareConsoleTrade,
+  importConsoleOffer,
+  acceptConsoleTrade,
+} from './consoleTrade.js'
+export type {PublicTradeOffer} from './consoleTrade.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,

@@ -147,7 +147,7 @@ export async function withWorkspaceMutation<T>(root: string, action: () => Promi
   }
 }
 
-export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState}): Promise<void> {
+export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
   await withWorkspaceMutation(args.root, async () => {
     const manifest = await inspectPartyWorkspace(args.root, args.expected)
     validatePartyWorkflowState(args.publicState, args.secretState)
@@ -157,8 +157,26 @@ export async function saveWorkspaceWorkflowState(args: {readonly root: string; r
     const name = generationName(args.publicState.generation)
     await atomicWrite(join(resolve(args.root), 'public', `${name}.json`), serializeClientState(args.publicState))
     await atomicWrite(join(resolve(args.root), 'private', `${name}.json`), serializeSecretState(args.secretState))
+    for (const [filename, contents] of Object.entries(args.publicArtifacts ?? {})) {
+      if (!/^[a-z0-9][a-z0-9.-]*\.json$/.test(filename)) throw new Error('invalid public artifact filename')
+      await atomicWrite(join(resolve(args.root), 'public', filename), contents)
+    }
     const next: WorkspaceManifest = {...manifest, tradeId: args.publicState.tradeId, generation: args.publicState.generation}
     await atomicWrite(join(resolve(args.root), 'workspace.json'), `${JSON.stringify(next, null, 2)}\n`)
+  })
+}
+
+export async function acceptWorkspaceTrade(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly acceptance: string}): Promise<WorkspaceManifest> {
+  return withWorkspaceMutation(args.root, async () => {
+    const manifest = await inspectPartyWorkspace(args.root, args.expected)
+    if (manifest.party !== 'bob') throw new Error('only Bob may accept a trade')
+    if (manifest.tradeId === null) throw new Error('workspace has no imported offer')
+    const acceptancePath = join(resolve(args.root), 'public', 'acceptance.json')
+    try { await readFile(acceptancePath, 'utf8'); throw new Error('trade is already accepted') } catch (error) {
+      if (error instanceof Error && error.message === 'trade is already accepted') throw error
+    }
+    await atomicWrite(acceptancePath, args.acceptance)
+    return manifest
   })
 }
 
