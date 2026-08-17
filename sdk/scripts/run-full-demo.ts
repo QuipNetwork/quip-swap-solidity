@@ -24,7 +24,7 @@ try {
   console.log('[demo] Writing demo artifact')
   mkdirSync(dirname(output), {recursive: true})
   writeFileSync(output, serializeFullDemo(artifact), {encoding: 'utf8', mode: 0o600})
-  console.log(JSON.stringify({schema: artifact.schema, tradeId: artifact.tradeId, finalStates: artifact.settlementTrace.finalSnapshots.map(value => [value.chainId, value.state]), negativeControls: artifact.negativeControls.records.length, artifact: output}))
+  console.log(JSON.stringify({schema: artifact.schema, tradeId: artifact.tradeId, finalStates: artifact.settlementTrace.finalSnapshots.map(value => [value.chainId, value.state]), negativeControls: artifact.negativeControls.records.length, artifact: output}, null, 2))
 } finally {
   a.stop(); b.stop()
 }

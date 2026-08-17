@@ -80,8 +80,7 @@ async function rpcChainId(rpcUrl: string): Promise<number | undefined> {
 async function ensureAnvil(chain: LocalBootstrapProfile['chains'][number], logPath: string): Promise<number | undefined> {
   const existing = await rpcChainId(chain.rpcUrl)
   if (existing !== undefined) {
-    if (existing !== chain.chainId) throw new Error(`RPC ${chain.rpcUrl} has chain ID ${existing}, expected ${chain.chainId}`)
-    return undefined
+    throw new Error(`RPC ${chain.rpcUrl} is already serving chain ${existing}. Stop the previous demo using its runtime.json before running bootstrap-local again.`)
   }
   const url = new URL(chain.rpcUrl)
   const log = openSync(logPath, constants.O_CREAT | constants.O_WRONLY | constants.O_APPEND, 0o600)

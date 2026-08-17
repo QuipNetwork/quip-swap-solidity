@@ -106,4 +106,4 @@ const artifact = {schema: 'quip-swap-console-demo.v1', tradeId: consoleResult.tr
 mkdirSync(dirname(output), {recursive: true})
 writeFileSync(output, `${JSON.stringify(artifact, null, 2)}\n`, {encoding: 'utf8', mode: 0o600})
 rmSync(runtime, {recursive: true, force: true})
-console.log(JSON.stringify({schema: artifact.schema, tradeId: artifact.tradeId, finalStates: artifact.finalStates, commands: transitions.length, artifact: output}))
+console.log(JSON.stringify({schema: artifact.schema, tradeId: artifact.tradeId, finalStates: artifact.finalStates, commands: transitions.length, artifact: output}, null, 2))

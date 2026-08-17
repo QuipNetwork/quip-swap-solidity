@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises'
+import {join, resolve} from 'node:path'
 import type {Address} from 'viem'
 import {AssetType} from './types.js'
 import type {Hex32} from './types.js'
@@ -11,7 +12,7 @@ import {restoreProtocolTerms, validateClientState} from './clientState.js'
 import type {BobClientState} from './clientState.js'
 import {SECRET_STATE_SCHEMA} from './clientPersistence.js'
 import type {BobSecretState} from './clientPersistence.js'
-import {acceptWorkspaceTrade, loadConsoleConfigIdentity, restoreWorkspaceWorkflowState, saveWorkspaceWorkflowState} from './consoleWorkspace.js'
+import {acceptWorkspaceTrade, inspectPartyWorkspace, loadConsoleConfigIdentity, restoreWorkspaceWorkflowState, saveWorkspaceWorkflowState} from './consoleWorkspace.js'
 
 export const PREPARE_TRADE_INPUT_SCHEMA = 'quip-swap-prepare-trade.v1' as const
 export const PUBLIC_OFFER_SCHEMA = 'quip-swap-public-offer.v1' as const
@@ -148,6 +149,18 @@ export async function importConsoleOffer(args: {readonly workspace: string; read
   if (party.principal.toLowerCase() !== config.actors.alice.toLowerCase() || counterparty.principal.toLowerCase() !== config.actors.bob.toLowerCase() || party.recipient.toLowerCase() !== config.actors.bob.toLowerCase() || counterparty.recipient.toLowerCase() !== config.actors.alice.toLowerCase()) throw new Error('offer actor binding mismatch')
   if (party.assets.length !== 1 || counterparty.assets.length !== 1 || party.assets[0]?.target.toLowerCase() !== config.chains[0].token.toLowerCase() || counterparty.assets[0]?.target.toLowerCase() !== config.chains[1].token.toLowerCase() || party.assets[0]?.amount !== config.chains[0].amount || counterparty.assets[0]?.amount !== config.chains[1].amount) throw new Error('offer asset binding mismatch')
   if (offer.bobState.selected.bobSubmitter.toLowerCase() !== config.actors.bob.toLowerCase() || offer.bobState.selected.finalClaimExecutors.length !== 2 || !offer.bobState.selected.finalClaimExecutors.some(value => value.toLowerCase() === config.actors.bob.toLowerCase()) || !offer.bobState.selected.finalClaimExecutors.some(value => value.toLowerCase() === config.actors.executor.toLowerCase())) throw new Error('offer executor binding mismatch')
+  const manifest = await inspectPartyWorkspace(args.workspace, expected(config))
+  if (manifest.tradeId !== null) {
+    if (manifest.tradeId !== offer.tradeId) throw new Error(`Bob workspace already contains trade ${manifest.tradeId}. Reset the local demo before importing a different offer.`)
+    try {
+      await readFile(join(resolve(args.workspace), 'public', 'acceptance.json'), 'utf8')
+      throw new Error('This exact offer is already imported and accepted. Continue with submit-alice-commit; do not run import-offer or accept-trade again.')
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('This exact offer')) throw error
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+    }
+    throw new Error('This exact offer is already imported. Continue with accept-trade; do not run import-offer again.')
+  }
   const secretState: BobSecretState = {schema: SECRET_STATE_SCHEMA, party: 'bob', generation: 1, tradeId: offer.tradeId, mode: 'prototype-local', publicTestSecrets: false}
   await saveWorkspaceWorkflowState({root: args.workspace, expected: expected(config), publicState: offer.bobState, secretState, publicArtifacts: {'offer.json': `${JSON.stringify(offer, null, 2)}\n`}})
   return offer

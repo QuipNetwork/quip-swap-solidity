@@ -35,6 +35,7 @@ export interface AliceCommitPreview {
 export interface AliceCommitBoundary {
   state(terms: ProtocolTerms, lock: Hex32): Promise<CrossChainLegState>
   transaction(hash: Hash): Promise<'pending' | 'success' | 'reverted' | 'missing'>
+  currentTimestamp?(): Promise<bigint>
   submit(args: {readonly terms: ProtocolTerms; readonly lock: Hex32; readonly actionNonce: Hex32; readonly expiry: bigint; readonly payloadHash: Hex32}): Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
 }
 
@@ -92,6 +93,7 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
   const client = createProtocolClient({addresses, publicClient, walletClient})
   return {
     state: (terms, lock) => client.getCrossChainState(terms, true, lock),
+    currentTimestamp: async () => (await publicClient.getBlock()).timestamp,
     transaction: async hash => {
       try {
         const receipt = await publicClient.getTransactionReceipt({hash})
@@ -167,6 +169,13 @@ export async function submitAliceCommit(args: {readonly workspace: string; reado
     if (restored.publicState.aliceCommit.status !== 'not-submitted' || restored.publicState.stage !== 'prepared') throw new Error('Alice commit state cannot be submitted')
     if (await boundary.state(restored.terms, restored.publicState.derived.settlementLock) !== CrossChainLegState.Unused) throw new Error('Alice leg is already used on-chain without a tracked transaction; refusing resend')
     const expiry = BigInt(offer.authorizationEvidence.partyExpiry)
+    if (boundary.currentTimestamp !== undefined) {
+      const now = await boundary.currentTimestamp()
+      const closed: string[] = []
+      if (now >= restored.terms.partySide.commitmentDeadline) closed.push(`commitment deadline ${restored.terms.partySide.commitmentDeadline}`)
+      if (now >= expiry) closed.push(`authorization expiry ${expiry}`)
+      if (closed.length > 0) throw new Error(`Alice commit cannot be submitted: chain timestamp ${now} is at or after ${closed.join(' and ')}. Prepare a new trade with future deadlines.`)
+    }
     const payloadHash = commitPayloadHash({terms: restored.terms, party: true, authorizationVerifier: config.chains[0].verifier, swapAddress: config.chains[0].wrapper, lock: restored.publicState.derived.settlementLock, expectedSourceState: ExpectedSourceState.Unused, actionNonce: offer.authorizationEvidence.partyActionNonce, expiry})
     if (payloadHash !== restored.publicState.derived.partyCommitPayloadHash) throw new Error('Alice commit authorization hash mismatch')
     const submitted = await boundary.submit({terms: restored.terms, lock: restored.publicState.derived.settlementLock, actionNonce: offer.authorizationEvidence.partyActionNonce, expiry, payloadHash})

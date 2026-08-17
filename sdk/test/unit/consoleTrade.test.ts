@@ -75,8 +75,10 @@ describe('console trade offer exchange', () => {
       expect(await readFile(join(value.aliceRoot, 'public', 'offer.json'), 'utf8')).not.toMatch(/settlementSecret|bobCommitSecret/i)
       expect(await readFile(join(value.aliceRoot, 'private', '000000000001.json'), 'utf8')).toContain('settlementSecret')
       await expect(importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: serialized})).resolves.toEqual(offer)
+      await expect(importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: serialized})).rejects.toThrow('already imported. Continue with accept-trade')
       const acceptance = await acceptConsoleTrade({workspace: value.bobRoot, configPath: value.bobConfig})
       expect(acceptance).toEqual({schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B})
+      await expect(importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: serialized})).rejects.toThrow('already imported and accepted')
       expect(await inspectPartyWorkspace(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).toMatchObject({tradeId: offer.tradeId, generation: 1})
       await expect(acceptConsoleTrade({workspace: value.bobRoot, configPath: value.bobConfig})).rejects.toThrow('already accepted')
     } finally { await rm(value.root, {recursive: true, force: true}) }
@@ -143,6 +145,25 @@ describe('console status', () => {
 })
 
 describe('console Alice commit', () => {
+  it('reports expired commit and authorization windows before submitting', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const action = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
+      let submissions = 0
+      const boundary: AliceCommitBoundary = {
+        state: async () => CrossChainLegState.Unused,
+        transaction: async () => 'missing',
+        currentTimestamp: async () => 501n,
+        submit: async () => { submissions += 1; return {hash: H(799), nonce: 1, submittedAtBlock: 1n} },
+      }
+      await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: action, boundary})).rejects.toThrow(
+        'chain timestamp 501 is at or after commitment deadline 100 and authorization expiry 500',
+      )
+      expect(submissions).toBe(0)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
   it('does not advance persisted state when authorization expires or submission is rejected', async () => {
     const value = await fixture()
     try {
@@ -196,6 +217,17 @@ describe('console Alice commit', () => {
       const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '12', confirmations: '3', inclusion})}
       expect(await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: final})).toMatchObject({lifecycle: 'final', bobCommitEnabled: true})
       expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'bob-enabled', aliceCommit: {status: 'final'}})
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('explains that Bob must submit before observing a Bob commit', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
+      await expect(observeBobCommit({workspace: value.bobRoot, configPath: value.bobConfig})).rejects.toThrow(
+        'Run submit-bob-commit successfully before observe-bob-commit',
+      )
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 

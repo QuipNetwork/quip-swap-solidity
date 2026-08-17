@@ -191,8 +191,8 @@ export async function acceptWorkspaceTrade(args: {readonly root: string; readonl
     if (manifest.party !== 'bob') throw new Error('only Bob may accept a trade')
     if (manifest.tradeId === null) throw new Error('workspace has no imported offer')
     const acceptancePath = join(resolve(args.root), 'public', 'acceptance.json')
-    try { await readFile(acceptancePath, 'utf8'); throw new Error('trade is already accepted') } catch (error) {
-      if (error instanceof Error && error.message === 'trade is already accepted') throw error
+    try { await readFile(acceptancePath, 'utf8'); throw new Error('This trade is already accepted. Continue with submit-alice-commit; do not run accept-trade again.') } catch (error) {
+      if (error instanceof Error && error.message.startsWith('This trade is already accepted')) throw error
     }
     await atomicWrite(acceptancePath, args.acceptance)
     return manifest

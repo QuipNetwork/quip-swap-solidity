@@ -136,110 +136,283 @@ must hold 20 chain-B demo tokens.
 ## Run the two-operator console demo
 
 The console path uses separate Alice and Bob directories and starts a new Bun
-process for every command. From `sdk/`, choose an empty temporary directory:
+process for every command. Run these commands from `sdk/` in order:
 
-```sh
-DEMO_ROOT=/tmp/quip-swap-console-manual
-mkdir -p "$DEMO_ROOT"
-```
+### 0. Reset a previous manual run
 
-Bootstrap the deterministic local deployment, then initialize the two client
-boundaries:
+Perform this reset before restarting a manual demo. Keep `DEMO_ROOT` set to
+the previous run until its processes have been stopped. The runtime file is the
+authority for which processes belong to that run; do not kill unrelated Anvil
+processes by name or port.
 
-```sh
-bun run src/bin/quip-swap.ts bootstrap-local --party alice \
-  --state-root "$DEMO_ROOT/runtime" \
-  --config ../config/demo/console-bootstrap.json --json
-
-ALICE_CONFIG="$DEMO_ROOT/runtime/alice.config.json"
-BOB_CONFIG="$DEMO_ROOT/runtime/bob.config.json"
-ALICE_ROOT="$DEMO_ROOT/alice"
-BOB_ROOT="$DEMO_ROOT/bob"
-
-bun run src/bin/quip-swap.ts init --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-bun run src/bin/quip-swap.ts init --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
-
-The checked-in bootstrap profile fixes the local demo timestamp so this input
-matches `demo:full` exactly. Alice prepares the offer; Bob imports and accepts
-it through his own process and state root:
-
-```sh
-printf '%s\n' '{"schema":"quip-swap-prepare-trade.v1","partyCommitmentDeadline":"4000000110","counterpartyCommitmentDeadline":"4000000210","partyClaimDeadline":"4000001010","counterpartyClaimDeadline":"4000001110","partyReclaimRelease":"4000001410","counterpartyReclaimRelease":"4000001310","partyAuthorizationExpiry":"4000000510","counterpartyAuthorizationExpiry":"4000000610"}' |
-  bun run src/bin/quip-swap.ts prepare-trade --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-
-bun run src/bin/quip-swap.ts import-offer --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
-  < "$ALICE_ROOT/public/offer.json"
-bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
-
-Alice submits her funded commit using Bob's public acceptance. Both clients
-observe it as non-final; after two additional blocks they independently record
-the required three confirmations:
-
-```sh
-jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
-  '{schema:"quip-swap-alice-commit.v1",confirmed:true,acceptance:$acceptance[0]}' |
-  bun run src/bin/quip-swap.ts submit-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-
-bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-cast rpc --rpc-url http://127.0.0.1:8545 anvil_mine 0x2
-bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
-
-Alice creates the private progression handoff. Its path is public metadata, but
-the file itself must go directly to Bob's standard input and must never be
-printed or passed as a command-line value:
-
-```sh
-bun run src/bin/quip-swap.ts release-bob-secret --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes \
-  > "$DEMO_ROOT/release.json"
-BOB_HANDOFF=$(jq -r '.result.handoffPath' "$DEMO_ROOT/release.json")
-bun run src/bin/quip-swap.ts import-bob-secret --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
-  < "$BOB_HANDOFF"
-```
-
-Bob commits on chain 31338. Both operators verify that exact commit, then Alice
-submits the revealing claim on the same chain:
-
-```sh
-bun run src/bin/quip-swap.ts submit-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
-bun run src/bin/quip-swap.ts observe-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-bun run src/bin/quip-swap.ts observe-bob-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-bun run src/bin/quip-swap.ts submit-revealing-claim --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes
-```
-
-Bob first observes the revealing claim without enough confirmations. After it
-becomes final, Bob imports the authenticated settlement preimage privately and
-immediately submits the final permissionless claim on chain 31337:
-
-```sh
-bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-cast rpc --rpc-url http://127.0.0.1:8546 anvil_mine 0x2
-bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-bun run src/bin/quip-swap.ts submit-final-claim --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
-```
-
-Both terminals must independently report `success`, `complete: true`, and
-`Claimed` on both chains:
-
-```sh
-bun run src/bin/quip-swap.ts status --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
-bun run src/bin/quip-swap.ts status --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
-
-The chain-31337 recipient balance must be 10 demo tokens, the chain-31338
-recipient balance 20 demo tokens, and both wrapper balances zero. Stop only the
-Anvil processes listed by this bootstrap run:
+- Stop only the Anvil processes recorded by the previous bootstrap.
 
 ```sh
 jq -r '.startedPids[]' "$DEMO_ROOT/runtime/runtime.json" | xargs -r kill
 ```
 
-For an automated replay of these exact separate-process commands and the
-comparison against `demo:full`, run:
+- Confirm that the previous chain-31337 RPC endpoint is no longer reachable.
+  This command is expected to report a connection failure.
+
+```sh
+cast block latest --rpc-url http://127.0.0.1:8545
+```
+
+- Confirm that the previous chain-31338 RPC endpoint is no longer reachable.
+  This command is also expected to report a connection failure.
+
+```sh
+cast block latest --rpc-url http://127.0.0.1:8546
+```
+
+### 1. Start a clean manual run
+
+- Select a new, timestamped demo root. This preserves the previous run's
+  diagnostics while giving the new run clean chain and client state.
+
+```sh
+DEMO_ROOT="/tmp/interlock-v11-demo-$(date +%s)"
+```
+
+- Create the fresh demo root.
+
+```sh
+mkdir -p "$DEMO_ROOT"
+```
+
+Always select and create a fresh demo root before `bootstrap-local`.
+`bootstrap-local` refuses to reuse an RPC endpoint from a previous run because
+reusing it would preserve old chain state. The subsequent `init` commands
+create clean, independent Alice and Bob client states.
+
+- Start both local chains, deploy the contracts, and generate both runtime
+  configurations.
+
+```sh
+bun run src/bin/quip-swap.ts bootstrap-local --party alice \
+  --state-root "$DEMO_ROOT/runtime" \
+  --config ../config/demo/console-bootstrap.json --json
+```
+
+- Set the path to Parties' generated runtime configurations.
+
+```sh
+ALICE_CONFIG="$DEMO_ROOT/runtime/alice.config.json"
+BOB_CONFIG="$DEMO_ROOT/runtime/bob.config.json"
+```
+
+- Assign Parties private client-state directories.
+
+```sh
+ALICE_ROOT="$DEMO_ROOT/alice"
+BOB_ROOT="$DEMO_ROOT/bob"
+```
+
+- Initialize Parties' client state.
+
+```sh
+bun run src/bin/quip-swap.ts init --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts init --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+The checked-in bootstrap profile fixes the initial local timestamp. Unlike the
+automated replay, a manual run can take longer than the narrow deterministic
+test windows, so derive its deadlines from the live chain time.
+
+- Record the current chain-31337 timestamp as the base for all deadlines.
+
+```sh
+NOW=$(cast block latest --rpc-url http://127.0.0.1:8545 --field timestamp)
+```
+
+### 2. Negotiations
+
+- Have Alice create terms with generous manual-operation windows and export
+  the public offer.
+
+```sh
+jq -n --argjson now "$NOW" '{
+  schema:"quip-swap-prepare-trade.v1",
+  partyCommitmentDeadline:($now + 86400 | tostring),
+  counterpartyCommitmentDeadline:($now + 172800 | tostring),
+  partyClaimDeadline:($now + 864000 | tostring),
+  counterpartyClaimDeadline:($now + 950400 | tostring),
+  partyReclaimRelease:($now + 1209600 | tostring),
+  counterpartyReclaimRelease:($now + 1123200 | tostring),
+  partyAuthorizationExpiry:($now + 432000 | tostring),
+  counterpartyAuthorizationExpiry:($now + 518400 | tostring)
+}' |
+  bun run src/bin/quip-swap.ts prepare-trade --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+
+- Have Bob import Alice's public offer into his own client state.
+
+```sh
+bun run src/bin/quip-swap.ts import-offer --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
+  < "$ALICE_ROOT/public/offer.json"
+```
+
+  Run `import-offer` only once. If the CLI says the exact offer is already
+  imported, continue with `accept-trade`. If it says the offer is already
+  imported and accepted, skip both commands and continue with
+  `submit-alice-commit`.
+
+- Have Bob validate and accept the imported trade.
+
+```sh
+bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+  Run `accept-trade` only once. If the CLI says the trade is already accepted,
+  continue with `submit-alice-commit`.
+
+- Combine Bob's acceptance with Alice's confirmation and submit Alice's funded
+  commit on chain 31337.
+
+```sh
+jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
+  '{schema:"quip-swap-alice-commit.v1",confirmed:true,acceptance:$acceptance[0]}' |
+  bun run src/bin/quip-swap.ts submit-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+
+### 2. Alice.commit
+- Have Alice observe that her commit exists but is not final yet.
+
+```sh
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+
+- Have Bob independently observe Alice's still-non-final commit.
+
+```sh
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+- Mine two additional blocks on chain 31337 to reach three confirmations.
+
+```sh
+cast rpc --rpc-url http://127.0.0.1:8545 anvil_mine 0x2
+```
+
+- Have Alice record that her commit is now final.
+
+```sh
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+
+- Have Bob independently record that Alice's commit is now final.
+
+```sh
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+### 3. Bob.commit
+
+- Have Alice create Bob's private progression-secret handoff.
+
+  ```sh
+bun run src/bin/quip-swap.ts release-bob-secret --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes \
+  > "$DEMO_ROOT/release.json"
+```
+
+- Extract the handoff path without printing the secret.
+
+```sh
+BOB_HANDOFF=$(jq -r '.result.handoffPath' "$DEMO_ROOT/release.json")
+```
+
+- Pass the private handoff directly into Bob's client through standard input.
+
+```sh
+bun run src/bin/quip-swap.ts import-bob-secret --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
+  < "$BOB_HANDOFF"
+```
+
+
+- Have Bob submit his funded commit on chain 31338.
+
+  Confirm that this command returns `ok: true` and a transaction hash before
+  running either `observe-bob-commit` command. Observation cannot reconstruct
+  a submission that never produced Bob's local transaction journal.
+
+  ```sh
+bun run src/bin/quip-swap.ts submit-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
+```
+
+- Have Bob observe and validate his submitted commit.
+
+```sh
+bun run src/bin/quip-swap.ts observe-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+- Have Alice independently observe and validate Bob's commit.
+
+```sh
+bun run src/bin/quip-swap.ts observe-bob-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+### 4. Alice.claim
+
+- Have Alice reveal the settlement preimage by claiming Bob's asset on chain
+  31338.
+
+```sh
+bun run src/bin/quip-swap.ts submit-revealing-claim --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes
+```
+
+- Have Bob observe the revealing claim before it is final.
+
+```sh
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+- Mine two additional blocks on chain 31338 to finalize the revealing claim.
+
+```sh
+cast rpc --rpc-url http://127.0.0.1:8546 anvil_mine 0x2
+```
+
+- Have Bob record the final reveal and recover its authenticated settlement
+  preimage.
+
+```sh
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+### 5. Bob.claim
+
+- Have Bob use the preimage to claim Alice's asset on chain 31337.
+
+```sh
+bun run src/bin/quip-swap.ts submit-final-claim --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
+```
+
+- Show Alice's independently reconstructed cross-chain status.
+
+```sh
+bun run src/bin/quip-swap.ts status --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+```
+
+- Show Bob's independently reconstructed cross-chain status.
+
+```sh
+bun run src/bin/quip-swap.ts status --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+Both status commands must report `success`, `complete: true`, and `Claimed`
+on both chains. The chain-31337 recipient balance must be 10 demo tokens, the
+chain-31338 recipient balance 20 demo tokens, and both wrapper balances zero.
+
+### 6. cleanups
+- Stop only the Anvil processes recorded by this run.
+
+```sh
+jq -r '.startedPids[]' "$DEMO_ROOT/runtime/runtime.json" | xargs -r kill
+```
+
+
+## Automated replay
+
+For an automated replay of the same separate-process flow:
+
+- Run the complete console demo and compare it with `demo:full`.
 
 ```sh
 bun run demo:console
