@@ -123,6 +123,7 @@ export type {
 export {
   CLI_NAME,
   CLI_VERSION,
+  CONSOLE_CONFIRMATION_SCHEMA,
   consoleUsage,
   parseConsoleArgs,
   runConsole,

@@ -21,6 +21,8 @@ import {enterConsoleRecovery, submitReclaim} from './consoleReclaim.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
+export const CONSOLE_CONFIRMATION_SCHEMA = 'quip-swap-confirmation.v1' as const
+const GREEN = '\u001b[32m'; const YELLOW = '\u001b[33m'; const RED = '\u001b[31m'; const RESET = '\u001b[0m'
 
 export interface ConsoleOptions {
   readonly command: CliCommand
@@ -28,6 +30,7 @@ export interface ConsoleOptions {
   readonly stateRoot: string
   readonly config: string
   readonly json: boolean
+  readonly yes: boolean
 }
 
 export interface ConsoleIo {
@@ -52,13 +55,14 @@ export function consoleUsage(): string {
     .map(spec => `  ${spec.command.padEnd(33)} ${spec.description}`)
     .join('\n')
   return [
-    `Usage: ${CLI_NAME} <command> --party <alice|bob> --state-root <path> --config <path> [--json]`,
+    `Usage: ${CLI_NAME} <command> --party <alice|bob> --state-root <path> --config <path> [--json] [--yes]`,
     '',
     'Global options:',
     '  --party <alice|bob>   Select the isolated client boundary.',
     '  --state-root <path>   Select that party\'s persisted workspace.',
     '  --config <path>       Load public chain and protocol configuration.',
     '  --json                Emit the stable JSON envelope.',
+    '  --yes                 Confirm sensitive actions in the local deterministic prototype only.',
     '  --help                Show this help.',
     '  --version             Show the console version.',
     '',
@@ -80,9 +84,11 @@ export function parseConsoleArgs(args: readonly string[]): ConsoleParseResult {
   let stateRoot: string | undefined
   let config: string | undefined
   let json = false
+  let yes = false
   for (let index = 1; index < args.length; index += 1) {
     const option = args[index]
     if (option === '--json') { json = true; continue }
+    if (option === '--yes') { yes = true; continue }
     if (option !== '--party' && option !== '--state-root' && option !== '--config') {
       throw new UsageError(`unknown option: ${option}`)
     }
@@ -98,7 +104,34 @@ export function parseConsoleArgs(args: readonly string[]): ConsoleParseResult {
   if (party === undefined) throw new UsageError('missing required option: --party')
   if (stateRoot === undefined) throw new UsageError('missing required option: --state-root')
   if (config === undefined) throw new UsageError('missing required option: --config')
-  return {kind: 'command', options: {command: command as CliCommand, party, stateRoot, config, json}}
+  return {kind: 'command', options: {command: command as CliCommand, party, stateRoot, config, json, yes}}
+}
+
+function confirmJson(serialized: string, action: string): void {
+  const value: unknown = JSON.parse(serialized)
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${action} requires explicit confirmation`)
+  const record = value as Record<string, unknown>
+  if (record['schema'] !== CONSOLE_CONFIRMATION_SCHEMA || record['action'] !== action || record['confirmed'] !== true) throw new Error(`${action} requires explicit confirmation`)
+  if (/settlementSecret|bobCommitSecret|privateKey|signature|preimage/i.test(serialized)) throw new Error('confirmation contains sensitive material')
+}
+
+async function requireConfirmation(action: string, yes: boolean, stdin: ConsoleIo['stdin']): Promise<void> {
+  if (yes) return
+  if (stdin === undefined) throw new Error(`${action} requires confirmation JSON on standard input or --yes`)
+  confirmJson(await stdin(), action)
+}
+
+function forceConfirmed(serialized: string): string {
+  const value: unknown = JSON.parse(serialized)
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('action input must be a JSON object')
+  return JSON.stringify({...value, confirmed: true})
+}
+
+function safeError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback
+  const message = error.message.replace(/[\r\n]+/g, ' ').trim()
+  if (message === '' || /settlementSecret|bobCommitSecret|preimage|private.?key|signature|authorization material|calldata/i.test(message)) return `${fallback}; sensitive details redacted`
+  return message
 }
 
 export async function runConsole(args: readonly string[], io: ConsoleIo, dependencies: ConsoleDependencies = {}): Promise<CliExitCode> {
@@ -106,13 +139,21 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   try {
     parsed = parseConsoleArgs(args)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'invalid command line'
+    const message = safeError(error, 'invalid command line')
     io.stderr(`${CLI_NAME}: ${message}\nRun '${CLI_NAME} --help' for usage.\n`)
     return CLI_EXIT_USAGE
   }
   if (parsed.kind === 'help') { io.stdout(`${consoleUsage()}\n`); return CLI_EXIT_SUCCESS }
   if (parsed.kind === 'version') { io.stdout(`${CLI_NAME} ${CLI_VERSION}\n`); return CLI_EXIT_SUCCESS }
-  const {command, party, json} = parsed.options
+  const {command, party, json, yes} = parsed.options
+  if (!json) {
+    const raw = io
+    io = {
+      ...raw,
+      stdout: text => raw.stdout(`${GREEN}${text}${RESET}`),
+      stderr: text => raw.stderr(`${text.startsWith('WARNING:') ? YELLOW : RED}${text}${RESET}`),
+    }
+  }
   const spec = cliCommandSpec(command)
   const wrongParty = !spec.parties.includes(party)
   if (!wrongParty && command === 'bootstrap-local') {
@@ -127,7 +168,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       }
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'local bootstrap failed'
+      const message = safeError(error, 'local bootstrap failed')
       const output = cliFailure({command, party, sequence: 0, code: 'BOOTSTRAP_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -152,7 +193,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else io.stdout(`Initialized ${party} workspace for ${manifest.networkId}: ${parsed.options.stateRoot}\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace initialization failed'
+      const message = safeError(error, 'workspace initialization failed')
       const output = cliFailure({command, party, sequence: 0, code: 'WORKSPACE_INIT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -177,7 +218,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else io.stdout(`Accepted trade ${tradeId}. Public acceptance: ${parsed.options.stateRoot}/public/acceptance.json\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : `${command} failed`
+      const message = safeError(error, `${command} failed`)
       const output = cliFailure({command, party, sequence: 0, code: command === 'prepare-trade' ? 'PREPARE_FAILED' : command === 'import-offer' ? 'OFFER_IMPORT_FAILED' : 'ACCEPTANCE_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -187,7 +228,8 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && command === 'submit-alice-commit') {
     try {
       if (io.stdin === undefined) throw new Error('submit-alice-commit requires Bob acceptance and confirmation JSON on standard input')
-      const result = await submitAliceCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin(), ...(!json ? {onPreview: view => io.stdout([
+      const actionInput = await io.stdin()
+      const result = await submitAliceCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!json ? {onPreview: view => io.stdout([
         `Alice funding preview for chain ${view.chainId}`,
         `Wrapper: ${view.wrapper}`,
         `Principal: ${view.principal}`,
@@ -202,7 +244,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} Alice commit ${result.transactionHash} (${result.lifecycle}).\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Alice commit failed'
+      const message = safeError(error, 'Alice commit failed')
       const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -220,7 +262,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       }
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Alice commit observation failed'
+      const message = safeError(error, 'Alice commit observation failed')
       const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_OBSERVATION_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -229,10 +271,11 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   }
   if (!wrongParty && (command === 'release-bob-secret' || command === 'import-bob-secret')) {
     try {
-      if (io.stdin === undefined) throw new Error(`${command} requires JSON on standard input`)
+      if (io.stdin === undefined && !(yes && command === 'release-bob-secret')) throw new Error(`${command} requires JSON on standard input`)
+      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-release-bob-secret.v1', confirmed: true}) : await io.stdin()
       const result = command === 'release-bob-secret'
-        ? await releaseBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
-        : await importBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+        ? await releaseBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput})
+        : await importBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: actionInput})
       const warnings = command === 'release-bob-secret' ? ['BobCommitSecret disclosure is irreversible. Transfer the private handoff only to the selected Bob boundary.'] : []
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
@@ -242,7 +285,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       } else io.stdout(`Imported and validated Bob progression handoff for ${result.tradeId}.\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : `${command} failed`
+      const message = safeError(error, `${command} failed`)
       const output = cliFailure({command, party, sequence: 0, code: command === 'release-bob-secret' ? 'PROGRESSION_RELEASE_FAILED' : 'PROGRESSION_IMPORT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -251,14 +294,15 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   }
   if (!wrongParty && command === 'submit-bob-commit') {
     try {
-      if (io.stdin === undefined) throw new Error('submit-bob-commit requires confirmation JSON on standard input')
-      const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin(), ...(!json ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
+      if (io.stdin === undefined && !yes) throw new Error('submit-bob-commit requires confirmation JSON on standard input')
+      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-bob-commit.v1', confirmed: true}) : await io.stdin()
+      const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!json ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ authorization and publicly known Anvil Bob key are active.']}
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} Bob commit ${result.transactionHash} (${result.lifecycle}).\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Bob commit failed'
+      const message = safeError(error, 'Bob commit failed')
       const output = cliFailure({command, party, sequence: 0, code: 'BOB_COMMIT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -273,7 +317,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else {io.stdout(`Bob commit ${result.transactionHash}: ${result.lifecycle}.\n`); if (result.warning !== undefined) io.stderr(`WARNING: ${result.warning}\n`)}
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Bob commit observation failed'
+      const message = safeError(error, 'Bob commit observation failed')
       const output = cliFailure({command, party, sequence: 0, code: 'BOB_COMMIT_OBSERVATION_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -282,15 +326,16 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   }
   if (!wrongParty && command === 'submit-revealing-claim') {
     try {
-      if (io.stdin === undefined) throw new Error('submit-revealing-claim requires confirmation JSON on standard input')
-      const result = await submitRevealingClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin(), ...(!json ? {onPreview: view => io.stdout([`Revealing claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Claim deadline: ${view.claimDeadline}`, `DISCLOSURE: ${view.disclosure}`, ''].join('\n'))} : {})})
+      if (io.stdin === undefined && !yes) throw new Error('submit-revealing-claim requires confirmation JSON on standard input')
+      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-revealing-claim.v1', confirmed: true}) : await io.stdin()
+      const result = await submitRevealingClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!json ? {onPreview: view => io.stdout([`Revealing claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Claim deadline: ${view.claimDeadline}`, `DISCLOSURE: ${view.disclosure}`, ''].join('\n'))} : {})})
       const warnings = ['The settlement preimage becomes public when this transaction is submitted. Disclosure is irreversible.']
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else {io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} revealing claim ${result.transactionHash} (${result.lifecycle}).\n`); io.stderr(`WARNING: ${warnings[0]}\n`)}
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'revealing claim failed'
+      const message = safeError(error, 'revealing claim failed')
       const output = cliFailure({command, party, sequence: 0, code: 'REVEALING_CLAIM_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -305,7 +350,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else {io.stdout(`Revealing claim ${result.transactionHash}: ${result.lifecycle} (${result.confirmations}/${result.requiredConfirmations} confirmations).\n`); if (result.warning !== undefined) io.stderr(`WARNING: ${result.warning}\n`)}
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'reveal observation failed'
+      const message = safeError(error, 'reveal observation failed')
       const output = cliFailure({command, party, sequence: 0, code: 'REVEAL_OBSERVATION_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -314,13 +359,14 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   }
   if (!wrongParty && command === 'submit-final-claim') {
     try {
+      await requireConfirmation('submit-final-claim', yes, io.stdin)
       const result = await submitFinalClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!json ? {onPreview: view => io.stdout([`Final claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Success-path delay: ${view.successPathDelay}`, ''].join('\n'))} : {})})
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: []}
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} permissionless final claim ${result.transactionHash} (${result.lifecycle}).\n`)
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'final claim failed'
+      const message = safeError(error, 'final claim failed')
       const output = cliFailure({command, party, sequence: 0, code: 'FINAL_CLAIM_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -332,7 +378,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       const config = await loadConsoleConfigIdentity(parsed.options.config)
       await inspectPartyWorkspace(parsed.options.stateRoot, {party, networkId: config.networkId, configDigest: config.digest})
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace validation failed'
+      const message = safeError(error, 'workspace validation failed')
       const output = cliFailure({command, party, sequence: 0, code: 'WORKSPACE_INVALID', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -358,7 +404,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       }
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'status failed'
+      const message = safeError(error, 'status failed')
       const output = cliFailure({command, party, sequence: 0, code: 'STATUS_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -367,6 +413,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   }
   if (!wrongParty && command === 'reclaim') {
     try {
+      await requireConfirmation('reclaim', yes, io.stdin)
       const result = await submitReclaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!json ? {onPreview: view => io.stdout([`Reclaim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed reclaim recipient: ${view.reclaimRecipient}`, `Reclaim release: ${view.reclaimRelease}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token}`).join(', ')}`, ''].join('\n'))} : {})})
       const warnings = result.lifecycle === 'dropped' || result.lifecycle === 'replaced' || result.lifecycle === 'reverted' ? [`Recorded reclaim is ${result.lifecycle}; it was not resubmitted. Inspect the chain and recover explicitly.`] : []
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
@@ -374,7 +421,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else {io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} permissionless reclaim ${result.transactionHash} (${result.lifecycle}).\n`); for (const warning of warnings) io.stderr(`WARNING: ${warning}\n`)}
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'reclaim failed'
+      const message = safeError(error, 'reclaim failed')
       const output = cliFailure({command, party, sequence: 0, code: 'RECLAIM_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -390,7 +437,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       else {io.stdout(`Entered recovery for ${result.tradeId}: ${result.reason}\n`); io.stderr(`WARNING: ${output.warnings[0]}\n`)}
       return CLI_EXIT_SUCCESS
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'enter recovery failed'
+      const message = safeError(error, 'enter recovery failed')
       const output = cliFailure({command, party, sequence: 0, code: 'RECOVERY_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
@@ -402,7 +449,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       const config = await loadConsoleConfigIdentity(parsed.options.config)
       await inspectPartyWorkspace(parsed.options.stateRoot, {party, networkId: config.networkId, configDigest: config.digest})
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace validation failed'
+      const message = safeError(error, 'workspace validation failed')
       const output = cliFailure({command, party, sequence: 0, code: 'WORKSPACE_INVALID', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)

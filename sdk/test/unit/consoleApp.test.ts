@@ -20,7 +20,9 @@ const invoke = async (args: readonly string[]) => {
 describe('quip-swap executable contract', () => {
   it('parses the required party boundary without accepting arbitrary options', () => {
     expect(parseConsoleArgs(['status', '--party', 'alice', '--state-root', '/alice', '--config', '/public.json', '--json']))
-      .toEqual({kind: 'command', options: {command: 'status', party: 'alice', stateRoot: '/alice', config: '/public.json', json: true}})
+      .toEqual({kind: 'command', options: {command: 'status', party: 'alice', stateRoot: '/alice', config: '/public.json', json: true, yes: false}})
+    expect(parseConsoleArgs(['reclaim', '--party', 'bob', '--state-root', '/bob', '--config', '/public.json', '--yes']))
+      .toMatchObject({kind: 'command', options: {command: 'reclaim', yes: true}})
     expect(() => parseConsoleArgs(['status', '--party', 'alice', '--state-root', '/alice', '--config', '/public.json', '--settlement-secret', 'secret']))
       .toThrow('unknown option: --settlement-secret')
   })
@@ -39,6 +41,10 @@ describe('quip-swap executable contract', () => {
     expect(pending.exitCode).toBe(CLI_EXIT_FAILURE)
     expect(JSON.parse(pending.stdout)).toMatchObject({schema: CLI_SCHEMA_VERSION, command: 'status', party: 'alice', ok: false, error: {code: 'WORKSPACE_INVALID'}})
     expect(pending.stderr).toBe('')
+    expect(pending.stdout).not.toContain('\u001b[')
+    const human = await invoke(['status', '--party', 'alice', '--state-root', '/alice', '--config', '/public.json'])
+    expect(human.stderr).toMatch(/^\u001b\[31m/)
+    expect(human.stderr).toContain('\u001b[0m')
   })
 
   it('returns a stable failure envelope for a command used by the wrong party', async () => {
