@@ -34,6 +34,7 @@
     "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
     "demo:full": "bun run scripts/run-full-demo.ts",
+    "demo:console": "bun run scripts/run-console-demo.ts",
     "console": "bun run src/bin/quip-swap.ts",
     "smoke": "bun run scripts/smoke.ts",
     "build": "tsup",

@@ -1,0 +1,173 @@
+{
+  "schema": "quip-swap-console-demo.v1",
+  "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+  "transitions": [
+    "bootstrap-local",
+    "init",
+    "init",
+    "prepare-trade",
+    "import-offer",
+    "accept-trade",
+    "submit-alice-commit",
+    "observe-alice-commit",
+    "observe-alice-commit",
+    "observe-alice-commit",
+    "observe-alice-commit",
+    "release-bob-secret",
+    "import-bob-secret",
+    "submit-bob-commit",
+    "observe-bob-commit",
+    "observe-bob-commit",
+    "submit-revealing-claim",
+    "observe-reveal",
+    "observe-reveal",
+    "submit-final-claim",
+    "status",
+    "status"
+  ],
+  "authorizationDecisions": [
+    "alice:accepted",
+    "bob:accepted"
+  ],
+  "finalStates": [
+    [
+      31337,
+      "Claimed"
+    ],
+    [
+      31338,
+      "Claimed"
+    ]
+  ],
+  "terminalBalances": [
+    {
+      "chainId": 31337,
+      "balances": [
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "role": "principal",
+          "amount": "0"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "role": "wrapper",
+          "amount": "0"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "role": "recipient",
+          "amount": "10000000000000000000"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "role": "reclaim-recipient",
+          "amount": "0"
+        }
+      ]
+    },
+    {
+      "chainId": 31338,
+      "balances": [
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "role": "principal",
+          "amount": "0"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+          "role": "wrapper",
+          "amount": "0"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "role": "recipient",
+          "amount": "20000000000000000000"
+        },
+        {
+          "token": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+          "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "role": "reclaim-recipient",
+          "amount": "0"
+        }
+      ]
+    }
+  ],
+  "journals": [
+    {
+      "schema": "quip-swap-transaction-journal.v1",
+      "action": "alice-commit",
+      "networkId": "quip-swap-local-31337-31338",
+      "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+      "chainId": 31337,
+      "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+      "transactionHash": "0x7ca0b6e689e8b529ed28c3b86b8826ba4ad0ea0c19b1e8e0e9dfcfa07cf97e00",
+      "sender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "nonce": 2,
+      "submittedAtBlock": "17"
+    },
+    {
+      "schema": "quip-swap-transaction-journal.v1",
+      "action": "revealing-claim",
+      "networkId": "quip-swap-local-31337-31338",
+      "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+      "chainId": 31338,
+      "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+      "transactionHash": "0x27a1f86c9fddd0ebe463dfff8c9a8299d536170796dc22c5d753a5153da3dd96",
+      "sender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "nonce": 0,
+      "submittedAtBlock": "18"
+    },
+    {
+      "networkId": "quip-swap-local-31337-31338",
+      "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+      "chainId": 31338,
+      "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+      "transactionHash": "0x529e922ad43c611fbabf9ada20866142ae8274738aef5901f4c9a7a68ba43921",
+      "sender": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "nonce": 2,
+      "submittedAtBlock": "17",
+      "schema": "quip-swap-transaction-journal.v1",
+      "action": "bob-commit"
+    },
+    {
+      "schema": "quip-swap-transaction-journal.v1",
+      "action": "final-claim",
+      "networkId": "quip-swap-local-31337-31338",
+      "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+      "chainId": 31337,
+      "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
+      "transactionHash": "0x5c0d5ce394e7c88c0b18a6b65f471f40743bda78c3d1c8742c1e4b6d1eb5a9fb",
+      "executor": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+    }
+  ],
+  "fullDemoComparison": {
+    "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+    "settlementActions": [
+      "alice-commit",
+      "bob-commit",
+      "revealing-claim",
+      "final-claim"
+    ],
+    "authorizationDecisions": [
+      "alice:accepted",
+      "bob:accepted"
+    ],
+    "finalStates": [
+      [
+        31337,
+        "Claimed"
+      ],
+      [
+        31338,
+        "Claimed"
+      ]
+    ]
+  }
+}

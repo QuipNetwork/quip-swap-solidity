@@ -133,6 +133,123 @@ At completion both wrappers must be `Claimed`, wrapper token custody must be
 zero, Bob's recipient must hold 10 chain-A demo tokens, and Alice's recipient
 must hold 20 chain-B demo tokens.
 
+## Run the two-operator console demo
+
+The console path uses separate Alice and Bob directories and starts a new Bun
+process for every command. From `sdk/`, choose an empty temporary directory:
+
+```sh
+DEMO_ROOT=/tmp/quip-swap-console-manual
+mkdir -p "$DEMO_ROOT"
+```
+
+Bootstrap the deterministic local deployment, then initialize the two client
+boundaries:
+
+```sh
+bun run src/bin/quip-swap.ts bootstrap-local --party alice \
+  --state-root "$DEMO_ROOT/runtime" \
+  --config ../config/demo/console-bootstrap.json --json
+
+ALICE_CONFIG="$DEMO_ROOT/runtime/alice.config.json"
+BOB_CONFIG="$DEMO_ROOT/runtime/bob.config.json"
+ALICE_ROOT="$DEMO_ROOT/alice"
+BOB_ROOT="$DEMO_ROOT/bob"
+
+bun run src/bin/quip-swap.ts init --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts init --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+The checked-in bootstrap profile fixes the local demo timestamp so this input
+matches `demo:full` exactly. Alice prepares the offer; Bob imports and accepts
+it through his own process and state root:
+
+```sh
+printf '%s\n' '{"schema":"quip-swap-prepare-trade.v1","partyCommitmentDeadline":"4000000110","counterpartyCommitmentDeadline":"4000000210","partyClaimDeadline":"4000001010","counterpartyClaimDeadline":"4000001110","partyReclaimRelease":"4000001410","counterpartyReclaimRelease":"4000001310","partyAuthorizationExpiry":"4000000510","counterpartyAuthorizationExpiry":"4000000610"}' |
+  bun run src/bin/quip-swap.ts prepare-trade --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+
+bun run src/bin/quip-swap.ts import-offer --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
+  < "$ALICE_ROOT/public/offer.json"
+bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+Alice submits her funded commit using Bob's public acceptance. Both clients
+observe it as non-final; after two additional blocks they independently record
+the required three confirmations:
+
+```sh
+jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
+  '{schema:"quip-swap-alice-commit.v1",confirmed:true,acceptance:$acceptance[0]}' |
+  bun run src/bin/quip-swap.ts submit-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+cast rpc --rpc-url http://127.0.0.1:8545 anvil_mine 0x2
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+Alice creates the private progression handoff. Its path is public metadata, but
+the file itself must go directly to Bob's standard input and must never be
+printed or passed as a command-line value:
+
+```sh
+bun run src/bin/quip-swap.ts release-bob-secret --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes \
+  > "$DEMO_ROOT/release.json"
+BOB_HANDOFF=$(jq -r '.result.handoffPath' "$DEMO_ROOT/release.json")
+bun run src/bin/quip-swap.ts import-bob-secret --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
+  < "$BOB_HANDOFF"
+```
+
+Bob commits on chain 31338. Both operators verify that exact commit, then Alice
+submits the revealing claim on the same chain:
+
+```sh
+bun run src/bin/quip-swap.ts submit-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
+bun run src/bin/quip-swap.ts observe-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-bob-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts submit-revealing-claim --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes
+```
+
+Bob first observes the revealing claim without enough confirmations. After it
+becomes final, Bob imports the authenticated settlement preimage privately and
+immediately submits the final permissionless claim on chain 31337:
+
+```sh
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+cast rpc --rpc-url http://127.0.0.1:8546 anvil_mine 0x2
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts submit-final-claim --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
+```
+
+Both terminals must independently report `success`, `complete: true`, and
+`Claimed` on both chains:
+
+```sh
+bun run src/bin/quip-swap.ts status --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts status --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+```
+
+The chain-31337 recipient balance must be 10 demo tokens, the chain-31338
+recipient balance 20 demo tokens, and both wrapper balances zero. Stop only the
+Anvil processes listed by this bootstrap run:
+
+```sh
+jq -r '.startedPids[]' "$DEMO_ROOT/runtime/runtime.json" | xargs -r kill
+```
+
+For an automated replay of these exact separate-process commands and the
+comparison against `demo:full`, run:
+
+```sh
+bun run demo:console
+```
+
+It writes `../demo-artifacts/console-demo.json` and requires the same TradeID,
+Alice/Bob authorization decisions, four settlement transitions, terminal
+`(Claimed, Claimed)` state, fixed recipient balances, empty wrapper custody,
+and redacted transaction journals as `demo:full`.
+
 ## Inspect the artifact
 
 The file is ordinary JSON. Useful top-level sections are:

@@ -8,6 +8,7 @@ const profile = () => ({
   prototype: true,
   mockVerifier: true,
   requiredConfirmations: 3,
+  deterministicTimestamp: '4000000000',
   chains: [
     {chainId: 31337, rpcUrl: 'http://127.0.0.1:8545'},
     {chainId: 31338, rpcUrl: 'http://localhost:8546'},

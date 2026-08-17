@@ -272,7 +272,8 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && (command === 'release-bob-secret' || command === 'import-bob-secret')) {
     try {
       if (io.stdin === undefined && !(yes && command === 'release-bob-secret')) throw new Error(`${command} requires JSON on standard input`)
-      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-release-bob-secret.v1', confirmed: true}) : await io.stdin()
+      const receivedInput = io.stdin === undefined ? '' : await io.stdin()
+      const actionInput = receivedInput.trim() === '' && yes && command === 'release-bob-secret' ? JSON.stringify({schema: 'quip-swap-release-bob-secret.v1', confirmed: true}) : receivedInput
       const result = command === 'release-bob-secret'
         ? await releaseBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput})
         : await importBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: actionInput})
@@ -295,7 +296,8 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && command === 'submit-bob-commit') {
     try {
       if (io.stdin === undefined && !yes) throw new Error('submit-bob-commit requires confirmation JSON on standard input')
-      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-bob-commit.v1', confirmed: true}) : await io.stdin()
+      const receivedInput = io.stdin === undefined ? '' : await io.stdin()
+      const actionInput = receivedInput.trim() === '' && yes ? JSON.stringify({schema: 'quip-swap-bob-commit.v1', confirmed: true}) : receivedInput
       const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!json ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ authorization and publicly known Anvil Bob key are active.']}
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
@@ -327,7 +329,8 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && command === 'submit-revealing-claim') {
     try {
       if (io.stdin === undefined && !yes) throw new Error('submit-revealing-claim requires confirmation JSON on standard input')
-      const actionInput = io.stdin === undefined ? JSON.stringify({schema: 'quip-swap-revealing-claim.v1', confirmed: true}) : await io.stdin()
+      const receivedInput = io.stdin === undefined ? '' : await io.stdin()
+      const actionInput = receivedInput.trim() === '' && yes ? JSON.stringify({schema: 'quip-swap-revealing-claim.v1', confirmed: true}) : receivedInput
       const result = await submitRevealingClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!json ? {onPreview: view => io.stdout([`Revealing claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Claim deadline: ${view.claimDeadline}`, `DISCLOSURE: ${view.disclosure}`, ''].join('\n'))} : {})})
       const warnings = ['The settlement preimage becomes public when this transaction is submitted. Disclosure is irreversible.']
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}

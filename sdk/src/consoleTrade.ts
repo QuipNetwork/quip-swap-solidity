@@ -4,6 +4,7 @@ import {AssetType} from './types.js'
 import type {Hex32} from './types.js'
 import {prepareTradeCommand} from './cliCommands.js'
 import type {PreparedAuthorization} from './workflows/trustedCrossChain.js'
+import type {ProtocolRandomness} from './workflows/trustedCrossChain.js'
 import {AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode, commitPayloadHash, gateContextId, timingPolicyId, tradeId, validateProtocolTerms} from './protocol.js'
 import type {ProtocolTerms, SideTerms, TimingPolicy} from './protocol.js'
 import {restoreProtocolTerms, validateClientState} from './clientState.js'
@@ -33,6 +34,7 @@ interface PrepareInput {
 export interface ConsoleRuntimeConfig {
   readonly identity: Awaited<ReturnType<typeof loadConsoleConfigIdentity>>
   readonly requiredConfirmations: bigint
+  readonly deterministicDemo: boolean
   readonly policy: TimingPolicy
   readonly actors: {readonly alice: Address; readonly bob: Address; readonly executor: Address}
   readonly exchangeDirectory: string
@@ -85,7 +87,7 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
     const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
     return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['authorizationGateway']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
   }
-  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, exchangeDirectory: String(exchange['directory']), chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
+  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), deterministicDemo: value['deterministicDemo'] === true, policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, exchangeDirectory: String(exchange['directory']), chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
 }
 
 function parsePrepareInput(serialized: string): PrepareInput {
@@ -105,7 +107,9 @@ const expected = (config: ConsoleRuntimeConfig) => ({party: config.identity.loca
 export async function prepareConsoleTrade(args: {readonly workspace: string; readonly configPath: string; readonly input: string}): Promise<PublicTradeOffer> {
   const config = await loadConsoleRuntimeConfig(args.configPath, 'alice')
   const input = parsePrepareInput(args.input)
-  const prepared = prepareTradeCommand({workflow: {policy: config.policy, partySide: side({chainId: 31337n, token: config.chains[0].token, amount: config.chains[0].amount, principal: config.actors.alice, recipient: config.actors.bob, commitment: decimal(input.partyCommitmentDeadline, 'partyCommitmentDeadline'), claim: decimal(input.partyClaimDeadline, 'partyClaimDeadline'), reclaim: decimal(input.partyReclaimRelease, 'partyReclaimRelease')}), counterpartySide: side({chainId: 31338n, token: config.chains[1].token, amount: config.chains[1].amount, principal: config.actors.bob, recipient: config.actors.alice, commitment: decimal(input.counterpartyCommitmentDeadline, 'counterpartyCommitmentDeadline'), claim: decimal(input.counterpartyClaimDeadline, 'counterpartyClaimDeadline'), reclaim: decimal(input.counterpartyReclaimRelease, 'counterpartyReclaimRelease')}), partyVerifier: config.chains[0].verifier, counterpartyVerifier: config.chains[1].verifier, partyWrapper: config.chains[0].wrapper, counterpartyWrapper: config.chains[1].wrapper, partyExpiry: decimal(input.partyAuthorizationExpiry, 'partyAuthorizationExpiry'), counterpartyExpiry: decimal(input.counterpartyAuthorizationExpiry, 'counterpartyAuthorizationExpiry'), requiredConfirmations: config.requiredConfirmations, selectedBobSubmitter: config.actors.bob}, finalClaimExecutors: [config.actors.bob, config.actors.executor]})
+  const fixed = (value: number) => `0x${value.toString(16).padStart(64, '0')}` as Hex32
+  const randomness: ProtocolRandomness | undefined = config.deterministicDemo ? {settlementSecret: fixed(1), bobCommitSecret: fixed(2), partySideNonce: fixed(3), counterpartySideNonce: fixed(4), partyActionNonce: fixed(5), counterpartyActionNonce: fixed(6)} : undefined
+  const prepared = prepareTradeCommand({workflow: {policy: config.policy, partySide: side({chainId: 31337n, token: config.chains[0].token, amount: config.chains[0].amount, principal: config.actors.alice, recipient: config.actors.bob, commitment: decimal(input.partyCommitmentDeadline, 'partyCommitmentDeadline'), claim: decimal(input.partyClaimDeadline, 'partyClaimDeadline'), reclaim: decimal(input.partyReclaimRelease, 'partyReclaimRelease')}), counterpartySide: side({chainId: 31338n, token: config.chains[1].token, amount: config.chains[1].amount, principal: config.actors.bob, recipient: config.actors.alice, commitment: decimal(input.counterpartyCommitmentDeadline, 'counterpartyCommitmentDeadline'), claim: decimal(input.counterpartyClaimDeadline, 'counterpartyClaimDeadline'), reclaim: decimal(input.counterpartyReclaimRelease, 'counterpartyReclaimRelease')}), partyVerifier: config.chains[0].verifier, counterpartyVerifier: config.chains[1].verifier, partyWrapper: config.chains[0].wrapper, counterpartyWrapper: config.chains[1].wrapper, partyExpiry: decimal(input.partyAuthorizationExpiry, 'partyAuthorizationExpiry'), counterpartyExpiry: decimal(input.counterpartyAuthorizationExpiry, 'counterpartyExpiry'), requiredConfirmations: config.requiredConfirmations, selectedBobSubmitter: config.actors.bob, ...(randomness === undefined ? {} : {randomness})}, finalClaimExecutors: [config.actors.bob, config.actors.executor], ...(randomness === undefined ? {} : {secretMode: 'unsafe-demo' as const})})
   const offer: PublicTradeOffer = {schema: PUBLIC_OFFER_SCHEMA, networkId: config.identity.networkId, tradeId: prepared.alice.publicState.tradeId, bobState: prepared.bob.publicState, authorizationEvidence: prepared.authorizationEvidence}
   const serialized = `${JSON.stringify(offer, null, 2)}\n`
   if (/settlementSecret|bobCommitSecret|privateKey|signature/i.test(serialized)) throw new Error('public offer contains sensitive material')

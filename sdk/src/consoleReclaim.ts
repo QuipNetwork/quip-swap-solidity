@@ -14,8 +14,8 @@ import type {Hex32} from './types.js'
 
 export const RECLAIM_JOURNAL_SCHEMA = 'quip-swap-transaction-journal.v1' as const
 export const RECOVERY_INPUT_SCHEMA = 'quip-swap-recovery.v1' as const
-const ALICE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const
-const BOB_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
+const ALICE_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as const
+const BOB_KEY = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a' as const
 
 export type ReclaimTransactionLifecycle = 'pending' | 'success' | 'dropped' | 'replaced' | 'reverted'
 export interface ReclaimTransactionStatus {readonly lifecycle: ReclaimTransactionLifecycle; readonly replacementHash?: Hash}

@@ -14,6 +14,7 @@ export interface LocalBootstrapProfile {
   readonly prototype: true
   readonly mockVerifier: true
   readonly requiredConfirmations: number
+  readonly deterministicTimestamp: string
   readonly chains: readonly [
     {readonly chainId: 31337; readonly rpcUrl: string},
     {readonly chainId: 31338; readonly rpcUrl: string},
@@ -46,6 +47,7 @@ export function parseLocalBootstrapProfile(value: unknown): LocalBootstrapProfil
   if (typeof profile['networkId'] !== 'string' || profile['networkId'].trim() === '') throw new Error('invalid local bootstrap networkId')
   if (profile['prototype'] !== true || profile['mockVerifier'] !== true) throw new Error('local bootstrap must explicitly enable prototype and mock verifier')
   if (!Number.isSafeInteger(profile['requiredConfirmations']) || (profile['requiredConfirmations'] as number) < 1) throw new Error('invalid required confirmations')
+  if (typeof profile['deterministicTimestamp'] !== 'string' || !/^[0-9]+$/.test(profile['deterministicTimestamp']) || BigInt(profile['deterministicTimestamp']) <= 0n) throw new Error('invalid deterministic timestamp')
   if (!Array.isArray(profile['chains']) || profile['chains'].length !== 2) throw new Error('local bootstrap requires exactly two chains')
   const chains = [localRpc(profile['chains'][0], 31337), localRpc(profile['chains'][1], 31338)] as const
   if (chains[0].rpcUrl === chains[1].rpcUrl) throw new Error('local bootstrap chains require distinct RPC endpoints')
@@ -55,6 +57,7 @@ export function parseLocalBootstrapProfile(value: unknown): LocalBootstrapProfil
     prototype: true,
     mockVerifier: true,
     requiredConfirmations: profile['requiredConfirmations'] as number,
+    deterministicTimestamp: profile['deterministicTimestamp'],
     chains,
   }
 }
@@ -126,6 +129,7 @@ export async function bootstrapConsoleLocal(args: {readonly profile: string; rea
     }
     const chainA = connectChain(profile.chains[0].rpcUrl, 31337)
     const chainB = connectChain(profile.chains[1].rpcUrl, 31338)
+    await Promise.all([chainA.testClient.setNextBlockTimestamp({timestamp: BigInt(profile.deterministicTimestamp)}), chainB.testClient.setNextBlockTimestamp({timestamp: BigInt(profile.deterministicTimestamp)})])
     const deployment = await bootstrapDemoEnvironment(chainA, chainB, loadArtifact)
     const publicBase = {
       schema: 'quip-swap-console-config.v1',
@@ -134,6 +138,7 @@ export async function bootstrapConsoleLocal(args: {readonly profile: string; rea
       mockVerifier: true,
       warning: 'LOCAL PROTOTYPE ONLY; uses a mock PQ verifier and publicly known Anvil accounts.',
       requiredConfirmations: profile.requiredConfirmations,
+      deterministicDemo: true,
       chains: profile.chains,
       actors: {alice: chainA.alice.address, bob: chainB.bob.address, permissionlessExecutor: chainA.charlie.address},
       timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10', timingPolicyId: deployment.chains[0].localCrossChainPolicyId},
