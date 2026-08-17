@@ -1,483 +1,352 @@
-# QUIP Architecture
+# QUIP Solidity Architecture
 
-## Overview
+## Status and scope
 
-QUIP (Quick Interchange Protocol) is a trustless atomic swap system using WOTS+ (Winternitz One-Time Signature Plus) for quantum-resistant authorization. It enables secure asset exchanges between two parties, potentially across different chains.
+This document describes the current v1.1 multi-contract prototype in `src/`.
+It supports atomic exchange of native currency, ERC-20, ERC-721, and ERC-1155
+assets on one chain or across two chains. Commit admission uses post-quantum
+(PQ) authorization; settlement uses trade-bound hashlock secrets and signed
+deadlines.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              QUIP SYSTEM                                    │
-│                                                                             │
-│  ┌─────────────────┐         ┌─────────────────┐         ┌───────────────┐  │
-│  │   QuipPortal    │ creates │      Quip       │  uses   │   TermsLib    │  │
-│  │                 │────────►│    (Clone)      │────────►│   (Library)   │  │
-│  └─────────────────┘         └─────────────────┘         └───────────────┘  │
-│          │                          │                           │           │
-│          │                          │                           │           │
-│          ▼                          ▼                           ▼           │
-│  ┌─────────────────┐         ┌─────────────────┐         ┌───────────────┐  │
-│  │  IQuipPortal    │         │     IQuip       │         │  Data Types   │  │
-│  │   (Interface)   │         │   (Interface)   │         │   & Structs   │  │
-│  └─────────────────┘         └─────────────────┘         └───────────────┘  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+`Omnibus.sol`, `interfaces/IOmnibus.sol`, and the old `Terms` functionality
+in `TermsLib.sol` remain for comparison and regression testing. They are not
+the current integration or deployment surface. The current implementation does
+not use the former QuipPortal/minimal-clone architecture.
 
----
+The normative design is under `../../interlock-ec/dev/v1.1/protocol/`,
+especially `protocol.md` and `technical-spec.md`. This document maps that
+design to Solidity.
 
-## Contract Hierarchy
+## System map
 
-### QuipPortal
+```text
+                         OFF-CHAIN CLIENT
+                               |
+                  canonical terms and PQ signature
+                               |
+             +-----------------+-----------------+
+             |                                   |
+      QuipWallet                         PQAuthorizationGateway
+      (wallet mode)                      (registered-direct mode)
+             |                                   |
+             |                         PQIdentityRegistry
+             +------------- verified evidence --+
+                               |
+               +---------------+---------------+
+               |                               |
+      SameChainWrapper                CrossChainWrapper
+               |                               |
+      SameChainStateMachine           CrossChainStateMachine
+               |                               |
+               +---------- Settlement --------+
+                               |
+                         AssetCustody
 
-The singleton portal contract responsible for deploying Quip instances.
-
-```
-QuipPortal
-├── Constants/Immutables
-│   ├── VERSION (constant)
-│   ├── MAX_FEE (immutable)
-│   └── QUIP_IMPLEMENTATION (immutable)
-│
-├── State
-│   ├── creationFee
-│   ├── accumulatedFees
-│   ├── admin
-│   └── pqOwnerState (mapping: bytes32 => PqOwnerState)
-│
-├── Modifier
-│   └── onlyAdmin
-│
-├── Constructor
-│   └── constructor(firstAdmin, quipImpl, maxFee, creationFee)
-│
-├── Public Functions
-│   ├── deployCoupledQuip(pqOwner, terms)
-│   ├── deployUncoupledQuip(pqOwner, terms)
-│   ├── spendPqOwner(pqOwnerHash)
-│   ├── withdrawFees(receiver, amount)
-│   └── setCreationFee(newFee)
-│
-└── Internal Functions
-    ├── _deployQuip(pqOwnerHash, deployer)
-    ├── _enforceValidPqOwner(pqOwner, pqOwnerHash)
-    ├── _advancePqOwner(pqOwnerHash)
-    ├── _computePqOwnerHash(pqOwner)
-    ├── _enforceQuipCaller()
-    ├── _enforceNonEmptyAddress(addr)
-    ├── _ensureCorrectNative(amount)
-    ├── _validateQuipTerms(terms)
-    ├── _validatePartyTerms(terms)
-    └── _onlyAdmin()
+Shared validation:
+  ProtocolTypes + ProtocolHashing + CommitAuthorization
+  + ProgressionGate + TimingPolicyRegistry + AssetSupportRegistry
 ```
 
-### Quip (Clone Instance)
+Authorization contracts authenticate who approved a commit. Wrappers do not
+verify PQ signatures themselves. They accept calls only from the authorization
+boundary named by the signed terms and independently reconstruct the signed
+payload. Wrappers own escrow, swap state, nonce consumption, and settlement
+entry points.
 
-Individual swap contracts deployed as minimal clones.
+## Canonical trade model
 
-```
-Quip
-├── Constants
-│   └── VERSION
-│
-├── State
-│   ├── pqOwner (WinternitzAddress)
-│   ├── termsDigest (bytes32)
-│   └── INIT_UNCOUPLED (bool)
-│
-├── Modifier
-│   └── onlyPortal
-│
-├── Public Functions
-│   ├── PORTAL_FROM_BYTECODE()
-│   ├── pqOwner()
-│   ├── pqOwnerHash()
-│   ├── initializeCoupled(pqOwner, termsDigest)
-│   ├── initializeUncoupled(pqOwner, termsDigest)
-│   ├── coupleQuip(party, counterparty)
-│   ├── claim(signature, terms)
-│   └── reclaim(terms)
-│
-└── Internal Functions
-    ├── _verifySignature(signature)
-    └── _onlyPortal()
-```
+### `ProtocolTypes.sol`
 
-### TermsLib (Library)
+Defines the shared data model:
 
-Stateless library for terms handling and asset transfers.
+- `AuthorizationMode`: QuipWallet or RegisteredDirect.
+- `DelegationPolicy`: no delegation, permissionless relay, or a specific
+  registered delegate.
+- `WrapperMode`: same-chain or cross-chain.
+- `SideTag`: party or counterparty.
+- `ExpectedSourceState`: the transition source state signed into a commit.
+- `CrossChainLegState` and `SameChainState`: settlement state enums.
+- `SideTerms`: one side's principal, destinations, chain, assets, deadlines,
+  authorization settings, commit lock, and nonce.
+- `ProtocolTerms`: both sides plus a timing-policy ID.
+- Commit request, payload, and verified-evidence structures.
+- PQ identity registration, rotation, recovery, and revocation structures.
 
-```
-TermsLib
-├── Errors
-│   ├── ZeroAmount
-│   ├── InvalidNativeAsset
-│   ├── InvalidERC20Asset
-│   ├── InvalidERC721Asset
-│   ├── InvalidERC1155Asset
-│   ├── InvalidTerms
-│   ├── TermsExpired
-│   └── TermsNotExpired
-│
-└── Functions
-    ├── digestPartyTerms(terms)
-    ├── coupleTerms(party, counterparty)
-    ├── digestTermsCanonically(terms) [calldata]
-    ├── digestTermsCanonicallyMemory(terms) [memory]
-    ├── verifyTerms(digest, terms)
-    ├── executePartyCommitment(quip, recipient, assets)
-    ├── releasePartyCommitment(quip, recipient, assets)
-    ├── validateAsset(asset)
-    ├── transferAsset(asset, from, to)
-    ├── transferAssets(assets, from, to)
-    ├── transferAssetsNoNative(assets, from, to)
-    ├── totalNativeAmount(assets)
-    ├── enforceTermFreshness(expiry)
-    └── enforceTermStaleness(expiry)
-```
+`recipient` receives assets after claim. `reclaimRecipient` receives the
+side's own assets after timeout. These destinations need not be principals and
+cannot be changed by the transaction caller.
 
----
+### `ProtocolHashing.sol`
 
-## Data Structures
+Provides domain-separated hashes and static term validation:
 
-### Asset Types
+- `tradeId` commits to all immutable protocol terms.
+- `gateContextId` identifies the counterparty progression-gate context.
+- `commitLock` binds Bob's cross-chain progression secret.
+- `settlementLock` binds the settlement secret to one trade.
+- `assetHash` commits to one side's exact canonical asset list.
+- `timingPolicyId` content-addresses a timing policy.
+- `commitPayloadHash` binds chain, wrapper, verifier, trade, lock, side,
+  source state, assets, principal, delegation, action nonce, and expiry.
+- Nonce encoders separate commit and registry replay domains.
+- `validateTerms` implements the specification's static `ValidTerms(T)`.
 
-```solidity
-enum AssetType {
-  Native,    // ETH or native chain currency
-  ERC20,     // Fungible tokens
-  ERC721,    // Non-fungible tokens
-  ERC1155    // Multi-tokens
-}
+Validation checks addresses, enum and authorization shapes, canonical assets,
+deadline ordering, chain mode, progression fields, and timing policy. For
+cross-chain trades it reserves the configured final-claim interval after a
+possible secret-revealing claim on the other chain.
 
-struct Asset {
-  AssetType assetType;
-  address target;      // Token contract (0x0 for Native)
-  uint256 id;          // Token ID (ERC721/ERC1155)
-  uint256 amount;      // Amount (Native/ERC20/ERC1155)
-}
-```
+## Authorization
 
-### Terms Structures
+Both authorization modes produce the same canonical payload and
+`VerifiedCommitAuthorization` evidence for the wrapper.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            PartyTerms                                       │
-│                     (Single party proposal)                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  signatory    │ address  │ The party's address (signer)                    │
-│  recipient    │ address  │ Where counterparty's assets go                  │
-│  expiry       │ uint64   │ Deadline for commitment                         │
-│  assets       │ Asset[]  │ Assets being offered                            │
-└─────────────────────────────────────────────────────────────────────────────┘
+### `QuipWallet.sol`
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            QuipTerms                                        │
-│                      (Complete agreement)                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  party                │ address  │ Initiating party                        │
-│  partyRecipient       │ address  │ Receives counterparty's assets          │
-│  counterparty         │ address  │ Accepting party                         │
-│  counterpartyRecipient│ address  │ Receives party's assets                 │
-│  partyExpiry          │ uint64   │ Party's deadline                        │
-│  counterpartyExpiry   │ uint64   │ Counterparty's deadline                 │
-│  partyAssets          │ Asset[]  │ Party's offered assets                  │
-│  counterpartyAssets   │ Asset[]  │ Counterparty's offered assets           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+The wallet-mode authorization boundary. It reconstructs the commit payload,
+verifies the active PQ key, identifies the authenticated submitter, and forwards
+the request, evidence, and native value to a wrapper. It supports active-key
+rotation using old-key authorization plus new-key proof of possession.
+`execute` remains controlled by the classical owner. Wallet key epochs are
+internal; wallet-mode terms use principal key version zero.
 
-### WOTS+ Types
+### `PQIdentityRegistry.sol`
 
-```solidity
-struct WinternitzAddress {
-    bytes32 publicSeed;      // Public seed for hash chain derivation
-    bytes32 publicKeyHash;   // Hash of all public key segments
-}
+Maps an EOA to independently versioned active and recovery PQ keys. It pins the
+trusted verifier by address, code hash, version tag, and profile tag so an
+encoded key cannot choose arbitrary verifier behavior.
 
-struct WinternitzElements {
-    bytes32[67] elements;    // Signature elements (67 hash chain endpoints)
-}
-```
+It supports atomic initial registration and first commit, active-key rotation,
+recovery-key rotation, recovery of both keys, and revocation. Requests bind the
+chain, registry, expected versions, proposed keys, action, nonce, and exclusive
+expiry. Newly installed keys prove possession. Failed registration-and-commit
+calls revert registration, nonce, escrow, and swap state together.
 
----
+### `PQAuthorizationGateway.sol`
 
-## Deployment Pattern
+The RegisteredDirect boundary. It reconstructs the exact commit payload,
+verifies it with the principal's active registered PQ key, establishes the
+logical submitter, and delivers evidence to the wrapper. It holds neither swap
+assets nor swap state.
 
-QuipPortal uses **EIP-1167 Minimal Proxy Clones** for gas-efficient Quip deployment.
+### `AuthorizationSubmitter.sol`
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CLONE DEPLOYMENT                                    │
-│                                                                             │
-│   QuipPortal                                                                │
-│       │                                                                     │
-│       │ LibClone.cloneDeterministic(                                        │
-│       │     implementation = QUIP_IMPLEMENTATION,                           │
-│       │     data = abi.encode(address(this)),                               │
-│       │     salt = pqOwnerHash                                              │
-│       │ )                                                                   │
-│       │                                                                     │
-│       ▼                                                                     │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  Quip Clone                                                         │   │
-│   │  ┌─────────────────────────────────────────────────────────────┐    │   │
-│   │  │ 45 bytes proxy bytecode → delegates to QUIP_IMPLEMENTATION  │    │   │
-│   │  └─────────────────────────────────────────────────────────────┘    │   │
-│   │  ┌─────────────────────────────────────────────────────────────┐    │   │
-│   │  │ Immutable args: portal address (encoded in bytecode)        │    │   │
-│   │  └─────────────────────────────────────────────────────────────┘    │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│   Address = CREATE2(sender, salt=pqOwnerHash, bytecode)                     │
-│   → Deterministic address from pqOwnerHash                                  │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+Derives the authenticated submitter and key version. Transaction sender,
+principal, broker, and relayer can differ, so downstream code must not equate
+`msg.sender` with the principal.
 
-**Benefits:**
-- ~10x cheaper deployment vs full contract
-- Deterministic addresses from pqOwnerHash
-- Upgradeable via new implementation + new portal
+### `KeyedVerifier.sol`
 
----
+Parses an encoded keyed-verifier value, extracts its verifier contract, and
+delegates digest/signature validation to it.
 
-## Storage Layout
+### `CommitAuthorization.sol`
 
-### QuipPortal Storage
+The wrapper-side authorization check. It requires:
 
-| Slot | Variable | Type |
-|------|----------|------|
-| 0 | creationFee | uint256 |
-| 1 | accumulatedFees | uint256 |
-| 2 | admin | address |
-| 3+ | pqOwnerState | mapping(bytes32 => PqOwnerState) |
+- the exact QuipWallet or configured direct gateway selected by the terms;
+- matching caller evidence;
+- the correct signed source state;
+- a live exclusive expiry;
+- a submitter satisfying the signed delegation policy;
+- a payload matching the wrapper's own reconstruction; and
+- an unused, version-scoped action nonce.
 
-*Note: VERSION, MAX_FEE, QUIP_IMPLEMENTATION are immutable (in bytecode)*
+Validation and nonce consumption are separate. Consumption happens only in the
+successful commit transaction; a later revert rolls it back with state and
+assets.
 
-### Quip Storage
+## Registries and admission policy
 
-| Slot | Variable | Type |
-|------|----------|------|
-| 0 | _initialized (from Initializable) | uint64 |
-| 1 | pqOwner.publicSeed | bytes32 |
-| 2 | pqOwner.publicKeyHash | bytes32 |
-| 3 | termsDigest | bytes32 |
-| 4 | INIT_UNCOUPLED | bool |
+### `TimingPolicyRegistry.sol`
 
----
+Stores immutable, content-addressed timing policies. A policy binds version,
+wrapper mode, ordered chains, and final-claim delays in both directions. A
+wrapper resolves the signed policy and requires its route and mode to match.
 
-## WOTS+ Security Model
+### `PrototypeTimingPolicies.sol`
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         WOTS+ SIGNATURE MECHANISM                           │
-│                                                                             │
-│   1. Key Generation (off-chain)                                             │
-│      privateKey = random_bytes32()                                          │
-│      pqOwner = WOTSPlus.generateKeyPair(privateKey)                         │
-│      pqOwnerHash = hash(pqOwner.publicSeed, pqOwner.publicKeyHash)          │
-│                                                                             │
-│   2. Public Key Published                                                   │
-│      Quip stores: pqOwner (public)                                          │
-│      Key holder: keeps privateKey secret                                    │
-│                                                                             │
-│   3. Claim with Signature                                                   │
-│      message = canonicalTermsDigest                                         │
-│      signature = WOTSPlus.sign(privateKey, message)                         │
-│      if WOTSPlus.verify(pqOwner, message, signature):                       │
-│          transfer assets                                                    │
-│          emit event with signature (now public)                             │
-│                                                                             │
-│   4. Signature Reuse (Cross-Chain)                                          │
-│      Both QUIPs use same canonical terms digest                             │
-│      Same signature valid on both chains                                    │
-│      Counterparty can use revealed signature on other chain                 │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Provides prototype Base Sepolia/OP Sepolia policies for deployment and demos. It
+is convenience code, not general policy logic.
+
+### `AssetSupportRegistry.sol` and `AssetSupport.sol`
+
+The registry is an owner-managed allowlist keyed by asset type and token
+address. Native currency needs no entry. `AssetSupport` checks each token
+before a new commit. Delisting blocks future commits only; existing escrow
+remains claimable and reclaimable.
+
+## Secrets and progression
+
+### `ProgressionGate.sol`
+
+Enforces commit sequence separately from PQ approval:
+
+- a cross-chain party commit needs no progression secret;
+- a cross-chain counterparty commit must reveal `bobCommitSecret` matching its
+  trade-bound `commitLock`;
+- a same-chain party commit starts from `Unused`; and
+- a same-chain counterparty commit requires local `PartyCommitted` state.
+
+Bob's commit secret is not the settlement secret. It should be released after
+observing adequate finality for the first commit. The settlement secret later
+claims escrow and enables the final cross-chain claim.
+
+## Escrow
+
+### `AssetCustody.sol`
+
+Collects and releases native currency and supported token standards. Collection
+requires exact native value and exact token balance or ownership changes,
+rejecting fee-on-transfer and other non-exact behavior. ERC-721 custody is one
+unit.
+
+Reserved amounts are tracked by asset identity. Because multiple swaps share a
+wrapper, reservations prevent one trade from consuming another trade's funds.
+
+### `TermsLib.sol`
+
+Defines `AssetType` and `Asset`, which current contracts still use. Its
+`Terms`, pair-digest, and older transfer helpers belong to legacy Omnibus.
+
+## State machines
+
+### `CrossChainStateMachine.sol`
+
+Each chain stores one local leg keyed by `(tradeId, lock, side)`:
+
+```text
+Unused -> Committed -> Claimed
+                    -> Reclaimed
 ```
 
-### Why WOTS+ Instead of Hashlock?
+Commit stores a binding over trade, lock, side, terms, and assets. Settlement
+must reproduce it. Terminal states cannot be reused. No remote-chain state is
+read or proven.
 
-| Aspect | Hashlock | WOTS+ |
-|--------|----------|-------|
-| **Quantum Security** | Vulnerable to Grover's algorithm | Quantum-resistant (hash-based) |
-| **Key Reuse** | Same key = same hash | One-time signature (by design) |
-| **Signature Size** | 32 bytes (preimage) | ~2KB (67 × 32 bytes) |
-| **Verification Cost** | ~3k gas | ~100-150k gas |
-| **Cross-Chain** | Same preimage reveals key | Same signature, same canonical digest |
+### `SameChainStateMachine.sol`
 
----
+A local trade is keyed by `(tradeId, lock)`:
 
-## Canonical Terms Digest Pattern
-
-The canonical digest ensures both parties can use the same signature:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     CANONICAL TERMS DIGEST PATTERN                          │
-│                                                                             │
-│   1. Compute party digests separately                                       │
-│      partyDigest = hash(party, partyRecipient, partyExpiry, partyAssets)    │
-│      counterpartyDigest = hash(counterparty, counterpartyRecipient, ...)    │
-│                                                                             │
-│   2. Sort and combine (smaller value first)                                 │
-│      if partyDigest < counterpartyDigest:                                   │
-│          canonicalDigest = hash(partyDigest, counterpartyDigest)            │
-│      else:                                                                  │
-│          canonicalDigest = hash(counterpartyDigest, partyDigest)            │
-│                                                                             │
-│   WHY THIS MATTERS:                                                         │
-│   ─────────────────                                                         │
-│   Chain A (Alice's QUIP):  party=Alice, counterparty=Bob                    │
-│   Chain B (Bob's QUIP):    party=Bob,   counterparty=Alice                  │
-│                                                                             │
-│   Both compute the SAME canonical digest!                                   │
-│   → Alice signs once, signature works on both chains                        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+Unused -> PartyCommitted -> BothCommitted -> Claimed
+             |                  |
+             +-> Reclaimed      +-> Reclaimed
 ```
 
-**Uncoupled Mode Transition:**
-```
-PROPOSED:   termsDigest = hash(PartyTerms)
-     │
-     │ coupleQuip()
-     ▼
-COMMITTED:  termsDigest = canonicalHash(QuipTerms)
-```
+The first commit binds both asset lists and complete terms. The second must
+match, preventing substitution after party assets enter escrow.
 
----
+## `Settlement.sol`
 
-## Asset Transfer Flow
+Combines validation, state transitions, time windows, secret checks, and asset
+release.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ASSET TRANSFER FLOW                                 │
-│                                                                             │
-│   COUPLED DEPLOYMENT                                                        │
-│   ──────────────────                                                        │
-│   User ──[approve tokens]──► Token Contracts                                │
-│     │                                                                       │
-│     └──[deployCoupledQuip + ETH]──► QuipPortal                              │
-│                                        │                                    │
-│                                        ├──► Deploy Quip clone               │
-│                                        │                                    │
-│                                        └──► transferAssets(user → quip)     │
-│                                                   │                         │
-│                                                   ├── Native: via msg.value │
-│                                                   ├── ERC20: transferFrom   │
-│                                                   ├── ERC721: safeTransfer  │
-│                                                   └── ERC1155: safeTransfer │
-│                                                                             │
-│   CLAIM                                                                     │
-│   ─────                                                                     │
-│   Claimer ──[claim(signature, terms)]──► Quip                               │
-│                                            │                                │
-│                                            └──► transferAssets(quip → recipient)
-│                                                                             │
-│   RECLAIM                                                                   │
-│   ───────                                                                   │
-│   Anyone ──[reclaim(terms)]──► Quip (after expiry)                          │
-│                                   │                                         │
-│                                   └──► transferAssets(quip → partyRecipient)│
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+A cross-chain claim requires a committed local leg, local-chain binding,
+`now < claimDeadline`, and a valid trade-bound preimage. Reclaim requires the
+leg still be committed and `reclaimRelease <= now`.
 
----
+Same-chain claim requires `BothCommitted` and atomically exchanges both sides.
+Timeout paths return either the sole party commitment or both committed legs.
+Claims and reclaims are permissionless because signed terms fix payouts.
 
-## Event Flow
+## Wrappers
 
-```
-COUPLED CREATION:
-  QuipPortal.deployCoupledQuip()
-    └── Quip.initializeCoupled()
-          └── emit PartyCommitment(pqOwnerHash, termsDigest)
-    └── emit QuipCreated(pqOwnerHash, quip, terms)
+### `CrossChainWrapper.sol`
 
-UNCOUPLED CREATION:
-  QuipPortal.deployUncoupledQuip()
-    └── Quip.initializeUncoupled()
-          └── emit PartyProposal(pqOwnerHash, termsDigest)
-    └── emit QuipProposed(pqOwnerHash, quip, terms)
+The escrow and orchestration contract for one local cross-chain leg. A commit
+atomically:
 
-COUPLING:
-  Quip.coupleQuip()
-    └── emit QuipCommitted(termsDigest)
+1. resolves the policy and validates terms;
+2. checks local chain and asset support;
+3. validates commit authorization;
+4. checks progression and commit time;
+5. records `Committed`;
+6. collects exact assets; and
+7. consumes the authorization nonce.
 
-CLAIM:
-  Quip.claim()
-    └── QuipPortal.spendPqOwner(pqOwnerHash)
-    └── emit PartyTermsFulfilled(signature, recipient, assets)
+It exposes permissionless claim/reclaim, state inspection, and reserved-balance
+inspection.
 
-RECLAIM:
-  Quip.reclaim()
-    └── QuipPortal.spendPqOwner(pqOwnerHash)
-    └── emit PartyUnbound(recipient, assets)
+### `SameChainWrapper.sol`
+
+The equivalent contract when both sides are on one chain. The party commits
+first, the counterparty second, and one claim exchanges both escrows atomically.
+One-sided and dual reclaim paths handle timeouts. Both wrappers accept safe NFT
+transfers and guard mutating entry points against reentrancy.
+
+## End-to-end flows
+
+### Same-chain
+
+```text
+Party authorization -> verify -> escrow party assets -> PartyCommitted
+Counterparty auth    -> verify -> escrow its assets   -> BothCommitted
+Settlement secret   -> verify -> exchange both sides -> Claimed
 ```
 
----
+If the counterparty never commits, the party can reclaim after its release. If
+both commit but no claim occurs, both legs can be reclaimed atomically.
 
-## Security Considerations
+### Cross-chain
 
-| Aspect | Implementation |
-|--------|----------------|
-| Reentrancy | State changes before external calls (CEI pattern) |
-| PqOwner uniqueness | `pqOwnerState` enum (Unused→Free→Spent) prevents replay; allows same-chain swaps |
-| Terms tampering | Terms verified against stored canonical digest |
-| Expiry enforcement | Block timestamp checks for claim/reclaim |
-| Asset validation | Type-specific validation in `validateAsset()` |
-| Permissionless claim | By design - valid signature = authorization |
-| Zero-address checks | Constructor and terms validation |
-| Quantum resistance | WOTS+ signatures based on hash function security |
-
-### Portal-Quip Mutual Authentication
-
-The system uses a two-way binding to prevent malicious clone attacks:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      MUTUAL AUTHENTICATION                                  │
-│                                                                             │
-│   ┌─────────────┐                              ┌─────────────┐              │
-│   │  QuipPortal │                              │    Quip     │              │
-│   │             │                              │   (Clone)   │              │
-│   └──────┬──────┘                              └──────┬──────┘              │
-│          │                                            │                     │
-│          │  1. Portal verifies Quip                   │                     │
-│          │     ─────────────────────                  │                     │
-│          │     spendPqOwner() checks:                 │                     │
-│          │     msg.sender.codehash ==                 │                     │
-│          │       QUIP_CODEHASH                        │                     │
-│          │                                            │                     │
-│          │  2. Quip verifies Portal                   │                     │
-│          │     ─────────────────────                  │                     │
-│          │     initializeCoupled/Uncoupled checks:    │                     │
-│          │     msg.sender == PORTAL_FROM_BYTECODE()   │                     │
-│          │                                            │                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+Chain A: party authorization -> party assets escrowed
+Off-chain: observe finality -> release bobCommitSecret
+Chain B: counterparty authorization + gate secret -> assets escrowed
+Chain B: claim with settlement secret -> secret becomes public
+Chain A: final claim with same secret -> remaining assets released
 ```
 
-**Why this matters:**
+The wrappers never communicate. Atomicity depends on settlement-secret
+confidentiality before both commits and timing policies leaving enough time for
+the final claim. Each local leg can otherwise be reclaimed after its release.
 
-An attacker could deploy a fake clone with matching `codehash` by using the same
-implementation and immutable args. However:
+## Interfaces
 
-1. **Attacker deploys fake clone** → Clone has matching codehash ✓
-2. **Attacker tries to initialize** → `onlyPortal` checks `msg.sender == PORTAL_FROM_BYTECODE()`
-3. **Attacker is not the portal** → Reverts with `CallerNotPortal`
-4. **Uninitialized clone** → `pqOwner = 0`, `termsDigest = 0`
-5. **Cannot claim/reclaim** → No path to call `spendPqOwner()`
+| File | Boundary |
+| --- | --- |
+| `ICommitAuthorizationReceiver.sol` | Wrapper callback after authorization. |
+| `IRegisteredCommitTarget.sol` | Atomic registration-and-commit callback. |
+| `IAssetSupportRegistry.sol` | Asset-support lookup. |
+| `ITimingPolicyRegistry.sol` | Timing-policy registration and resolution. |
+| `IProfiledPQVerifier.sol` | PQ verifier version/profile introspection. |
+| `IWalletFactory.sol` | Legacy Omnibus wallet-factory boundary. |
+| `IOmnibus.sol` | Legacy Omnibus types and interface. |
 
-The portal address embedded in the clone's bytecode (via LibClone immutable args)
-ensures only the legitimate portal can initialize quips, while the codehash check
-ensures only legitimate quips can call `spendPqOwner()`.
+## Legacy Omnibus
 
----
+`Omnibus.sol` combines authorization, terms hashing, lock state, escrow,
+settlement, verifier administration, and fees. It uses legacy `Terms` and lock
+states based on `Unused`, `Free`, `Committed`, and `Spent`.
 
-## Dependencies
+The v1.1 design replaces that broad boundary with separate identity,
+authorization, registry, wrapper, custody, state-machine, and settlement
+components. Omnibus scripts, tests, and SDK exports are legacy unless labeled
+otherwise.
 
-| Package | Version | Usage |
-|---------|---------|-------|
-| OpenZeppelin Contracts | 5.6.0-rc.1 | IERC721, IERC1155, Context |
-| Solady | 0.1.26 | SafeTransferLib, LibClone, EfficientHashLib, Initializable |
-| hashsigs-solidity | 0.1.0 | WOTSPlus library for quantum-resistant signatures |
+## Security boundaries and invariants
+
+- **Canonical binding:** trades, payloads, locks, policies, assets, wrappers,
+  and verifiers are domain-separated and signed or stored.
+- **Trusted caller:** wrappers accept commits only from the selected wallet or
+  configured gateway.
+- **Replay protection:** nonces include chain, verifier/registry, principal, key
+  role/version, and action nonce.
+- **Atomic rejection:** a revert rolls back state, custody, nonce, and lazy
+  registration.
+- **Exact custody:** asset changes must match signed terms, while reservations
+  isolate concurrent trades.
+- **Terminal states:** local escrow can be claimed or reclaimed at most once.
+- **Permissionless settlement:** callers cannot redirect signed payouts.
+- **Key lifecycle isolation:** key changes block future stale-key commits but do
+  not strand committed escrow.
+- **Cross-chain limitation:** contracts cannot observe remote state; secrets,
+  finality observation, and timing margins supply the safety assumptions.
+
+## External dependencies
+
+- OpenZeppelin Contracts: ownership, receiver helpers, token interfaces, and
+  reentrancy protection.
+- Configured profiled PQ verifier: post-quantum signature checking.
+- Foundry: compilation, deployment scripts, and Solidity tests.
