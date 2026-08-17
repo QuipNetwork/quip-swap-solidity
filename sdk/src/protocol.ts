@@ -144,7 +144,7 @@ export const deriveCommitLock = (contextId: Hex32, bobCommitSecret: Hex32): Hex3
     [domains.bobCommitGate, contextId, bobCommitSecret]))
 
 export function validateCommitProgression(
-  terms: ProtocolTerms, party: boolean, bobCommitSecret: Hex32,
+  terms: ProtocolTerms, _party: boolean, bobCommitSecret: Hex32,
 ): void {
   const zero = '0x0000000000000000000000000000000000000000000000000000000000000000' as Hex32
   if (terms.partySide.commitLock !== zero) throw new Error('Invalid progression terms')
@@ -156,11 +156,6 @@ export function validateCommitProgression(
   }
 
   if (terms.counterpartySide.commitLock === zero) throw new Error('Invalid progression terms')
-  if (party) {
-    if (bobCommitSecret !== zero) throw new Error('Unexpected Bob commit secret')
-    return
-  }
-
   if (bobCommitSecret === zero) throw new Error('Missing Bob commit secret')
   if (deriveCommitLock(gateContextId(terms), bobCommitSecret) !== terms.counterpartySide.commitLock) {
     throw new Error('Invalid Bob commit secret')

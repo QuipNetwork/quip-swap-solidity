@@ -37,7 +37,7 @@ describe('trusted workflow across two Anvil chains', () => {
     await a.testClient.mine({blocks: 2}); const head = receipt2.blockNumber + 2n
     coordinator.observeAlice({transactionHash: tx2, blockNumber: receipt2.blockNumber, blockHash: block2.hash}, head)
     expect(coordinator.status().bobCommitEnabled).toBe(true)
-    coordinator.releaseBobCommitSecret(b.charlie.address); coordinator.markBobCommitted()
+    coordinator.enableBobCommit(b.charlie.address); coordinator.markBobCommitted()
     await b.testClient.mine({blocks: 1})
     coordinator.observeFinalReveal(); await coordinator.handoffFinalClaim([{funded: true, submit: async () => tx2}]); coordinator.markComplete()
     expect(coordinator.status().stage).toBe('complete')

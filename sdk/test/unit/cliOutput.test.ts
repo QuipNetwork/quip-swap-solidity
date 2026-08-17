@@ -23,7 +23,7 @@ describe('trusted-client CLI output', () => {
 
   it('shows enablement, selected submitter, and the final-claim executor', () => {
     const initial = fixturesForClientOutput()
-    const final = {...initial.alice.publicState, stage: 'bob-enabled' as const, aliceCommit: {status: 'final' as const}}
+    const final = {...initial.alice.publicState, stage: 'bob-enabled' as const, aliceCommit: {status: 'final' as const}, progression: {published: true}}
     expect(trustedClientStatus(final)).toMatchObject({bobCommitEnabled: true, selectedBobSubmitter: initial.alice.publicState.selected.bobSubmitter})
     const selected = {...initial.bob.publicState, selected: {...initial.bob.publicState.selected, finalClaimExecutor: initial.bob.publicState.selected.finalClaimExecutors[0]!}}
     expect(trustedClientStatus(selected).selectedFinalClaimExecutor).toBe(initial.bob.publicState.selected.finalClaimExecutors[0])

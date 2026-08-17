@@ -21,9 +21,6 @@ import {
   submitAliceCommit,
   restoreWorkspaceWorkflowState,
   observeAliceCommit,
-  releaseBobCommitSecret,
-  importBobCommitSecret,
-  RELEASE_BOB_SECRET_INPUT_SCHEMA,
   BOB_COMMIT_INPUT_SCHEMA,
   submitBobCommit,
   observeBobCommit,
@@ -214,7 +211,9 @@ describe('console Alice commit', () => {
       const nonFinal: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'included-non-final', observedHead: '10', confirmations: '1', inclusion})}
       expect(await observeAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: nonFinal})).toMatchObject({lifecycle: 'included-non-final', bobCommitEnabled: false})
       expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.aliceCommit.status).toBe('included-non-final')
-      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '12', confirmations: '3', inclusion})}
+      const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
+      if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
+      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '12', confirmations: '3', inclusion, bobCommitSecret: aliceSecrets.bobCommitSecret})}
       expect(await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: final})).toMatchObject({lifecycle: 'final', bobCommitEnabled: true})
       expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'bob-enabled', aliceCommit: {status: 'final'}})
     } finally { await rm(value.root, {recursive: true, force: true}) }
@@ -231,7 +230,7 @@ describe('console Alice commit', () => {
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 
-  it('rechecks finality, exports once privately, and imports only the exact Bob preimage', async () => {
+  it('enables Bob only after finality and imports the exact preimage published by Alice commit', async () => {
     const value = await fixture()
     try {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
@@ -239,23 +238,19 @@ describe('console Alice commit', () => {
       const transactionHash = H(810)
       await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 10, submittedAtBlock: 20n})}})
       const inclusion = {transactionHash, blockNumber: '20', blockHash: H(811)}
-      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '22', confirmations: '3', inclusion})}
-      const released = await releaseBobCommitSecret({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: RELEASE_BOB_SECRET_INPUT_SCHEMA, confirmed: true}), observationBoundary: final})
-      expect(released).toMatchObject({tradeId: offer.tradeId, to: B, irreversible: true})
-      expect(JSON.stringify(released)).not.toMatch(/bobCommitSecret|settlementSecret/i)
-      const handoff = await readFile(released.handoffPath, 'utf8')
-      expect(handoff).toContain('bobCommitSecret')
-      expect(await readFile(join(value.aliceRoot, 'public', '000000000004.json'), 'utf8')).not.toMatch(/bobCommitSecret|settlementSecret/i)
+      const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
+      if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
+      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '22', confirmations: '3', inclusion, bobCommitSecret: aliceSecrets.bobCommitSecret})}
       const reorganized: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'reorganized', observedHead: '22', confirmations: '0', inclusion})}
-      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: reorganized})).rejects.toThrow('not currently final')
-      const tampered = {...JSON.parse(handoff), bobCommitSecret: H(999)}
-      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(tampered), observationBoundary: final})).rejects.toThrow('wrong preimage')
-      const imported = await importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})
-      expect(imported).toMatchObject({tradeId: offer.tradeId, from: A, imported: true})
+      await expect(observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: reorganized})).resolves.toMatchObject({lifecycle: 'reorganized', bobCommitEnabled: false})
+      const wrong: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '22', confirmations: '3', inclusion, bobCommitSecret: H(999)})}
+      await expect(observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: wrong})).rejects.toThrow('preimage')
+      const imported = await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: final})
+      expect(imported).toMatchObject({tradeId: offer.tradeId, lifecycle: 'final', bobCommitEnabled: true})
+      expect(JSON.stringify(imported)).not.toMatch(/bobCommitSecret|settlementSecret/i)
       const bob = await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})
-      expect(bob.publicState).toMatchObject({stage: 'bob-enabled', progression: {received: true}})
+      expect(bob.publicState).toMatchObject({stage: 'bob-enabled', progression: {observed: true}})
       expect(bob.secretState).toHaveProperty('bobCommitSecret')
-      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})).rejects.toThrow(/already received|progression/)
       await expect(observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: reorganized})).resolves.toMatchObject({lifecycle: 'reorganized', bobCommitEnabled: false})
       expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'recovery', recovery: {active: true}})
     } finally { await rm(value.root, {recursive: true, force: true}) }
@@ -269,9 +264,11 @@ describe('console Alice commit', () => {
       const aliceHash = H(820)
       await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: aliceHash, nonce: 11, submittedAtBlock: 30n})}})
       const aliceInclusion = {transactionHash: aliceHash, blockNumber: '30', blockHash: H(821)}
-      const aliceFinal: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '32', confirmations: '3', inclusion: aliceInclusion})}
-      const released = await releaseBobCommitSecret({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: RELEASE_BOB_SECRET_INPUT_SCHEMA, confirmed: true}), observationBoundary: aliceFinal})
-      await importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: await readFile(released.handoffPath, 'utf8'), observationBoundary: aliceFinal})
+      const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
+      if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
+      const aliceFinal: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '32', confirmations: '3', inclusion: aliceInclusion, bobCommitSecret: aliceSecrets.bobCommitSecret})}
+      await observeAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: aliceFinal})
+      await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: aliceFinal})
       const bobHash = H(822)
       let submissions = 0
       const bobBoundary: BobCommitBoundary = {state: async () => CrossChainLegState.Unused, transaction: async hash => hash === bobHash ? 'pending' : 'missing', submit: async args => {submissions += 1; expect(args.bobCommitSecret).not.toBe(H(0)); return {hash: bobHash, nonce: 12, submittedAtBlock: 40n}}}
@@ -297,8 +294,6 @@ describe('console Alice commit', () => {
       expect(JSON.stringify(reveal)).not.toMatch(/settlementSecret|bobCommitSecret/i)
       expect((await submitRevealingClaim({workspace: value.aliceRoot, configPath: value.aliceConfig, input: revealInput, boundary: revealBoundary})).reused).toBe(true)
       expect(claims).toBe(1)
-      const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
-      if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
       const revealInclusion = {transactionHash: revealHash, blockNumber: '41', blockHash: H(825)}
       const nonFinalReveal: RevealObservationBoundary = {inspect: async () => ({lifecycle: 'included-non-final', observedHead: '41', confirmations: '1', inclusion: revealInclusion, secret: aliceSecrets.settlementSecret})}
       expect(await observeReveal({workspace: value.bobRoot, configPath: value.bobConfig, boundary: nonFinalReveal})).toMatchObject({lifecycle: 'included-non-final', finalClaimEnabled: false})

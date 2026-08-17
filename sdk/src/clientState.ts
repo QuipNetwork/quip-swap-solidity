@@ -74,16 +74,16 @@ interface ClientStateBase {
 export interface AliceClientState extends ClientStateBase {
   readonly party: 'alice'
   readonly progression: {
-    readonly released: boolean
-    readonly releasedTo?: Address
+    readonly published: boolean
+    readonly publishedBy?: Address
   }
 }
 
 export interface BobClientState extends ClientStateBase {
   readonly party: 'bob'
   readonly progression: {
-    readonly received: boolean
-    readonly receivedFrom?: Address
+    readonly observed: boolean
+    readonly observedFrom?: Address
   }
 }
 
@@ -258,14 +258,14 @@ export function validateClientState(value: unknown): asserts value is ClientStat
   }
   record(value['progression'], 'progression')
   if (value['party'] === 'alice') {
-    if (typeof value['progression']['released'] !== 'boolean' || value['progression']['received'] !== undefined) {
+    if (typeof value['progression']['published'] !== 'boolean' || value['progression']['observed'] !== undefined) {
       throw new Error('invalid Alice progression state')
     }
-    if (value['progression']['releasedTo'] !== undefined) address(value['progression']['releasedTo'], 'releasedTo')
+    if (value['progression']['publishedBy'] !== undefined) address(value['progression']['publishedBy'], 'publishedBy')
   } else {
-    if (typeof value['progression']['received'] !== 'boolean' || value['progression']['released'] !== undefined) {
+    if (typeof value['progression']['observed'] !== 'boolean' || value['progression']['published'] !== undefined) {
       throw new Error('invalid Bob progression state')
     }
-    if (value['progression']['receivedFrom'] !== undefined) address(value['progression']['receivedFrom'], 'receivedFrom')
+    if (value['progression']['observedFrom'] !== undefined) address(value['progression']['observedFrom'], 'observedFrom')
   }
 }

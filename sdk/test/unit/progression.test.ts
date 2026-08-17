@@ -27,16 +27,17 @@ const crossTerms = (): ProtocolTerms => {
 }
 
 describe('mandatory Bob commit progression', () => {
-  test('accepts zero only for the cross-chain party commit and exact preimage for counterparty', () => {
+  test('requires the exact preimage for both cross-chain commits', () => {
     const terms = crossTerms()
-    expect(() => validateCommitProgression(terms, true, ZERO)).not.toThrow()
+    expect(() => validateCommitProgression(terms, true, SECRET)).not.toThrow()
     expect(() => validateCommitProgression(terms, false, SECRET)).not.toThrow()
   })
-  test('rejects missing, wrong, and premature secrets', () => {
+  test('rejects missing and wrong secrets on both cross-chain sides', () => {
     const terms = crossTerms()
     expect(() => validateCommitProgression(terms, false, ZERO)).toThrow('Missing')
     expect(() => validateCommitProgression(terms, false, WRONG)).toThrow('Invalid Bob')
-    expect(() => validateCommitProgression(terms, true, SECRET)).toThrow('Unexpected')
+    expect(() => validateCommitProgression(terms, true, ZERO)).toThrow('Missing')
+    expect(() => validateCommitProgression(terms, true, WRONG)).toThrow('Invalid Bob')
   })
   test('same-chain commits require the canonical zero secret', () => {
     const terms = crossTerms()

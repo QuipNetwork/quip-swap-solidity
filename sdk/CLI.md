@@ -13,13 +13,12 @@ accepted as command-line arguments. `--json` emits exactly one JSON object to st
 operator diagnostics go to stderr. The trusted-workflow command layer is implemented;
 the operator-facing formatter and executable assembly follow in the remaining demo tasks.
 
-The commands are `prepare-trade`, `status`, `mark-alice-pending`,
-`mark-alice-included-non-final`, `mark-alice-final`, `release-bob-secret`,
-`submit-bob-commit`, `observe-reveal`, `handoff-final-claim`, `mark-complete`, and
-`enter-recovery`. `status` is the only read-only command. Every other command writes
-only the selected party's state. Cross-party transfer, such as progression-secret
-release, must be an explicit command and must not grant either client direct access
-to the other party's state directory.
+The public commands are defined by `cliCommandSpecs` in `cliSurface.ts`. `status` is
+the only read-only command; every other command writes only the selected party's
+state. Alice publishes `BobCommitSecret` in her on-chain commit. Bob's
+`observe-alice-commit` authenticates and verifies that publication, but enables it
+for Bob's submission only after the configured finality threshold. No private
+progression-secret transfer command exists.
 
 Every command returns the `quip-swap-cli.v1` envelope defined in `cliSurface.ts`:
 
@@ -34,8 +33,9 @@ No normal result or error field may contain a secret preimage.
 Each party directory publishes matched public and secret generations through an
 atomically replaced `current` pointer. Generation files are created with mode `0600`;
 the containing directories use mode `0700`. Alice initially owns both preimages.
-Bob's file may acquire the progression preimage only through `release-bob-secret`
-and the settlement preimage only after a finalized revealing claim. Restoration
+Bob's file acquires the progression preimage only from a finalized, authenticated
+Alice-commit observation and acquires the settlement preimage only after a finalized
+revealing claim. Restoration
 recomputes `TradeID`, `GateContextID`, settlement `Lock`, and `commitLock` before
 accepting the state. The prototype files are intentionally not encrypted.
 

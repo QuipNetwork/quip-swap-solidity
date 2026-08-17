@@ -10,6 +10,9 @@ import {
   commitPayloadHash,
   createProtocolClient,
   crossChainWrapperAbi,
+  decodeProtocolEvents,
+  deriveCommitLock,
+  gateContextId,
   keyPossessionDigest,
   pqAuthorizationGatewayAbi,
   prepareTradeCommand,
@@ -109,13 +112,13 @@ export async function runFullDemo(
 
   progress('Submitting and recording Alice commit on chain 31337')
   const aliceBefore = await snapshotA()
-  const aliceRequest = request(alicePrepared, ZERO32)
+  const aliceRequest = request(alicePrepared, randomness.bobCommitSecret)
   const aliceSignature = pqSignature(aliceKey, alicePrepared.payloadHash)
   const aliceHash = await lazyCommit(chainA, clientA, deployment.chains[0], aliceRequest, alicePrepared.payloadHash, aliceKey, aliceRecovery, fixed(201), now + 500n, aliceSignature)
   const aliceReceipt = await receipt(chainA, aliceHash)
   const aliceAfter = await snapshotA()
   authorization.record({side: 'alice', prepared: alicePrepared, signatureVerifier: deployment.chains[0].trustedVerifier, authenticatedSubmitter: chainA.alice.address}, {status: 'accepted', transactionHash: aliceHash})
-  settlement.record({action: 'alice-commit', receipt: aliceReceipt, addresses: addressesA, before: aliceBefore, after: aliceAfter, progressionGate: 'not-required'})
+  settlement.record({action: 'alice-commit', receipt: aliceReceipt, addresses: addressesA, before: aliceBefore, after: aliceAfter, progressionGate: 'bob-secret-published'})
 
   progress('Recording Alice commit as pending; Bob remains disabled')
   alice = applied(alice, {command: 'mark-alice-pending'}); recordClient('pending', alice.publicState)
@@ -125,21 +128,26 @@ export async function runFullDemo(
   progress('Mining the required confirmations and marking Alice commit final')
   await chainA.testClient.mine({blocks: 2})
   alice = applied(alice, {command: 'mark-alice-final', inclusion: aliceInclusion}); recordClient('final', alice.publicState)
-  progress("Releasing BobCommitSecret into Bob's selected client boundary")
-  const released = applyPartyCommand(alice.publicState, alice.secretState, {command: 'release-bob-secret', aliceAddress: chainA.alice.address})
-  if (released.transfer === undefined) throw new Error('progression transfer missing')
-  alice = {publicState: released.publicState as typeof alice.publicState, secretState: released.secretState as typeof alice.secretState}; recordClient('secret-release', alice.publicState)
+  progress("Extracting BobCommitSecret from Alice's finalized on-chain commit")
+  const publications = decodeProtocolEvents(aliceReceipt.logs, addressesA).filter(event => event.source === 'crossChainWrapper' && event.eventName === 'BobCommitSecretPublished' && event.transactionHash === aliceHash)
+  if (publications.length !== 1 || typeof publications[0]!.args !== 'object' || publications[0]!.args === null) throw new Error('Alice commit did not publish exactly one BobCommitSecret')
+  const published = (publications[0]!.args as {readonly bobCommitSecret?: unknown}).bobCommitSecret
+  if (typeof published !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(published)) throw new Error('Alice commit published a malformed BobCommitSecret')
+  const observedBobCommitSecret = published as Hex32
+  if (deriveCommitLock(gateContextId(terms), observedBobCommitSecret) !== terms.counterpartySide.commitLock) throw new Error('Alice commit published the wrong BobCommitSecret')
+  bob = applied(bob, {command: 'mark-alice-final', inclusion: aliceInclusion, bobCommitSecret: observedBobCommitSecret}); recordClient('on-chain-secret-observed', bob.publicState)
 
   progress("Submitting Bob's PQ-authorized, secret-gated commit on chain 31338")
   const bobBefore = await snapshotB()
-  const bobRequest = request(bobPrepared, randomness.bobCommitSecret)
+  const bobRequest = request(bobPrepared, observedBobCommitSecret)
   const bobSignature = pqSignature(bobKey, bobPrepared.payloadHash)
   const bobHash = await lazyCommit(chainB, clientB, deployment.chains[1], bobRequest, bobPrepared.payloadHash, bobKey, bobRecovery, fixed(202), now + 600n, bobSignature)
   const bobReceipt = await receipt(chainB, bobHash)
   const bobAfter = await snapshotB()
   authorization.record({side: 'bob', prepared: bobPrepared, signatureVerifier: deployment.chains[1].trustedVerifier, authenticatedSubmitter: chainB.bob.address}, {status: 'accepted', transactionHash: bobHash})
   settlement.record({action: 'bob-commit', receipt: bobReceipt, addresses: addressesB, before: bobBefore, after: bobAfter, progressionGate: 'bob-secret-accepted'})
-  bob = applied(bob, {command: 'submit-bob-commit', transfer: released.transfer, transactionHash: bobHash}); recordClient('bob-commit', bob.publicState)
+  bob = applied(bob, {command: 'mark-bob-commit-pending'})
+  bob = applied(bob, {command: 'mark-bob-committed'}); recordClient('bob-commit', bob.publicState)
 
   progress('Negative control: rejecting a disallowed commit submitter')
   await runBobNegative(negatives, 'commit-disallowed-submitter', chainB, addressesB, snapshotB, terms, lock, fixed(7), randomness.bobCommitSecret, bobKey, chainB.charlie.address, now + 700n)
@@ -192,7 +200,7 @@ function tracked(token: Address, principal: Address, recipient: Address, wrapper
 async function latestTime(a: ChainContext, b: ChainContext): Promise<bigint> { const [left, right] = await Promise.all([a.now(), b.now()]); return (left > right ? left : right) + 10n }
 async function runBobNegative(recorder: NegativeControlRecorder, scenario: NegativeControlScenario, ctx: ChainContext, addresses: DemoDeploymentArtifact['chains'][number]['addresses'], snapshot: () => Promise<CrossChainSettlementSnapshot>, terms: ReturnType<typeof restoreTerms>, lock: Hex32, actionNonce: Hex32, bobCommitSecret: Hex32, key: Hex, caller: Address, expiry: bigint): Promise<void> { const prepared = preparedAuthorization(terms, false, addresses.authorizationGateway, addresses.crossChainWrapper, lock, actionNonce, expiry); const req = request(prepared, bobCommitSecret); const signature = pqSignature(key, prepared.payloadHash); await recorder.execute({scenario, snapshot, attempt: async () => { await ctx.publicClient.simulateContract({address: addresses.authorizationGateway, abi: [...pqAuthorizationGatewayAbi, ...crossChainWrapperAbi], functionName: 'authorizeCommit', args: [req, signature], account: caller} as never) }}) }
 export function validateFullDemoArtifact(artifact: FullDemoArtifact): void {
-  const expectedSteps = ['prepare:alice', 'prepare:bob', 'pending:alice', 'included-non-final:alice', 'final:alice', 'secret-release:alice', 'bob-commit:bob', 'revealing-claim-final:bob', 'final-claim-handoff:bob', 'completion:alice', 'completion:bob']
+  const expectedSteps = ['prepare:alice', 'prepare:bob', 'pending:alice', 'included-non-final:alice', 'final:alice', 'on-chain-secret-observed:bob', 'bob-commit:bob', 'revealing-claim-final:bob', 'final-claim-handoff:bob', 'completion:alice', 'completion:bob']
   const expectedActions = ['alice-commit', 'bob-commit', 'revealing-claim', 'final-claim']
   const expectedNegative = ['commit-disallowed-submitter', 'bob-commit-missing-secret', 'bob-commit-wrong-secret', 'final-claim-wrong-secret']
   const terms = restoreTerms({terms: artifact.terms})

@@ -108,12 +108,12 @@ commit authorization, and on-chain settlement.
 | Order | Client step | Expected result |
 | ---: | --- | --- |
 | 1 | `prepare` for Alice and Bob | Terms, locks, TradeID, and exact commit payloads are derived. |
-| 2 | `pending` | Alice's commit is submitted; Bob remains disabled. |
+| 2 | `pending` | Alice's commit publishes `BobCommitSecret`; Bob remains disabled while it is non-final. |
 | 3 | `included-non-final` | Alice's commit is included, but the non-finality warning remains and Bob remains disabled. |
 | 4 | `final` | Alice's canonical commit satisfies the configured finality policy. |
-| 5 | `secret-release` | `BobCommitSecret` crosses only into Bob's selected client boundary. |
+| 5 | `on-chain-secret-observed` | Bob verifies the preimage from Alice's finalized commit and enables his commit path. |
 | 6 | `bob-commit` | Bob's PQ-authorized, secret-gated commit is accepted. |
-| 7 | `revealing-claim-final` | Bob's revealing claim is final and exposes the settlement preimage on-chain. |
+| 7 | `revealing-claim-final` | Alice's revealing claim is final and exposes the settlement preimage on-chain. |
 | 8 | `final-claim-handoff` | The final claim is handed to a selected funded permissionless executor. |
 | 9 | `completion` for Alice and Bob | Both local client states become complete. |
 
@@ -267,7 +267,8 @@ bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" -
   continue with `submit-alice-commit`.
 
 - Combine Bob's acceptance with Alice's confirmation and submit Alice's funded
-  commit on chain 31337.
+  commit on chain 31337. This transaction verifies and publishes the
+  trade-bound Bob-commit preimage atomically with Alice's escrow.
 
 ```sh
 jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
@@ -282,7 +283,9 @@ jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
 bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
 ```
 
-- Have Bob independently observe Alice's still-non-final commit.
+- Have Bob independently observe Alice's still-non-final commit and verify its
+  published Bob-commit preimage. Bob's client records the warning but does not
+  enable that preimage for submission yet.
 
 ```sh
 bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
@@ -300,33 +303,14 @@ cast rpc --rpc-url http://127.0.0.1:8545 anvil_mine 0x2
 bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
 ```
 
-- Have Bob independently record that Alice's commit is now final.
+- Have Bob independently record that Alice's commit is now final. This command
+  extracts the authenticated on-chain preimage into Bob's private workspace and
+  enables `submit-bob-commit`; there is no separate Alice-to-Bob handoff.
 
 ```sh
 bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
 ```
 ### 3. Bob.commit
-
-- Have Alice create Bob's private progression-secret handoff.
-
-  ```sh
-bun run src/bin/quip-swap.ts release-bob-secret --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes \
-  > "$DEMO_ROOT/release.json"
-```
-
-- Extract the handoff path without printing the secret.
-
-```sh
-BOB_HANDOFF=$(jq -r '.result.handoffPath' "$DEMO_ROOT/release.json")
-```
-
-- Pass the private handoff directly into Bob's client through standard input.
-
-```sh
-bun run src/bin/quip-swap.ts import-bob-secret --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
-  < "$BOB_HANDOFF"
-```
-
 
 - Have Bob submit his funded commit on chain 31338.
 
@@ -475,11 +459,13 @@ cd ..
   required.
 - **Failure before Alice's commit:** discard the run and its local states. No
   escrow should exist.
-- **Alice pending or included but non-final:** do not release
-  `BobCommitSecret` and do not submit Bob's commit. Wait for canonical finality;
-  after a reorganization, roll the observation back and warn the operator.
-- **Alice final but progression not released:** retry the client-boundary
-  transfer only to Bob's selected permitted submitter.
+- **Alice pending or included but non-final:** Alice's transaction has already
+  published `BobCommitSecret`, but Bob's client must not enable or submit it.
+  Wait for canonical finality; after a reorganization, roll the observation
+  back and warn the operator.
+- **Alice final but Bob has not enabled progression:** rerun Bob's
+  `observe-alice-commit` against the canonical Alice receipt; never bypass the
+  finality check or import a preimage from an unauthenticated source.
 - **Bob committed but no revealing claim:** monitor the claim window and prepare
   permissionless reclaim assistance for Bob's fixed reclaim recipient.
 - **Revealing claim observed but non-final:** do not treat its secret as final

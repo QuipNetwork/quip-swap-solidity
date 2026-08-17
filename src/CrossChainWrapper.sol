@@ -38,6 +38,7 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   error CommitWindowClosed();
 
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
+  event BobCommitSecretPublished(bytes32 indexed tradeId, bytes32 bobCommitSecret);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
 
@@ -81,6 +82,7 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     custody.collect(side, msg.value);
     authorizations.consume(prepared);
     emit Committed(trade, lock, tag, side.principal);
+    if (party) emit BobCommitSecretPublished(trade, bobCommitSecret);
   }
 
   function claim(ProtocolTerms calldata terms, bool party, bytes32 lock, bytes32 secret) external nonReentrant {

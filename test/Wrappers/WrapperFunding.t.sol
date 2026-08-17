@@ -865,7 +865,9 @@ contract WrapperFundingTest is Test {
     bytes32 progressionSecret
   ) internal {
     CommitAuthorizationRequest memory request = _request(receiver, terms, party, lock, nonce);
-    request.bobCommitSecret = progressionSecret;
+    if (progressionSecret != bytes32(0) || ProtocolHashing.mode(terms) == WrapperMode.SameChain) {
+      request.bobCommitSecret = progressionSecret;
+    }
     vm.prank(caller);
     gateway.authorizeCommit(request, _signature(request, address(gateway), key));
   }
@@ -942,6 +944,7 @@ contract WrapperFundingTest is Test {
     request.party = party;
     request.lock = lock;
     request.actionNonce = bytes32(nonce);
+    if (ProtocolHashing.mode(terms) == WrapperMode.CrossChain) request.bobCommitSecret = BOB_COMMIT_SECRET;
     request.expiry = 190;
   }
 

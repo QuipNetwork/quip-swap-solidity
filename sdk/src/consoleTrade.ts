@@ -138,7 +138,7 @@ export function parseConsoleOffer(serialized: string): PublicTradeOffer {
 export async function importConsoleOffer(args: {readonly workspace: string; readonly configPath: string; readonly input: string}): Promise<PublicTradeOffer> {
   const config = await loadConsoleRuntimeConfig(args.configPath, 'bob')
   const offer = parseConsoleOffer(args.input)
-  if (offer.networkId !== config.identity.networkId || offer.bobState.party !== 'bob' || offer.tradeId !== offer.bobState.tradeId || offer.bobState.stage !== 'prepared' || offer.bobState.generation !== 1 || offer.bobState.sequence !== 1 || offer.bobState.progression.received) throw new Error('offer state envelope mismatch')
+  if (offer.networkId !== config.identity.networkId || offer.bobState.party !== 'bob' || offer.tradeId !== offer.bobState.tradeId || offer.bobState.stage !== 'prepared' || offer.bobState.generation !== 1 || offer.bobState.sequence !== 1 || offer.bobState.progression.observed) throw new Error('offer state envelope mismatch')
   const terms = restoreProtocolTerms(offer.bobState.terms)
   validateProtocolTerms(terms, config.policy)
   if (tradeId(terms) !== offer.tradeId || gateContextId(terms) !== offer.bobState.derived.gateContextId) throw new Error('offer protocol hash mismatch')

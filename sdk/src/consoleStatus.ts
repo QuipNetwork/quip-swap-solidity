@@ -101,12 +101,12 @@ function guidance(state: ClientState, legs: readonly [ConsoleLegStatus, ConsoleL
   if (state.recovery.active) return {enabledActions: [], responsibleParty: 'none', nextCommand: null}
   if (state.party === 'alice') {
     if (state.aliceCommit.status !== 'final') return {enabledActions: ['observe-alice-commit'], responsibleParty: 'alice', nextCommand: command('observe-alice-commit', 'alice')}
-    if (!state.progression.released) return {enabledActions: ['release-bob-secret'], responsibleParty: 'alice', nextCommand: command('release-bob-secret', 'alice')}
+    if (!state.progression.published) return {enabledActions: ['observe-alice-commit'], responsibleParty: 'alice', nextCommand: command('observe-alice-commit', 'alice')}
     if (legs[1].state === 'Committed') return {enabledActions: ['submit-revealing-claim'], responsibleParty: 'alice', nextCommand: command('submit-revealing-claim', 'alice')}
     if (legs[1].state === 'Unused') return {enabledActions: ['observe-bob-commit'], responsibleParty: 'alice', nextCommand: command('observe-bob-commit', 'alice')}
   } else {
     if (state.aliceCommit.status !== 'final') return {enabledActions: ['observe-alice-commit'], responsibleParty: 'bob', nextCommand: command('observe-alice-commit', 'bob')}
-    if (!state.progression.received) return {enabledActions: ['import-bob-secret'], responsibleParty: 'bob', nextCommand: command('import-bob-secret', 'bob')}
+    if (!state.progression.observed) return {enabledActions: ['observe-alice-commit'], responsibleParty: 'bob', nextCommand: command('observe-alice-commit', 'bob')}
     if (legs[1].state === 'Unused') return {enabledActions: ['submit-bob-commit'], responsibleParty: 'bob', nextCommand: command('submit-bob-commit', 'bob')}
     if (legs[1].state === 'Committed') return {enabledActions: ['observe-reveal'], responsibleParty: 'bob', nextCommand: command('observe-reveal', 'bob')}
     if (legs[1].state === 'Claimed' && legs[0].state === 'Committed') return {enabledActions: ['submit-final-claim'], responsibleParty: 'bob', nextCommand: command('submit-final-claim', 'bob')}

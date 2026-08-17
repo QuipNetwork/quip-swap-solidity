@@ -66,9 +66,9 @@ function fixtures(generation = 1) {
     aliceCommit: {status: 'not-submitted' as const},
     recovery: {active: false},
   }
-  const alicePublic: AliceClientState = {...common, party: 'alice', progression: {released: false}}
+  const alicePublic: AliceClientState = {...common, party: 'alice', progression: {published: false}}
   const aliceSecrets: AliceSecretState = {schema: SECRET_STATE_SCHEMA, party: 'alice', generation, tradeId: workflow.tradeId, mode: 'prototype-local', publicTestSecrets: false, settlementSecret: hexN(1), bobCommitSecret: hexN(2)}
-  const bobPublic: BobClientState = {...common, party: 'bob', progression: {received: false}}
+  const bobPublic: BobClientState = {...common, party: 'bob', progression: {observed: false}}
   const bobSecrets: BobSecretState = {schema: SECRET_STATE_SCHEMA, party: 'bob', generation, tradeId: workflow.tradeId, mode: 'prototype-local', publicTestSecrets: false}
   return {alicePublic, aliceSecrets, bobPublic, bobSecrets}
 }
@@ -115,10 +115,10 @@ describe('party-local workflow persistence', () => {
     }
   })
 
-  it('keeps Bob empty until release and validates unsafe-demo labeling', () => {
+  it('keeps Bob empty until finalized on-chain observation and validates unsafe-demo labeling', () => {
     const {bobPublic, bobSecrets, alicePublic, aliceSecrets} = fixtures()
     expect(validatePartyWorkflowState(bobPublic, bobSecrets).secretState).toEqual(bobSecrets)
-    expect(() => validatePartyWorkflowState({...bobPublic, progression: {received: true}}, bobSecrets)).toThrow('receipt')
+    expect(() => validatePartyWorkflowState({...bobPublic, progression: {observed: true}}, bobSecrets)).toThrow('observation')
     const demo = {...aliceSecrets, mode: 'unsafe-demo', publicTestSecrets: true} as const
     expect(validatePartyWorkflowState(alicePublic, demo).secretState.publicTestSecrets).toBe(true)
     expect(() => validatePartyWorkflowState(alicePublic, {...demo, publicTestSecrets: false})).toThrow('marker')

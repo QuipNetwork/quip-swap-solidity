@@ -99,8 +99,8 @@ export function validatePartyWorkflowState(
     }
   }
   if (publicState.party === 'bob') {
-    if (publicState.progression.received !== (secretState.bobCommitSecret !== undefined)) {
-      throw new Error('Bob progression receipt does not match secret state')
+    if (publicState.progression.observed !== (secretState.bobCommitSecret !== undefined)) {
+      throw new Error('Bob on-chain progression observation does not match secret state')
     }
     const revealReached = ['reveal-final', 'final-claim', 'complete'].includes(publicState.stage)
     if (revealReached !== (secretState.settlementSecret !== undefined)) {

@@ -170,11 +170,6 @@ export {
 } from './consoleObservation.js'
 export type {AliceCommitLifecycle, AliceCommitObservation, AliceCommitObservationBoundary} from './consoleObservation.js'
 export {
-  RELEASE_BOB_SECRET_INPUT_SCHEMA,
-  releaseBobCommitSecret,
-  importBobCommitSecret,
-} from './consoleProgression.js'
-export {
   BOB_COMMIT_INPUT_SCHEMA,
   BOB_COMMIT_REFERENCE_SCHEMA,
   BOB_COMMIT_OBSERVATION_SCHEMA,
@@ -230,7 +225,6 @@ export {
 } from './clientPersistence.js'
 export {prepareTradeCommand, applyPartyCommand, cliWorkflowCommands} from './cliCommands.js'
 export type {
-  BobProgressionTransfer,
   PrepareTradeCommandArgs,
   PreparedPartyStates,
   AppliedPartyCommand,

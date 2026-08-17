@@ -8,16 +8,6 @@ import type {Hex32} from './types.js'
 import {prepareTrustedCrossChainWorkflow} from './workflows/trustedCrossChain.js'
 import type {WorkflowArgs} from './workflows/trustedCrossChain.js'
 
-export interface BobProgressionTransfer {
-  readonly schema: 'quip-swap-bob-progression.v1'
-  readonly tradeId: Hex32
-  readonly from: Address
-  readonly to: Address
-  readonly bobCommitSecret: Hex32
-  readonly aliceGeneration: number
-  readonly aliceCommit: {readonly status: 'final'; readonly inclusion?: PersistedInclusion}
-}
-
 export interface PrepareTradeCommandArgs {
   readonly workflow: WorkflowArgs
   readonly finalClaimExecutors: readonly Address[]
@@ -60,9 +50,9 @@ export function prepareTradeCommand(args: PrepareTradeCommandArgs): PreparedPart
     recovery: {active: false},
   }
   const marker = mode === 'unsafe-demo'
-  const alicePublic: AliceClientState = {...common, party: 'alice', progression: {released: false}}
+  const alicePublic: AliceClientState = {...common, party: 'alice', progression: {published: false}}
   const aliceSecret: AliceSecretState = {schema: SECRET_STATE_SCHEMA, party: 'alice', generation: 1, tradeId: flow.tradeId, mode, publicTestSecrets: marker, settlementSecret: prepared.settlementSecret, bobCommitSecret: prepared.bobCommitSecret}
-  const bobPublic: BobClientState = {...common, party: 'bob', progression: {received: false}}
+  const bobPublic: BobClientState = {...common, party: 'bob', progression: {observed: false}}
   const bobSecret: BobSecretState = {schema: SECRET_STATE_SCHEMA, party: 'bob', generation: 1, tradeId: flow.tradeId, mode, publicTestSecrets: marker}
   validatePartyWorkflowState(alicePublic, aliceSecret)
   validatePartyWorkflowState(bobPublic, bobSecret)
@@ -82,13 +72,10 @@ type CommandInput =
   | {readonly command: 'status'}
   | {readonly command: 'mark-alice-pending'}
   | {readonly command: 'mark-alice-included-non-final'; readonly inclusion: PersistedInclusion}
-  | {readonly command: 'mark-alice-final'; readonly inclusion: PersistedInclusion}
-  | {readonly command: 'release-bob-secret'; readonly aliceAddress: Address}
-  | {readonly command: 'import-bob-secret'; readonly transfer: BobProgressionTransfer}
+  | {readonly command: 'mark-alice-final'; readonly inclusion: PersistedInclusion; readonly bobCommitSecret?: Hex32}
   | {readonly command: 'mark-bob-commit-pending'}
   | {readonly command: 'mark-bob-committed'}
   | {readonly command: 'record-observation'}
-  | {readonly command: 'submit-bob-commit'; readonly transfer: BobProgressionTransfer; readonly transactionHash: Hex}
   | {readonly command: 'observe-reveal'; readonly settlementSecret: Hex32; readonly inclusion: PersistedInclusion}
   | {readonly command: 'handoff-final-claim'; readonly executor: Address; readonly transactionHash: Hex}
   | {readonly command: 'mark-complete'}
@@ -97,7 +84,6 @@ type CommandInput =
 export interface AppliedPartyCommand {
   readonly publicState: ClientState
   readonly secretState: PartySecretState
-  readonly transfer?: BobProgressionTransfer
 }
 
 const next = <P extends ClientState, S extends PartySecretState>(publicState: P, secretState: S) => ({
@@ -113,42 +99,26 @@ export function applyPartyCommand(
   validatePartyWorkflowState(publicState, secretState)
   if (input.command === 'status') return {publicState, secretState}
   let pair = next(publicState, secretState)
-  let transfer: BobProgressionTransfer | undefined
   switch (input.command) {
     case 'record-observation':
       break
     case 'mark-alice-pending':
-      requireProgressionNotReleased(pair.publicState)
-      pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}}
+      pair.publicState = pair.publicState.party === 'alice'
+        ? {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}, progression: {published: true}}
+        : {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}}
       break
     case 'mark-alice-included-non-final':
-      requireProgressionNotReleased(pair.publicState)
       pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'included-non-final', inclusion: input.inclusion}}
       break
     case 'mark-alice-final':
-      requireProgressionNotReleased(pair.publicState)
-      pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}}
-      break
-    case 'release-bob-secret':
-      requireAlice(pair.publicState, pair.secretState)
-      if (publicState.aliceCommit.status !== 'final') throw new Error('Alice commit is not final')
-      if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
-      transfer = {schema: 'quip-swap-bob-progression.v1', tradeId: publicState.tradeId, from: input.aliceAddress, to: publicState.selected.bobSubmitter, bobCommitSecret: (pair.secretState as AliceSecretState).bobCommitSecret, aliceGeneration: pair.publicState.generation, aliceCommit: (pair.publicState as AliceClientState).aliceCommit as {status: 'final'; inclusion?: PersistedInclusion}}
-      pair.publicState = {...pair.publicState, stage: 'bob-commit-pending', progression: {released: true, releasedTo: transfer.to}}
-      break
-    case 'import-bob-secret':
-      requireBob(pair.publicState, pair.secretState)
-      if (publicState.stage !== 'bob-enabled' || publicState.aliceCommit.status !== 'final') throw new Error('Alice commit is not currently final')
-      if ((publicState as BobClientState).progression.received) throw new Error('progression already received')
-      validateTransfer(pair.publicState as BobClientState, input.transfer, true)
-      pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
-      pair.publicState = {...pair.publicState, progression: {received: true, receivedFrom: input.transfer.from}}
-      break
-    case 'submit-bob-commit':
-      requireBob(pair.publicState, pair.secretState)
-      validateTransfer(pair.publicState as BobClientState, input.transfer, false)
-      pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
-      pair.publicState = {...pair.publicState, stage: 'bob-committed', aliceCommit: input.transfer.aliceCommit, progression: {received: true, receivedFrom: input.transfer.from}}
+      if (pair.publicState.party === 'bob') {
+        if (input.bobCommitSecret === undefined) throw new Error('final Alice observation lacks the on-chain Bob commit secret')
+        if (deriveCommitLock(pair.publicState.derived.gateContextId, input.bobCommitSecret) !== pair.publicState.terms.counterpartySide.commitLock) throw new Error('on-chain Bob commit secret does not match the signed commitLock')
+        pair.secretState = {...pair.secretState, bobCommitSecret: input.bobCommitSecret}
+        pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}, progression: {observed: true, observedFrom: pair.publicState.terms.partySide.principal}}
+      } else {
+        pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}, progression: {published: true}}
+      }
       break
     case 'mark-bob-commit-pending':
       requireProgressionReady(pair.publicState, pair.secretState)
@@ -180,35 +150,18 @@ export function applyPartyCommand(
       pair.publicState = {...pair.publicState, stage: 'recovery', recovery: {active: true, reason: input.reason}}
       break
   }
-  const result = {...pair, ...(transfer === undefined ? {} : {transfer})}
+  const result = pair
   validatePartyWorkflowState(result.publicState, result.secretState)
   return result
 }
 
-function requireAlice(publicState: ClientState, secretState: PartySecretState): asserts publicState is AliceClientState & typeof publicState {
-  if (publicState.party !== 'alice' || secretState.party !== 'alice') throw new Error('command requires Alice client state')
-}
 function requireBob(publicState: ClientState, secretState: PartySecretState): asserts publicState is BobClientState & typeof publicState {
   if (publicState.party !== 'bob' || secretState.party !== 'bob') throw new Error('command requires Bob client state')
 }
-function requireProgressionNotReleased(publicState: ClientState): void {
-  if (publicState.party === 'alice' && publicState.progression.released) throw new Error('progression already released')
-  if (publicState.party === 'bob' && publicState.progression.received) throw new Error('progression already received')
-}
 function requireProgressionReady(publicState: ClientState, secretState: PartySecretState): void {
   if (publicState.party === 'alice') {
-    if (!publicState.progression.released) throw new Error('Alice has not released progression')
-  } else if (!publicState.progression.received || secretState.bobCommitSecret === undefined) throw new Error('Bob has not imported progression')
+    if (!publicState.progression.published) throw new Error('Alice commit has not published progression')
+  } else if (!publicState.progression.observed || secretState.bobCommitSecret === undefined) throw new Error('Bob has not observed progression on-chain')
 }
-function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer, requireObservedFinality: boolean): void {
-  if (transfer.schema !== 'quip-swap-bob-progression.v1' || transfer.tradeId !== state.tradeId) throw new Error('invalid progression transfer')
-  if (transfer.aliceCommit.status !== 'final') throw new Error('progression transfer lacks final Alice commit')
-  if (!Number.isSafeInteger(transfer.aliceGeneration) || transfer.aliceGeneration < 1) throw new Error('progression transfer has invalid Alice generation')
-  if (requireObservedFinality && (state.aliceCommit.status !== 'final' || state.aliceCommit.inclusion === undefined || transfer.aliceCommit.inclusion === undefined || JSON.stringify(state.aliceCommit.inclusion) !== JSON.stringify(transfer.aliceCommit.inclusion))) throw new Error('progression transfer has stale Alice finality evidence')
-  if (transfer.from.toLowerCase() !== state.terms.partySide.principal.toLowerCase()) throw new Error('progression transfer has wrong sender')
-  if (transfer.to.toLowerCase() !== state.selected.bobSubmitter.toLowerCase()) throw new Error('progression transfer has wrong recipient')
-  if (deriveCommitLock(state.derived.gateContextId, transfer.bobCommitSecret) !== state.terms.counterpartySide.commitLock) throw new Error('progression transfer has wrong preimage')
-}
-
 /** Internal persisted-state reducer commands; these are not the public console command contract. */
-export const cliWorkflowCommands = ['prepare-trade', 'status', 'mark-alice-pending', 'mark-alice-included-non-final', 'mark-alice-final', 'release-bob-secret', 'submit-bob-commit', 'observe-reveal', 'handoff-final-claim', 'mark-complete', 'enter-recovery'] as const
+export const cliWorkflowCommands = ['prepare-trade', 'status', 'mark-alice-pending', 'mark-alice-included-non-final', 'mark-alice-final', 'mark-bob-commit-pending', 'mark-bob-committed', 'observe-reveal', 'handoff-final-claim', 'mark-complete', 'enter-recovery'] as const

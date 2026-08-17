@@ -60,7 +60,7 @@ export class TrustedCrossChainWorkflow {
   readonly partyAuthorization: PreparedAuthorization; readonly counterpartyAuthorization: PreparedAuthorization
   readonly #secret: Hex32; readonly #bobSecret: Hex32; private readonly confirmations: bigint
   private readonly selected: Address; private alice: AliceCommitStatus = 'not-submitted'
-  private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private released = false; private unsafeReorg = false
+  private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private bobEnabled = false; private unsafeReorg = false
   constructor(args: WorkflowArgs) {
     if (args.requiredConfirmations < 1n) throw new Error('requiredConfirmations must be positive')
     if (args.randomness !== undefined && args.randomHex32 !== undefined) throw new Error('choose named randomness or randomHex32, not both')
@@ -84,25 +84,25 @@ export class TrustedCrossChainWorkflow {
     this.counterpartyAuthorization = {payload: counter, payloadHash: commitPayloadHash(counter)}
   }
   status(now?: bigint): WorkflowStatus {
-    const warning = this.unsafeReorg ? 'Alice commit reorganized after progression disclosure; stop submission and recover if possible.' : this.stage === 'bob-commit-pending' ? 'Progression was released; awaiting Bob commit confirmation.' : this.alice === 'pending' ? 'Alice commit is pending; Bob commit is disabled.' : this.alice === 'included-non-final' ? 'Alice commit is not final; Bob commit is disabled and may be reorganized.' : undefined
-    return {stage: this.stage, aliceCommit: this.alice, ...(warning ? {warning} : {}), bobCommitEnabled: this.alice === 'final' && !this.released, reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && this.stage !== 'complete'}
+    const warning = this.unsafeReorg ? 'Alice commit reorganized after Bob submission was enabled; stop submission and recover if possible.' : this.stage === 'bob-commit-pending' ? 'Bob submission was enabled; awaiting Bob commit confirmation.' : this.alice === 'pending' ? 'Alice commit is pending; its published preimage is not enabled for Bob yet.' : this.alice === 'included-non-final' ? 'Alice commit is not final; its published preimage is not enabled for Bob yet and the commit may be reorganized.' : undefined
+    return {stage: this.stage, aliceCommit: this.alice, ...(warning ? {warning} : {}), bobCommitEnabled: this.alice === 'final' && !this.bobEnabled, reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && this.stage !== 'complete'}
   }
-  markAlicePending(): void { this.beforeRelease(); this.alice = 'pending'; this.inclusion = undefined; this.stage = 'alice-commit' }
+  markAlicePending(): void { this.beforeBobEnablement(); this.alice = 'pending'; this.inclusion = undefined; this.stage = 'alice-commit' }
   observeAlice(inclusion: Inclusion, head: bigint): void {
-    this.beforeRelease(); if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
+    this.beforeBobEnablement(); if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
     this.inclusion = inclusion; this.alice = head - inclusion.blockNumber + 1n >= this.confirmations ? 'final' : 'included-non-final'; this.stage = this.alice === 'final' ? 'bob-enabled' : 'alice-commit'
   }
   rollbackAlice(blockHash: Hex32): void {
     if (this.inclusion?.blockHash !== blockHash) return
     this.inclusion = undefined; this.alice = 'pending'
-    if (this.released) { this.unsafeReorg = true; this.stage = 'recovery' } else this.stage = 'alice-commit'
+    if (this.bobEnabled) { this.unsafeReorg = true; this.stage = 'recovery' } else this.stage = 'alice-commit'
   }
-  releaseBobCommitSecret(submitter: Address): Hex32 {
+  enableBobCommit(submitter: Address): Hex32 {
     if (this.alice !== 'final') throw new Error('Alice commit is not final')
     if (submitter.toLowerCase() !== this.selected.toLowerCase()) throw new Error('submitter not selected')
-    this.beforeRelease(); this.released = true; this.stage = 'bob-commit-pending'; return this.#bobSecret
+    this.beforeBobEnablement(); this.bobEnabled = true; this.stage = 'bob-commit-pending'; return this.#bobSecret
   }
-  markBobCommitted(): void { if (!this.released) throw new Error('progression was not released'); if (this.unsafeReorg) throw new Error('Alice commit was reorganized after progression disclosure'); this.stage = 'bob-committed' }
+  markBobCommitted(): void { if (!this.bobEnabled) throw new Error('Bob submission was not enabled'); if (this.unsafeReorg) throw new Error('Alice commit was reorganized after Bob submission was enabled'); this.stage = 'bob-committed' }
   observeFinalReveal(): void { if (this.stage !== 'bob-committed') throw new Error('Bob is not committed'); this.stage = 'reveal-final' }
   async handoffFinalClaim(executors: readonly FinalClaimExecutor[]): Promise<Hex> {
     if (this.stage !== 'reveal-final') throw new Error('revealing claim is not final')
@@ -113,7 +113,7 @@ export class TrustedCrossChainWorkflow {
   }
   markComplete(): void { this.stage = 'complete' }
   enterRecovery(): void { this.stage = 'recovery' }
-  private beforeRelease(): void { if (this.released) throw new Error('progression already released') }
+  private beforeBobEnablement(): void { if (this.bobEnabled) throw new Error('Bob submission already enabled') }
   private assertSelected(): void {
     const side = this.terms.counterpartySide; const selected = this.selected.toLowerCase()
     if (side.delegationPolicy === DelegationPolicy.NotAllowed && selected !== side.principal.toLowerCase()) throw new Error('selected submitter must be Bob')

@@ -60,7 +60,7 @@ describe('quip-swap executable contract', () => {
   })
 
   it('does not read interactive stdin for confirmation-only --yes commands', async () => {
-    for (const [command, party] of [['release-bob-secret', 'alice'], ['submit-bob-commit', 'bob'], ['submit-revealing-claim', 'alice']] as const) {
+    for (const [command, party] of [['submit-bob-commit', 'bob'], ['submit-revealing-claim', 'alice']] as const) {
       let stdinReads = 0
       let stdout = ''
       const exitCode = await runConsole(

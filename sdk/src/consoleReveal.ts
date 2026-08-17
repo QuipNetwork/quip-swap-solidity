@@ -105,7 +105,7 @@ export async function submitRevealingClaim(args: {readonly workspace: string; re
   return withWorkspaceMutation(args.workspace, async () => {
     const expected = {party: 'alice' as const, networkId: config.identity.networkId, configDigest: config.identity.digest}
     const restored = await restoreWorkspaceWorkflowState(args.workspace, expected)
-    if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice' || restored.publicState.stage !== 'bob-committed' || !restored.publicState.progression.released) throw new Error('revealing claim requires Alice to verify Bob committed')
+    if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice' || restored.publicState.stage !== 'bob-committed' || !restored.publicState.progression.published) throw new Error('revealing claim requires Alice to verify Bob committed')
     const observation = object(JSON.parse(await readFile(join(resolve(args.workspace), 'public', 'bob-commit-observation.json'), 'utf8')), 'Bob commit observation')
     if (observation['lifecycle'] !== 'committed' || observation['tradeId'] !== restored.publicState.tradeId || observation['aliceClaimEnabled'] !== true) throw new Error('Bob commit observation does not enable Alice claim')
     const view = preview(config, restored.terms)

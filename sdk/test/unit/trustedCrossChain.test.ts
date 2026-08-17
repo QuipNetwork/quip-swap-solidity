@@ -43,16 +43,16 @@ describe('trusted cross-chain workflow', () => {
     const first = workflow(1); const second = workflow(101)
     expect(JSON.stringify(first, (_, value) => typeof value === 'bigint' ? value.toString() : value)).not.toContain(`0x${'01'.padStart(64, '0')}`)
     first.observeAlice(inclusion, 12n); second.observeAlice(inclusion, 12n)
-    expect(first.releaseBobCommitSecret(EXECUTOR)).not.toBe(second.releaseBobCommitSecret(EXECUTOR))
+    expect(first.enableBobCommit(EXECUTOR)).not.toBe(second.enableBobCommit(EXECUTOR))
   })
   it('rejects duplicate random material within one run', () => {
     const duplicate = `0x${'11'.repeat(32)}` as Hex32
     expect(() => new TrustedCrossChainWorkflow({policy, partySide: side(true), counterpartySide: side(false), partyVerifier: VERIFIER, counterpartyVerifier: VERIFIER, partyWrapper: WRAPPER, counterpartyWrapper: WRAPPER, partyExpiry: 90n, counterpartyExpiry: 190n, requiredConfirmations: 3n, selectedBobSubmitter: EXECUTOR, randomHex32: () => duplicate})).toThrow('randomness must be independent')
   })
-  it('withholds progression through pending, non-finality and reorg', () => {
+  it('keeps the published preimage disabled through pending, non-finality and reorg', () => {
     const flow = workflow(); flow.markAlicePending()
     expect(flow.status().warning).toContain('pending')
-    expect(() => flow.releaseBobCommitSecret(EXECUTOR)).toThrow('not final')
+    expect(() => flow.enableBobCommit(EXECUTOR)).toThrow('not final')
     flow.observeAlice(inclusion, 10n)
     expect(flow.status().aliceCommit).toBe('included-non-final')
     flow.rollbackAlice(inclusion.blockHash)
@@ -65,24 +65,24 @@ describe('trusted cross-chain workflow', () => {
       .rejects.toThrow('revealing claim is not final')
     expect(flow.status().stage).toBe('bob-enabled')
   })
-  it('rolls finalized inclusion back before release and enters recovery after disclosure', () => {
-    const beforeRelease = workflow(); beforeRelease.observeAlice(inclusion, 12n)
-    beforeRelease.rollbackAlice(inclusion.blockHash)
-    expect(beforeRelease.status().aliceCommit).toBe('pending')
-    expect(beforeRelease.status().bobCommitEnabled).toBe(false)
+  it('rolls finalized inclusion back before enablement and enters recovery after enablement', () => {
+    const beforeEnable = workflow(); beforeEnable.observeAlice(inclusion, 12n)
+    beforeEnable.rollbackAlice(inclusion.blockHash)
+    expect(beforeEnable.status().aliceCommit).toBe('pending')
+    expect(beforeEnable.status().bobCommitEnabled).toBe(false)
 
-    const afterRelease = workflow(); afterRelease.observeAlice(inclusion, 12n)
-    afterRelease.releaseBobCommitSecret(EXECUTOR)
-    expect(afterRelease.status().stage).toBe('bob-commit-pending')
-    expect(afterRelease.status().warning).toContain('awaiting Bob commit')
-    afterRelease.rollbackAlice(inclusion.blockHash)
-    expect(afterRelease.status().stage).toBe('recovery')
-    expect(afterRelease.status().warning).toContain('after progression disclosure')
-    expect(() => afterRelease.markBobCommitted()).toThrow('reorganized after progression disclosure')
-    expect(afterRelease.status(500n).reclaimRecommended).toBe(true)
+    const afterEnable = workflow(); afterEnable.observeAlice(inclusion, 12n)
+    afterEnable.enableBobCommit(EXECUTOR)
+    expect(afterEnable.status().stage).toBe('bob-commit-pending')
+    expect(afterEnable.status().warning).toContain('awaiting Bob commit')
+    afterEnable.rollbackAlice(inclusion.blockHash)
+    expect(afterEnable.status().stage).toBe('recovery')
+    expect(afterEnable.status().warning).toContain('after Bob submission was enabled')
+    expect(() => afterEnable.markBobCommitted()).toThrow('reorganized after Bob submission was enabled')
+    expect(afterEnable.status(500n).reclaimRecommended).toBe(true)
   })
   it('keeps final-claim handoff retryable when funded executors are censored', async () => {
-    const flow = workflow(); flow.observeAlice(inclusion, 12n); flow.releaseBobCommitSecret(EXECUTOR)
+    const flow = workflow(); flow.observeAlice(inclusion, 12n); flow.enableBobCommit(EXECUTOR)
     flow.markBobCommitted(); flow.observeFinalReveal()
     await expect(flow.handoffFinalClaim([
       {funded: true, submit: async () => { throw new Error('censored-a') }},
@@ -93,12 +93,12 @@ describe('trusted cross-chain workflow', () => {
       .resolves.toBe(inclusion.transactionHash)
     expect(flow.status().stage).toBe('final-claim')
   })
-  it('releases once to the selected executor only after finality, then hands off final claim', async () => {
+  it('enables only the selected executor after finality, then hands off final claim', async () => {
     const flow = workflow(); flow.observeAlice(inclusion, 12n)
     expect(flow.status().bobCommitEnabled).toBe(true)
-    expect(() => flow.releaseBobCommitSecret(BOB)).toThrow('not selected')
-    expect(flow.releaseBobCommitSecret(EXECUTOR)).not.toMatch(/^0x0+$/)
-    expect(() => flow.releaseBobCommitSecret(EXECUTOR)).toThrow('already released')
+    expect(() => flow.enableBobCommit(BOB)).toThrow('not selected')
+    expect(flow.enableBobCommit(EXECUTOR)).not.toMatch(/^0x0+$/)
+    expect(() => flow.enableBobCommit(EXECUTOR)).toThrow('already enabled')
     flow.markBobCommitted(); flow.observeFinalReveal()
     const finalHash = await flow.handoffFinalClaim([{funded: false, submit: async () => inclusion.transactionHash}, {funded: true, submit: async secret => { expect(secret).not.toMatch(/^0x0+$/); return inclusion.transactionHash }}]); expect(finalHash).toBe(inclusion.transactionHash); flow.markComplete(); expect(flow.status().stage).toBe('complete')
   })

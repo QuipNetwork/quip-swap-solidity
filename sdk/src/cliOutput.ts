@@ -15,8 +15,8 @@ export interface TrustedClientStatusResult {
 }
 
 export function trustedClientStatus(state: ClientState): TrustedClientStatusResult {
-  const releasedOrReceived = state.party === 'alice' ? state.progression.released : state.progression.received
-  const bobCommitEnabled = state.aliceCommit.status === 'final' && !releasedOrReceived && state.stage !== 'recovery'
+  const progressionAvailable = state.party === 'alice' ? state.progression.published : state.progression.observed
+  const bobCommitEnabled = state.aliceCommit.status === 'final' && progressionAvailable && ['bob-enabled', 'bob-commit-pending'].includes(state.stage) && state.stage !== 'recovery'
   return {
     workflowStage: state.stage,
     aliceCommitStatus: state.aliceCommit.status,
@@ -68,7 +68,7 @@ function warningFor(state: ClientState): string | null {
   if (state.aliceCommit.status === 'included-non-final') {
     return 'Alice commit is included but not final; Bob commit is disabled and may be reorganized.'
   }
-  if (state.stage === 'bob-commit-pending') return 'Progression was released; awaiting Bob commit confirmation.'
+  if (state.stage === 'bob-commit-pending') return 'The on-chain progression preimage was enabled; awaiting Bob commit confirmation.'
   return null
 }
 

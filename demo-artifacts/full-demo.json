@@ -208,13 +208,13 @@
     },
     {
       "sequence": 6,
-      "step": "secret-release",
-      "party": "alice",
+      "step": "on-chain-secret-observed",
+      "party": "bob",
       "status": {
-        "workflowStage": "bob-commit-pending",
+        "workflowStage": "bob-enabled",
         "aliceCommitStatus": "final",
-        "bobCommitEnabled": false,
-        "warning": "Progression was released; awaiting Bob commit confirmation.",
+        "bobCommitEnabled": true,
+        "warning": null,
         "selectedBobSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         "finalClaimExecutorCandidates": [
           "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
@@ -325,7 +325,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
         "expiry": "4000000510",
         "status": "accepted",
-        "transactionHash": "0x4ba2ab72508109d694a1a7a73f6f0730e862f0d060975eab57ccc2cca9f4a245",
+        "transactionHash": "0xac6982f006eef6d8d8ca6593a7a26e752d559f383e71705e8fa81573722d11bb",
         "errorName": null
       },
       {
@@ -341,7 +341,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
         "expiry": "4000000610",
         "status": "accepted",
-        "transactionHash": "0x4be764c19922e05c6d78d7ec4578c8ed606d8a40ac6a59680eff8a2b60143d50",
+        "transactionHash": "0xadebf6b7331b60c2aa16ff50904d549d9222cc814d02b173ada80d07fc1ad53a",
         "errorName": null
       }
     ]
@@ -353,9 +353,9 @@
         "sequence": 1,
         "action": "alice-commit",
         "chainId": 31337,
-        "transactionHash": "0x4ba2ab72508109d694a1a7a73f6f0730e862f0d060975eab57ccc2cca9f4a245",
+        "transactionHash": "0xac6982f006eef6d8d8ca6593a7a26e752d559f383e71705e8fa81573722d11bb",
         "blockNumber": "18",
-        "progressionGate": "not-required",
+        "progressionGate": "bob-secret-published",
         "before": {
           "chainId": 31337,
           "wrapper": "0xAb2e032A6E0784898b556167Ecc1e99fe840EdBF",
@@ -442,6 +442,16 @@
               "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
             },
             "logIndex": 3
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0xab2e032a6e0784898b556167ecc1e99fe840edbf",
+            "eventName": "BobCommitSecretPublished",
+            "args": {
+              "tradeId": "0x0ce216da8d9dd6a1b106b69de26af8bdf3329378824c5c9276cb466991b8f383",
+              "bobCommitSecret": "0x0000000000000000000000000000000000000000000000000000000000000002"
+            },
+            "logIndex": 4
           }
         ]
       },
@@ -449,7 +459,7 @@
         "sequence": 2,
         "action": "bob-commit",
         "chainId": 31338,
-        "transactionHash": "0x4be764c19922e05c6d78d7ec4578c8ed606d8a40ac6a59680eff8a2b60143d50",
+        "transactionHash": "0xadebf6b7331b60c2aa16ff50904d549d9222cc814d02b173ada80d07fc1ad53a",
         "blockNumber": "18",
         "progressionGate": "bob-secret-accepted",
         "before": {
@@ -545,7 +555,7 @@
         "sequence": 3,
         "action": "revealing-claim",
         "chainId": 31338,
-        "transactionHash": "0xd8d951e45217353f7389bd24c4afab5310b0245691a5ac7fa0f62ed51d2d5c0b",
+        "transactionHash": "0x2da2dc611673c7afff577f2cdc2c9a9ae5708d92254535db51c4ca258d61d571",
         "blockNumber": "19",
         "progressionGate": "not-applicable",
         "before": {
@@ -618,7 +628,7 @@
         "sequence": 4,
         "action": "final-claim",
         "chainId": 31337,
-        "transactionHash": "0x9c3e0d8c6a2be67b9285f93a0660977bb54e54e8bc455b3d5577adc874078c72",
+        "transactionHash": "0x78e3ace76d64db7362e387d67d6da27cb01207557ea9a886b6ba8bae1b3305c9",
         "blockNumber": "21",
         "progressionGate": "not-applicable",
         "before": {

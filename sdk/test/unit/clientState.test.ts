@@ -59,8 +59,8 @@ function common() {
 
 describe('party client state persistence', () => {
   it('round-trips Alice and Bob independently with decimal bigint fields', () => {
-    const alice: AliceClientState = {...common(), party: 'alice', progression: {released: false}}
-    const bob: BobClientState = {...common(), party: 'bob', progression: {received: false}}
+    const alice: AliceClientState = {...common(), party: 'alice', progression: {published: false}}
+    const bob: BobClientState = {...common(), party: 'bob', progression: {observed: false}}
     for (const state of [alice, bob]) {
       const restored = parseClientState(serializeClientState(state))
       expect(restored).toEqual(state)
@@ -71,14 +71,14 @@ describe('party client state persistence', () => {
   })
 
   it('rejects malformed schemas and mixed party progression state', () => {
-    const alice: AliceClientState = {...common(), party: 'alice', progression: {released: false}}
+    const alice: AliceClientState = {...common(), party: 'alice', progression: {published: false}}
     expect(() => parseClientState('{')).toThrow('not valid JSON')
     expect(() => parseClientState(JSON.stringify({...alice, schema: 'old'}))).toThrow('unsupported')
-    expect(() => parseClientState(JSON.stringify({...alice, progression: {received: false}}))).toThrow('Alice progression')
+    expect(() => parseClientState(JSON.stringify({...alice, progression: {observed: false}}))).toThrow('Alice progression')
   })
 
   it('contains observations and decisions but no secret fields', () => {
-    const alice: AliceClientState = {...common(), party: 'alice', progression: {released: false}}
+    const alice: AliceClientState = {...common(), party: 'alice', progression: {published: false}}
     const serialized = serializeClientState(alice)
     expect(serialized).toContain('finalClaimExecutors')
     expect(serialized).toContain('aliceCommit')

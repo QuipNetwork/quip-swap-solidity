@@ -7,7 +7,7 @@ import type {PersistedInclusion} from './clientState.js'
 import {ALICE_COMMIT_JOURNAL_SCHEMA, ALICE_COMMIT_REFERENCE_SCHEMA} from './consoleCommit.js'
 import {loadConsoleRuntimeConfig} from './consoleTrade.js'
 import type {ConsoleRuntimeConfig} from './consoleTrade.js'
-import {CrossChainLegState} from './protocol.js'
+import {CrossChainLegState, deriveCommitLock, gateContextId} from './protocol.js'
 import type {ProtocolTerms} from './protocol.js'
 import {decodeProtocolEvents} from './protocolEvents.js'
 import {createProtocolClient} from './protocolClient.js'
@@ -47,7 +47,7 @@ export interface AliceCommitObservation {
 }
 
 export interface AliceCommitObservationBoundary {
-  inspect(args: {readonly reference: CommitReference; readonly terms: ProtocolTerms; readonly lock: Hex32; readonly requiredConfirmations: bigint; readonly principal: Address}): Promise<Omit<AliceCommitObservation, 'schema' | 'networkId' | 'tradeId' | 'chainId' | 'wrapper' | 'transactionHash' | 'requiredConfirmations' | 'bobCommitEnabled' | 'warning'>>
+  inspect(args: {readonly reference: CommitReference; readonly terms: ProtocolTerms; readonly lock: Hex32; readonly requiredConfirmations: bigint; readonly principal: Address}): Promise<Omit<AliceCommitObservation, 'schema' | 'networkId' | 'tradeId' | 'chainId' | 'wrapper' | 'transactionHash' | 'requiredConfirmations' | 'bobCommitEnabled' | 'warning'> & {readonly bobCommitSecret?: Hex32}>
 }
 
 const object = (value: unknown, label: string): Record<string, unknown> => {
@@ -98,15 +98,23 @@ export function createLocalAliceObservationBoundary(config: ConsoleRuntimeConfig
     try { canonicalHash = (await publicClient.getBlock({blockNumber: receipt.blockNumber})).hash as Hex32 } catch {}
     const inclusion: PersistedInclusion = {transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber.toString(), blockHash: receipt.blockHash as Hex32}
     if (canonicalHash === undefined || canonicalHash !== receipt.blockHash) return {lifecycle: 'reorganized', observedHead: head.toString(), confirmations: '0', inclusion}
-    const events = decodeProtocolEvents(receipt.logs, addresses).filter(event => event.source === 'crossChainWrapper' && event.eventName === 'Committed')
-    const valid = events.filter(event => {
+    const events = decodeProtocolEvents(receipt.logs, addresses).filter(event => event.source === 'crossChainWrapper')
+    const valid = events.filter(event => event.eventName === 'Committed').filter(event => {
       const args = object(event.args, 'Committed event')
       return args['tradeId'] === reference.tradeId && args['lock'] === lock && args['side'] === 0 && typeof args['principal'] === 'string' && args['principal'].toLowerCase() === principal.toLowerCase() && event.address.toLowerCase() === reference.wrapper.toLowerCase() && event.transactionHash === reference.transactionHash
     })
     if (valid.length !== 1) throw new Error('Alice transaction lacks one exact authenticated Committed event')
+    const publications = events.filter(event => event.eventName === 'BobCommitSecretPublished').filter(event => {
+      const args = object(event.args, 'BobCommitSecretPublished event')
+      return args['tradeId'] === reference.tradeId && hex32(args['bobCommitSecret']) && event.address.toLowerCase() === reference.wrapper.toLowerCase() && event.transactionHash === reference.transactionHash
+    })
+    if (publications.length !== 1) throw new Error('Alice transaction lacks one exact authenticated BobCommitSecretPublished event')
+    const publication = object(publications[0]!.args, 'BobCommitSecretPublished event')
+    const bobCommitSecret = publication['bobCommitSecret'] as Hex32
+    if (deriveCommitLock(gateContextId(terms), bobCommitSecret) !== terms.counterpartySide.commitLock) throw new Error('published Bob commit secret does not match signed commitLock')
     if (await client.getCrossChainState(terms, true, lock) !== CrossChainLegState.Committed) throw new Error('Alice committed event disagrees with wrapper state')
     const confirmations = head >= receipt.blockNumber ? head - receipt.blockNumber + 1n : 0n
-    return {lifecycle: confirmations >= requiredConfirmations ? 'final' : 'included-non-final', observedHead: head.toString(), confirmations: confirmations.toString(), inclusion}
+    return {lifecycle: confirmations >= requiredConfirmations ? 'final' : 'included-non-final', observedHead: head.toString(), confirmations: confirmations.toString(), inclusion, bobCommitSecret}
   }}
 }
 
@@ -125,15 +133,19 @@ export async function observeAliceCommit(args: {readonly workspace: string; read
     const restored = await restoreWorkspaceWorkflowState(args.workspace, expected)
     const reference = await loadReference(args.workspace, {...config, identity}, restored.publicState.tradeId)
     if (reference.networkId !== identity.networkId || reference.tradeId !== restored.publicState.tradeId || reference.wrapper.toLowerCase() !== config.chains[0].wrapper.toLowerCase() || reference.sender.toLowerCase() !== config.actors.alice.toLowerCase()) throw new Error('Alice commit reference binding mismatch')
-    const observed = await (args.boundary ?? createLocalAliceObservationBoundary({...config, identity})).inspect({reference, terms: restored.terms, lock: restored.publicState.derived.settlementLock, requiredConfirmations: config.requiredConfirmations, principal: config.actors.alice})
+    const inspected = await (args.boundary ?? createLocalAliceObservationBoundary({...config, identity})).inspect({reference, terms: restored.terms, lock: restored.publicState.derived.settlementLock, requiredConfirmations: config.requiredConfirmations, principal: config.actors.alice})
+    const {bobCommitSecret, ...observed} = inspected
     const final = observed.lifecycle === 'final'
-    const observation: AliceCommitObservation = {schema: ALICE_COMMIT_OBSERVATION_SCHEMA, networkId: identity.networkId, tradeId: restored.publicState.tradeId, chainId: 31337, wrapper: config.chains[0].wrapper, transactionHash: reference.transactionHash, ...observed, requiredConfirmations: config.requiredConfirmations.toString(), bobCommitEnabled: final, ...(!final ? {warning: observed.lifecycle === 'included-non-final' ? `Alice commit is not final; ${observed.confirmations}/${config.requiredConfirmations} confirmations.` : `Alice commit is ${observed.lifecycle}; Bob commit remains disabled.`} : {})}
+    if (final && identity.localParty === 'bob' && bobCommitSecret === undefined) throw new Error('final Alice commit observation lacks the published Bob commit secret')
+    if (bobCommitSecret !== undefined && deriveCommitLock(gateContextId(restored.terms), bobCommitSecret) !== restored.terms.counterpartySide.commitLock) throw new Error('published Bob commit secret is the wrong preimage for the signed commitLock')
+    const observation: AliceCommitObservation = {schema: ALICE_COMMIT_OBSERVATION_SCHEMA, networkId: identity.networkId, tradeId: restored.publicState.tradeId, chainId: 31337, wrapper: config.chains[0].wrapper, transactionHash: reference.transactionHash, ...observed, requiredConfirmations: config.requiredConfirmations.toString(), bobCommitEnabled: final, ...(!final ? {warning: observed.lifecycle === 'included-non-final' ? `Alice commit is not final; ${observed.confirmations}/${config.requiredConfirmations} confirmations. The published Bob commit secret is not enabled for use yet.` : `Alice commit is ${observed.lifecycle}; Bob commit remains disabled.`} : {})}
     const progressionDisclosed = restored.publicState.party === 'alice'
-      ? restored.publicState.progression.released
-      : restored.publicState.progression.received
+      ? restored.publicState.progression.published
+      : restored.publicState.progression.observed
+    const wasFinal = restored.publicState.aliceCommit.status === 'final'
     const command = final
-      ? {command: 'mark-alice-final' as const, inclusion: observed.inclusion!}
-      : progressionDisclosed
+      ? {command: 'mark-alice-final' as const, inclusion: observed.inclusion!, ...(identity.localParty === 'bob' ? {bobCommitSecret: bobCommitSecret!} : {})}
+      : wasFinal && progressionDisclosed
         ? {command: 'enter-recovery' as const, reason: `Alice commit became ${observed.lifecycle} after progression disclosure; stop Bob submission and reclaim eligible committed legs.`}
         : observed.lifecycle === 'included-non-final'
           ? {command: 'mark-alice-included-non-final' as const, inclusion: observed.inclusion!}

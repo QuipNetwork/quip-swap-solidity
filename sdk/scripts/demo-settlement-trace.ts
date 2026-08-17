@@ -5,7 +5,7 @@ import type {Hex32, ProtocolAddresses, ProtocolEvent, ProtocolTerms} from '../sr
 export const SETTLEMENT_TRACE_SCHEMA = 'quip-swap-settlement-trace.v1' as const
 
 export type SettlementAction = 'alice-commit' | 'bob-commit' | 'revealing-claim' | 'final-claim' | 'reclaim'
-export type ProgressionGateOutcome = 'not-required' | 'bob-secret-accepted' | 'not-applicable'
+export type ProgressionGateOutcome = 'bob-secret-published' | 'bob-secret-accepted' | 'not-applicable'
 
 export type TrackedHolding =
   | {readonly assetType: 'native'; readonly account: Address}
@@ -141,7 +141,7 @@ async function readHolding(publicClient: PublicClient, holding: TrackedHolding):
 
 function validateTransition(action: SettlementAction, before: CrossChainLegState, after: CrossChainLegState, gate: ProgressionGateOutcome): void {
   const expected = action === 'alice-commit'
-    ? [CrossChainLegState.Unused, CrossChainLegState.Committed, 'not-required'] as const
+    ? [CrossChainLegState.Unused, CrossChainLegState.Committed, 'bob-secret-published'] as const
     : action === 'bob-commit'
       ? [CrossChainLegState.Unused, CrossChainLegState.Committed, 'bob-secret-accepted'] as const
       : action === 'reclaim'

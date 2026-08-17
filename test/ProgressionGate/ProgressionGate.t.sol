@@ -15,18 +15,20 @@ contract ProgressionGateTest is Test {
     harness = new ProgressionGateHarness();
   }
 
-  function test_crossChainPartyNeedsNoSecretAndCounterpartyRequiresExactSecret() public view {
+  function test_bothCrossChainCommitsRequireExactSecret() public view {
     ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('run-a'));
-    harness.validate(terms, true, bytes32(0));
+    harness.validate(terms, true, SECRET);
     harness.validate(terms, false, SECRET);
   }
 
-  function test_crossChainCounterpartyRejectsAbsentAndIncorrectSecret() public {
+  function test_bothCrossChainSidesRejectAbsentAndIncorrectSecret() public {
     ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('run-a'));
-    vm.expectRevert(ProgressionGate.MissingBobCommitSecret.selector);
-    harness.validate(terms, false, bytes32(0));
-    vm.expectRevert(ProgressionGate.InvalidBobCommitSecret.selector);
-    harness.validate(terms, false, keccak256('wrong'));
+    for (uint256 party; party <= 1; ++party) {
+      vm.expectRevert(ProgressionGate.MissingBobCommitSecret.selector);
+      harness.validate(terms, party == 1, bytes32(0));
+      vm.expectRevert(ProgressionGate.InvalidBobCommitSecret.selector);
+      harness.validate(terms, party == 1, keccak256('wrong'));
+    }
   }
 
   function test_secretFromAnotherTradeCannotOpenThisTrade() public {
@@ -49,14 +51,15 @@ contract ProgressionGateTest is Test {
 
   function test_prematureDisclosureMakesCounterpartyGateImmediatelyUsable() public view {
     ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('premature-disclosure'));
-    // ProgressionGate is intentionally stateless: finality is enforced by withholding this preimage off-chain.
+    // ProgressionGate is intentionally stateless: the trusted Bob client delays use of the public preimage until finality.
     harness.validate(terms, false, SECRET);
   }
 
-  function test_partyCommitRejectsPrematureOrExtraneousProgressionSecret() public {
+  function test_partyCommitRequiresOnlyTheTradeBoundProgressionSecret() public {
     ProtocolTerms memory terms = _crossChainTerms(SECRET, keccak256('run-a'));
-    vm.expectRevert(ProgressionGate.UnexpectedBobCommitSecret.selector);
     harness.validate(terms, true, SECRET);
+    vm.expectRevert(ProgressionGate.InvalidBobCommitSecret.selector);
+    harness.validate(terms, true, keccak256('wrong'));
   }
 
   function test_sameChainNeverAcceptsProgressionSecretOnEitherCommit() public {

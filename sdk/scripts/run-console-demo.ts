@@ -62,8 +62,6 @@ try {
   await rpc('http://127.0.0.1:8545', 'anvil_mine', ['0x2'])
   command('observe-alice-commit', 'alice', aliceRoot, aliceConfig)
   command('observe-alice-commit', 'bob', bobRoot, bobConfig)
-  const released = command('release-bob-secret', 'alice', aliceRoot, aliceConfig, undefined, true)
-  command('import-bob-secret', 'bob', bobRoot, bobConfig, read(String(released.result.handoffPath)))
   command('submit-bob-commit', 'bob', bobRoot, bobConfig, undefined, true)
   command('observe-bob-commit', 'bob', bobRoot, bobConfig)
   command('observe-bob-commit', 'alice', aliceRoot, aliceConfig)

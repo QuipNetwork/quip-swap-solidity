@@ -16,7 +16,6 @@ import type {Hex32} from './types.js'
 export const ALICE_COMMIT_INPUT_SCHEMA = 'quip-swap-alice-commit.v1' as const
 export const ALICE_COMMIT_JOURNAL_SCHEMA = 'quip-swap-transaction-journal.v1' as const
 export const ALICE_COMMIT_REFERENCE_SCHEMA = 'quip-swap-alice-commit-reference.v1' as const
-const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
 const ANVIL_ALICE_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d' as Hex
 
 export interface AliceCommitPreview {
@@ -36,7 +35,7 @@ export interface AliceCommitBoundary {
   state(terms: ProtocolTerms, lock: Hex32): Promise<CrossChainLegState>
   transaction(hash: Hash): Promise<'pending' | 'success' | 'reverted' | 'missing'>
   currentTimestamp?(): Promise<bigint>
-  submit(args: {readonly terms: ProtocolTerms; readonly lock: Hex32; readonly actionNonce: Hex32; readonly expiry: bigint; readonly payloadHash: Hex32}): Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
+  submit(args: {readonly terms: ProtocolTerms; readonly lock: Hex32; readonly actionNonce: Hex32; readonly expiry: bigint; readonly payloadHash: Hex32; readonly bobCommitSecret: Hex32}): Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
 }
 
 interface AliceCommitInput {
@@ -102,10 +101,10 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
         try { await publicClient.getTransaction({hash}); return 'pending' } catch { return 'missing' }
       }
     },
-    submit: async ({terms, lock, actionNonce, expiry, payloadHash}) => {
+    submit: async ({terms, lock, actionNonce, expiry, payloadHash, bobCommitSecret}) => {
       const activeKey = pqKey(route.trustedVerifier, 'quip-swap-console-alice-active')
       const recoveryKey = pqKey(route.trustedVerifier, 'quip-swap-console-alice-recovery')
-      const request: CommitAuthorizationRequest = {receiver: route.wrapper, terms, party: true, lock, actionNonce, bobCommitSecret: ZERO32, expiry, commitData: '0x'}
+      const request: CommitAuthorizationRequest = {receiver: route.wrapper, terms, party: true, lock, actionNonce, bobCommitSecret, expiry, commitData: '0x'}
       const registration: InitialRegistration = {eoa: config.actors.alice, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: route.verifier, commitPayloadHash: payloadHash, operationNonce: keccak256(concatHex([terms.timingPolicyId, actionNonce])), expiry}
       const digest = registrationDigest(31337n, addresses.identityRegistry, registration)
       const call = encodeFunctionData({abi: pqAuthorizationGatewayAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, payloadHash)]})
@@ -146,7 +145,7 @@ export async function submitAliceCommit(args: {readonly workspace: string; reado
   return withWorkspaceMutation(args.workspace, async () => {
     const expected = {party: 'alice' as const, networkId: config.identity.networkId, configDigest: config.identity.digest}
     const restored = await restoreWorkspaceWorkflowState(args.workspace, expected)
-    if (restored.publicState.party !== 'alice') throw new Error('Alice commit requires Alice state')
+    if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice') throw new Error('Alice commit requires Alice state')
     if (input.acceptance.networkId !== config.identity.networkId || input.acceptance.tradeId !== restored.publicState.tradeId || input.acceptance.bob.toLowerCase() !== config.actors.bob.toLowerCase()) throw new Error('Bob acceptance does not match this exact trade')
     const offer = parseConsoleOffer(await readFile(join(resolve(args.workspace), 'public', 'offer.json'), 'utf8'))
     if (offer.tradeId !== restored.publicState.tradeId) throw new Error('workspace offer TradeID mismatch')
@@ -178,7 +177,7 @@ export async function submitAliceCommit(args: {readonly workspace: string; reado
     }
     const payloadHash = commitPayloadHash({terms: restored.terms, party: true, authorizationVerifier: config.chains[0].verifier, swapAddress: config.chains[0].wrapper, lock: restored.publicState.derived.settlementLock, expectedSourceState: ExpectedSourceState.Unused, actionNonce: offer.authorizationEvidence.partyActionNonce, expiry})
     if (payloadHash !== restored.publicState.derived.partyCommitPayloadHash) throw new Error('Alice commit authorization hash mismatch')
-    const submitted = await boundary.submit({terms: restored.terms, lock: restored.publicState.derived.settlementLock, actionNonce: offer.authorizationEvidence.partyActionNonce, expiry, payloadHash})
+    const submitted = await boundary.submit({terms: restored.terms, lock: restored.publicState.derived.settlementLock, actionNonce: offer.authorizationEvidence.partyActionNonce, expiry, payloadHash, bobCommitSecret: restored.secretState.bobCommitSecret})
     const transactionHash = submitted.hash
     const journal: AliceCommitJournal = {schema: ALICE_COMMIT_JOURNAL_SCHEMA, action: 'alice-commit', networkId: config.identity.networkId, tradeId: restored.publicState.tradeId, chainId: 31337, wrapper: config.chains[0].wrapper, transactionHash, sender: config.actors.alice, nonce: submitted.nonce, submittedAtBlock: submitted.submittedAtBlock.toString()}
     await writeLockedWorkspaceJournal(args.workspace, 'alice-commit', `${JSON.stringify(journal, null, 2)}\n`)

@@ -20,8 +20,6 @@ export type CliCommand =
   | 'status'
   | 'submit-alice-commit'
   | 'observe-alice-commit'
-  | 'release-bob-secret'
-  | 'import-bob-secret'
   | 'submit-bob-commit'
   | 'observe-bob-commit'
   | 'submit-revealing-claim'
@@ -96,25 +94,11 @@ export const cliCommandSpecs: readonly CliCommandSpec[] = [
     description: 'Verify Alice\'s exact commit lifecycle and canonical finality.',
   },
   {
-    command: 'release-bob-secret',
-    parties: ['alice'],
-    mutatesState: true,
-    input: 'stdin-json',
-    description: 'Transfer the progression preimage from Alice state into the selected Bob client boundary.',
-  },
-  {
-    command: 'import-bob-secret',
-    parties: ['bob'],
-    mutatesState: true,
-    input: 'stdin-json',
-    description: 'Validate and privately import Alice\'s progression handoff.',
-  },
-  {
     command: 'submit-bob-commit',
     parties: ['bob'],
     mutatesState: true,
     input: 'stdin-json',
-    description: 'Submit and record Bob commit using the released progression preimage.',
+    description: 'Submit Bob commit using the preimage recovered from Alice\'s finalized on-chain commit.',
   },
   {
     command: 'observe-bob-commit',

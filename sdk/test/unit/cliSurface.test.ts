@@ -12,7 +12,7 @@ describe('prototype CLI surface', () => {
     expect(new Set(cliCommandSpecs.map(spec => spec.command)).size).toBe(cliCommandSpecs.length)
     expect(cliCommandSpec('status').mutatesState).toBe(false)
     expect(cliCommandSpecs.filter(spec => !spec.mutatesState).map(spec => spec.command)).toEqual(['status'])
-    expect(cliCommandSpec('release-bob-secret').parties).toEqual(['alice'])
+    expect(cliCommandSpecs.map(spec => spec.command)).not.toContain('release-bob-secret')
     expect(cliCommandSpec('submit-bob-commit').parties).toEqual(['bob'])
     expect(cliCommandSpec('observe-reveal').parties).toEqual(['bob'])
     expect(() => cliCommandSpec('mark-alice-final' as never)).toThrow('unknown CLI command')
