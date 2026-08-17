@@ -11,6 +11,7 @@ import type {CliCommand, CliExitCode, ClientParty} from './cliSurface.js'
 import {initializePartyWorkspace, inspectPartyWorkspace, loadConsoleConfigIdentity} from './consoleWorkspace.js'
 import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './consoleTrade.js'
 import {submitAliceCommit} from './consoleCommit.js'
+import {observeAliceCommit} from './consoleObservation.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -197,6 +198,24 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Alice commit failed'
       const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'observe-alice-commit') {
+    try {
+      const result = await observeAliceCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: result.warning === undefined ? [] : [result.warning]}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {
+        io.stdout(`Alice commit ${result.transactionHash}: ${result.lifecycle} (${result.confirmations}/${result.requiredConfirmations} confirmations).\n`)
+        if (result.warning !== undefined) io.stderr(`WARNING: ${result.warning}\n`)
+      }
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Alice commit observation failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_OBSERVATION_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

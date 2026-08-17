@@ -20,8 +20,9 @@ import {
   timingPolicyId,
   submitAliceCommit,
   restoreWorkspaceWorkflowState,
+  observeAliceCommit,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -98,7 +99,7 @@ describe('console Alice commit', () => {
       const boundary: AliceCommitBoundary = {
         state: async () => CrossChainLegState.Unused,
         transaction: async hash => hash === transactionHash ? 'pending' : 'missing',
-        submit: async args => { submissions += 1; expect(args.payloadHash).toBe(offer.bobState.derived.partyCommitPayloadHash); return transactionHash },
+        submit: async args => { submissions += 1; expect(args.payloadHash).toBe(offer.bobState.derived.partyCommitPayloadHash); return {hash: transactionHash, nonce: 7, submittedAtBlock: 10n} },
       }
       const commitInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
       const first = await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary})
@@ -112,12 +113,31 @@ describe('console Alice commit', () => {
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 
+  it('persists independently verified non-final and final observations for both parties', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
+      const transactionHash = H(802)
+      const commitBoundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 9, submittedAtBlock: 10n})}
+      const commitInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
+      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary: commitBoundary})
+      const inclusion = {transactionHash, blockNumber: '10', blockHash: H(803)}
+      const nonFinal: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'included-non-final', observedHead: '10', confirmations: '1', inclusion})}
+      expect(await observeAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: nonFinal})).toMatchObject({lifecycle: 'included-non-final', bobCommitEnabled: false})
+      expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.aliceCommit.status).toBe('included-non-final')
+      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '12', confirmations: '3', inclusion})}
+      expect(await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: final})).toMatchObject({lifecycle: 'final', bobCommitEnabled: true})
+      expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'bob-enabled', aliceCommit: {status: 'final'}})
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
   it('rejects mismatched acceptance and untracked used on-chain state without funding', async () => {
     const value = await fixture()
     try {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       let submissions = 0
-      const boundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Committed, transaction: async () => 'missing', submit: async () => { submissions += 1; return H(801) }}
+      const boundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Committed, transaction: async () => 'missing', submit: async () => { submissions += 1; return {hash: H(801), nonce: 8, submittedAtBlock: 10n} }}
       const makeInput = (tradeId: Hex32) => JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId, bob: B}})
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(H(99)), boundary})).rejects.toThrow('does not match')
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: makeInput(offer.tradeId), boundary})).rejects.toThrow('already used on-chain')

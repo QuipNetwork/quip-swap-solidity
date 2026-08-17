@@ -35,6 +35,7 @@ export interface ConsoleRuntimeConfig {
   readonly requiredConfirmations: bigint
   readonly policy: TimingPolicy
   readonly actors: {readonly alice: Address; readonly bob: Address; readonly executor: Address}
+  readonly exchangeDirectory: string
   readonly chains: readonly [{readonly chainId: 31337; readonly rpcUrl: string; readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address; readonly trustedVerifier: Address; readonly addresses: Record<string, Address>}, {readonly chainId: 31338; readonly rpcUrl: string; readonly token: Address; readonly amount: bigint; readonly verifier: Address; readonly wrapper: Address; readonly trustedVerifier: Address; readonly addresses: Record<string, Address>}]
 }
 
@@ -74,6 +75,7 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
   const actors = record(value['actors'], 'actors')
   const deployment = record(value['deployment'], 'deployment')
   const deployedChains = deployment['chains'] as unknown[]
+  const exchange = record(value['artifactExchange'], 'artifact exchange')
   const configuredChains = value['chains'] as unknown[]
   const chain = (index: 0 | 1) => {
     const deployed = record(deployedChains[index], `deployment chain ${index}`)
@@ -83,7 +85,7 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
     const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
     return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['authorizationGateway']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
   }
-  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
+  return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, exchangeDirectory: String(exchange['directory']), chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
 }
 
 function parsePrepareInput(serialized: string): PrepareInput {

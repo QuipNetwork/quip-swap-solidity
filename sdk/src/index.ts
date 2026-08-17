@@ -157,10 +157,17 @@ export type {PublicTradeOffer, ConsoleRuntimeConfig} from './consoleTrade.js'
 export {
   ALICE_COMMIT_INPUT_SCHEMA,
   ALICE_COMMIT_JOURNAL_SCHEMA,
+  ALICE_COMMIT_REFERENCE_SCHEMA,
   createLocalAliceCommitBoundary,
   submitAliceCommit,
 } from './consoleCommit.js'
 export type {AliceCommitPreview, AliceCommitBoundary} from './consoleCommit.js'
+export {
+  ALICE_COMMIT_OBSERVATION_SCHEMA,
+  createLocalAliceObservationBoundary,
+  observeAliceCommit,
+} from './consoleObservation.js'
+export type {AliceCommitLifecycle, AliceCommitObservation, AliceCommitObservationBoundary} from './consoleObservation.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,

@@ -111,18 +111,15 @@ export function applyPartyCommand(
   let transfer: BobProgressionTransfer | undefined
   switch (input.command) {
     case 'mark-alice-pending':
-      requireAlice(pair.publicState, pair.secretState)
-      if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
+      requireProgressionNotReleased(pair.publicState)
       pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}}
       break
     case 'mark-alice-included-non-final':
-      requireAlice(pair.publicState, pair.secretState)
-      if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
+      requireProgressionNotReleased(pair.publicState)
       pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'included-non-final', inclusion: input.inclusion}}
       break
     case 'mark-alice-final':
-      requireAlice(pair.publicState, pair.secretState)
-      if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
+      requireProgressionNotReleased(pair.publicState)
       pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}}
       break
     case 'release-bob-secret':
@@ -168,6 +165,10 @@ function requireAlice(publicState: ClientState, secretState: PartySecretState): 
 }
 function requireBob(publicState: ClientState, secretState: PartySecretState): asserts publicState is BobClientState & typeof publicState {
   if (publicState.party !== 'bob' || secretState.party !== 'bob') throw new Error('command requires Bob client state')
+}
+function requireProgressionNotReleased(publicState: ClientState): void {
+  if (publicState.party === 'alice' && publicState.progression.released) throw new Error('progression already released')
+  if (publicState.party === 'bob' && publicState.progression.received) throw new Error('progression already received')
 }
 function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer): void {
   if (transfer.schema !== 'quip-swap-bob-progression.v1' || transfer.tradeId !== state.tradeId) throw new Error('invalid progression transfer')

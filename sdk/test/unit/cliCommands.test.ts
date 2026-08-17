@@ -50,7 +50,7 @@ describe('trusted workflow CLI commands', () => {
   it('rejects early release, wrong-party commands, invalid transfers, and premature reveal', () => {
     const initial = prepared()
     expect(() => applyPartyCommand(initial.alice.publicState, initial.alice.secretState, {command: 'release-bob-secret', aliceAddress: ALICE})).toThrow('not final')
-    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-pending'})).toThrow('requires Alice')
+    expect(applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-pending'}).publicState.aliceCommit.status).toBe('pending')
     expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'observe-reveal', settlementSecret: initial.alice.secretState.settlementSecret, inclusion})).toThrow('not committed')
   })
 
