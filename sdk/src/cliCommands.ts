@@ -85,6 +85,8 @@ type CommandInput =
   | {readonly command: 'mark-alice-final'; readonly inclusion: PersistedInclusion}
   | {readonly command: 'release-bob-secret'; readonly aliceAddress: Address}
   | {readonly command: 'import-bob-secret'; readonly transfer: BobProgressionTransfer}
+  | {readonly command: 'mark-bob-commit-pending'}
+  | {readonly command: 'mark-bob-committed'}
   | {readonly command: 'submit-bob-commit'; readonly transfer: BobProgressionTransfer; readonly transactionHash: Hex}
   | {readonly command: 'observe-reveal'; readonly settlementSecret: Hex32; readonly inclusion: PersistedInclusion}
   | {readonly command: 'handoff-final-claim'; readonly executor: Address; readonly transactionHash: Hex}
@@ -145,6 +147,16 @@ export function applyPartyCommand(
       pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
       pair.publicState = {...pair.publicState, stage: 'bob-committed', aliceCommit: input.transfer.aliceCommit, progression: {received: true, receivedFrom: input.transfer.from}}
       break
+    case 'mark-bob-commit-pending':
+      requireProgressionReady(pair.publicState, pair.secretState)
+      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(publicState.stage)) throw new Error('Bob commit is not enabled')
+      pair.publicState = {...pair.publicState, stage: 'bob-commit-pending'}
+      break
+    case 'mark-bob-committed':
+      requireProgressionReady(pair.publicState, pair.secretState)
+      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(publicState.stage)) throw new Error('Bob commit is not pending')
+      pair.publicState = {...pair.publicState, stage: 'bob-committed'}
+      break
     case 'observe-reveal':
       requireBob(pair.publicState, pair.secretState)
       if (publicState.stage !== 'bob-committed') throw new Error('Bob is not committed')
@@ -179,6 +191,11 @@ function requireBob(publicState: ClientState, secretState: PartySecretState): as
 function requireProgressionNotReleased(publicState: ClientState): void {
   if (publicState.party === 'alice' && publicState.progression.released) throw new Error('progression already released')
   if (publicState.party === 'bob' && publicState.progression.received) throw new Error('progression already received')
+}
+function requireProgressionReady(publicState: ClientState, secretState: PartySecretState): void {
+  if (publicState.party === 'alice') {
+    if (!publicState.progression.released) throw new Error('Alice has not released progression')
+  } else if (!publicState.progression.received || secretState.bobCommitSecret === undefined) throw new Error('Bob has not imported progression')
 }
 function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer, requireObservedFinality: boolean): void {
   if (transfer.schema !== 'quip-swap-bob-progression.v1' || transfer.tradeId !== state.tradeId) throw new Error('invalid progression transfer')

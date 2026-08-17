@@ -13,6 +13,7 @@ import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './con
 import {submitAliceCommit} from './consoleCommit.js'
 import {observeAliceCommit} from './consoleObservation.js'
 import {importBobCommitSecret, releaseBobCommitSecret} from './consoleProgression.js'
+import {observeBobCommit, submitBobCommit} from './consoleBobCommit.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -239,6 +240,37 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : `${command} failed`
       const output = cliFailure({command, party, sequence: 0, code: command === 'release-bob-secret' ? 'PROGRESSION_RELEASE_FAILED' : 'PROGRESSION_IMPORT_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'submit-bob-commit') {
+    try {
+      if (io.stdin === undefined) throw new Error('submit-bob-commit requires confirmation JSON on standard input')
+      const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin(), ...(!json ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ authorization and publicly known Anvil Bob key are active.']}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} Bob commit ${result.transactionHash} (${result.lifecycle}).\n`)
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Bob commit failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'BOB_COMMIT_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'observe-bob-commit') {
+    try {
+      const result = await observeBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: result.warning === undefined ? [] : [result.warning]}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {io.stdout(`Bob commit ${result.transactionHash}: ${result.lifecycle}.\n`); if (result.warning !== undefined) io.stderr(`WARNING: ${result.warning}\n`)}
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Bob commit observation failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'BOB_COMMIT_OBSERVATION_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

@@ -24,8 +24,11 @@ import {
   releaseBobCommitSecret,
   importBobCommitSecret,
   RELEASE_BOB_SECRET_INPUT_SCHEMA,
+  BOB_COMMIT_INPUT_SCHEMA,
+  submitBobCommit,
+  observeBobCommit,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, AliceCommitObservationBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -160,6 +163,36 @@ describe('console Alice commit', () => {
       expect(bob.publicState).toMatchObject({stage: 'bob-enabled', progression: {received: true}})
       expect(bob.secretState).toHaveProperty('bobCommitSecret')
       await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})).rejects.toThrow(/already received|progression/)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('submits Bob secret-gated funding once and lets both parties verify the exact commit', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
+      const aliceHash = H(820)
+      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: aliceHash, nonce: 11, submittedAtBlock: 30n})}})
+      const aliceInclusion = {transactionHash: aliceHash, blockNumber: '30', blockHash: H(821)}
+      const aliceFinal: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '32', confirmations: '3', inclusion: aliceInclusion})}
+      const released = await releaseBobCommitSecret({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: RELEASE_BOB_SECRET_INPUT_SCHEMA, confirmed: true}), observationBoundary: aliceFinal})
+      await importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: await readFile(released.handoffPath, 'utf8'), observationBoundary: aliceFinal})
+      const bobHash = H(822)
+      let submissions = 0
+      const bobBoundary: BobCommitBoundary = {state: async () => CrossChainLegState.Unused, transaction: async hash => hash === bobHash ? 'pending' : 'missing', submit: async args => {submissions += 1; expect(args.bobCommitSecret).not.toBe(H(0)); return {hash: bobHash, nonce: 12, submittedAtBlock: 40n}}}
+      const bobInput = JSON.stringify({schema: BOB_COMMIT_INPUT_SCHEMA, confirmed: true})
+      await expect(submitBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, input: bobInput, boundary: bobBoundary})).rejects.toThrow()
+      await acceptConsoleTrade({workspace: value.bobRoot, configPath: value.bobConfig})
+      const submitted = await submitBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, input: bobInput, boundary: bobBoundary})
+      expect(submitted).toMatchObject({transactionHash: bobHash, reused: false, lifecycle: 'pending'})
+      expect(JSON.stringify(submitted)).not.toMatch(/bobCommitSecret|settlementSecret/i)
+      expect((await submitBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, input: bobInput, boundary: bobBoundary})).reused).toBe(true)
+      expect(submissions).toBe(1)
+      const bobInclusion = {transactionHash: bobHash, blockNumber: '40', blockHash: H(823)}
+      const committed: BobCommitObservationBoundary = {inspect: async () => ({lifecycle: 'committed', observedHead: '40', inclusion: bobInclusion})}
+      expect(await observeBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: committed})).toMatchObject({lifecycle: 'committed', aliceClaimEnabled: true})
+      expect(await observeBobCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: committed})).toMatchObject({lifecycle: 'committed', aliceClaimEnabled: true})
+      expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.stage).toBe('bob-committed')
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 

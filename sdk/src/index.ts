@@ -174,6 +174,16 @@ export {
   importBobCommitSecret,
 } from './consoleProgression.js'
 export {
+  BOB_COMMIT_INPUT_SCHEMA,
+  BOB_COMMIT_REFERENCE_SCHEMA,
+  BOB_COMMIT_OBSERVATION_SCHEMA,
+  createLocalBobCommitBoundary,
+  createLocalBobObservationBoundary,
+  submitBobCommit,
+  observeBobCommit,
+} from './consoleBobCommit.js'
+export type {BobCommitPreview, BobCommitBoundary, BobCommitLifecycle, BobCommitObservation, BobCommitObservationBoundary} from './consoleBobCommit.js'
+export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
   restoreProtocolTerms,
