@@ -147,7 +147,7 @@ export async function withWorkspaceMutation<T>(root: string, action: () => Promi
   }
 }
 
-async function saveWorkspaceWorkflowStateLocked(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
+async function saveWorkspaceWorkflowStateLocked(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>; readonly privateArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
     const manifest = await inspectPartyWorkspace(args.root, args.expected)
     validatePartyWorkflowState(args.publicState, args.secretState)
     if (args.publicState.party !== manifest.party) throw new Error('state party does not match workspace')
@@ -160,16 +160,20 @@ async function saveWorkspaceWorkflowStateLocked(args: {readonly root: string; re
       if (!/^[a-z0-9][a-z0-9.-]*\.json$/.test(filename)) throw new Error('invalid public artifact filename')
       await atomicWrite(join(resolve(args.root), 'public', filename), contents)
     }
+    for (const [filename, contents] of Object.entries(args.privateArtifacts ?? {})) {
+      if (!/^[a-z0-9][a-z0-9.-]*\.json$/.test(filename)) throw new Error('invalid private artifact filename')
+      await atomicWrite(join(resolve(args.root), 'private', filename), contents)
+    }
     const next: WorkspaceManifest = {...manifest, tradeId: args.publicState.tradeId, generation: args.publicState.generation}
     await atomicWrite(join(resolve(args.root), 'workspace.json'), `${JSON.stringify(next, null, 2)}\n`)
 }
 
-export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
+export async function saveWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>; readonly privateArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
   await withWorkspaceMutation(args.root, () => saveWorkspaceWorkflowStateLocked(args))
 }
 
 /** Use only from an action already protected by withWorkspaceMutation. */
-export async function publishLockedWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
+export async function publishLockedWorkspaceWorkflowState(args: {readonly root: string; readonly expected: WorkspaceExpectation; readonly publicState: ClientState; readonly secretState: PartySecretState; readonly publicArtifacts?: Readonly<Record<string, string>>; readonly privateArtifacts?: Readonly<Record<string, string>>}): Promise<void> {
   await saveWorkspaceWorkflowStateLocked(args)
 }
 

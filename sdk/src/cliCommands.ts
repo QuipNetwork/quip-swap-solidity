@@ -14,6 +14,7 @@ export interface BobProgressionTransfer {
   readonly from: Address
   readonly to: Address
   readonly bobCommitSecret: Hex32
+  readonly aliceGeneration: number
   readonly aliceCommit: {readonly status: 'final'; readonly inclusion?: PersistedInclusion}
 }
 
@@ -83,6 +84,7 @@ type CommandInput =
   | {readonly command: 'mark-alice-included-non-final'; readonly inclusion: PersistedInclusion}
   | {readonly command: 'mark-alice-final'; readonly inclusion: PersistedInclusion}
   | {readonly command: 'release-bob-secret'; readonly aliceAddress: Address}
+  | {readonly command: 'import-bob-secret'; readonly transfer: BobProgressionTransfer}
   | {readonly command: 'submit-bob-commit'; readonly transfer: BobProgressionTransfer; readonly transactionHash: Hex}
   | {readonly command: 'observe-reveal'; readonly settlementSecret: Hex32; readonly inclusion: PersistedInclusion}
   | {readonly command: 'handoff-final-claim'; readonly executor: Address; readonly transactionHash: Hex}
@@ -126,12 +128,20 @@ export function applyPartyCommand(
       requireAlice(pair.publicState, pair.secretState)
       if (publicState.aliceCommit.status !== 'final') throw new Error('Alice commit is not final')
       if ((pair.publicState as AliceClientState).progression.released) throw new Error('progression already released')
-      transfer = {schema: 'quip-swap-bob-progression.v1', tradeId: publicState.tradeId, from: input.aliceAddress, to: publicState.selected.bobSubmitter, bobCommitSecret: (pair.secretState as AliceSecretState).bobCommitSecret, aliceCommit: (pair.publicState as AliceClientState).aliceCommit as {status: 'final'; inclusion?: PersistedInclusion}}
+      transfer = {schema: 'quip-swap-bob-progression.v1', tradeId: publicState.tradeId, from: input.aliceAddress, to: publicState.selected.bobSubmitter, bobCommitSecret: (pair.secretState as AliceSecretState).bobCommitSecret, aliceGeneration: pair.publicState.generation, aliceCommit: (pair.publicState as AliceClientState).aliceCommit as {status: 'final'; inclusion?: PersistedInclusion}}
       pair.publicState = {...pair.publicState, stage: 'bob-commit-pending', progression: {released: true, releasedTo: transfer.to}}
+      break
+    case 'import-bob-secret':
+      requireBob(pair.publicState, pair.secretState)
+      if (publicState.stage !== 'bob-enabled' || publicState.aliceCommit.status !== 'final') throw new Error('Alice commit is not currently final')
+      if ((publicState as BobClientState).progression.received) throw new Error('progression already received')
+      validateTransfer(pair.publicState as BobClientState, input.transfer, true)
+      pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
+      pair.publicState = {...pair.publicState, progression: {received: true, receivedFrom: input.transfer.from}}
       break
     case 'submit-bob-commit':
       requireBob(pair.publicState, pair.secretState)
-      validateTransfer(pair.publicState as BobClientState, input.transfer)
+      validateTransfer(pair.publicState as BobClientState, input.transfer, false)
       pair.secretState = {...pair.secretState, bobCommitSecret: input.transfer.bobCommitSecret}
       pair.publicState = {...pair.publicState, stage: 'bob-committed', aliceCommit: input.transfer.aliceCommit, progression: {received: true, receivedFrom: input.transfer.from}}
       break
@@ -170,9 +180,12 @@ function requireProgressionNotReleased(publicState: ClientState): void {
   if (publicState.party === 'alice' && publicState.progression.released) throw new Error('progression already released')
   if (publicState.party === 'bob' && publicState.progression.received) throw new Error('progression already received')
 }
-function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer): void {
+function validateTransfer(state: BobClientState, transfer: BobProgressionTransfer, requireObservedFinality: boolean): void {
   if (transfer.schema !== 'quip-swap-bob-progression.v1' || transfer.tradeId !== state.tradeId) throw new Error('invalid progression transfer')
   if (transfer.aliceCommit.status !== 'final') throw new Error('progression transfer lacks final Alice commit')
+  if (!Number.isSafeInteger(transfer.aliceGeneration) || transfer.aliceGeneration < 1) throw new Error('progression transfer has invalid Alice generation')
+  if (requireObservedFinality && (state.aliceCommit.status !== 'final' || state.aliceCommit.inclusion === undefined || transfer.aliceCommit.inclusion === undefined || JSON.stringify(state.aliceCommit.inclusion) !== JSON.stringify(transfer.aliceCommit.inclusion))) throw new Error('progression transfer has stale Alice finality evidence')
+  if (transfer.from.toLowerCase() !== state.terms.partySide.principal.toLowerCase()) throw new Error('progression transfer has wrong sender')
   if (transfer.to.toLowerCase() !== state.selected.bobSubmitter.toLowerCase()) throw new Error('progression transfer has wrong recipient')
   if (deriveCommitLock(state.derived.gateContextId, transfer.bobCommitSecret) !== state.terms.counterpartySide.commitLock) throw new Error('progression transfer has wrong preimage')
 }

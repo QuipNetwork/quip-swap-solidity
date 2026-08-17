@@ -21,6 +21,9 @@ import {
   submitAliceCommit,
   restoreWorkspaceWorkflowState,
   observeAliceCommit,
+  releaseBobCommitSecret,
+  importBobCommitSecret,
+  RELEASE_BOB_SECRET_INPUT_SCHEMA,
 } from '../../src/index.js'
 import type {AliceCommitBoundary, AliceCommitObservationBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
@@ -129,6 +132,34 @@ describe('console Alice commit', () => {
       const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '12', confirmations: '3', inclusion})}
       expect(await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: final})).toMatchObject({lifecycle: 'final', bobCommitEnabled: true})
       expect((await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})).publicState).toMatchObject({stage: 'bob-enabled', aliceCommit: {status: 'final'}})
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('rechecks finality, exports once privately, and imports only the exact Bob preimage', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
+      const transactionHash = H(810)
+      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 10, submittedAtBlock: 20n})}})
+      const inclusion = {transactionHash, blockNumber: '20', blockHash: H(811)}
+      const final: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'final', observedHead: '22', confirmations: '3', inclusion})}
+      const released = await releaseBobCommitSecret({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: RELEASE_BOB_SECRET_INPUT_SCHEMA, confirmed: true}), observationBoundary: final})
+      expect(released).toMatchObject({tradeId: offer.tradeId, to: B, irreversible: true})
+      expect(JSON.stringify(released)).not.toMatch(/bobCommitSecret|settlementSecret/i)
+      const handoff = await readFile(released.handoffPath, 'utf8')
+      expect(handoff).toContain('bobCommitSecret')
+      expect(await readFile(join(value.aliceRoot, 'public', '000000000004.json'), 'utf8')).not.toMatch(/bobCommitSecret|settlementSecret/i)
+      const reorganized: AliceCommitObservationBoundary = {inspect: async () => ({lifecycle: 'reorganized', observedHead: '22', confirmations: '0', inclusion})}
+      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: reorganized})).rejects.toThrow('not currently final')
+      const tampered = {...JSON.parse(handoff), bobCommitSecret: H(999)}
+      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(tampered), observationBoundary: final})).rejects.toThrow('wrong preimage')
+      const imported = await importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})
+      expect(imported).toMatchObject({tradeId: offer.tradeId, from: A, imported: true})
+      const bob = await restoreWorkspaceWorkflowState(value.bobRoot, {party: 'bob', networkId: 'trade-test', configDigest: value.bobIdentity.digest})
+      expect(bob.publicState).toMatchObject({stage: 'bob-enabled', progression: {received: true}})
+      expect(bob.secretState).toHaveProperty('bobCommitSecret')
+      await expect(importBobCommitSecret({workspace: value.bobRoot, configPath: value.bobConfig, input: handoff, observationBoundary: final})).rejects.toThrow(/already received|progression/)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 

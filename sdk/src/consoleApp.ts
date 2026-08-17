@@ -12,6 +12,7 @@ import {initializePartyWorkspace, inspectPartyWorkspace, loadConsoleConfigIdenti
 import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './consoleTrade.js'
 import {submitAliceCommit} from './consoleCommit.js'
 import {observeAliceCommit} from './consoleObservation.js'
+import {importBobCommitSecret, releaseBobCommitSecret} from './consoleProgression.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -216,6 +217,28 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Alice commit observation failed'
       const output = cliFailure({command, party, sequence: 0, code: 'ALICE_COMMIT_OBSERVATION_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && (command === 'release-bob-secret' || command === 'import-bob-secret')) {
+    try {
+      if (io.stdin === undefined) throw new Error(`${command} requires JSON on standard input`)
+      const result = command === 'release-bob-secret'
+        ? await releaseBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+        : await importBobCommitSecret({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: await io.stdin()})
+      const warnings = command === 'release-bob-secret' ? ['BobCommitSecret disclosure is irreversible. Transfer the private handoff only to the selected Bob boundary.'] : []
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else if (command === 'release-bob-secret') {
+        io.stdout(`Created private Bob progression handoff for ${result.tradeId}: ${(result as {handoffPath: string}).handoffPath}\n`)
+        io.stderr(`WARNING: ${warnings[0]}\n`)
+      } else io.stdout(`Imported and validated Bob progression handoff for ${result.tradeId}.\n`)
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `${command} failed`
+      const output = cliFailure({command, party, sequence: 0, code: command === 'release-bob-secret' ? 'PROGRESSION_RELEASE_FAILED' : 'PROGRESSION_IMPORT_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

@@ -169,6 +169,11 @@ export {
 } from './consoleObservation.js'
 export type {AliceCommitLifecycle, AliceCommitObservation, AliceCommitObservationBoundary} from './consoleObservation.js'
 export {
+  RELEASE_BOB_SECRET_INPUT_SCHEMA,
+  releaseBobCommitSecret,
+  importBobCommitSecret,
+} from './consoleProgression.js'
+export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
   restoreProtocolTerms,
