@@ -143,6 +143,20 @@ describe('console status', () => {
 })
 
 describe('console Alice commit', () => {
+  it('does not advance persisted state when authorization expires or submission is rejected', async () => {
+    const value = await fixture()
+    try {
+      const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const action = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
+      const before = await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')
+      const rejected = (reason: string): AliceCommitBoundary => ({state: async () => CrossChainLegState.Unused, transaction: async () => 'missing', submit: async () => {throw new Error(reason)}})
+      await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: action, boundary: rejected('ExpiredAuthorization')})).rejects.toThrow('ExpiredAuthorization')
+      expect(await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')).toBe(before)
+      await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: action, boundary: rejected('TransactionRejected')})).rejects.toThrow('TransactionRejected')
+      expect(await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')).toBe(before)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
   it('requires exact Bob acceptance, journals once, and reconciles retry without resubmission', async () => {
     const value = await fixture()
     try {
