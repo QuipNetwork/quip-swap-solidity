@@ -3,7 +3,6 @@ import {CLIENT_STATE_SCHEMA, persistProtocolTerms} from './clientState.js'
 import type {AliceClientState, BobClientState, ClientState, PersistedInclusion} from './clientState.js'
 import {SECRET_STATE_SCHEMA, validatePartyWorkflowState} from './clientPersistence.js'
 import type {AliceSecretState, BobSecretState, PartySecretState, SecretStateMode} from './clientPersistence.js'
-import type {CliCommand} from './cliSurface.js'
 import {deriveCommitLock, gateContextId, settlementLock} from './protocol.js'
 import type {Hex32} from './types.js'
 import {prepareTrustedCrossChainWorkflow} from './workflows/trustedCrossChain.js'
@@ -162,4 +161,5 @@ function validateTransfer(state: BobClientState, transfer: BobProgressionTransfe
   if (deriveCommitLock(state.derived.gateContextId, transfer.bobCommitSecret) !== state.terms.counterpartySide.commitLock) throw new Error('progression transfer has wrong preimage')
 }
 
-export const cliWorkflowCommands: readonly CliCommand[] = ['prepare-trade', 'status', 'mark-alice-pending', 'mark-alice-included-non-final', 'mark-alice-final', 'release-bob-secret', 'submit-bob-commit', 'observe-reveal', 'handoff-final-claim', 'mark-complete', 'enter-recovery']
+/** Internal persisted-state reducer commands; these are not the public console command contract. */
+export const cliWorkflowCommands = ['prepare-trade', 'status', 'mark-alice-pending', 'mark-alice-included-non-final', 'mark-alice-final', 'release-bob-secret', 'submit-bob-commit', 'observe-reveal', 'handoff-final-claim', 'mark-complete', 'enter-recovery'] as const

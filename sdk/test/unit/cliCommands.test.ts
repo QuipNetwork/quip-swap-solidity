@@ -62,7 +62,8 @@ describe('trusted workflow CLI commands', () => {
     expect(recovery.publicState).toMatchObject({stage: 'recovery', recovery: {active: true, reason: 'RPC disagreement'}})
   })
 
-  it('implements every command declared by the stable CLI surface', () => {
-    expect(cliWorkflowCommands).toEqual(cliCommandSpecs.map(spec => spec.command))
+  it('keeps internal reducer commands separate from the public console surface', () => {
+    expect(cliWorkflowCommands).toContain('mark-alice-final')
+    expect(cliCommandSpecs.map(spec => spec.command)).not.toContain('mark-alice-final')
   })
 })

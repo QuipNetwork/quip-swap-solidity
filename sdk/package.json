@@ -8,6 +8,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "quip-swap": "./dist/bin/quip-swap.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -31,6 +34,7 @@
     "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
     "demo:full": "bun run scripts/run-full-demo.ts",
+    "console": "bun run src/bin/quip-swap.ts",
     "smoke": "bun run scripts/smoke.ts",
     "build": "tsup",
     "check": "bun run typecheck && bun run test && bun run build"

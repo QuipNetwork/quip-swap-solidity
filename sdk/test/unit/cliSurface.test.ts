@@ -15,10 +15,11 @@ describe('prototype CLI surface', () => {
     expect(cliCommandSpec('release-bob-secret').parties).toEqual(['alice'])
     expect(cliCommandSpec('submit-bob-commit').parties).toEqual(['bob'])
     expect(cliCommandSpec('observe-reveal').parties).toEqual(['bob'])
+    expect(() => cliCommandSpec('mark-alice-final' as never)).toThrow('unknown CLI command')
   })
 
   it('never defines a secret as a command-line argument', () => {
-    expect(cliCommandSpecs.every(spec => spec.input === 'none' || spec.input === 'json')).toBe(true)
+    expect(cliCommandSpecs.every(spec => spec.input === 'none' || spec.input === 'stdin-json')).toBe(true)
     expect(cliCommandSpecs.every(spec => !Object.hasOwn(spec, 'secret') && !Object.hasOwn(spec, 'arguments'))).toBe(true)
   })
 

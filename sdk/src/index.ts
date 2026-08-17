@@ -102,12 +102,16 @@ export type {
 } from './prototypeDeployment.js'
 export {
   CLI_SCHEMA_VERSION,
+  CLI_EXIT_SUCCESS,
+  CLI_EXIT_FAILURE,
+  CLI_EXIT_USAGE,
   cliCommandSpecs,
   cliCommandSpec,
   cliSuccess,
   cliFailure,
 } from './cliSurface.js'
 export type {
+  CliExitCode,
   ClientParty,
   CliCommand,
   CliCommandSpec,
@@ -116,6 +120,26 @@ export type {
   CliFailureOutput,
   CliOutput,
 } from './cliSurface.js'
+export {
+  CLI_NAME,
+  CLI_VERSION,
+  consoleUsage,
+  parseConsoleArgs,
+  runConsole,
+  consoleContract,
+} from './consoleApp.js'
+export type {ConsoleOptions, ConsoleIo, ConsoleParseResult} from './consoleApp.js'
+export {
+  WORKSPACE_SCHEMA,
+  CONSOLE_CONFIG_SCHEMA,
+  loadConsoleConfigIdentity,
+  initializePartyWorkspace,
+  inspectPartyWorkspace,
+  withWorkspaceMutation,
+  saveWorkspaceWorkflowState,
+  restoreWorkspaceWorkflowState,
+} from './consoleWorkspace.js'
+export type {ConsoleConfigIdentity, WorkspaceManifest, WorkspaceExpectation} from './consoleWorkspace.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,

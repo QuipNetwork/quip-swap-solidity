@@ -2,35 +2,77 @@
 
 export const CLI_SCHEMA_VERSION = 'quip-swap-cli.v1' as const
 
+export const CLI_EXIT_SUCCESS = 0 as const
+export const CLI_EXIT_FAILURE = 1 as const
+export const CLI_EXIT_USAGE = 2 as const
+
+export type CliExitCode =
+  | typeof CLI_EXIT_SUCCESS
+  | typeof CLI_EXIT_FAILURE
+  | typeof CLI_EXIT_USAGE
 export type ClientParty = 'alice' | 'bob'
 export type CliCommand =
+  | 'init'
+  | 'bootstrap-local'
   | 'prepare-trade'
+  | 'import-offer'
+  | 'accept-trade'
   | 'status'
-  | 'mark-alice-pending'
-  | 'mark-alice-included-non-final'
-  | 'mark-alice-final'
+  | 'submit-alice-commit'
+  | 'observe-alice-commit'
   | 'release-bob-secret'
+  | 'import-bob-secret'
   | 'submit-bob-commit'
+  | 'observe-bob-commit'
+  | 'submit-revealing-claim'
   | 'observe-reveal'
-  | 'handoff-final-claim'
-  | 'mark-complete'
+  | 'submit-final-claim'
+  | 'reclaim'
   | 'enter-recovery'
 
 export interface CliCommandSpec {
   readonly command: CliCommand
   readonly parties: readonly ClientParty[]
   readonly mutatesState: boolean
-  readonly input: 'none' | 'json'
+  readonly input: 'none' | 'stdin-json'
   readonly description: string
 }
 
 export const cliCommandSpecs: readonly CliCommandSpec[] = [
   {
+    command: 'init',
+    parties: ['alice', 'bob'],
+    mutatesState: true,
+    input: 'none',
+    description: 'Create one isolated party workspace.',
+  },
+  {
+    command: 'bootstrap-local',
+    parties: ['alice', 'bob'],
+    mutatesState: true,
+    input: 'none',
+    description: 'Create or connect the local two-chain prototype environment.',
+  },
+  {
     command: 'prepare-trade',
     parties: ['alice'],
     mutatesState: true,
-    input: 'json',
+    input: 'stdin-json',
     description: 'Create Alice state and the Bob trade invitation from public trade configuration.',
+  },
+  {
+    command: 'import-offer',
+    parties: ['bob'],
+    mutatesState: true,
+    input: 'stdin-json',
+    description: 'Validate and import Alice\'s public trade offer.',
+  },
+  {
+    command: 'accept-trade',
+    parties: ['bob'],
+    mutatesState: true,
+    input: 'none',
+    description: 'Explicitly accept the locally validated public offer.',
   },
   {
     command: 'status',
@@ -40,66 +82,80 @@ export const cliCommandSpecs: readonly CliCommandSpec[] = [
     description: 'Read the selected party client state without changing it.',
   },
   {
-    command: 'mark-alice-pending',
+    command: 'submit-alice-commit',
     parties: ['alice'],
     mutatesState: true,
-    input: 'json',
-    description: 'Record Alice commit submission as pending.',
+    input: 'stdin-json',
+    description: 'Authorize and submit Alice\'s funding commit.',
   },
   {
-    command: 'mark-alice-included-non-final',
-    parties: ['alice'],
+    command: 'observe-alice-commit',
+    parties: ['alice', 'bob'],
     mutatesState: true,
-    input: 'json',
-    description: 'Record Alice commit inclusion while keeping Bob commit disabled.',
-  },
-  {
-    command: 'mark-alice-final',
-    parties: ['alice'],
-    mutatesState: true,
-    input: 'json',
-    description: 'Record Alice commit finality under the configured confirmation policy.',
+    input: 'none',
+    description: 'Verify Alice\'s exact commit lifecycle and canonical finality.',
   },
   {
     command: 'release-bob-secret',
     parties: ['alice'],
     mutatesState: true,
-    input: 'json',
+    input: 'stdin-json',
     description: 'Transfer the progression preimage from Alice state into the selected Bob client boundary.',
+  },
+  {
+    command: 'import-bob-secret',
+    parties: ['bob'],
+    mutatesState: true,
+    input: 'stdin-json',
+    description: 'Validate and privately import Alice\'s progression handoff.',
   },
   {
     command: 'submit-bob-commit',
     parties: ['bob'],
     mutatesState: true,
-    input: 'json',
+    input: 'stdin-json',
     description: 'Submit and record Bob commit using the released progression preimage.',
+  },
+  {
+    command: 'observe-bob-commit',
+    parties: ['alice', 'bob'],
+    mutatesState: true,
+    input: 'none',
+    description: 'Verify Bob\'s exact committed leg on its canonical chain.',
+  },
+  {
+    command: 'submit-revealing-claim',
+    parties: ['alice'],
+    mutatesState: true,
+    input: 'none',
+    description: 'Claim Bob\'s leg and reveal the settlement secret on-chain.',
   },
   {
     command: 'observe-reveal',
     parties: ['bob'],
     mutatesState: true,
-    input: 'json',
-    description: 'Record the finalized revealing claim and its on-chain settlement preimage.',
+    input: 'none',
+    description: 'Verify the revealing claim and extract its settlement preimage.',
   },
   {
-    command: 'handoff-final-claim',
+    command: 'submit-final-claim',
     parties: ['bob'],
     mutatesState: true,
-    input: 'json',
-    description: 'Record delivery of the final claim to the selected funded executor.',
+    input: 'none',
+    description: 'Submit the permissionless claim of Alice\'s committed leg.',
   },
   {
-    command: 'mark-complete',
+    command: 'reclaim',
     parties: ['alice', 'bob'],
     mutatesState: true,
-    input: 'json',
-    description: 'Record terminal completion independently in one party client boundary.',
+    input: 'none',
+    description: 'Reclaim an eligible committed leg to its fixed reclaim recipient.',
   },
   {
     command: 'enter-recovery',
     parties: ['alice', 'bob'],
     mutatesState: true,
-    input: 'json',
+    input: 'stdin-json',
     description: 'Record recovery mode and its public reason in one party client boundary.',
   },
 ] as const
@@ -175,7 +231,6 @@ export function cliFailure(args: {
   readonly details?: CliJson
 }): CliFailureOutput {
   const spec = cliCommandSpec(args.command)
-  requireParty(spec, args.party)
   return {
     schema: CLI_SCHEMA_VERSION,
     command: args.command,

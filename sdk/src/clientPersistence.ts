@@ -46,7 +46,7 @@ export interface RestoredPartyWorkflowState {
 const HEX32 = /^0x[0-9a-fA-F]{64}$/
 const generationName = (generation: number): string => generation.toString(10).padStart(12, '0')
 
-function validateSecretState(value: unknown): asserts value is PartySecretState {
+export function validateSecretState(value: unknown): asserts value is PartySecretState {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('secret state must be an object')
   const state = value as Record<string, unknown>
   if (state['schema'] !== SECRET_STATE_SCHEMA) throw new Error('unsupported secret state schema')
@@ -111,7 +111,7 @@ export function validatePartyWorkflowState(
   return {publicState, secretState, terms}
 }
 
-function serializeSecretState(state: PartySecretState): string {
+export function serializeSecretState(state: PartySecretState): string {
   validateSecretState(state)
   return `${JSON.stringify(state, null, 2)}\n`
 }
