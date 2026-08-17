@@ -31,8 +31,9 @@ import {
   submitRevealingClaim,
   observeReveal,
   submitFinalClaim,
+  getConsoleStatus,
 } from '../../src/index.js'
-import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, RevealObservationBoundary, FinalClaimBoundary, Hex32, TimingPolicy} from '../../src/index.js'
+import type {AliceCommitBoundary, AliceCommitObservationBoundary, BobCommitBoundary, BobCommitObservationBoundary, RevealingClaimBoundary, RevealObservationBoundary, FinalClaimBoundary, ConsoleLegStatus, ConsoleStatusBoundary, Hex32, TimingPolicy} from '../../src/index.js'
 
 const A = '0x1111111111111111111111111111111111111111' as Address
 const B = '0x2222222222222222222222222222222222222222' as Address
@@ -95,6 +96,47 @@ describe('console trade offer exchange', () => {
     try {
       await expect(prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({...JSON.parse(input), settlementSecret: H(1)})})).rejects.toThrow('forbidden')
       expect(await inspectPartyWorkspace(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).toMatchObject({tradeId: null, generation: 0})
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+})
+
+describe('console status', () => {
+  const leg = (chainId: 31337 | 31338, state: ConsoleLegStatus['state'], deadlineRisk: ConsoleLegStatus['deadlineRisk'] = 'none'): ConsoleLegStatus => ({
+    chainId,
+    wrapper: W,
+    state,
+    custody: state === 'Committed' ? 'wrapper' : state === 'Claimed' ? 'recipient' : state === 'Reclaimed' ? 'reclaim-recipient' : 'principal',
+    payoutVerified: state === 'Claimed' || state === 'Reclaimed',
+    timestamp: '900',
+    claimDeadline: '1000',
+    reclaimRelease: '1400',
+    deadlineRisk,
+    balances: [{token: chainId === 31337 ? T1 : T2, account: W, role: 'wrapper', amount: state === 'Committed' ? '10' : '0'}],
+  })
+
+  it('reports asymmetric progress and an exact next command without mutating state', async () => {
+    const value = await fixture()
+    try {
+      await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const before = await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')
+      const boundary: ConsoleStatusBoundary = {inspect: async () => [leg(31337, 'Committed', 'claim-window-open'), leg(31338, 'Unused')]}
+      const status = await getConsoleStatus({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary})
+      expect(status).toMatchObject({outcome: 'in-progress', complete: false, responsibleParty: 'alice'})
+      expect(status.warnings).toContain('Asymmetric on-chain states: Committed/Unused.')
+      expect(status.nextCommand).toContain('observe-alice-commit --party alice')
+      expect(status.legs[0]).toMatchObject({custody: 'wrapper', balances: [{amount: '10'}]})
+      expect(await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')).toBe(before)
+    } finally { await rm(value.root, {recursive: true, force: true}) }
+  })
+
+  it('requires two terminal states with verified payouts before completion', async () => {
+    const value = await fixture()
+    try {
+      await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
+      const asymmetric = await getConsoleStatus({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: {inspect: async () => [leg(31337, 'Claimed'), leg(31338, 'Committed')]}})
+      expect(asymmetric).toMatchObject({outcome: 'in-progress', complete: false})
+      const complete = await getConsoleStatus({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary: {inspect: async () => [leg(31337, 'Claimed'), leg(31338, 'Claimed')]}})
+      expect(complete).toMatchObject({outcome: 'success', complete: true, enabledActions: [], responsibleParty: 'none', nextCommand: null})
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
 })

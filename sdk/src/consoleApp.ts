@@ -16,6 +16,7 @@ import {importBobCommitSecret, releaseBobCommitSecret} from './consoleProgressio
 import {observeBobCommit, submitBobCommit} from './consoleBobCommit.js'
 import {submitRevealingClaim} from './consoleReveal.js'
 import {observeReveal, submitFinalClaim} from './consoleFinalClaim.js'
+import {getConsoleStatus} from './consoleStatus.js'
 
 export const CLI_NAME = 'quip-swap' as const
 export const CLI_VERSION = '0.1.0-beta.2' as const
@@ -320,6 +321,44 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
     } catch (error) {
       const message = error instanceof Error ? error.message : 'final claim failed'
       const output = cliFailure({command, party, sequence: 0, code: 'FINAL_CLAIM_FAILED', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+  }
+  if (!wrongParty && command === 'status') {
+    try {
+      const config = await loadConsoleConfigIdentity(parsed.options.config)
+      await inspectPartyWorkspace(parsed.options.stateRoot, {party, networkId: config.networkId, configDigest: config.digest})
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace validation failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'WORKSPACE_INVALID', message})
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else io.stderr(`${CLI_NAME}: ${message}\n`)
+      return CLI_EXIT_FAILURE
+    }
+    try {
+      const result = await getConsoleStatus({workspace: parsed.options.stateRoot, configPath: parsed.options.config})
+      const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: false, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: result.warnings}
+      if (json) io.stdout(`${JSON.stringify(output)}\n`)
+      else {
+        io.stdout([
+          `Trade: ${result.tradeId}`,
+          `Outcome: ${result.outcome}${result.complete ? ' (complete)' : ''}`,
+          `Persisted stage: ${result.persistedStage}`,
+          `Completed: ${result.completedActions.join(', ') || 'none'}`,
+          ...result.legs.map(leg => `Chain ${leg.chainId}: ${leg.state}; custody ${leg.custody}; deadline ${leg.deadlineRisk}; balances ${leg.balances.map(balance => `${balance.role}=${balance.amount}`).join(', ')}`),
+          `Enabled actions: ${result.enabledActions.join(', ') || 'none'}`,
+          `Responsible party: ${result.responsibleParty}`,
+          `Next command: ${result.nextCommand ?? 'none'}`,
+          '',
+        ].join('\n'))
+        for (const warning of result.warnings) io.stderr(`WARNING: ${warning}\n`)
+      }
+      return CLI_EXIT_SUCCESS
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'status failed'
+      const output = cliFailure({command, party, sequence: 0, code: 'STATUS_FAILED', message})
       if (json) io.stdout(`${JSON.stringify(output)}\n`)
       else io.stderr(`${CLI_NAME}: ${message}\n`)
       return CLI_EXIT_FAILURE

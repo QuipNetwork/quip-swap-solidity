@@ -199,6 +199,8 @@ export {
   submitFinalClaim,
 } from './consoleFinalClaim.js'
 export type {RevealLifecycle, RevealObservation, RevealObservationBoundary, FinalClaimPreview, FinalClaimBoundary} from './consoleFinalClaim.js'
+export {CONSOLE_STATUS_SCHEMA, createLocalConsoleStatusBoundary, getConsoleStatus} from './consoleStatus.js'
+export type {ConsoleBalance, ConsoleLegState, ConsoleLegStatus, ConsoleStatusBoundary, ConsoleStatusReport} from './consoleStatus.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
