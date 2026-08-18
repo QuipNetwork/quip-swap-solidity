@@ -18,8 +18,7 @@ const PRINCIPAL = address('3')
 const TOKEN = address('4')
 const addresses = (wrapper: Address): ProtocolAddresses => ({
   assetSupportRegistry: address('5'),
-  identityRegistry: address('7'),
-  authorizationGateway: address('8'),
+  directAuthorization: address('8'),
   crossChainWrapper: wrapper,
   sameChainWrapper: address('9'),
 })

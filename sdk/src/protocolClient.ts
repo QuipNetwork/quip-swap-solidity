@@ -1,8 +1,7 @@
 import type {Address, Hash, Hex, PublicClient, WalletClient} from 'viem'
 import {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
-import {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.js'
-import {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
+import {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
 import type {
@@ -19,8 +18,7 @@ import type {Hex32} from './types.js'
 
 export interface ProtocolAddresses {
   readonly assetSupportRegistry: Address
-  readonly identityRegistry: Address
-  readonly authorizationGateway: Address
+  readonly directAuthorization: Address
   readonly crossChainWrapper: Address
   readonly sameChainWrapper: Address
 }
@@ -99,14 +97,14 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
   return {
     addresses,
     authorizeDirectCommit: (request, signature, options) =>
-      write(addresses.authorizationGateway, pqAuthorizationGatewayAbi, 'authorizeCommit', [request, signature], options?.value),
+      write(addresses.directAuthorization, directAuthorizationAbi, 'authorizeCommit', [request, signature], options?.value),
     authorizeWalletCommit: (wallet, request, signature, options) =>
       write(wallet, quipWalletAbi, 'authorizeCommit', [request, signature], options?.value),
     registerAndCommit: (registration, eoaSignature, activeProof, recoveryProof, commitData, options) =>
-      write(addresses.identityRegistry, pqIdentityRegistryAbi, 'registerAndCommit',
+      write(addresses.directAuthorization, directAuthorizationAbi, 'registerAndCommit',
         [registration, eoaSignature, activeProof, recoveryProof, commitData], options?.value),
     executeRegistry: (request, authorization) =>
-      write(addresses.identityRegistry, pqIdentityRegistryAbi, 'execute', [request, authorization]),
+      write(addresses.directAuthorization, directAuthorizationAbi, 'execute', [request, authorization]),
     setAssetSupport: (assetType, target, supported) =>
       write(addresses.assetSupportRegistry, assetSupportRegistryAbi, 'setAssetSupport', [assetType, target, supported]),
     claimCrossChain: (terms, party, lock, secret) =>
@@ -121,7 +119,7 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       write(addresses.sameChainWrapper, sameChainWrapperAbi, 'reclaimBoth', [terms, lock]),
     isAssetSupported: (assetType, target) =>
       read(addresses.assetSupportRegistry, assetSupportRegistryAbi, 'isSupported', [assetType, target]),
-    getIdentity: eoa => read(addresses.identityRegistry, pqIdentityRegistryAbi, 'identityOf', [eoa]),
+    getIdentity: eoa => read(addresses.directAuthorization, directAuthorizationAbi, 'identityOf', [eoa]),
     getCrossChainState: (terms, party, lock) =>
       read(addresses.crossChainWrapper, crossChainWrapperAbi, 'state', [terms, party, lock]),
     getSameChainState: (terms, lock) =>

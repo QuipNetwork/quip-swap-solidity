@@ -243,8 +243,7 @@ export type {
 } from './clientPersistence.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
-export {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
-export {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.js'
+export {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 export {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
 export {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
 export {quipWalletAbi} from './generated/quipWalletAbi.js'

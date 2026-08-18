@@ -11,7 +11,7 @@ export const quipWalletAbi = [
       {
         "name": "registry",
         "type": "address",
-        "internalType": "contract PQIdentityRegistry"
+        "internalType": "contract DirectAuthorization"
       },
       {
         "name": "initialPQKey",
@@ -46,7 +46,7 @@ export const quipWalletAbi = [
       {
         "name": "",
         "type": "address",
-        "internalType": "contract PQIdentityRegistry"
+        "internalType": "contract DirectAuthorization"
       }
     ],
     "stateMutability": "view"

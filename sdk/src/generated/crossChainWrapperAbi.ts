@@ -4,7 +4,7 @@ export const crossChainWrapperAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "directGateway",
+        "name": "directAuthorization",
         "type": "address",
         "internalType": "address"
       },
@@ -31,7 +31,7 @@ export const crossChainWrapperAbi = [
   },
   {
     "type": "function",
-    "name": "DIRECT_GATEWAY",
+    "name": "DIRECT_AUTHORIZATION",
     "inputs": [],
     "outputs": [
       {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
-import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
+import {ICommitAuthorizationReceiver} from '../../interfaces/ICommitAuthorizationReceiver.sol';
+import {ProtocolHashing} from '../../protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
@@ -12,10 +12,10 @@ import {
   SideTerms,
   VerifiedCommitAuthorization,
   WrapperMode
-} from '../protocol/ProtocolTypes.sol';
-import {AuthorizationSubmitter} from './AuthorizationSubmitter.sol';
-import {KeyedVerifier} from './KeyedVerifier.sol';
-import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
+} from '../../protocol/ProtocolTypes.sol';
+import {DirectAuthorization} from '../direct/DirectAuthorization.sol';
+import {AuthorizationSubmitter} from '../shared/AuthorizationSubmitter.sol';
+import {KeyedVerifier} from '../shared/KeyedVerifier.sol';
 
 /// @notice Prototype implementation of the deployable wallet-mode principal boundary.
 /// @dev The wallet stores its ERC-7913 keyed verifier and public key together as
@@ -38,14 +38,14 @@ contract QuipWallet {
   error ExecutionFailed();
 
   address public immutable OWNER;
-  PQIdentityRegistry public immutable REGISTRY;
+  DirectAuthorization public immutable REGISTRY;
   bytes private activePQKey;
   uint256 public walletKeyEpoch = 1;
   mapping(bytes32 => bool) public consumedRotationNonces;
 
   receive() external payable {}
 
-  constructor(address owner, PQIdentityRegistry registry, bytes memory initialPQKey) {
+  constructor(address owner, DirectAuthorization registry, bytes memory initialPQKey) {
     if (owner == address(0) || !registry.isTrustedKey(initialPQKey)) revert InvalidKey();
     OWNER = owner;
     REGISTRY = registry;

@@ -37,10 +37,8 @@ design to Solidity.
                                |
              +-----------------+-----------------+
              |                                   |
-      QuipWallet                         PQAuthorizationGateway
+      QuipWallet                         DirectAuthorization
       (wallet mode)                      (registered-direct mode)
-             |                                   |
-             |                         PQIdentityRegistry
              +------------- verified evidence --+
                                |
                +---------------+---------------+
@@ -109,7 +107,7 @@ deadline ordering, chain mode, and progression fields. Cross-chain terms must le
 Both authorization modes produce the same canonical payload and
 `VerifiedCommitAuthorization` evidence for the wrapper.
 
-### `authorization/QuipWallet.sol`
+### `authorization/wallet/QuipWallet.sol`
 
 The wallet-mode authorization boundary. It reconstructs the commit payload,
 verifies the active PQ key, identifies the authenticated submitter, and forwards
@@ -118,7 +116,7 @@ rotation using old-key authorization plus new-key proof of possession.
 `execute` remains controlled by the classical owner. Wallet key epochs are
 internal; wallet-mode terms use principal key version zero.
 
-### `authorization/PQIdentityRegistry.sol`
+### `authorization/direct/DirectAuthorization.sol`
 
 Maps an EOA to independently versioned active and recovery PQ keys. It pins the
 trusted verifier by address, code hash, version tag, and profile tag so an
@@ -130,20 +128,13 @@ chain, registry, expected versions, proposed keys, action, nonce, and exclusive
 expiry. Newly installed keys prove possession. Failed registration-and-commit
 calls revert registration, nonce, escrow, and swap state together.
 
-### `authorization/PQAuthorizationGateway.sol`
-
-The RegisteredDirect boundary. It reconstructs the exact commit payload,
-verifies it with the principal's active registered PQ key, establishes the
-logical submitter, and delivers evidence to the wrapper. It holds neither swap
-assets nor swap state.
-
-### `authorization/AuthorizationSubmitter.sol`
+### `authorization/shared/AuthorizationSubmitter.sol`
 
 Derives the authenticated submitter and key version. Transaction sender,
 principal, broker, and relayer can differ, so downstream code must not equate
 `msg.sender` with the principal.
 
-### `authorization/KeyedVerifier.sol`
+### `authorization/shared/KeyedVerifier.sol`
 
 Parses an encoded keyed-verifier value, extracts its verifier contract, and
 delegates digest/signature validation to it.
@@ -152,7 +143,7 @@ delegates digest/signature validation to it.
 
 The wrapper-side authorization check. It requires:
 
-- the exact QuipWallet or configured direct gateway selected by the terms;
+- the exact QuipWallet or configured direct authorization boundary selected by the terms;
 - matching caller evidence;
 - the correct signed source state;
 - a live exclusive expiry;
@@ -334,7 +325,7 @@ otherwise.
 - **Canonical binding:** trades, payloads, locks, policies, assets, wrappers,
   and verifiers are domain-separated and signed or stored.
 - **Trusted caller:** wrappers accept commits only from the selected wallet or
-  configured gateway.
+  configured authorization boundary.
 - **Replay protection:** nonces include chain, verifier/registry, principal, key
   role/version, and action nonce.
 - **Atomic rejection:** a revert rolls back state, custody, nonce, and lazy

@@ -9,7 +9,7 @@ import type {ConsoleRuntimeConfig} from './consoleTrade.js'
 import {CrossChainLegState, ExpectedSourceState, KeyRole, commitPayloadHash, keyPossessionDigest, registrationDigest, tradeId} from './protocol.js'
 import type {CommitAuthorizationRequest, InitialRegistration, ProtocolTerms} from './protocol.js'
 import {createProtocolClient} from './protocolClient.js'
-import {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.js'
+import {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 import {publishLockedWorkspaceWorkflowState, restoreWorkspaceWorkflowState, withWorkspaceMutation, writeLockedWorkspaceJournal} from './consoleWorkspace.js'
 import type {Hex32} from './types.js'
 
@@ -104,8 +104,8 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
       const recoveryKey = pqKey(route.trustedVerifier, 'quip-swap-console-alice-recovery')
       const request: CommitAuthorizationRequest = {receiver: route.wrapper, terms, party: true, lock, actionNonce, bobCommitSecret, expiry, commitData: '0x'}
       const registration: InitialRegistration = {eoa: config.actors.alice, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: route.verifier, commitPayloadHash: payloadHash, operationNonce: keccak256(concatHex([tradeId(terms), actionNonce])), expiry}
-      const digest = registrationDigest(31337n, addresses.identityRegistry, registration)
-      const call = encodeFunctionData({abi: pqAuthorizationGatewayAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, payloadHash)]})
+      const digest = registrationDigest(31337n, addresses.directAuthorization, registration)
+      const call = encodeFunctionData({abi: directAuthorizationAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, payloadHash)]})
       const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4))
       const [transaction, blockNumber] = await Promise.all([publicClient.getTransaction({hash}), publicClient.getBlockNumber()])
       return {hash, nonce: transaction.nonce, submittedAtBlock: blockNumber}

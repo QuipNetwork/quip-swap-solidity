@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AuthorizationSubmitter} from '../../src/authorization/AuthorizationSubmitter.sol';
-import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
-import {QuipWallet} from '../../src/authorization/QuipWallet.sol';
+import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
+import {AuthorizationSubmitter} from '../../src/authorization/shared/AuthorizationSubmitter.sol';
+import {QuipWallet} from '../../src/authorization/wallet/QuipWallet.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
 import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
@@ -36,8 +35,8 @@ contract AuthorizationBoundariesTest is Test {
   address internal relayer = address(0x7E1A);
   bytes32 internal constant LOCK = keccak256('lock');
 
-  PQIdentityRegistry internal registry;
-  PQAuthorizationGateway internal gateway;
+  DirectAuthorization internal registry;
+  DirectAuthorization internal gateway;
   QuipWallet internal wallet;
   AuthorizationReceiverHarness internal receiver;
   RegisteredCommitTargetHarness internal registrationTarget;
@@ -50,13 +49,13 @@ contract AuthorizationBoundariesTest is Test {
     broker = vm.addr(BROKER_KEY);
     vm.warp(1000);
     verifier = new KeyBoundVerifierMock();
-    registry = new PQIdentityRegistry(address(verifier));
+    registry = new DirectAuthorization(address(verifier));
     directPQKey = _key('direct');
     walletPQKey = _key('wallet-1');
     registrationTarget = new RegisteredCommitTargetHarness();
     _register(directUser, directPQKey);
     _register(broker, _key('broker'));
-    gateway = new PQAuthorizationGateway(registry);
+    gateway = registry;
     receiver = new AuthorizationReceiverHarness(address(gateway));
     wallet = new QuipWallet(owner, registry, walletPQKey);
   }
@@ -83,16 +82,17 @@ contract AuthorizationBoundariesTest is Test {
     CommitAuthorizationRequest memory request = _request(terms, keccak256('replay-scope'));
     bytes memory signature = _signature(request, address(gateway));
 
-    // A second gateway has the same registry and key, but a different signed verifier address.
-    PQAuthorizationGateway otherGateway = new PQAuthorizationGateway(registry);
-    vm.expectRevert(PQAuthorizationGateway.InvalidPQAuthorization.selector);
+    // A second direct boundary has the same registered key, but a different signed verifier address.
+    DirectAuthorization otherAuthorization = new DirectAuthorization(address(verifier));
+    _registerAt(otherAuthorization, directUser, directPQKey);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
     vm.prank(relayer);
-    otherGateway.authorizeCommit(request, signature);
+    otherAuthorization.authorizeCommit(request, signature);
 
     // The unchanged authorization cannot execute on another chain.
     uint256 originalChainId = block.chainid;
     vm.chainId(originalChainId + 1);
-    vm.expectRevert(PQAuthorizationGateway.InvalidChain.selector);
+    vm.expectRevert(DirectAuthorization.InvalidChain.selector);
     vm.prank(relayer);
     gateway.authorizeCommit(request, signature);
     vm.chainId(originalChainId);
@@ -100,7 +100,7 @@ contract AuthorizationBoundariesTest is Test {
     // Selecting the other side changes the signed SideTag and all side-specific bindings.
     request.terms.counterpartySide = request.terms.partySide;
     request.party = false;
-    vm.expectRevert(PQAuthorizationGateway.InvalidPQAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
     vm.prank(relayer);
     gateway.authorizeCommit(request, signature);
   }
@@ -125,7 +125,7 @@ contract AuthorizationBoundariesTest is Test {
     });
     RegistryAuthorization memory authorization;
     authorization.authorizingPQSignature = commitSignature;
-    vm.expectRevert(PQIdentityRegistry.InvalidPQAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
     vm.prank(directUser);
     registry.execute(operation, authorization);
   }
@@ -259,7 +259,7 @@ contract AuthorizationBoundariesTest is Test {
     bytes memory newKey = _key('direct-2');
     _rotateActive(directUser, directPQKey, newKey);
 
-    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
     vm.prank(directUser);
     gateway.authorizeCommit(pending, staleSignature);
 
@@ -277,7 +277,7 @@ contract AuthorizationBoundariesTest is Test {
     bytes memory signature = _signature(pending, address(gateway));
     _rotateActive(broker, _key('broker'), _key('broker-2'));
 
-    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
     vm.prank(broker);
     gateway.authorizeCommit(pending, signature);
   }
@@ -310,7 +310,7 @@ contract AuthorizationBoundariesTest is Test {
     signature = _pqSig(failingKey, payloadHash);
     registration = _lazyRegistration(failingUser, failingKey, payloadHash);
     (activeProof, recoveryProof) = _registrationProofs(registration);
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(failingUser);
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, signature));
     assertEq(registry.identityOf(failingUser).activeKeyVersion, 0);
@@ -357,7 +357,7 @@ contract AuthorizationBoundariesTest is Test {
     InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
     (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
 
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(newcomer);
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, principalSignature));
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
@@ -380,7 +380,7 @@ contract AuthorizationBoundariesTest is Test {
     InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
     (bytes memory activeProof, bytes memory recoveryProof) = _registrationProofs(registration);
 
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(newcomer);
     registry.registerAndCommit(
       registration, '', activeProof, recoveryProof, abi.encode(request, _pqSig(directPQKey, payloadHash))
@@ -392,7 +392,7 @@ contract AuthorizationBoundariesTest is Test {
     payloadHash = _payload(request, address(gateway));
     registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
     (activeProof, recoveryProof) = _registrationProofs(registration);
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(newcomer);
     registry.registerAndCommit(
       registration, '', activeProof, recoveryProof, abi.encode(request, _pqSig(newcomerPQKey, payloadHash))
@@ -451,7 +451,7 @@ contract AuthorizationBoundariesTest is Test {
       vm.prank(relayer);
       wallet.authorizeCommit(expired, expiredSignature);
     } else {
-      vm.expectRevert(PQAuthorizationGateway.AuthorizationExpired.selector);
+      vm.expectRevert(DirectAuthorization.AuthorizationExpired.selector);
       vm.prank(relayer);
       gateway.authorizeCommit(expired, expiredSignature);
     }
@@ -652,6 +652,10 @@ contract AuthorizationBoundariesTest is Test {
   }
 
   function _register(address eoa, bytes memory key) internal {
+    _registerAt(registry, eoa, key);
+  }
+
+  function _registerAt(DirectAuthorization target, address eoa, bytes memory key) internal {
     InitialRegistration memory request = InitialRegistration({
       eoa: eoa,
       activePQKey: key,
@@ -661,12 +665,12 @@ contract AuthorizationBoundariesTest is Test {
       operationNonce: keccak256(abi.encode(eoa)),
       expiry: 2000
     });
-    bytes32 digest = registry.registrationDigest(request);
+    bytes32 digest = target.registrationDigest(request);
     bytes32 activeProof = keccak256(abi.encode('InterlockKeyPossession-v1.1', digest, KeyRole.Active, keccak256(key)));
     bytes32 recoveryProof =
       keccak256(abi.encode('InterlockKeyPossession-v1.1', digest, KeyRole.Recovery, keccak256(request.recoveryPQKey)));
     vm.prank(eoa);
-    registry.registerAndCommit(request, '', _pqSig(key, activeProof), _pqSig(request.recoveryPQKey, recoveryProof), '');
+    target.registerAndCommit(request, '', _pqSig(key, activeProof), _pqSig(request.recoveryPQKey, recoveryProof), '');
   }
 
   function _key(string memory label) internal view returns (bytes memory) {

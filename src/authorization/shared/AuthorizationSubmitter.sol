@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {DelegationPolicy, SideTerms} from '../protocol/ProtocolTypes.sol';
-import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
+import {DelegationPolicy, SideTerms} from '../../protocol/ProtocolTypes.sol';
+
+interface IActiveKeyRegistry {
+  function activeKey(address eoa, uint256 version) external view returns (bytes memory);
+}
 
 library AuthorizationSubmitter {
   error InvalidTransportSubmitter();
 
   function derive(
     SideTerms memory side,
-    PQIdentityRegistry registry,
+    IActiveKeyRegistry registry,
     address transportCaller
   ) internal view returns (address submitter, uint256 keyVersion) {
     if (side.delegationPolicy == DelegationPolicy.NotAllowed) {

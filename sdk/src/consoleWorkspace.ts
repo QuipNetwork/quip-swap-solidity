@@ -76,7 +76,7 @@ export async function loadConsoleConfigIdentity(path: string): Promise<ConsoleCo
     const chain = object(deployment['chains'][index], `deployment chain ${chainId}`)
     if (chain['chainId'] !== chainId || typeof chain['trustedVerifier'] !== 'string' || !ADDRESS.test(chain['trustedVerifier'])) throw new Error(`invalid deployment chain ${chainId}`)
     const addresses = object(chain['addresses'], `deployment addresses ${chainId}`)
-    for (const field of ['assetSupportRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper']) if (typeof addresses[field] !== 'string' || !ADDRESS.test(addresses[field])) throw new Error(`invalid deployment address ${field}`)
+    for (const field of ['assetSupportRegistry', 'directAuthorization', 'crossChainWrapper', 'sameChainWrapper']) if (typeof addresses[field] !== 'string' || !ADDRESS.test(addresses[field])) throw new Error(`invalid deployment address ${field}`)
   }
   return {schema: CONSOLE_CONFIG_SCHEMA, networkId: parsed['networkId'], localParty: parsed['localParty'], digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, source}
 }

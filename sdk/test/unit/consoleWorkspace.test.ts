@@ -39,7 +39,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'quip-workspace-'))
   const workspace = join(root, 'alice')
   const configPath = join(root, 'config.json')
-  const addresses = {assetSupportRegistry: ALICE, identityRegistry: EXECUTOR, authorizationGateway: VERIFIER, crossChainWrapper: WRAPPER, sameChainWrapper: ALICE}
+  const addresses = {assetSupportRegistry: ALICE, directAuthorization: VERIFIER, crossChainWrapper: WRAPPER, sameChainWrapper: ALICE}
   const deploymentChain = (chainId: number) => ({chainId, trustedVerifier: VERIFIER, addresses})
   const configValue = {
     schema: CONSOLE_CONFIG_SCHEMA,

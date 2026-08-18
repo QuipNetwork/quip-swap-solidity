@@ -43,8 +43,7 @@ import {extractSecretFromClaims} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {assetSupportRegistryAbi} from '../../src/generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from '../../src/generated/crossChainWrapperAbi.js'
-import {pqAuthorizationGatewayAbi} from '../../src/generated/pqAuthorizationGatewayAbi.js'
-import {pqIdentityRegistryAbi} from '../../src/generated/pqIdentityRegistryAbi.js'
+import {directAuthorizationAbi} from '../../src/generated/directAuthorizationAbi.js'
 import {generateLock} from '../../src/hashing.js'
 import {AuthorizationMode, DelegationPolicy} from '../../src/protocol.js'
 import type {ProtocolTerms} from '../../src/protocol.js'
@@ -79,8 +78,7 @@ let demoDeployment: DemoDeploymentArtifact
 
 interface PrototypeDeployment {
   readonly assetSupportRegistry: Address
-  readonly identityRegistry: Address
-  readonly authorizationGateway: Address
+  readonly directAuthorization: Address
   readonly crossChainWrapper: Address
   readonly sameChainWrapper: Address
   readonly verifier: Address
@@ -91,24 +89,19 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
   const assetSupportRegistry = await ctx.deploy(loadArtifact('AssetSupportRegistry.sol', 'AssetSupportRegistry'), [
     ctx.deployer.address,
   ])
-  const identityRegistry = await ctx.deploy(loadArtifact('PQIdentityRegistry.sol', 'PQIdentityRegistry'), [verifier])
-  const authorizationGateway = await ctx.deploy(
-    loadArtifact('PQAuthorizationGateway.sol', 'PQAuthorizationGateway'),
-    [identityRegistry],
-  )
+  const directAuthorization = await ctx.deploy(loadArtifact('DirectAuthorization.sol', 'DirectAuthorization'), [verifier])
   const crossChainWrapper = await ctx.deploy(loadArtifact('CrossChainWrapper.sol', 'CrossChainWrapper'), [
-    authorizationGateway,
+    directAuthorization,
     assetSupportRegistry,
   ])
   const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
-    authorizationGateway,
+    directAuthorization,
     assetSupportRegistry,
   ])
   return {
     verifier,
     assetSupportRegistry,
-    identityRegistry,
-    authorizationGateway,
+    directAuthorization,
     crossChainWrapper,
     sameChainWrapper,
   }
@@ -350,25 +343,18 @@ describe('v1.1 deployment smoke', () => {
     ] as const) {
       expect(
         await ctx.publicClient.readContract({
-          address: deployment.identityRegistry,
-          abi: pqIdentityRegistryAbi,
+          address: deployment.directAuthorization,
+          abi: directAuthorizationAbi,
           functionName: 'TRUSTED_VERIFIER',
         }),
       ).toBe(deployment.verifier)
       expect(
         await ctx.publicClient.readContract({
-          address: deployment.authorizationGateway,
-          abi: pqAuthorizationGatewayAbi,
-          functionName: 'REGISTRY',
-        }),
-      ).toBe(deployment.identityRegistry)
-      expect(
-        await ctx.publicClient.readContract({
           address: deployment.crossChainWrapper,
           abi: crossChainWrapperAbi,
-          functionName: 'DIRECT_GATEWAY',
+          functionName: 'DIRECT_AUTHORIZATION',
         }),
-      ).toBe(deployment.authorizationGateway)
+      ).toBe(deployment.directAuthorization)
     }
   })
 })

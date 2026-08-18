@@ -39,18 +39,18 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
 
-  address public immutable DIRECT_GATEWAY;
+  address public immutable DIRECT_AUTHORIZATION;
   IAssetSupportRegistry public immutable ASSET_SUPPORT;
 
   CommitAuthorization.Layout private authorizations;
   SameChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
 
-  constructor(address directGateway, IAssetSupportRegistry assetSupport) {
-    if (directGateway == address(0) || address(assetSupport) == address(0)) {
+  constructor(address directAuthorization, IAssetSupportRegistry assetSupport) {
+    if (directAuthorization == address(0) || address(assetSupport) == address(0)) {
       revert ZeroConfiguration();
     }
-    DIRECT_GATEWAY = directGateway;
+    DIRECT_AUTHORIZATION = directAuthorization;
     ASSET_SUPPORT = assetSupport;
   }
 
@@ -66,8 +66,9 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
     side.requireSupported(ASSET_SUPPORT);
-    CommitAuthorization.PreparedAuthorization memory prepared =
-      authorizations.validate(terms, party, DIRECT_GATEWAY, address(this), lock, msg.sender, evidence, block.timestamp);
+    CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
+      terms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
+    );
     ProgressionGate.validate(terms, party, bobCommitSecret);
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 

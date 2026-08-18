@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {PQAuthorizationGateway} from '../src/authorization/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../src/authorization/PQIdentityRegistry.sol';
+import {DirectAuthorization} from '../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
 import {AssetSupportRegistry} from '../src/registry/AssetSupportRegistry.sol';
@@ -15,8 +14,7 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
 contract DeployProtocol is Script {
   struct Addresses {
     address assetSupportRegistry;
-    address identityRegistry;
-    address authorizationGateway;
+    address directAuthorization;
     address crossChainWrapper;
     address sameChainWrapper;
   }
@@ -52,23 +50,16 @@ contract DeployProtocol is Script {
     _deploy(
       Constants.CREATEX,
       deployer,
-      PrototypeDeployment.Component.IdentityRegistry,
-      abi.encodePacked(type(PQIdentityRegistry).creationCode, abi.encode(verifier)),
-      addresses.identityRegistry
-    );
-    _deploy(
-      Constants.CREATEX,
-      deployer,
-      PrototypeDeployment.Component.AuthorizationGateway,
-      abi.encodePacked(type(PQAuthorizationGateway).creationCode, abi.encode(addresses.identityRegistry)),
-      addresses.authorizationGateway
+      PrototypeDeployment.Component.DirectAuthorization,
+      abi.encodePacked(type(DirectAuthorization).creationCode, abi.encode(verifier)),
+      addresses.directAuthorization
     );
     _deploy(
       Constants.CREATEX,
       deployer,
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
-        type(CrossChainWrapper).creationCode, abi.encode(addresses.authorizationGateway, addresses.assetSupportRegistry)
+        type(CrossChainWrapper).creationCode, abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry)
       ),
       addresses.crossChainWrapper
     );
@@ -77,7 +68,7 @@ contract DeployProtocol is Script {
       deployer,
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(
-        type(SameChainWrapper).creationCode, abi.encode(addresses.authorizationGateway, addresses.assetSupportRegistry)
+        type(SameChainWrapper).creationCode, abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry)
       ),
       addresses.sameChainWrapper
     );
@@ -91,10 +82,8 @@ contract DeployProtocol is Script {
   function predicted(address factory, address deployer) public pure returns (Addresses memory addresses) {
     addresses.assetSupportRegistry =
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.AssetSupportRegistry);
-    addresses.identityRegistry =
-      PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.IdentityRegistry);
-    addresses.authorizationGateway =
-      PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.AuthorizationGateway);
+    addresses.directAuthorization =
+      PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.DirectAuthorization);
     addresses.crossChainWrapper =
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.CrossChainWrapper);
     addresses.sameChainWrapper =
@@ -115,16 +104,14 @@ contract DeployProtocol is Script {
 
   function _verify(Addresses memory a, address owner, address verifier) internal view {
     require(AssetSupportRegistry(a.assetSupportRegistry).owner() == owner, 'asset owner mismatch');
-    require(PQIdentityRegistry(a.identityRegistry).TRUSTED_VERIFIER() == verifier, 'verifier mismatch');
+    require(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER() == verifier, 'verifier mismatch');
     require(
-      address(PQAuthorizationGateway(a.authorizationGateway).REGISTRY()) == a.identityRegistry, 'registry mismatch'
+      CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION() == a.directAuthorization,
+      'cross direct authorization mismatch'
     );
     require(
-      CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_GATEWAY() == a.authorizationGateway,
-      'cross gateway mismatch'
-    );
-    require(
-      SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_GATEWAY() == a.authorizationGateway, 'same gateway mismatch'
+      SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION() == a.directAuthorization,
+      'same direct authorization mismatch'
     );
   }
 
@@ -135,8 +122,7 @@ contract DeployProtocol is Script {
     console.log('Owner:', owner);
     console.log('Trusted verifier:', verifier);
     console.log('AssetSupportRegistry:', a.assetSupportRegistry);
-    console.log('PQIdentityRegistry:', a.identityRegistry);
-    console.log('PQAuthorizationGateway:', a.authorizationGateway);
+    console.log('DirectAuthorization:', a.directAuthorization);
     console.log('CrossChainWrapper:', a.crossChainWrapper);
     console.log('SameChainWrapper:', a.sameChainWrapper);
   }

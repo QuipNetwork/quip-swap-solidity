@@ -7,8 +7,7 @@ const generated = join(sdkRoot, 'src', 'generated')
 
 const contracts = [
   ['AssetSupportRegistry', 'assetSupportRegistryAbi'],
-  ['PQIdentityRegistry', 'pqIdentityRegistryAbi'],
-  ['PQAuthorizationGateway', 'pqAuthorizationGatewayAbi'],
+  ['DirectAuthorization', 'directAuthorizationAbi'],
   ['CrossChainWrapper', 'crossChainWrapperAbi'],
   ['SameChainWrapper', 'sameChainWrapperAbi'],
   ['QuipWallet', 'quipWalletAbi'],

@@ -2,14 +2,14 @@ import {decodeEventLog} from 'viem'
 import type {Abi, Address, Hash, Log, PublicClient, TransactionReceipt} from 'viem'
 import {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
-import {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
+import {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
 import type {ProtocolAddresses} from './protocolClient.js'
 
 export type ProtocolEventSource =
   | 'assetSupportRegistry'
-  | 'identityRegistry'
+  | 'directAuthorization'
   | 'quipWallet'
   | 'crossChainWrapper'
   | 'sameChainWrapper'
@@ -26,7 +26,7 @@ export interface ProtocolEvent {
 
 const abiBySource: Readonly<Record<ProtocolEventSource, Abi>> = {
   assetSupportRegistry: assetSupportRegistryAbi as Abi,
-  identityRegistry: pqIdentityRegistryAbi as Abi,
+  directAuthorization: directAuthorizationAbi as Abi,
   quipWallet: quipWalletAbi as Abi,
   crossChainWrapper: crossChainWrapperAbi as Abi,
   sameChainWrapper: sameChainWrapperAbi as Abi,
@@ -39,7 +39,7 @@ export function decodeProtocolEvents(
 ): ProtocolEvent[] {
   const sourceByAddress = new Map<string, ProtocolEventSource>([
     [addresses.assetSupportRegistry.toLowerCase(), 'assetSupportRegistry'],
-    [addresses.identityRegistry.toLowerCase(), 'identityRegistry'],
+    [addresses.directAuthorization.toLowerCase(), 'directAuthorization'],
     [addresses.crossChainWrapper.toLowerCase(), 'crossChainWrapper'],
     [addresses.sameChainWrapper.toLowerCase(), 'sameChainWrapper'],
   ])

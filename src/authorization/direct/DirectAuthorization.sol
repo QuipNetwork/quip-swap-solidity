@@ -1,23 +1,31 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IProfiledPQVerifier} from '../interfaces/IProfiledPQVerifier.sol';
-import {IRegisteredCommitTarget} from '../interfaces/IRegisteredCommitTarget.sol';
-import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
+import {ICommitAuthorizationReceiver} from '../../interfaces/ICommitAuthorizationReceiver.sol';
+import {IProfiledPQVerifier} from '../../interfaces/IProfiledPQVerifier.sol';
+import {IRegisteredCommitTarget} from '../../interfaces/IRegisteredCommitTarget.sol';
+import {ProtocolHashing} from '../../protocol/ProtocolHashing.sol';
 import {
+  AuthorizationMode,
+  CommitAuthorizationRequest,
+  DelegationPolicy,
+  ExpectedSourceState,
   InitialRegistration,
   KeyRole,
   PQIdentity,
   RegistryActionTag,
   RegistryAuthorization,
-  RegistryOperation
-} from '../protocol/ProtocolTypes.sol';
-import {KeyedVerifier} from './KeyedVerifier.sol';
+  RegistryOperation,
+  SideTerms,
+  VerifiedCommitAuthorization
+} from '../../protocol/ProtocolTypes.sol';
+import {AuthorizationSubmitter, IActiveKeyRegistry} from '../shared/AuthorizationSubmitter.sol';
+import {KeyedVerifier} from '../shared/KeyedVerifier.sol';
 import {
   IERC7913SignatureVerifier
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 
-contract PQIdentityRegistry {
+contract DirectAuthorization is IActiveKeyRegistry {
   string internal constant REGISTRATION_DOMAIN = 'InterlockRegister-v1.1';
   string internal constant REGISTRY_DOMAIN = 'InterlockRegistry-v1.1';
   string internal constant POSSESSION_DOMAIN = 'InterlockKeyPossession-v1.1';
@@ -37,6 +45,11 @@ contract PQIdentityRegistry {
   error RequestExpired();
   error RegistryNonceAlreadyConsumed(bytes32 nonceKey);
   error CommitCallbackFailed();
+  error InvalidAuthorizationMode();
+  error InvalidChain();
+  error AuthorizationExpired();
+  error InvalidRegisteredSubmitter();
+  error RegistrationPayloadMismatch();
 
   event IdentityRegistered(address indexed eoa, uint256 activeKeyVersion, uint256 recoveryKeyVersion);
   event ActiveKeyRotated(address indexed eoa, uint256 indexed activeKeyVersion);
@@ -120,6 +133,28 @@ contract PQIdentityRegistry {
     catch {
       revert CommitCallbackFailed();
     }
+  }
+
+  function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external payable {
+    _deliver(request, _verifyCommit(request, signature, msg.sender));
+  }
+
+  function completeRegisteredCommit(
+    address eoa,
+    address,
+    bytes32 registeredPayloadHash,
+    bytes calldata commitData
+  ) external payable {
+    if (msg.sender != address(this)) revert CommitCallbackFailed();
+    (CommitAuthorizationRequest memory request, bytes memory signature) =
+      abi.decode(commitData, (CommitAuthorizationRequest, bytes));
+    SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
+    if (eoa != side.principal && (side.delegationPolicy != DelegationPolicy.SpecificDelegate || eoa != side.delegate)) {
+      revert InvalidRegisteredSubmitter();
+    }
+    VerifiedCommitAuthorization memory evidence = _verifyCommit(request, signature, eoa);
+    if (evidence.payloadHash != registeredPayloadHash) revert RegistrationPayloadMismatch();
+    _deliver(request, evidence);
   }
 
   function execute(RegistryOperation calldata request, RegistryAuthorization calldata authorization) external {
@@ -224,6 +259,55 @@ contract PQIdentityRegistry {
   function registryNonceKey(address eoa, KeyRole role, uint256 version, bytes32 nonce) public view returns (bytes32) {
     return
       keccak256(ProtocolHashing.encodeRegistryNonceKey(block.chainid, address(this), eoa, uint8(role), version, nonce));
+  }
+
+  function _deliver(CommitAuthorizationRequest memory request, VerifiedCommitAuthorization memory evidence) private {
+    ICommitAuthorizationReceiver(request.receiver).receiveAuthorizedCommit{value: msg.value}(
+      request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
+    );
+  }
+
+  function _verifyCommit(
+    CommitAuthorizationRequest memory request,
+    bytes memory signature,
+    address transportCaller
+  ) private view returns (VerifiedCommitAuthorization memory evidence) {
+    SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
+    if (side.authorizationMode != AuthorizationMode.RegisteredDirect) revert InvalidAuthorizationMode();
+    if (side.chainId != block.chainid) revert InvalidChain();
+    if (block.timestamp >= request.expiry) revert AuthorizationExpired();
+    bytes memory key = this.activeKey(side.principal, side.principalKeyVersion);
+    (bytes32 payloadHash, ExpectedSourceState sourceState) = _commitPayload(request);
+    if (!KeyedVerifier.isValid(key, payloadHash, signature)) revert InvalidPQAuthorization();
+    (address submitter, uint256 submitterVersion) =
+      AuthorizationSubmitter.derive(side, IActiveKeyRegistry(address(this)), transportCaller);
+    evidence = VerifiedCommitAuthorization({
+      payloadHash: payloadHash,
+      wrapperCaller: address(this),
+      authenticatedSubmitter: submitter,
+      authenticatedSubmitterKeyVersion: submitterVersion,
+      expectedSourceState: sourceState,
+      actionNonce: request.actionNonce,
+      expiry: request.expiry
+    });
+  }
+
+  function _commitPayload(CommitAuthorizationRequest memory request)
+    private
+    view
+    returns (bytes32 payloadHash, ExpectedSourceState sourceState)
+  {
+    sourceState = ProtocolHashing.expectedSourceState(request.party, ProtocolHashing.mode(request.terms));
+    payloadHash = ProtocolHashing.commitPayloadHash(
+      request.terms,
+      request.party,
+      address(this),
+      request.receiver,
+      request.lock,
+      sourceState,
+      request.actionNonce,
+      request.expiry
+    );
   }
 
   function _authorizer(

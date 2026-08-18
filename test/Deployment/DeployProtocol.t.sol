@@ -4,8 +4,7 @@ pragma solidity 0.8.33;
 import {DeployProtocol} from '../../script/DeployProtocol.s.sol';
 import {ICreateX} from '../../script/ICreateX.sol';
 import {PrototypeDeployment} from '../../script/PrototypeDeployment.sol';
-import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
+import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
@@ -28,9 +27,8 @@ contract DeployProtocolTest is Test {
 
   function test_componentSaltsAndAddressesAreDistinctAndConstructorIndependent() public view {
     DeployProtocol.Addresses memory a = script.predicted(address(factory), address(this));
-    assertTrue(a.assetSupportRegistry != a.identityRegistry);
-    assertTrue(a.identityRegistry != a.authorizationGateway);
-    assertTrue(a.authorizationGateway != a.crossChainWrapper);
+    assertTrue(a.assetSupportRegistry != a.directAuthorization);
+    assertTrue(a.directAuthorization != a.crossChainWrapper);
     assertTrue(a.crossChainWrapper != a.sameChainWrapper);
     assertEq(
       a.crossChainWrapper,
@@ -47,11 +45,11 @@ contract DeployProtocolTest is Test {
 
   function test_predictionMatchesPublishedSdkVector() public view {
     DeployProtocol.Addresses memory a = script.predicted(CANONICAL_CREATEX, VECTOR_DEPLOYER);
-    assertEq(a.assetSupportRegistry, 0x87809f19A53302A03380189146c1291F5f4baDe9);
-    assertEq(a.identityRegistry, 0xeEe2445807eC6eCe54EA5614C9eedeE1CD5f3c58);
-    assertEq(a.authorizationGateway, 0xeEFC2Fc5Bd8F22D865Bd5956C058301e1DC04E29);
-    assertEq(a.crossChainWrapper, 0xb25ABE97C7ff0Dd32F798f2f41b65418ad2D73Ef);
-    assertEq(a.sameChainWrapper, 0x9236D569776AAD47d661E57D5a490bEbC3798145);
+    assertEq(a.assetSupportRegistry, 0x504BA325b5e51a95b0D2225ea7feBE87120c049D);
+    assertEq(a.directAuthorization, 0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA);
+    assertEq(a.directAuthorization, 0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA);
+    assertEq(a.crossChainWrapper, 0xBefC4530880E8318250592F76C63007A04b04175);
+    assertEq(a.sameChainWrapper, 0x5aa0Ef5b07cdc3FA4c7587e220AB4880df066387);
   }
 
   function test_localCreate3DeploymentPinsCompleteGraph() public {
@@ -62,34 +60,26 @@ contract DeployProtocolTest is Test {
       a.assetSupportRegistry
     );
     _deploy(
-      PrototypeDeployment.Component.IdentityRegistry,
-      abi.encodePacked(type(PQIdentityRegistry).creationCode, abi.encode(address(verifier))),
-      a.identityRegistry
-    );
-    _deploy(
-      PrototypeDeployment.Component.AuthorizationGateway,
-      abi.encodePacked(type(PQAuthorizationGateway).creationCode, abi.encode(a.identityRegistry)),
-      a.authorizationGateway
+      PrototypeDeployment.Component.DirectAuthorization,
+      abi.encodePacked(type(DirectAuthorization).creationCode, abi.encode(address(verifier))),
+      a.directAuthorization
     );
     _deploy(
       PrototypeDeployment.Component.CrossChainWrapper,
-      abi.encodePacked(
-        type(CrossChainWrapper).creationCode, abi.encode(a.authorizationGateway, a.assetSupportRegistry)
-      ),
+      abi.encodePacked(type(CrossChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry)),
       a.crossChainWrapper
     );
     _deploy(
       PrototypeDeployment.Component.SameChainWrapper,
-      abi.encodePacked(type(SameChainWrapper).creationCode, abi.encode(a.authorizationGateway, a.assetSupportRegistry)),
+      abi.encodePacked(type(SameChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry)),
       a.sameChainWrapper
     );
 
     assertEq(AssetSupportRegistry(a.assetSupportRegistry).owner(), address(this));
-    assertEq(PQIdentityRegistry(a.identityRegistry).TRUSTED_VERIFIER(), address(verifier));
-    assertEq(address(PQAuthorizationGateway(a.authorizationGateway).REGISTRY()), a.identityRegistry);
-    assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_GATEWAY(), a.authorizationGateway);
+    assertEq(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER(), address(verifier));
+    assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
     assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
-    assertEq(SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_GATEWAY(), a.authorizationGateway);
+    assertEq(SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
   }
 
   function _deploy(PrototypeDeployment.Component component, bytes memory initCode, address expected) internal {

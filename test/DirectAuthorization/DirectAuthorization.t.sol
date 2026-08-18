@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
+import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
 import {
   InitialRegistration,
   KeyRole,
@@ -20,7 +20,7 @@ contract WrongProfileVerifier {
   bytes32 public constant PROFILE_TAG = keccak256('shrincs-128s-q20-keccak');
 }
 
-contract PQIdentityRegistryTest is Test {
+contract DirectAuthorizationTest is Test {
   string internal constant REGISTRY_DOMAIN = 'InterlockRegistry-v1.1';
   string internal constant POSSESSION_DOMAIN = 'InterlockKeyPossession-v1.1';
 
@@ -42,7 +42,7 @@ contract PQIdentityRegistryTest is Test {
   uint256 internal constant EOA_KEY = 0xA11CE;
   address internal eoa;
   address internal relayer = address(0xB0B);
-  PQIdentityRegistry internal registry;
+  DirectAuthorization internal registry;
   DigestVerifierMock internal verifier;
   RegisteredCommitTargetHarness internal target;
 
@@ -50,7 +50,7 @@ contract PQIdentityRegistryTest is Test {
     eoa = vm.addr(EOA_KEY);
     vm.warp(1000);
     verifier = new DigestVerifierMock();
-    registry = new PQIdentityRegistry(address(verifier));
+    registry = new DirectAuthorization(address(verifier));
     target = new RegisteredCommitTargetHarness();
   }
 
@@ -78,7 +78,7 @@ contract PQIdentityRegistryTest is Test {
 
   function test_registryPinsV10Shrincs256sKeccakProfileAndDeploymentCode() public {
     SHRINCS256sKeccak shrincs = new SHRINCS256sKeccak();
-    PQIdentityRegistry pinned = new PQIdentityRegistry(address(shrincs));
+    DirectAuthorization pinned = new DirectAuthorization(address(shrincs));
     assertEq(pinned.TRUSTED_VERIFIER(), address(shrincs));
     assertEq(pinned.TRUSTED_VERIFIER_CODEHASH(), address(shrincs).codehash);
     assertEq(pinned.EXPECTED_VERIFIER_VERSION(), keccak256('quip.shrincs-verifier.v1'));
@@ -87,23 +87,23 @@ contract PQIdentityRegistryTest is Test {
   }
 
   function test_registryRejectsMissingOrWrongVerifierProfile() public {
-    vm.expectRevert(PQIdentityRegistry.InvalidVerifier.selector);
-    new PQIdentityRegistry(address(0));
+    vm.expectRevert(DirectAuthorization.InvalidVerifier.selector);
+    new DirectAuthorization(address(0));
     WrongProfileVerifier wrongProfile = new WrongProfileVerifier();
-    vm.expectRevert(PQIdentityRegistry.InvalidVerifier.selector);
-    new PQIdentityRegistry(address(wrongProfile));
+    vm.expectRevert(DirectAuthorization.InvalidVerifier.selector);
+    new DirectAuthorization(address(wrongProfile));
   }
 
   function test_registrationRejectsWrongVerifierPrefixAndNonCommitmentKeyLength() public {
     InitialRegistration memory request = _registration();
     DigestVerifierMock otherVerifier = new DigestVerifierMock();
     request.activePQKey = abi.encodePacked(address(otherVerifier), keccak256('other'));
-    vm.expectRevert(PQIdentityRegistry.InvalidKey.selector);
+    vm.expectRevert(DirectAuthorization.InvalidKey.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, '', '', '', '');
 
     request.activePQKey = abi.encodePacked(address(verifier), bytes31(uint248(1)));
-    vm.expectRevert(PQIdentityRegistry.InvalidKey.selector);
+    vm.expectRevert(DirectAuthorization.InvalidKey.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, '', '', '', '');
   }
@@ -111,7 +111,7 @@ contract PQIdentityRegistryTest is Test {
   function test_relayedRegistrationRequiresNativeEOASignature() public {
     InitialRegistration memory request = _registration();
     bytes32 digest = registry.registrationDigest(request);
-    vm.expectRevert(PQIdentityRegistry.InvalidEOAAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidEOAAuthorization.selector);
     vm.prank(relayer);
     registry.registerAndCommit(
       request, '', _activeRegistrationProof(request, digest), _recoveryRegistrationProof(request, digest), ''
@@ -132,7 +132,7 @@ contract PQIdentityRegistryTest is Test {
     InitialRegistration memory request = _registration();
     bytes32 digest = registry.registrationDigest(request);
     target.setReject(true);
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(eoa);
     registry.registerAndCommit(
       request, '', _activeRegistrationProof(request, digest), _recoveryRegistrationProof(request, digest), ''
@@ -150,17 +150,17 @@ contract PQIdentityRegistryTest is Test {
   function test_registrationRejectsBadProofExpiryAndOverwrite() public {
     InitialRegistration memory request = _registration();
     bytes32 digest = registry.registrationDigest(request);
-    vm.expectRevert(PQIdentityRegistry.InvalidPQAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, '', hex'bad0', _recoveryRegistrationProof(request, digest), '');
     request.expiry = block.timestamp;
-    vm.expectRevert(PQIdentityRegistry.RequestExpired.selector);
+    vm.expectRevert(DirectAuthorization.RequestExpired.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, '', '', '', '');
 
     _register();
     request = _registration();
-    vm.expectRevert(PQIdentityRegistry.AlreadyRegistered.selector);
+    vm.expectRevert(DirectAuthorization.AlreadyRegistered.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, '', '', '', '');
   }
@@ -168,12 +168,12 @@ contract PQIdentityRegistryTest is Test {
   function test_registrationRejectsZeroIdentityAndNonContractCommitTarget() public {
     InitialRegistration memory request = _registration();
     request.eoa = address(0);
-    vm.expectRevert(PQIdentityRegistry.InvalidEOAAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidEOAAuthorization.selector);
     registry.registerAndCommit(request, hex'00', hex'00', hex'00', hex'');
 
     request = _registration();
     request.commitTarget = relayer;
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(eoa);
     registry.registerAndCommit(request, hex'', hex'', hex'', hex'');
   }
@@ -185,7 +185,7 @@ contract PQIdentityRegistryTest is Test {
     request.newActiveKeyVersion = 2;
     RegistryAuthorization memory auth = _authorization(request, true, false);
 
-    vm.expectRevert(PQIdentityRegistry.InvalidEOAAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidEOAAuthorization.selector);
     vm.prank(relayer);
     registry.execute(request, auth);
     vm.prank(eoa);
@@ -193,7 +193,7 @@ contract PQIdentityRegistryTest is Test {
     PQIdentity memory identity = registry.identityOf(eoa);
     assertEq(identity.activeKeyVersion, 2);
     assertEq(identity.activePQKey, request.newActivePQKey);
-    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
     registry.activeKey(eoa, 1);
   }
 
@@ -231,7 +231,7 @@ contract PQIdentityRegistryTest is Test {
     vm.prank(eoa);
     registry.execute(normal, _authorization(normal, false, false));
     assertFalse(registry.identityOf(eoa).active);
-    vm.expectRevert(PQIdentityRegistry.IdentityNotActive.selector);
+    vm.expectRevert(DirectAuthorization.IdentityNotActive.selector);
     registry.activeKey(eoa, 1);
 
     RegistryOperation memory recovery = _operation(RegistryActionTag.RecoverActive);
@@ -259,25 +259,25 @@ contract PQIdentityRegistryTest is Test {
     replay.newRecoveryKeyVersion = 3;
     replay.operationNonce = request.operationNonce;
     RegistryAuthorization memory replayAuth = _authorization(replay, false, true);
-    vm.expectRevert(abi.encodeWithSelector(PQIdentityRegistry.RegistryNonceAlreadyConsumed.selector, key));
+    vm.expectRevert(abi.encodeWithSelector(DirectAuthorization.RegistryNonceAlreadyConsumed.selector, key));
     vm.prank(eoa);
     registry.execute(replay, replayAuth);
 
-    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
     vm.prank(eoa);
     registry.execute(request, auth);
 
     RegistryOperation memory bad = _operation(RegistryActionTag.RotateActive);
     bad.newActivePQKey = _key('a2');
     bad.newActiveKeyVersion = 3;
-    vm.expectRevert(PQIdentityRegistry.InvalidVersion.selector);
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
     vm.prank(eoa);
     registry.execute(bad, _authorization(bad, true, false));
     assertEq(registry.identityOf(eoa).activeKeyVersion, 1);
 
     bad.newActiveKeyVersion = 2;
     bad.expiry = block.timestamp;
-    vm.expectRevert(PQIdentityRegistry.RequestExpired.selector);
+    vm.expectRevert(DirectAuthorization.RequestExpired.selector);
     vm.prank(eoa);
     registry.execute(bad, _authorization(bad, true, false));
   }
@@ -290,7 +290,7 @@ contract PQIdentityRegistryTest is Test {
     RegistryAuthorization memory auth = _authorization(request, true, false);
     auth.activeProofOfPossession = hex'bad0';
     bytes32 key = registry.registryNonceKey(eoa, KeyRole.Active, 1, request.operationNonce);
-    vm.expectRevert(PQIdentityRegistry.InvalidPQAuthorization.selector);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
     vm.prank(eoa);
     registry.execute(request, auth);
     assertFalse(registry.isRegistryNonceConsumed(key));

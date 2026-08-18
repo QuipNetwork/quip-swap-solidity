@@ -3,8 +3,8 @@
 This branch contains the current multi-contract protocol prototype:
 
 - asset-support registry;
-- direct-user and broker PQ identity registration;
-- the direct authorization gateway and QuipWallet authorization boundary;
+- direct-user and broker PQ identity registration through `DirectAuthorization`;
+- separate direct-user and `QuipWallet` authorization boundaries;
 - separate cross-chain and same-chain wrappers; and
 - the trusted-client workflow in the TypeScript SDK.
 

@@ -4,7 +4,7 @@ export const sameChainWrapperAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "directGateway",
+        "name": "directAuthorization",
         "type": "address",
         "internalType": "address"
       },
@@ -31,7 +31,7 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "function",
-    "name": "DIRECT_GATEWAY",
+    "name": "DIRECT_AUTHORIZATION",
     "inputs": [],
     "outputs": [
       {

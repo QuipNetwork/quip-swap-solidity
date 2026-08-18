@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AuthorizationSubmitter} from '../../src/authorization/AuthorizationSubmitter.sol';
-import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
-import {QuipWallet} from '../../src/authorization/QuipWallet.sol';
+import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
+import {AuthorizationSubmitter} from '../../src/authorization/shared/AuthorizationSubmitter.sol';
+import {QuipWallet} from '../../src/authorization/wallet/QuipWallet.sol';
 import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
 import {AssetSupport} from '../../src/protocol/AssetHandling.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
@@ -58,8 +57,8 @@ contract WrapperFundingTest is Test {
   bytes internal walletKey;
 
   KeyBoundVerifierMock internal verifier;
-  PQIdentityRegistry internal registry;
-  PQAuthorizationGateway internal gateway;
+  DirectAuthorization internal registry;
+  DirectAuthorization internal gateway;
   AssetSupportRegistry internal assetSupport;
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
@@ -73,7 +72,7 @@ contract WrapperFundingTest is Test {
     bob = vm.addr(BOB_PRIVATE);
     broker = vm.addr(BROKER_PRIVATE);
     verifier = new KeyBoundVerifierMock();
-    registry = new PQIdentityRegistry(address(verifier));
+    registry = new DirectAuthorization(address(verifier));
     registrationTarget = new RegisteredCommitTargetHarness();
     aliceKey = _key('alice');
     bobKey = _key('bob');
@@ -82,7 +81,7 @@ contract WrapperFundingTest is Test {
     _register(alice, aliceKey);
     _register(bob, bobKey);
     _register(broker, brokerKey);
-    gateway = new PQAuthorizationGateway(registry);
+    gateway = registry;
     assetSupport = new AssetSupportRegistry(address(this));
     cross = new CrossChainWrapper(address(gateway), assetSupport);
     same = new SameChainWrapper(address(gateway), assetSupport);
@@ -229,7 +228,7 @@ contract WrapperFundingTest is Test {
     bytes memory commitData = abi.encode(commitRequest, commitSignature);
     token.mint(newcomer, 10 ether);
 
-    vm.expectRevert(PQIdentityRegistry.CommitCallbackFailed.selector);
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(newcomer);
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);

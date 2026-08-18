@@ -12,8 +12,7 @@ import type {ProtocolAddresses} from '../../src/index.js'
 const address = (suffix: string): Address => `0x${suffix.padStart(40, '0')}` as Address
 const addresses: ProtocolAddresses = {
   assetSupportRegistry: address('1'),
-  identityRegistry: address('3'),
-  authorizationGateway: address('4'),
+  directAuthorization: address('4'),
   crossChainWrapper: address('5'),
   sameChainWrapper: address('6'),
 }

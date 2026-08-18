@@ -3,8 +3,7 @@ import type {Address} from 'viem'
 import {AssetType, PROTOTYPE_DEPLOYMENT_VERSION, predictPrototypeAddresses, prototypeComponents, prototypeDeploymentSalt} from '../src/index.js'
 import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from '../src/generated/crossChainWrapperAbi.js'
-import {pqAuthorizationGatewayAbi} from '../src/generated/pqAuthorizationGatewayAbi.js'
-import {pqIdentityRegistryAbi} from '../src/generated/pqIdentityRegistryAbi.js'
+import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
 import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
 import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
 import {erc20MockAbi} from '../test/helpers/mockAbis.js'
@@ -73,10 +72,9 @@ async function bootstrapChain(
   const addresses = predictPrototypeAddresses(ctx.deployer.address, createX)
   const definitions: readonly [string, string, readonly unknown[]][] = [
     ['AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
-    ['PQIdentityRegistry.sol', 'PQIdentityRegistry', [trustedVerifier]],
-    ['PQAuthorizationGateway.sol', 'PQAuthorizationGateway', [addresses.identityRegistry]],
-    ['CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.authorizationGateway, addresses.assetSupportRegistry]],
-    ['SameChainWrapper.sol', 'SameChainWrapper', [addresses.authorizationGateway, addresses.assetSupportRegistry]],
+    ['DirectAuthorization.sol', 'DirectAuthorization', [trustedVerifier]],
+    ['CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry]],
+    ['SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry]],
   ]
   for (const [index, [solFile, contract, args]] of definitions.entries()) {
     const artifact = load(solFile, contract)
@@ -116,11 +114,10 @@ async function setupDemoFunding(
 }
 
 async function verifyGraph(ctx: ChainContext, addresses: DemoChainDeployment['addresses'], verifier: Address): Promise<void> {
-  const registryVerifier = await ctx.publicClient.readContract({address: addresses.identityRegistry, abi: pqIdentityRegistryAbi, functionName: 'TRUSTED_VERIFIER'})
-  const gatewayRegistry = await ctx.publicClient.readContract({address: addresses.authorizationGateway, abi: pqAuthorizationGatewayAbi, functionName: 'REGISTRY'})
-  const crossChainGateway = await ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'DIRECT_GATEWAY'})
-  const sameChainGateway = await ctx.publicClient.readContract({address: addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'DIRECT_GATEWAY'})
-  if (getAddress(registryVerifier) !== verifier || getAddress(gatewayRegistry) !== addresses.identityRegistry || getAddress(crossChainGateway) !== addresses.authorizationGateway || getAddress(sameChainGateway) !== addresses.authorizationGateway) throw new Error('immutable deployment graph mismatch')
+  const registryVerifier = await ctx.publicClient.readContract({address: addresses.directAuthorization, abi: directAuthorizationAbi, functionName: 'TRUSTED_VERIFIER'})
+  const crossChainAuthorization = await ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'})
+  const sameChainAuthorization = await ctx.publicClient.readContract({address: addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'})
+  if (getAddress(registryVerifier) !== verifier || getAddress(crossChainAuthorization) !== addresses.directAuthorization || getAddress(sameChainAuthorization) !== addresses.directAuthorization) throw new Error('immutable deployment graph mismatch')
 }
 
 export function serializeDemoDeploymentArtifact(artifact: DemoDeploymentArtifact): string {

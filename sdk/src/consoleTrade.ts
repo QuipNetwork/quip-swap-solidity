@@ -84,8 +84,8 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
     const addresses = record(deployed['addresses'], 'deployment addresses')
     const funding = record(deployed['funding'], 'deployment funding')
     const configured = record(configuredChains[index], `configured chain ${index}`)
-    const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
-    return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['authorizationGateway']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
+    const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'directAuthorization', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
+    return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['directAuthorization']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
   }
   return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), deterministicDemo: value['deterministicDemo'] === true, policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, exchangeDirectory: String(exchange['directory']), chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}
 }

@@ -50,7 +50,7 @@ async function fixture() {
   const exchange = join(root, 'exchange')
   const aliceRoot = join(root, 'alice')
   const bobRoot = join(root, 'bob')
-  const addresses = {assetSupportRegistry: A, identityRegistry: E, authorizationGateway: V, crossChainWrapper: W, sameChainWrapper: A}
+  const addresses = {assetSupportRegistry: A, directAuthorization: V, crossChainWrapper: W, sameChainWrapper: A}
   const deploymentChain = (chainId: number, token: Address, amount: string, principal: Address) => ({chainId, trustedVerifier: V, addresses, funding: {token, amount, principal}})
   const base = {schema: CONSOLE_CONFIG_SCHEMA, networkId: 'trade-test', prototype: true, mockVerifier: true, requiredConfirmations: 3, chains: [{chainId: 31337, rpcUrl: 'http://127.0.0.1:8545'}, {chainId: 31338, rpcUrl: 'http://127.0.0.1:8546'}], actors: {alice: A, bob: B, permissionlessExecutor: E}, timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10'}, artifactExchange: {directory: exchange}, deployment: {schema: 'quip-swap-demo-deployment.v1', chains: [deploymentChain(31337, T1, '10', A), deploymentChain(31338, T2, '20', B)]}}
   const aliceConfig = join(root, 'alice.json'); const bobConfig = join(root, 'bob.json')

@@ -1,8 +1,8 @@
 # v1.1 prototype deployment
 
 The prototype stack is deployed through canonical CreateX using component-specific,
-sender-permissioned CREATE3 salts under version `v1.1.0-alpha.2`. The same deployer
-therefore receives the same five protocol addresses on every supported chain even
+sender-permissioned CREATE3 salts under version `v1.1.0-alpha.3`. The same deployer
+therefore receives the same four protocol addresses on every supported chain even
 though constructor configuration is checked independently on each chain.
 
 Required environment:
@@ -16,10 +16,9 @@ Run a dry run with `make deploy-protocol-dry RPC=API_URL_BASE_SEPOLIA`, then bro
 with `make deploy-protocol RPC=API_URL_BASE_SEPOLIA`. The script deploys, in order:
 
 1. `AssetSupportRegistry`
-2. `PQIdentityRegistry`
-3. `PQAuthorizationGateway`
-4. `CrossChainWrapper`
-5. `SameChainWrapper`
+2. `DirectAuthorization`
+3. `CrossChainWrapper`
+4. `SameChainWrapper`
 
 Existing code is accepted only after the same immutable configuration checks, making a rerun idempotent. Timing and finality policy is configured and enforced by each client, not deployed on chain.
 
