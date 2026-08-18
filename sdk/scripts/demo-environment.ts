@@ -61,12 +61,10 @@ export async function bootstrapDemoEnvironment(
   }
 }
 
-async function bootstrapChain(
+export async function bootstrapProtocolChain(
   ctx: ChainContext,
-  principal: Address,
-  amount: bigint,
   load: (solFile: string, contract: string) => FoundryArtifact,
-): Promise<DemoChainDeployment> {
+): Promise<Omit<DemoChainDeployment, 'funding'>> {
   const createX = await ctx.deploy(load('CreateXMock.sol', 'CreateXMock'))
   const trustedVerifier = await ctx.deploy(load('KeyBoundVerifierMock.sol', 'KeyBoundVerifierMock'))
   const addresses = predictPrototypeAddresses(ctx.deployer.address, createX)
@@ -82,9 +80,20 @@ async function bootstrapChain(
     const hash = await ctx.deployer.walletClient.writeContract({address: createX, abi: createXAbi, functionName: 'deployCreate3', args: [prototypeDeploymentSalt(ctx.deployer.address, index), initCode], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
     await ctx.publicClient.waitForTransactionReceipt({hash})
     const component = prototypeComponents[index]
-    if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
+    if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed `)
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
+  return {chainId: ctx.chainId, createX, trustedVerifier, addresses}
+}
+
+async function bootstrapChain(
+  ctx: ChainContext,
+  principal: Address,
+  amount: bigint,
+  load: (solFile: string, contract: string) => FoundryArtifact,
+): Promise<DemoChainDeployment> {
+  const protocol = await bootstrapProtocolChain(ctx, load)
+  const {createX, trustedVerifier, addresses} = protocol
   const funding = await setupDemoFunding(ctx, addresses, principal, amount, load)
   return {chainId: ctx.chainId, createX, trustedVerifier, addresses, funding}
 }
