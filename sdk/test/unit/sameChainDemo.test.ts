@@ -1,6 +1,7 @@
 import {getAddress} from 'viem'
+import type {Hex} from 'viem'
 import {describe, expect, it} from 'vitest'
-import {WrapperMode, settlementLock, tradeId, validateProtocolTerms, wrapperMode} from '../../src/index.js'
+import {WrapperMode, settlementLock, tradeId, validateCommitProgression, validateProtocolTerms, wrapperMode} from '../../src/index.js'
 import {
   SAME_CHAIN_DEMO_CHAIN_ID,
   buildSameChainDemoTerms,
@@ -8,7 +9,7 @@ import {
 } from '../../scripts/same-chain-demo.js'
 
 const address = (suffix: string) => getAddress(`0x${suffix.padStart(40, '0')}`)
-const ZERO32 = `0x${'00'.repeat(32)}`
+const ZERO32 = ('0x' + '00'.repeat(32)) as Hex
 
 function terms() {
   return buildSameChainDemoTerms({
@@ -32,6 +33,8 @@ describe('current-protocol same-chain demo foundation', () => {
     expect(value.counterpartySide.commitLock).toBe(ZERO32)
     expect(value.partySide.sideNonce).not.toBe(value.counterpartySide.sideNonce)
     expect(value.partySide.principal).not.toBe(value.counterpartySide.principal)
+    expect(() => validateCommitProgression(value, true, ZERO32)).not.toThrow()
+    expect(() => validateCommitProgression(value, false, ZERO32)).not.toThrow()
   })
 
   it('binds the settlement lock to the complete terms and secret', () => {

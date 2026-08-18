@@ -1,5 +1,5 @@
-import {getAddress} from 'viem'
-import type {Address} from 'viem'
+import {concatHex, getAddress, keccak256} from 'viem'
+import type {Address, Hex} from 'viem'
 import {
   AssetType,
   AuthorizationMode,
@@ -11,8 +11,16 @@ import {
   wrapperMode,
 } from '../src/index.js'
 import type {Hex32, ProtocolTerms, TimingPolicy} from '../src/index.js'
-import {bootstrapProtocolChain} from './demo-environment.js'
+import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
+import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
+import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
 import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
+import {erc20MockAbi} from '../test/helpers/mockAbis.js'
+import {bootstrapProtocolChain} from './demo-environment.js'
+import {runSameChainSuccess} from './same-chain-success.js'
+import {runSameChainAdversarial} from './same-chain-adversarial.js'
+import type {SameChainSuccessTrace} from './same-chain-success.js'
+import type {SameChainAdversarialTrace} from './same-chain-adversarial.js'
 
 export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v1' as const
 export const SAME_CHAIN_DEMO_CHAIN_ID = 31_337
@@ -32,14 +40,44 @@ export interface SameChainTermsInput {
   readonly now: bigint
 }
 
+export interface SameChainParticipantSetup {
+  readonly role: 'alice' | 'bob'
+  readonly principal: Address
+  readonly recipient: Address
+  readonly reclaimRecipient: Address
+  readonly asset: Address
+  readonly amount: string
+  readonly balance: string
+  readonly allowance: string
+  readonly supported: true
+  readonly authorization: {
+    readonly mode: 'registered-direct'
+    readonly status: 'pending-lazy-registration'
+    readonly expectedActiveKeyVersion: '1'
+    readonly activeKeyHash: Hex32
+    readonly recoveryKeyHash: Hex32
+  }
+}
+
+export interface SameChainSetup {
+  readonly wrapper: Address
+  readonly state: 'Unused'
+  readonly alice: SameChainParticipantSetup
+  readonly bob: SameChainParticipantSetup
+}
+
 export interface SameChainDemoFoundation {
   readonly schema: typeof SAME_CHAIN_DEMO_SCHEMA
-  readonly phase: 'prepared'
+  readonly phase: 'claimed'
   readonly mockVerifier: typeof SAME_CHAIN_DEMO_MOCK_VERIFIER
+  readonly publicTestSecrets: true
   readonly deployment: Awaited<ReturnType<typeof bootstrapProtocolChain>>
   readonly terms: ProtocolTerms
   readonly tradeId: Hex32
   readonly lock: Hex32
+  readonly setup: SameChainSetup
+  readonly adversarial: SameChainAdversarialTrace
+  readonly success: SameChainSuccessTrace
 }
 
 export function sameChainDemoPolicy(chainId: bigint): TimingPolicy {
@@ -122,17 +160,155 @@ export async function runSameChainDemoFoundation(
 
   onProgress?.('Binding canonical terms to the settlement lock')
   const id = tradeId(terms)
+  const lock = settlementLock(id, SETTLEMENT_SECRET)
+  onProgress?.('Funding, allowlisting, and approving both same-chain assets')
+  await bootstrapSameChainAssets(
+    chain,
+    deployment.addresses.assetSupportRegistry,
+    deployment.addresses.sameChainWrapper,
+    terms,
+  )
+  onProgress?.('Preparing both lazy direct-authorization identities')
+  const setup = await readSameChainSetup(chain, deployment, terms, lock)
+  const adversarial = await runSameChainAdversarial(chain, deployment, terms, lock, onProgress)
+  const success = await runSameChainSuccess(chain, deployment, terms, lock, onProgress)
   return {
     schema: SAME_CHAIN_DEMO_SCHEMA,
-    phase: 'prepared',
+    phase: 'claimed',
     mockVerifier: SAME_CHAIN_DEMO_MOCK_VERIFIER,
+    publicTestSecrets: true,
     deployment,
     terms,
     tradeId: id,
-    lock: settlementLock(id, SETTLEMENT_SECRET),
+    lock,
+    setup,
+    adversarial,
+    success,
   }
 }
 
-export function serializeSameChainDemoFoundation(artifact: SameChainDemoFoundation): string {
-  return `${JSON.stringify(artifact, (_, value: unknown) => typeof value === 'bigint' ? value.toString() : value, 2)}\n`
+function prototypePQKey(verifier: Address, seed: Hex32): Hex {
+  return concatHex([verifier, seed])
+}
+
+async function bootstrapSameChainAssets(
+  chain: ChainContext,
+  registry: Address,
+  wrapper: Address,
+  terms: ProtocolTerms,
+): Promise<void> {
+  for (const [actor, side] of [[chain.alice, terms.partySide], [chain.bob, terms.counterpartySide]] as const) {
+    const asset = side.assets[0]
+    if (asset === undefined || asset.assetType !== AssetType.ERC20) {
+      throw new Error('same-chain demo requires one ERC-20 per side')
+    }
+    let hash = await chain.deployer.walletClient.writeContract({
+      address: registry,
+      abi: assetSupportRegistryAbi,
+      functionName: 'setAssetSupport',
+      args: [AssetType.ERC20, asset.target, true],
+      chain: chain.publicClient.chain ?? null,
+      account: chain.deployer.account,
+    })
+    await chain.publicClient.waitForTransactionReceipt({hash})
+    hash = await actor.walletClient.writeContract({
+      address: asset.target,
+      abi: erc20MockAbi,
+      functionName: 'mint',
+      args: [side.principal, asset.amount],
+      chain: chain.publicClient.chain ?? null,
+      account: actor.account,
+    })
+    await chain.publicClient.waitForTransactionReceipt({hash})
+    hash = await actor.walletClient.writeContract({
+      address: asset.target,
+      abi: erc20MockAbi,
+      functionName: 'approve',
+      args: [wrapper, asset.amount],
+      chain: chain.publicClient.chain ?? null,
+      account: actor.account,
+    })
+    await chain.publicClient.waitForTransactionReceipt({hash})
+  }
+}
+
+async function readSameChainSetup(
+  chain: ChainContext,
+  deployment: Awaited<ReturnType<typeof bootstrapProtocolChain>>,
+  terms: ProtocolTerms,
+  lock: Hex32,
+): Promise<SameChainSetup> {
+  const participant = async (
+    role: 'alice' | 'bob',
+    side: ProtocolTerms['partySide'],
+    activeSeed: Hex32,
+    recoverySeed: Hex32,
+  ): Promise<SameChainParticipantSetup> => {
+    const asset = side.assets[0]
+    if (asset === undefined) throw new Error(`${role} has no demo asset`)
+    const [balance, allowance, supported, identity] = await Promise.all([
+      chain.publicClient.readContract({
+        address: asset.target,
+        abi: erc20MockAbi,
+        functionName: 'balanceOf',
+        args: [side.principal],
+      }),
+      chain.publicClient.readContract({
+        address: asset.target,
+        abi: erc20MockAbi,
+        functionName: 'allowance',
+        args: [side.principal, deployment.addresses.sameChainWrapper],
+      }),
+      chain.publicClient.readContract({
+        address: deployment.addresses.assetSupportRegistry,
+        abi: assetSupportRegistryAbi,
+        functionName: 'isSupported',
+        args: [asset.assetType, asset.target],
+      }),
+      chain.publicClient.readContract({
+        address: deployment.addresses.directAuthorization,
+        abi: directAuthorizationAbi,
+        functionName: 'identityOf',
+        args: [side.principal],
+      }),
+    ])
+    if (balance !== asset.amount || allowance !== asset.amount || supported !== true) {
+      throw new Error(`${role} asset bootstrap mismatch`)
+    }
+    if (identity.activeKeyVersion !== 0n || identity.recoveryKeyVersion !== 0n || identity.active) {
+      throw new Error(`${role} identity registered before its first commit`)
+    }
+    return {
+      role,
+      principal: side.principal,
+      recipient: side.recipient,
+      reclaimRecipient: side.reclaimRecipient,
+      asset: asset.target,
+      amount: asset.amount.toString(),
+      balance: balance.toString(),
+      allowance: allowance.toString(),
+      supported: true,
+      authorization: {
+        mode: 'registered-direct',
+        status: 'pending-lazy-registration',
+        expectedActiveKeyVersion: '1',
+        activeKeyHash: keccak256(prototypePQKey(deployment.trustedVerifier, activeSeed)),
+        recoveryKeyHash: keccak256(prototypePQKey(deployment.trustedVerifier, recoverySeed)),
+      },
+    }
+  }
+
+  const state = await chain.publicClient.readContract({
+    address: deployment.addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'state',
+    args: [terms, lock],
+  })
+  if (state !== 0) throw new Error('same-chain state advanced during bootstrap')
+  return {
+    wrapper: deployment.addresses.sameChainWrapper,
+    state: 'Unused',
+    alice: await participant('alice', terms.partySide, fixed(101), fixed(102)),
+    bob: await participant('bob', terms.counterpartySide, fixed(103), fixed(104)),
+  }
 }

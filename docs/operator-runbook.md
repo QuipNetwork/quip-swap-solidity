@@ -531,3 +531,64 @@ cd ..
 
 All commands must pass, and a final `bun run demo:full` artifact must match the
 terminal states and asset outcomes described above.
+
+## Run and replay the current same-chain demo
+
+This is the standalone demonstration of the current v1.1
+`SameChainWrapper`. It is separate from `bun run smoke`, which exercises the
+legacy Omnibus implementation and is not evidence for the current wrapper.
+
+- Enter the SDK directory so package commands and relative artifact paths resolve
+  consistently.
+
+```sh
+cd sdk
+```
+
+- Run the current same-chain success, rejection, and recovery flows and write the
+  default owner-only artifact at `../demo-artifacts/same-chain-demo.json`.
+
+```sh
+bun run demo:same-chain
+```
+
+- Alternatively, run the same deterministic logical flow and select a replay
+  artifact path explicitly.
+
+```sh
+bun run demo:same-chain ../demo-artifacts/same-chain-replay.json
+```
+
+The runner prints eleven green progress steps. Its final summary must report
+three ordered transitions
+`Unused -> PartyCommitted -> BothCommitted -> Claimed`, fourteen rejected
+controls, both `party-only-reclaim` and `both-reclaim`, a successful atomic
+rollback check, and `secretsPersisted: false`.
+
+The versioned `quip-swap-same-chain-demo.v1` artifact contains deployment
+metadata, canonical terms and TradeID, the settlement lock, redacted accepted
+authorization decisions, ordered receipt summaries, custody snapshots and
+balance deltas, negative controls, recovery outcomes, and the terminal result.
+It excludes settlement preimages, PQ signatures, private keys, PQ public-key
+bytes or hashes, and recovery-key material.
+
+- Validate the default persisted artifact without starting Anvil or executing
+  another swap.
+
+```sh
+bun run demo:same-chain:validate ../demo-artifacts/same-chain-demo.json
+```
+
+- Validate an explicitly named replay artifact in the same way.
+
+```sh
+bun run demo:same-chain:validate ../demo-artifacts/same-chain-replay.json
+```
+
+Validation recomputes the TradeID from the persisted terms and rejects missing
+or reordered transitions, mismatched protocol identifiers, incomplete
+authorization and rejection evidence, malformed recovery outcomes, nonterminal
+success traces, terminal custody mismatches, and forbidden sensitive fields.
+Transaction hashes may differ between fresh Anvil runs; the ordered logical
+transitions, authorization decisions, controls, recovery outcomes, and final
+custody must agree.

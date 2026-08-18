@@ -80,7 +80,7 @@ export async function bootstrapProtocolChain(
     const hash = await ctx.deployer.walletClient.writeContract({address: createX, abi: createXAbi, functionName: 'deployCreate3', args: [prototypeDeploymentSalt(ctx.deployer.address, index), initCode], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
     await ctx.publicClient.waitForTransactionReceipt({hash})
     const component = prototypeComponents[index]
-    if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed `)
+    if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
   return {chainId: ctx.chainId, createX, trustedVerifier, addresses}
