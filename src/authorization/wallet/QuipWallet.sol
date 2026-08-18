@@ -24,6 +24,7 @@ import {KeyedVerifier} from '../shared/KeyedVerifier.sol';
 ///      request is forwarded atomically to its named receiver. Selecting and pinning
 ///      the production verifier implementation is a separate deployment decision.
 contract QuipWallet {
+  string internal constant COMMIT_DOMAIN = 'InterlockWalletCommitAuthorization-v1.1';
   string internal constant ROTATION_DOMAIN = 'InterlockWalletKeyRotation-v1.1';
   string internal constant POSSESSION_DOMAIN = 'InterlockKeyPossession-v1.1';
 
@@ -36,6 +37,7 @@ contract QuipWallet {
   error AuthorizationExpired();
   error RotationNonceAlreadyConsumed();
   error ExecutionFailed();
+  error ForbiddenAuthorizationBypass();
 
   address public immutable OWNER;
   DirectAuthorization public immutable REGISTRY;
@@ -61,6 +63,9 @@ contract QuipWallet {
 
   function execute(address target, uint256 value, bytes calldata data) external returns (bytes memory result) {
     if (msg.sender != OWNER) revert NotOwner();
+    if (data.length >= 4 && bytes4(data[:4]) == ICommitAuthorizationReceiver.receiveAuthorizedCommit.selector) {
+      revert ForbiddenAuthorizationBypass();
+    }
     bool success;
     (success, result) = target.call{value: value}(data);
     if (!success) revert ExecutionFailed();
@@ -79,7 +84,9 @@ contract QuipWallet {
     if (side.chainId != block.chainid) revert InvalidChain();
     if (block.timestamp >= request.expiry) revert AuthorizationExpired();
     (bytes32 payloadHash, ExpectedSourceState sourceState) = _payload(request);
-    if (!KeyedVerifier.isValid(activePQKey, payloadHash, signature)) revert InvalidPQAuthorization();
+    if (!KeyedVerifier.isValid(activePQKey, commitAuthorizationDigest(payloadHash), signature)) {
+      revert InvalidPQAuthorization();
+    }
     (address submitter, uint256 submitterVersion) = AuthorizationSubmitter.derive(side, REGISTRY, transportCaller);
     evidence = VerifiedCommitAuthorization({
       payloadHash: payloadHash,
@@ -110,6 +117,10 @@ contract QuipWallet {
     activePQKey = newPQKey;
     ++walletKeyEpoch;
     consumedRotationNonces[rotationNonce] = true;
+  }
+
+  function commitAuthorizationDigest(bytes32 payloadHash) public view returns (bytes32) {
+    return keccak256(abi.encode(COMMIT_DOMAIN, block.chainid, address(this), walletKeyEpoch, payloadHash));
   }
 
   function rotationDigest(bytes calldata newPQKey, bytes32 nonce, uint256 expiry) public view returns (bytes32) {

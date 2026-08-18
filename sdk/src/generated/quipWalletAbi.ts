@@ -336,6 +336,25 @@ export const quipWalletAbi = [
   },
   {
     "type": "function",
+    "name": "commitAuthorizationDigest",
+    "inputs": [
+      {
+        "name": "payloadHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "consumedRotationNonces",
     "inputs": [
       {
@@ -465,6 +484,11 @@ export const quipWalletAbi = [
   {
     "type": "error",
     "name": "ExecutionFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ForbiddenAuthorizationBypass",
     "inputs": []
   },
   {

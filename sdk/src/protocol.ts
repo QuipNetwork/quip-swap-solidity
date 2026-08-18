@@ -104,7 +104,7 @@ const protocolTermsParameter = {name: 'terms', type: 'tuple', components: [
 const domains = {
   terms: 'InterlockTerms-v1.1', gateContext: 'InterlockBobCommitGateContext-v1.1',
   bobCommitGate: 'InterlockBobCommitGate-v1.1', settlement: 'InterlockSettlementLock-v1.1', assets: 'InterlockAssets-v1.1', commit: 'InterlockCommit-v1.1',
-  registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1', walletRotation: 'InterlockWalletKeyRotation-v1.1',
+  registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1', walletCommit: 'InterlockWalletCommitAuthorization-v1.1', walletRotation: 'InterlockWalletKeyRotation-v1.1',
 } as const
 
 const abiSide = (side: SideTerms) => ({...side, assets: side.assets.map(asset => ({
@@ -234,6 +234,15 @@ export function registryOperationDigest(chainId: bigint, registry: Address, requ
 export const keyPossessionDigest = (requestDigest: Hex32, role: KeyRole, key: Hex): Hex32 =>
   keccak256(encodeAbiParameters([{type: "string"}, {type: "bytes32"}, {type: "uint8"}, {type: "bytes32"}],
     [domains.possession, requestDigest, role, keccak256(key)]))
+
+export function walletCommitAuthorizationDigest(
+  chainId: bigint, wallet: Address, walletKeyEpoch: bigint, payloadHash: Hex32,
+): Hex32 {
+  return keccak256(encodeAbiParameters(
+    [{type: 'string'}, {type: 'uint256'}, {type: 'address'}, {type: 'uint256'}, {type: 'bytes32'}],
+    [domains.walletCommit, chainId, wallet, walletKeyEpoch, payloadHash],
+  ))
+}
 
 export function walletRotationDigest(
   chainId: bigint, wallet: Address, currentEpoch: bigint, currentKeyHash: Hex32,

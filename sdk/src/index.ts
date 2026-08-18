@@ -24,6 +24,7 @@ export {
   registrationDigest,
   registryOperationDigest,
   keyPossessionDigest,
+  walletCommitAuthorizationDigest,
   walletRotationDigest,
   encodeAuthorizationNonceKey,
   encodeRegistryNonceKey,

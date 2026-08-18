@@ -263,8 +263,9 @@ contract WrapperFundingTest is Test {
     wallet.execute(address(token), 0, abi.encodeCall(token.approve, (address(cross), 10 ether)));
     CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 3);
 
+    bytes memory signature = _signature(request, address(wallet), walletKey);
     vm.prank(RELAYER);
-    wallet.authorizeCommit(request, _signature(request, address(wallet), walletKey));
+    wallet.authorizeCommit(request, signature);
 
     assertEq(token.balanceOf(address(cross)), 10 ether);
     assertEq(token.balanceOf(RELAYER), 0);
@@ -826,9 +827,10 @@ contract WrapperFundingTest is Test {
     _matrixCommit(terms, true, lock, 1601, alice, aliceKey);
 
     CommitAuthorizationRequest memory bobRequest = _request(address(same), terms, false, lock, 1602);
+    bytes memory bobSignature = _signature(bobRequest, address(bobWallet), bobWalletKey);
     vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
     vm.prank(RELAYER);
-    bobWallet.authorizeCommit(bobRequest, _signature(bobRequest, address(bobWallet), bobWalletKey));
+    bobWallet.authorizeCommit(bobRequest, bobSignature);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
     assertEq(bobToken.balanceOf(address(bobWallet)), 20 ether);
     assertEq(bobToken.balanceOf(address(same)), 0);
@@ -1135,7 +1137,7 @@ contract WrapperFundingTest is Test {
     CommitAuthorizationRequest memory request,
     address boundary,
     bytes memory key
-  ) internal pure returns (bytes memory) {
+  ) internal view returns (bytes memory) {
     bytes32 payload = ProtocolHashing.commitPayloadHash(
       request.terms,
       request.party,
@@ -1146,6 +1148,8 @@ contract WrapperFundingTest is Test {
       request.actionNonce,
       request.expiry
     );
+    if (boundary == address(wallet)) payload = wallet.commitAuthorizationDigest(payload);
+    else if (boundary == address(bobWallet)) payload = bobWallet.commitAuthorizationDigest(payload);
     return _pqSig(key, payload);
   }
 

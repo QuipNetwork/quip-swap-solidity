@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
 import {AuthorizationSubmitter} from '../../src/authorization/shared/AuthorizationSubmitter.sol';
 import {QuipWallet} from '../../src/authorization/wallet/QuipWallet.sol';
+import {ICommitAuthorizationReceiver} from '../../src/interfaces/ICommitAuthorizationReceiver.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
 import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
@@ -60,12 +61,184 @@ contract AuthorizationBoundariesTest is Test {
     wallet = new QuipWallet(owner, registry, walletPQKey);
   }
 
+  function test_walletConstructorAndExecuteFailuresAreAtomic() public {
+    vm.expectRevert(QuipWallet.InvalidKey.selector);
+    new QuipWallet(address(0), registry, walletPQKey);
+    vm.expectRevert(QuipWallet.InvalidKey.selector);
+    new QuipWallet(owner, registry, '');
+
+    bytes32 keyHash = wallet.activeKeyHash();
+    vm.expectRevert(QuipWallet.NotOwner.selector);
+    vm.prank(relayer);
+    wallet.execute(address(receiver), 0, hex'deadbeef');
+    _assertWalletState(1, keyHash, 0);
+
+    vm.expectRevert(QuipWallet.ExecutionFailed.selector);
+    vm.prank(owner);
+    wallet.execute(address(receiver), 0, hex'deadbeef');
+    _assertWalletState(1, keyHash, 0);
+  }
+
+  function test_walletRejectsMalformedCommitContextWithoutEffects() public {
+    bytes32 keyHash = wallet.activeKeyHash();
+
+    ProtocolTerms memory wrongMode = _terms(address(wallet), AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory request = _request(wrongMode, keccak256('wrong-mode'));
+    vm.expectRevert(QuipWallet.InvalidAuthorizationMode.selector);
+    wallet.authorizeCommit(request, hex'00');
+    _assertWalletState(1, keyHash, 0);
+
+    ProtocolTerms memory wrongPrincipal = _terms(address(0xBAD), AuthorizationMode.QuipWallet, 0);
+    request = _request(wrongPrincipal, keccak256('wrong-principal'));
+    vm.expectRevert(QuipWallet.InvalidWalletPrincipal.selector);
+    wallet.authorizeCommit(request, hex'00');
+    _assertWalletState(1, keyHash, 0);
+
+    ProtocolTerms memory wrongChain = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    wrongChain.partySide.chainId = block.chainid + 1;
+    request = _request(wrongChain, keccak256('wrong-chain'));
+    vm.expectRevert(QuipWallet.InvalidChain.selector);
+    wallet.authorizeCommit(request, hex'00');
+    _assertWalletState(1, keyHash, 0);
+
+    ProtocolTerms memory validTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    validTerms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
+    request = _request(validTerms, keccak256('exclusive-expiry'));
+    request.expiry = block.timestamp;
+    vm.expectRevert(QuipWallet.AuthorizationExpired.selector);
+    vm.prank(relayer);
+    wallet.authorizeCommit(request, hex'00');
+    _assertWalletState(1, keyHash, 0);
+
+    request = _request(validTerms, keccak256('invalid-signature'));
+    vm.expectRevert(QuipWallet.InvalidPQAuthorization.selector);
+    vm.prank(relayer);
+    wallet.authorizeCommit(request, _pqSig(walletPQKey, keccak256('wrong-wallet-digest')));
+    _assertWalletState(1, keyHash, 0);
+
+    // The exact rejected request and nonce remain usable with a valid envelope.
+    bytes memory validSignature = _signature(request, address(wallet));
+    vm.prank(relayer);
+    wallet.authorizeCommit(request, validSignature);
+    assertEq(receiver.commits(), 1);
+  }
+
+  function test_walletRotationFailuresAreAtomicAndNonceScoped() public {
+    bytes32 initialHash = wallet.activeKeyHash();
+    bytes memory nextKey = _key('wallet-failure-next');
+    bytes32 nonce = keccak256('wallet-failure-rotation');
+    uint256 expiry = 2000;
+    bytes32 digest = wallet.rotationDigest(nextKey, nonce, expiry);
+    bytes32 proofDigest = _walletPossessionDigest(digest, nextKey);
+
+    vm.expectRevert(QuipWallet.NotOwner.selector);
+    vm.prank(relayer);
+    wallet.rotateActiveKey(nextKey, nonce, expiry, _pqSig(walletPQKey, digest), _pqSig(nextKey, proofDigest));
+    _assertWalletState(1, initialHash, 0);
+    assertFalse(wallet.consumedRotationNonces(nonce));
+
+    vm.expectRevert(QuipWallet.InvalidKey.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey('', nonce, expiry, '', '');
+    _assertWalletState(1, initialHash, 0);
+    assertFalse(wallet.consumedRotationNonces(nonce));
+
+    vm.expectRevert(QuipWallet.AuthorizationExpired.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey(nextKey, nonce, block.timestamp, '', '');
+    _assertWalletState(1, initialHash, 0);
+    assertFalse(wallet.consumedRotationNonces(nonce));
+
+    vm.expectRevert(QuipWallet.InvalidPQAuthorization.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey(
+      nextKey, nonce, expiry, _pqSig(walletPQKey, keccak256('wrong-current')), _pqSig(nextKey, proofDigest)
+    );
+    _assertWalletState(1, initialHash, 0);
+    assertFalse(wallet.consumedRotationNonces(nonce));
+
+    vm.expectRevert(QuipWallet.InvalidPQAuthorization.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey(
+      nextKey, nonce, expiry, _pqSig(walletPQKey, digest), _pqSig(nextKey, keccak256('wrong-proof'))
+    );
+    _assertWalletState(1, initialHash, 0);
+    assertFalse(wallet.consumedRotationNonces(nonce));
+
+    _rotateWallet(walletPQKey, nextKey, nonce, expiry);
+    walletPQKey = nextKey;
+    _assertWalletState(2, keccak256(nextKey), 0);
+    assertTrue(wallet.consumedRotationNonces(nonce));
+
+    vm.expectRevert(QuipWallet.RotationNonceAlreadyConsumed.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey(_key('unused-replacement'), nonce, expiry, '', '');
+    _assertWalletState(2, keccak256(nextKey), 0);
+  }
+
+  function test_walletRotateAwayAndBackCannotResurrectOldCommitAuthorization() public {
+    ProtocolTerms memory terms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
+    CommitAuthorizationRequest memory pending = _request(terms, keccak256('rotate-away-pending'));
+    bytes memory staleSignature = _signature(pending, address(wallet));
+    bytes memory originalKey = walletPQKey;
+    bytes memory secondKey = _key('wallet-away-key');
+    bytes32 awayNonce = keccak256('wallet-away');
+
+    _rotateWallet(originalKey, secondKey, awayNonce, 2000);
+    walletPQKey = secondKey;
+    _rotateWallet(secondKey, originalKey, keccak256('wallet-back'), 2000);
+    walletPQKey = originalKey;
+    _assertWalletState(3, keccak256(originalKey), 0);
+
+    vm.expectRevert(QuipWallet.InvalidPQAuthorization.selector);
+    vm.prank(relayer);
+    wallet.authorizeCommit(pending, staleSignature);
+    _assertWalletState(3, keccak256(originalKey), 0);
+
+    vm.expectRevert(QuipWallet.RotationNonceAlreadyConsumed.selector);
+    vm.prank(owner);
+    wallet.rotateActiveKey(secondKey, awayNonce, 2000, '', '');
+    _assertWalletState(3, keccak256(originalKey), 0);
+
+    bytes memory freshSignature = _signature(pending, address(wallet));
+    vm.prank(relayer);
+    wallet.authorizeCommit(pending, freshSignature);
+    assertEq(receiver.commits(), 1);
+  }
+
+  function test_genericWalletExecutionCannotFabricateAuthorizationEvidence() public {
+    ProtocolTerms memory terms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('generic-bypass'));
+    bytes32 payloadHash = _payload(request, address(wallet));
+    VerifiedCommitAuthorization memory forged =
+      _evidence(payloadHash, address(wallet), address(wallet), request.actionNonce, request.expiry);
+    bytes memory bypass = abi.encodeCall(
+      ICommitAuthorizationReceiver.receiveAuthorizedCommit,
+      (request.terms, request.party, request.lock, request.bobCommitSecret, forged, request.commitData)
+    );
+
+    vm.expectRevert(QuipWallet.ForbiddenAuthorizationBypass.selector);
+    vm.prank(owner);
+    wallet.execute(address(receiver), 0, bypass);
+    _assertWalletState(1, keccak256(walletPQKey), 0);
+
+    // Self-execution through authorizeCommit remains available and performs PQ
+    // verification before exporting trusted evidence.
+    bytes memory signature = _signature(request, address(wallet));
+    vm.prank(owner);
+    wallet.execute(address(wallet), 0, abi.encodeCall(QuipWallet.authorizeCommit, (request, signature)));
+    assertEq(receiver.commits(), 1);
+    assertEq(receiver.lastSubmitter(), address(wallet));
+  }
+
   function test_walletAndGatewayProduceIdenticalSharedAdmissionSemantics() public {
     ProtocolTerms memory walletTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
     walletTerms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory walletRequest = _request(walletTerms, keccak256('wallet-nonce'));
+    bytes memory walletSignature = _signature(walletRequest, address(wallet));
     vm.prank(relayer);
-    wallet.authorizeCommit(walletRequest, _signature(walletRequest, address(wallet)));
+    wallet.authorizeCommit(walletRequest, walletSignature);
     assertEq(receiver.lastSubmitter(), relayer);
 
     ProtocolTerms memory directTerms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
@@ -168,8 +341,9 @@ contract AuthorizationBoundariesTest is Test {
     assertEq(receiver.lastSubmitter(), address(wallet));
 
     CommitAuthorizationRequest memory walletDelegate = _request(walletTerms, keccak256('wallet-specific-delegate'));
+    bytes memory walletDelegateSignature = _signature(walletDelegate, address(wallet));
     vm.prank(broker);
-    wallet.authorizeCommit(walletDelegate, _signature(walletDelegate, address(wallet)));
+    wallet.authorizeCommit(walletDelegate, walletDelegateSignature);
     assertEq(receiver.lastSubmitter(), broker);
 
     ProtocolTerms memory directTerms = _specificTerms(directUser, AuthorizationMode.RegisteredDirect, 1);
@@ -210,8 +384,9 @@ contract AuthorizationBoundariesTest is Test {
     ProtocolTerms memory walletTerms = _terms(address(wallet), AuthorizationMode.QuipWallet, 0);
     walletTerms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
     CommitAuthorizationRequest memory walletRequest = _request(walletTerms, keccak256('wallet-open'));
+    bytes memory walletSignature = _signature(walletRequest, address(wallet));
     vm.prank(relayer);
-    wallet.authorizeCommit(walletRequest, _signature(walletRequest, address(wallet)));
+    wallet.authorizeCommit(walletRequest, walletSignature);
     assertEq(receiver.lastSubmitter(), relayer);
 
     ProtocolTerms memory directTerms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
@@ -432,6 +607,24 @@ contract AuthorizationBoundariesTest is Test {
     );
   }
 
+  function _rotateWallet(bytes memory currentKey, bytes memory newKey, bytes32 nonce, uint256 expiry) internal {
+    bytes32 digest = wallet.rotationDigest(newKey, nonce, expiry);
+    vm.prank(owner);
+    wallet.rotateActiveKey(
+      newKey, nonce, expiry, _pqSig(currentKey, digest), _pqSig(newKey, _walletPossessionDigest(digest, newKey))
+    );
+  }
+
+  function _walletPossessionDigest(bytes32 rotationDigest, bytes memory key) internal pure returns (bytes32) {
+    return keccak256(abi.encode('InterlockKeyPossession-v1.1', rotationDigest, KeyRole.Active, keccak256(key)));
+  }
+
+  function _assertWalletState(uint256 epoch, bytes32 keyHash, uint256 commits) internal view {
+    assertEq(wallet.walletKeyEpoch(), epoch);
+    assertEq(wallet.activeKeyHash(), keyHash);
+    assertEq(receiver.commits(), commits);
+  }
+
   function _assertCommonRejections(bool walletPath) internal {
     address principal = walletPath ? address(wallet) : directUser;
     AuthorizationMode mode = walletPath ? AuthorizationMode.QuipWallet : AuthorizationMode.RegisteredDirect;
@@ -536,7 +729,11 @@ contract AuthorizationBoundariesTest is Test {
     CommitAuthorizationRequest memory request,
     address boundary
   ) internal view returns (bytes memory) {
-    return _pqSig(boundary == address(wallet) ? walletPQKey : directPQKey, _payload(request, boundary));
+    bytes32 payloadHash = _payload(request, boundary);
+    if (boundary == address(wallet)) {
+      return _pqSig(walletPQKey, wallet.commitAuthorizationDigest(payloadHash));
+    }
+    return _pqSig(directPQKey, payloadHash);
   }
 
   function _payload(CommitAuthorizationRequest memory request, address boundary) internal pure returns (bytes32) {
