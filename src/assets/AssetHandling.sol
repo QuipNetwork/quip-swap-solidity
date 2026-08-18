@@ -2,7 +2,7 @@
 pragma solidity 0.8.33;
 
 import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
-import {Asset, AssetType, SideTerms} from './ProtocolTypes.sol';
+import {Asset, AssetType, SideTerms} from '../protocol/ProtocolTypes.sol';
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';

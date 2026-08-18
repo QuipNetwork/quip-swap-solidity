@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from './AssetHandling.sol';
+import {AssetCustody} from '../assets/AssetHandling.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {ProtocolTerms, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {AssetSupportRegistry} from '../src/assets/AssetSupportRegistry.sol';
 import {DirectAuthorization} from '../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
-import {AssetSupportRegistry} from '../src/registry/AssetSupportRegistry.sol';
 import {Constants} from './Constants.sol';
 import {ICreateX} from './ICreateX.sol';
 import {PrototypeDeployment} from './PrototypeDeployment.sol';

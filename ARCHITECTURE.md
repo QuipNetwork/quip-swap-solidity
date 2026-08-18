@@ -20,11 +20,11 @@ design to Solidity.
 ## Source layout
 
 - `src/protocol/` contains the v1.1 terms model, hashing, state machines,
-  escrow, commit validation, settlement, and wrappers. Related internal
-  libraries share `AssetHandling.sol`, `CommitValidation.sol`, and
-  `StateMachines.sol` source units while retaining their library names.
+  commit validation, settlement, and wrappers. Related internal libraries share
+  `CommitValidation.sol` and `StateMachines.sol` source units while retaining
+  their library names.
 - `src/authorization/` contains wallet and registered-direct PQ admission.
-- `src/registry/` contains the independently deployed asset-support registry.
+- `src/assets/` contains asset admission, support configuration, and custody helpers.
 - `src/interfaces/` contains cross-component interfaces.
 - `src/legacy/` isolates the v1.0 Omnibus implementation and terms library.
 
@@ -166,7 +166,7 @@ both still sign the same terms.
 
 ## Admission policy
 
-### Asset admission `registry/AssetSupportRegistry.sol` and `protocol/AssetHandling.sol`
+### Asset admission `assets/AssetSupportRegistry.sol` and `assets/AssetHandling.sol`
 
 The registry is an owner-managed allowlist keyed by asset type and token
 address. Native currency needs no entry. `AssetSupport` checks each token
@@ -191,7 +191,7 @@ claims escrow and enables the final cross-chain claim.
 
 ## Escrow
 
-### Asset custody `protocol/AssetHandling.sol`
+### Asset custody `assets/AssetHandling.sol`
 
 Collects and releases native currency and supported token standards. Collection
 requires exact native value and exact token balance or ownership changes,

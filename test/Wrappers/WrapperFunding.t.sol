@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {AssetCustody} from '../../src/assets/AssetHandling.sol';
+import {AssetSupport} from '../../src/assets/AssetHandling.sol';
+import {AssetSupportRegistry} from '../../src/assets/AssetSupportRegistry.sol';
 import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
 import {AuthorizationSubmitter} from '../../src/authorization/shared/AuthorizationSubmitter.sol';
 import {QuipWallet} from '../../src/authorization/wallet/QuipWallet.sol';
-import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
-import {AssetSupport} from '../../src/protocol/AssetHandling.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
 import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
 import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
@@ -26,7 +27,6 @@ import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {Settlement} from '../../src/protocol/Settlement.sol';
 import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
-import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
 import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
