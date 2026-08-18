@@ -16,6 +16,7 @@ out/
 # Docs
 docs/*
 !docs/operator-runbook.md
+!docs/asset-support.md
 
 # Dotenv file
 .env

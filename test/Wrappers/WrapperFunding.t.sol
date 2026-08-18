@@ -29,6 +29,7 @@ import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
+import {AdversarialERC20Mock} from '../mocks/AdversarialERC20Mock.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {ERC721Mock} from '../mocks/ERC721Mock.sol';
@@ -36,6 +37,7 @@ import {FeeOnTransferERC20Mock} from '../mocks/FeeOnTransferERC20Mock.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
 import {MaliciousERC721Mock} from '../mocks/MaliciousERC721Mock.sol';
+import {ReentrantERC1155Mock, ReentrantERC1155Recipient} from '../mocks/ReentrantERC1155Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract WrapperFundingTest is Test {
@@ -389,7 +391,7 @@ contract WrapperFundingTest is Test {
       Asset[] memory assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10 ether);
       uint256 nonce = 60 + raw;
       (ProtocolTerms memory terms, bytes32 lock) =
-        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, nonce);
+        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, (80 + raw));
       CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, nonce);
       bytes memory signature = _signature(request, address(gateway), aliceKey);
       malicious.mint(alice, 11 ether);
@@ -564,6 +566,196 @@ contract WrapperFundingTest is Test {
     assertEq(same.reserved(partyAssets[0]), 0);
     assertEq(same.reserved(counterpartyAssets[0]), 0);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function test_erc721OwnerQueryFailuresAfterCollectionRollbackAndPermitAuthorizationRetry() public {
+    for (
+      uint8 raw = uint8(MaliciousERC721Mock.Behavior.OwnerQueryReverts);
+      raw <= uint8(MaliciousERC721Mock.Behavior.OwnerQueryWrong);
+      ++raw
+    ) {
+      MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+      uint256 tokenId = 100 + raw;
+      uint256 nonce = 200 + raw;
+      Asset[] memory assets = _oneAsset(AssetType.ERC721, address(malicious), tokenId, 1);
+      (ProtocolTerms memory terms, bytes32 lock) =
+        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, (89 + raw));
+      CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, nonce);
+      bytes memory signature = _signature(request, address(gateway), aliceKey);
+      malicious.mint(alice, tokenId);
+      vm.prank(alice);
+      malicious.approve(address(cross), tokenId);
+      malicious.setBehavior(MaliciousERC721Mock.Behavior(raw));
+
+      address reported = raw == uint8(MaliciousERC721Mock.Behavior.OwnerQueryReverts) ? address(0) : address(0xBAD);
+      vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, address(cross), reported));
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.actualOwnerOf(tokenId), alice);
+      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+      malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.actualOwnerOf(tokenId), address(cross));
+      assertEq(cross.reserved(assets[0]), 1);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    }
+  }
+
+  function test_erc721OwnerQueryFailuresAfterPayoutRollbackAndPermitClaimRetry() public {
+    for (
+      uint8 raw = uint8(MaliciousERC721Mock.Behavior.TransferThenOwnerQueryReverts);
+      raw <= uint8(MaliciousERC721Mock.Behavior.TransferThenOwnerQueryWrong);
+      ++raw
+    ) {
+      MaliciousERC721Mock malicious = new MaliciousERC721Mock();
+      uint256 tokenId = 110 + raw;
+      uint256 nonce = 210 + raw;
+      Asset[] memory assets = _oneAsset(AssetType.ERC721, address(malicious), tokenId, 1);
+      (ProtocolTerms memory terms, bytes32 lock) =
+        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, (84 + raw));
+      malicious.mint(alice, tokenId);
+      vm.prank(alice);
+      malicious.approve(address(cross), tokenId);
+      _directCommit(terms, true, lock, nonce, alice, aliceKey, bytes32(0));
+      malicious.setBehavior(MaliciousERC721Mock.Behavior(raw));
+
+      address reported =
+        raw == uint8(MaliciousERC721Mock.Behavior.TransferThenOwnerQueryReverts) ? address(0) : address(0xBAD);
+      vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, reported));
+      cross.claim(terms, true, lock, SECRET);
+      assertEq(malicious.actualOwnerOf(tokenId), address(cross));
+      assertEq(cross.reserved(assets[0]), 1);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+
+      malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
+      cross.claim(terms, true, lock, SECRET);
+      assertEq(malicious.actualOwnerOf(tokenId), RECIPIENT);
+      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+    }
+  }
+
+  function test_erc1155TokenCannotReenterDuringCollection() public {
+    ReentrantERC1155Mock malicious = new ReentrantERC1155Mock();
+    Asset[] memory assets = _oneAsset(AssetType.ERC1155, address(malicious), 7, 3);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 87);
+    malicious.mint(alice, 7, 3);
+    vm.prank(alice);
+    malicious.setApprovalForAll(address(cross), true);
+    malicious.arm(address(cross), abi.encodeCall(cross.claim, (terms, true, lock, SECRET)));
+
+    _directCommit(terms, true, lock, 220, alice, aliceKey, bytes32(0));
+
+    assertTrue(malicious.reentered());
+    assertFalse(malicious.innerSucceeded());
+    assertEq(malicious.balanceOf(address(cross), 7), 3);
+    assertEq(cross.reserved(assets[0]), 3);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_erc1155RecipientCannotReenterDuringRelease() public {
+    ReentrantERC1155Mock token1155 = new ReentrantERC1155Mock();
+    ReentrantERC1155Recipient attacker = new ReentrantERC1155Recipient();
+    Asset[] memory assets = _oneAsset(AssetType.ERC1155, address(token1155), 8, 4);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 88);
+    terms.partySide.recipient = address(attacker);
+    _rebindCross(terms);
+    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+    token1155.mint(alice, 8, 4);
+    vm.prank(alice);
+    token1155.setApprovalForAll(address(cross), true);
+    _directCommit(terms, true, lock, 221, alice, aliceKey, bytes32(0));
+    attacker.arm(address(cross), abi.encodeCall(cross.claim, (terms, true, lock, SECRET)));
+
+    cross.claim(terms, true, lock, SECRET);
+
+    assertTrue(attacker.reentered());
+    assertFalse(attacker.innerSucceeded());
+    assertEq(token1155.balanceOf(address(attacker), 8), 4);
+    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
+  }
+
+  function test_erc20BalanceQueryFailuresDuringCollectionRollbackNonceAndPermitRetry() public {
+    for (
+      uint8 raw = uint8(AdversarialERC20Mock.BalanceBehavior.RevertQuery);
+      raw <= uint8(AdversarialERC20Mock.BalanceBehavior.MalformedQuery);
+      ++raw
+    ) {
+      AdversarialERC20Mock malicious = new AdversarialERC20Mock();
+      uint256 nonce = 230 + raw;
+      Asset[] memory assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10 ether);
+      (ProtocolTerms memory terms, bytes32 lock) =
+        _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, (89 + raw));
+      CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, nonce);
+      bytes memory signature = _signature(request, address(gateway), aliceKey);
+      malicious.mint(alice, 10 ether);
+      vm.prank(alice);
+      malicious.approve(address(cross), 10 ether);
+      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), address(cross));
+
+      vm.expectRevert();
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.rawBalanceOf(alice), 10 ether);
+      assertEq(malicious.rawBalanceOf(address(cross)), 0);
+      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+
+      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior.Exact, address(0));
+      vm.prank(alice);
+      gateway.authorizeCommit(request, signature);
+      assertEq(malicious.rawBalanceOf(address(cross)), 10 ether);
+      assertEq(cross.reserved(assets[0]), 10 ether);
+      assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    }
+  }
+
+  function test_sameChainBalanceQueryFailuresRollbackPriorPayoutStateAndReserves() public {
+    for (
+      uint8 raw = uint8(AdversarialERC20Mock.BalanceBehavior.RevertQuery);
+      raw <= uint8(AdversarialERC20Mock.BalanceBehavior.MalformedQuery);
+      ++raw
+    ) {
+      ERC20Mock partyToken = new ERC20Mock('Party', 'PTY', 18);
+      AdversarialERC20Mock malicious = new AdversarialERC20Mock();
+      Asset[] memory partyAssets = _oneAsset(AssetType.ERC20, address(partyToken), 0, 10 ether);
+      Asset[] memory counterpartyAssets = _oneAsset(AssetType.ERC20, address(malicious), 0, 20 ether);
+      ProtocolTerms memory terms;
+      terms.partySide = _side(alice, AuthorizationMode.RegisteredDirect, 1, partyAssets, 92 + raw);
+      terms.counterpartySide = _side(bob, AuthorizationMode.RegisteredDirect, 1, counterpartyAssets, 192 + raw);
+      bytes32 lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+      partyToken.mint(alice, 10 ether);
+      malicious.mint(bob, 20 ether);
+      vm.prank(alice);
+      partyToken.approve(address(same), 10 ether);
+      vm.prank(bob);
+      malicious.approve(address(same), 20 ether);
+      _directCommitTo(address(same), terms, true, lock, 240 + raw, alice, aliceKey, bytes32(0));
+      _directCommitTo(address(same), terms, false, lock, 250 + raw, bob, bobKey, bytes32(0));
+      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), RECIPIENT);
+
+      vm.expectRevert();
+      same.claim(terms, lock, SECRET);
+      assertEq(partyToken.balanceOf(RECIPIENT), 0);
+      assertEq(partyToken.balanceOf(address(same)), 10 ether);
+      assertEq(malicious.rawBalanceOf(RECIPIENT), 0);
+      assertEq(malicious.rawBalanceOf(address(same)), 20 ether);
+      assertEq(same.reserved(partyAssets[0]), 10 ether);
+      assertEq(same.reserved(counterpartyAssets[0]), 20 ether);
+      assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+
+      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior.Exact, address(0));
+      same.claim(terms, lock, SECRET);
+      assertEq(partyToken.balanceOf(RECIPIENT), 10 ether);
+      assertEq(malicious.rawBalanceOf(RECIPIENT), 20 ether);
+      assertEq(same.reserved(partyAssets[0]), 0);
+      assertEq(same.reserved(counterpartyAssets[0]), 0);
+      assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+    }
   }
 
   function test_reserveDeficitCannotDrainAnotherTrade() public {
