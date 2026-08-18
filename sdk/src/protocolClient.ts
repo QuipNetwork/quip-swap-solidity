@@ -5,7 +5,6 @@ import {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.j
 import {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
-import {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
 import type {
   CommitAuthorizationRequest,
   InitialRegistration,
@@ -13,7 +12,6 @@ import type {
   ProtocolTerms,
   RegistryAuthorization,
   RegistryOperation,
-  TimingPolicy,
 } from './protocol.js'
 import type {CrossChainLegState, SameChainState} from './protocol.js'
 import type {AssetType} from './types.js'
@@ -21,7 +19,6 @@ import type {Hex32} from './types.js'
 
 export interface ProtocolAddresses {
   readonly assetSupportRegistry: Address
-  readonly timingPolicyRegistry: Address
   readonly identityRegistry: Address
   readonly authorizationGateway: Address
   readonly crossChainWrapper: Address
@@ -57,14 +54,12 @@ export interface ProtocolClient {
   ): Promise<Hash>
   executeRegistry(request: RegistryOperation, authorization: RegistryAuthorization): Promise<Hash>
   setAssetSupport(assetType: AssetType, target: Address, supported: boolean): Promise<Hash>
-  registerTimingPolicy(expectedPolicyId: Hex32, policy: TimingPolicy): Promise<Hash>
   claimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32, secret: Hex32): Promise<Hash>
   reclaimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Hash>
   claimSameChain(terms: ProtocolTerms, lock: Hex32, secret: Hex32): Promise<Hash>
   reclaimSameChainParty(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
   reclaimSameChainBoth(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
   isAssetSupported(assetType: AssetType, target: Address): Promise<boolean>
-  resolveTimingPolicy(policyId: Hex32): Promise<TimingPolicy>
   getIdentity(eoa: Address): Promise<PQIdentity>
   getCrossChainState(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<CrossChainLegState>
   getSameChainState(terms: ProtocolTerms, lock: Hex32): Promise<SameChainState>
@@ -114,8 +109,6 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       write(addresses.identityRegistry, pqIdentityRegistryAbi, 'execute', [request, authorization]),
     setAssetSupport: (assetType, target, supported) =>
       write(addresses.assetSupportRegistry, assetSupportRegistryAbi, 'setAssetSupport', [assetType, target, supported]),
-    registerTimingPolicy: (expectedPolicyId, policy) =>
-      write(addresses.timingPolicyRegistry, timingPolicyRegistryAbi, 'registerPolicy', [expectedPolicyId, policy]),
     claimCrossChain: (terms, party, lock, secret) =>
       write(addresses.crossChainWrapper, crossChainWrapperAbi, 'claim', [terms, party, lock, secret]),
     reclaimCrossChain: (terms, party, lock) =>
@@ -128,8 +121,6 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       write(addresses.sameChainWrapper, sameChainWrapperAbi, 'reclaimBoth', [terms, lock]),
     isAssetSupported: (assetType, target) =>
       read(addresses.assetSupportRegistry, assetSupportRegistryAbi, 'isSupported', [assetType, target]),
-    resolveTimingPolicy: policyId =>
-      read(addresses.timingPolicyRegistry, timingPolicyRegistryAbi, 'resolvePolicy', [policyId]),
     getIdentity: eoa => read(addresses.identityRegistry, pqIdentityRegistryAbi, 'identityOf', [eoa]),
     getCrossChainState: (terms, party, lock) =>
       read(addresses.crossChainWrapper, crossChainWrapperAbi, 'state', [terms, party, lock]),

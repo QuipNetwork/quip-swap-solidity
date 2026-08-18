@@ -93,18 +93,8 @@ struct SideTerms {
 }
 
 struct ProtocolTerms {
-  bytes32 timingPolicyId;
   SideTerms partySide;
   SideTerms counterpartySide;
-}
-
-struct TimingPolicy {
-  uint256 policyVersion;
-  WrapperMode mode;
-  uint256 partyChainId;
-  uint256 counterpartyChainId;
-  uint256 partyToCounterpartyDelay;
-  uint256 counterpartyToPartyDelay;
 }
 
 struct CommitPayload {

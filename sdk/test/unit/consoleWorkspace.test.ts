@@ -39,7 +39,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'quip-workspace-'))
   const workspace = join(root, 'alice')
   const configPath = join(root, 'config.json')
-  const addresses = {assetSupportRegistry: ALICE, timingPolicyRegistry: BOB, identityRegistry: EXECUTOR, authorizationGateway: VERIFIER, crossChainWrapper: WRAPPER, sameChainWrapper: ALICE}
+  const addresses = {assetSupportRegistry: ALICE, identityRegistry: EXECUTOR, authorizationGateway: VERIFIER, crossChainWrapper: WRAPPER, sameChainWrapper: ALICE}
   const deploymentChain = (chainId: number) => ({chainId, trustedVerifier: VERIFIER, addresses})
   const configValue = {
     schema: CONSOLE_CONFIG_SCHEMA,
@@ -50,7 +50,7 @@ async function fixture() {
     requiredConfirmations: 3,
     chains: [{chainId: 31337, rpcUrl: 'http://127.0.0.1:8545'}, {chainId: 31338, rpcUrl: 'http://127.0.0.1:8546'}],
     actors: {alice: ALICE, bob: BOB, permissionlessExecutor: EXECUTOR},
-    timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10', timingPolicyId: hexN(50)},
+    timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10'},
     artifactExchange: {directory: root},
     deployment: {schema: 'quip-swap-demo-deployment.v1', chains: [deploymentChain(31337), deploymentChain(31338)]},
   }

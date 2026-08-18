@@ -33,7 +33,6 @@ export interface SideTerms {
 }
 
 export interface ProtocolTerms {
-  readonly timingPolicyId: Hex32
   readonly partySide: SideTerms
   readonly counterpartySide: SideTerms
 }
@@ -98,22 +97,13 @@ const sideTermsComponents = [
 ] as const
 
 const protocolTermsParameter = {name: 'terms', type: 'tuple', components: [
-  {name: 'timingPolicyId', type: 'bytes32'},
   {name: 'partySide', type: 'tuple', components: sideTermsComponents},
   {name: 'counterpartySide', type: 'tuple', components: sideTermsComponents},
 ]} as const
 
-const timingPolicyParameter = {name: 'policy', type: 'tuple', components: [
-  {name: 'policyVersion', type: 'uint256'}, {name: 'mode', type: 'uint8'},
-  {name: 'partyChainId', type: 'uint256'}, {name: 'counterpartyChainId', type: 'uint256'},
-  {name: 'partyToCounterpartyDelay', type: 'uint256'},
-  {name: 'counterpartyToPartyDelay', type: 'uint256'},
-]} as const
-
 const domains = {
   terms: 'InterlockTerms-v1.1', gateContext: 'InterlockBobCommitGateContext-v1.1',
-  bobCommitGate: 'InterlockBobCommitGate-v1.1', settlement: 'InterlockSettlementLock-v1.1',
-  timing: 'InterlockTimingPolicy-v1.1', assets: 'InterlockAssets-v1.1', commit: 'InterlockCommit-v1.1',
+  bobCommitGate: 'InterlockBobCommitGate-v1.1', settlement: 'InterlockSettlementLock-v1.1', assets: 'InterlockAssets-v1.1', commit: 'InterlockCommit-v1.1',
   registration: 'InterlockRegister-v1.1', registry: 'InterlockRegistry-v1.1', possession: 'InterlockKeyPossession-v1.1', walletRotation: 'InterlockWalletKeyRotation-v1.1',
 } as const
 
@@ -121,7 +111,7 @@ const abiSide = (side: SideTerms) => ({...side, assets: side.assets.map(asset =>
   assetType: asset.assetType, target: asset.target, id: asset.id, amount: asset.amount,
 }))})
 const abiTerms = (terms: ProtocolTerms) => ({
-  timingPolicyId: terms.timingPolicyId, partySide: abiSide(terms.partySide), counterpartySide: abiSide(terms.counterpartySide),
+  partySide: abiSide(terms.partySide), counterpartySide: abiSide(terms.counterpartySide),
 })
 
 function hashTerms(domain: string, terms: ProtocolTerms): Hex32 {
@@ -165,9 +155,6 @@ export function validateCommitProgression(
 export const settlementLock = (trade: Hex32, secret: Hex32): Hex32 =>
   keccak256(encodeAbiParameters([{type: 'string'}, {type: 'bytes32'}, {type: 'bytes32'}],
     [domains.settlement, trade, secret]))
-
-export const timingPolicyId = (policy: TimingPolicy): Hex32 =>
-  keccak256(encodeAbiParameters([{type: 'string'}, timingPolicyParameter], [domains.timing, policy]))
 
 export const assetHash = (side: SideTerms): Hex32 => keccak256(encodeAbiParameters(
   [{type: 'string'}, {type: 'uint256'}, assetArrayAbiParameter],
@@ -269,9 +256,9 @@ export const encodeRegistryNonceKey = (
 export function validateProtocolTerms(terms: ProtocolTerms, policy: TimingPolicy): void {
   const mode = wrapperMode(terms)
   const invalid = () => { throw new Error('Invalid protocol terms') }
-  if (terms.partySide.chainId === 0n || terms.counterpartySide.chainId === 0n ||
+  if (policy.policyVersion === 0n || terms.partySide.chainId === 0n || terms.counterpartySide.chainId === 0n ||
       terms.partySide.principal === zeroAddress || terms.counterpartySide.principal === zeroAddress ||
-      timingPolicyId(policy) !== terms.timingPolicyId || policy.mode !== mode ||
+      policy.mode !== mode ||
       policy.partyChainId !== terms.partySide.chainId || policy.counterpartyChainId !== terms.counterpartySide.chainId) invalid()
   validateSide(terms.partySide); validateSide(terms.counterpartySide)
   if (!(terms.partySide.commitmentDeadline < terms.counterpartySide.commitmentDeadline &&
@@ -285,7 +272,8 @@ export function validateProtocolTerms(terms: ProtocolTerms, policy: TimingPolicy
       ? terms.partySide.claimDeadline : terms.counterpartySide.claimDeadline
     if (claim >= terms.partySide.reclaimRelease || claim >= terms.counterpartySide.reclaimRelease) invalid()
   } else {
-    if (terms.counterpartySide.commitLock === zero ||
+    if (terms.counterpartySide.commitLock === zero || policy.partyToCounterpartyDelay <= 0n ||
+        policy.counterpartyToPartyDelay <= 0n ||
         terms.partySide.claimDeadline + policy.partyToCounterpartyDelay > terms.counterpartySide.reclaimRelease ||
         terms.counterpartySide.claimDeadline + policy.counterpartyToPartyDelay > terms.partySide.reclaimRelease) invalid()
   }

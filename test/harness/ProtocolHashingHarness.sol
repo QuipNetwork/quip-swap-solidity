@@ -2,7 +2,7 @@
 pragma solidity 0.8.33;
 
 import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
-import {ExpectedSourceState, ProtocolTerms, TimingPolicy, WrapperMode} from '../../src/protocol/ProtocolTypes.sol';
+import {ExpectedSourceState, ProtocolTerms, WrapperMode} from '../../src/protocol/ProtocolTypes.sol';
 
 contract ProtocolHashingHarness {
   function exposedMode(ProtocolTerms calldata terms) external pure returns (WrapperMode) {
@@ -29,10 +29,6 @@ contract ProtocolHashingHarness {
     return ProtocolHashing.settlementLock(trade, secret);
   }
 
-  function exposedTimingPolicyId(TimingPolicy calldata policy) external pure returns (bytes32) {
-    return ProtocolHashing.timingPolicyId(policy);
-  }
-
   function exposedAssetHash(ProtocolTerms calldata terms, bool party) external pure returns (bytes32) {
     return ProtocolHashing.assetHash(party ? terms.partySide : terms.counterpartySide);
   }
@@ -52,8 +48,8 @@ contract ProtocolHashingHarness {
     );
   }
 
-  function exposedValidateTerms(ProtocolTerms calldata terms, TimingPolicy calldata policy) external pure {
-    ProtocolHashing.validateTerms(terms, policy);
+  function exposedValidateTerms(ProtocolTerms calldata terms) external pure {
+    ProtocolHashing.validateTerms(terms);
   }
 
   function exposedAuthorizationNonceKey(

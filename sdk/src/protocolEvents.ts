@@ -5,12 +5,10 @@ import {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
 import {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
-import {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
 import type {ProtocolAddresses} from './protocolClient.js'
 
 export type ProtocolEventSource =
   | 'assetSupportRegistry'
-  | 'timingPolicyRegistry'
   | 'identityRegistry'
   | 'quipWallet'
   | 'crossChainWrapper'
@@ -28,7 +26,6 @@ export interface ProtocolEvent {
 
 const abiBySource: Readonly<Record<ProtocolEventSource, Abi>> = {
   assetSupportRegistry: assetSupportRegistryAbi as Abi,
-  timingPolicyRegistry: timingPolicyRegistryAbi as Abi,
   identityRegistry: pqIdentityRegistryAbi as Abi,
   quipWallet: quipWalletAbi as Abi,
   crossChainWrapper: crossChainWrapperAbi as Abi,
@@ -42,7 +39,6 @@ export function decodeProtocolEvents(
 ): ProtocolEvent[] {
   const sourceByAddress = new Map<string, ProtocolEventSource>([
     [addresses.assetSupportRegistry.toLowerCase(), 'assetSupportRegistry'],
-    [addresses.timingPolicyRegistry.toLowerCase(), 'timingPolicyRegistry'],
     [addresses.identityRegistry.toLowerCase(), 'identityRegistry'],
     [addresses.crossChainWrapper.toLowerCase(), 'crossChainWrapper'],
     [addresses.sameChainWrapper.toLowerCase(), 'sameChainWrapper'],

@@ -10,20 +10,15 @@ import {
   toHex,
 } from 'viem'
 import type {Address, Hex} from 'viem'
-import {
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
-} from './prototypeTiming.js'
 import type {Hex32} from './types.js'
 
-export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.1'
+export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.2'
 export const CANONICAL_CREATEX: Address = getAddress('0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed')
 const CREATE3_PROXY_INITCODE_HASH: Hex32 =
   '0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f'
 
 export const prototypeComponents = [
   'assetSupportRegistry',
-  'timingPolicyRegistry',
   'identityRegistry',
   'authorizationGateway',
   'crossChainWrapper',
@@ -41,7 +36,6 @@ export interface PrototypeDeploymentManifest {
   readonly owner: Address
   readonly trustedVerifier: Address
   readonly addresses: PrototypeDeploymentAddresses
-  readonly policyIds: readonly [Hex32, Hex32]
   readonly vectorHash: Hex32
 }
 
@@ -81,8 +75,7 @@ export function prototypeDeploymentVectorHash(
         {type: 'address'},
         {type: 'address'},
         {type: 'address'},
-        {type: 'address[6]'},
-        {type: 'bytes32[2]'},
+        {type: 'address[5]'},
       ],
       [
         PROTOTYPE_DEPLOYMENT_VERSION,
@@ -91,15 +84,7 @@ export function prototypeDeploymentVectorHash(
         deployer,
         owner,
         trustedVerifier,
-        prototypeComponents.map(component => addresses[component]) as unknown as readonly [
-          Address,
-          Address,
-          Address,
-          Address,
-          Address,
-          Address,
-        ],
-        [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID],
+        prototypeComponents.map(component => addresses[component]) as unknown as readonly [Address, Address, Address, Address, Address],
       ],
     ),
   )
@@ -122,7 +107,6 @@ export function buildPrototypeDeploymentManifest(args: {
     owner: args.owner,
     trustedVerifier: args.trustedVerifier,
     addresses,
-    policyIds: [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID],
     vectorHash: prototypeDeploymentVectorHash(
       args.chainId,
       createX,

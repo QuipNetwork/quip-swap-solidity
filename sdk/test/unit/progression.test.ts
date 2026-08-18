@@ -18,7 +18,6 @@ const side = (chainId: bigint, principal: `0x${string}`, nonce: Hex32): SideTerm
 })
 const crossTerms = (): ProtocolTerms => {
   const terms: ProtocolTerms = {
-    timingPolicyId: `0x${'33'.repeat(32)}`,
     partySide: side(1n, '0x00000000000000000000000000000000000000a1', `0x${'44'.repeat(32)}`),
     counterpartySide: side(2n, '0x00000000000000000000000000000000000000b2', `0x${'55'.repeat(32)}`),
   }

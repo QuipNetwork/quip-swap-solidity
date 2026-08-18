@@ -24,8 +24,7 @@ design to Solidity.
   libraries share `AssetHandling.sol`, `CommitValidation.sol`, and
   `StateMachines.sol` source units while retaining their library names.
 - `src/authorization/` contains wallet and registered-direct PQ admission.
-- `src/registry/` contains independently deployed asset and timing policy
-  registries plus prototype policy constants.
+- `src/registry/` contains the independently deployed asset-support registry.
 - `src/interfaces/` contains cross-component interfaces.
 - `src/legacy/` isolates the v1.0 Omnibus implementation and terms library.
 
@@ -56,7 +55,7 @@ design to Solidity.
 
 Shared validation:
   ProtocolTypes + ProtocolHashing + CommitAuthorization
-  + ProgressionGate + TimingPolicyRegistry + AssetSupportRegistry
+  + ProgressionGate + AssetSupportRegistry
 ```
 
 Authorization contracts authenticate who approved a commit. Wrappers do not
@@ -80,7 +79,7 @@ Defines the shared data model:
 - `CrossChainLegState` and `SameChainState`: settlement state enums.
 - `SideTerms`: one side's principal, destinations, chain, assets, deadlines,
   authorization settings, commit lock, and nonce.
-- `ProtocolTerms`: both sides plus a timing-policy ID.
+- `ProtocolTerms`: the two signed side-term records.
 - Commit request, payload, and verified-evidence structures.
 - PQ identity registration, rotation, recovery, and revocation structures.
 
@@ -97,16 +96,13 @@ Provides domain-separated hashes and static term validation:
 - `commitLock` binds Bob's cross-chain progression secret.
 - `settlementLock` binds the settlement secret to one trade.
 - `assetHash` commits to one side's exact canonical asset list.
-- `timingPolicyId` content-addresses a timing policy.
 - `commitPayloadHash` binds chain, wrapper, verifier, trade, lock, side,
   source state, assets, principal, delegation, action nonce, and expiry.
 - Nonce encoders separate commit and registry replay domains.
 - `validateTerms` implements the specification's static `ValidTerms(T)`.
 
 Validation checks addresses, enum and authorization shapes, canonical assets,
-deadline ordering, chain mode, progression fields, and timing policy. For
-cross-chain trades it reserves the configured final-claim interval after a
-possible secret-revealing claim on the other chain.
+deadline ordering, chain mode, and progression fields. Cross-chain terms must leave each claim deadline no later than the opposite reclaim release. Clients apply any stronger route-specific finality and reaction margins before signing or submitting terms.
 
 ## Authorization
 
@@ -168,18 +164,16 @@ Validation and nonce consumption are separate. Consumption happens only in the
 successful commit transaction; a later revert rolls it back with state and
 assets.
 
-## Registries and admission policy
+### Off-chain timing policy
 
-### `registry/TimingPolicyRegistry.sol`
+The SDK timing policy is local configuration, not a protocol term. Before a user
+signs or submits terms, the client checks the wrapper mode, ordered chain pair,
+and directional finality and reaction margins against the signed deadlines.
+Contracts enforce only intrinsic deadline ordering and do not store, identify,
+or resolve timing policies. Different clients may require stronger margins, but
+both still sign the same terms.
 
-Stores immutable, content-addressed timing policies. A policy binds version,
-wrapper mode, ordered chains, and final-claim delays in both directions. A
-wrapper resolves the signed policy and requires its route and mode to match.
-
-### `registry/PrototypeTimingPolicies.sol`
-
-Provides prototype Base Sepolia/OP Sepolia policies for deployment and demos. It
-is convenience code, not general policy logic.
+## Admission policy
 
 ### Asset admission `registry/AssetSupportRegistry.sol` and `protocol/AssetHandling.sol`
 
@@ -311,9 +305,7 @@ Chain B: claim with settlement secret -> secret becomes public
 Chain A: final claim with same secret -> remaining assets released
 ```
 
-The wrappers never communicate. Atomicity depends on settlement-secret
-confidentiality before both commits and timing policies leaving enough time for
-the final claim. Each local leg can otherwise be reclaimed after its release.
+The wrappers never communicate. Atomicity depends on settlement-secret confidentiality before both commits. Each client must apply its configured chain-finality and reaction margins before accepting the signed deadlines; those operational margins are deliberately not represented or registered on chain. Each local leg can otherwise be reclaimed after its release.
 
 ## Interfaces
 
@@ -322,7 +314,6 @@ the final claim. Each local leg can otherwise be reclaimed after its release.
 | `ICommitAuthorizationReceiver.sol` | Wrapper callback after authorization. |
 | `IRegisteredCommitTarget.sol` | Atomic registration-and-commit callback. |
 | `IAssetSupportRegistry.sol` | Asset-support lookup. |
-| `ITimingPolicyRegistry.sol` | Timing-policy registration and resolution. |
 | `IProfiledPQVerifier.sol` | PQ verifier version/profile introspection. |
 | `IWalletFactory.sol` | Legacy Omnibus wallet-factory boundary. |
 | `IOmnibus.sol` | Legacy Omnibus types and interface. |
@@ -334,7 +325,7 @@ settlement, verifier administration, and fees. It uses legacy `Terms` and lock
 states based on `Unused`, `Free`, `Committed`, and `Spent`.
 
 The v1.1 design replaces that broad boundary with separate identity,
-authorization, registry, wrapper, custody, state-machine, and settlement
+authorization, wrapper, custody, state-machine, and settlement
 components. Omnibus scripts, tests, and SDK exports are legacy unless labeled
 otherwise.
 

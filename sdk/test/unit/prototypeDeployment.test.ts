@@ -20,12 +20,11 @@ describe('prototype deployment vectors', () => {
     expect(second).toEqual(first)
     expect(new Set(prototypeComponents.map(component => first[component])).size).toBe(prototypeComponents.length)
     expect(first).toEqual({
-      assetSupportRegistry: '0x999Cbf13223e2421fAb3d16894a19E6A1DfEE12E',
-      timingPolicyRegistry: '0x216B1ffa9B0b9b0075d3F452bA54418F3c7BFc6f',
-      identityRegistry: '0x617f50EfC9D607d758F14221ce8f5757927A1F15',
-      authorizationGateway: '0x132A36eDe5F30C9D00477d9c8181A3E8e1Ef356F',
-      crossChainWrapper: '0x67F0DB16f0a61852a63c8c1771EB5440E89396D4',
-      sameChainWrapper: '0x877ED96E48852fB3640c67e576B4ceC3C1C026A0',
+      assetSupportRegistry: '0x87809f19A53302A03380189146c1291F5f4baDe9',
+      identityRegistry: '0xeEe2445807eC6eCe54EA5614C9eedeE1CD5f3c58',
+      authorizationGateway: '0xeEFC2Fc5Bd8F22D865Bd5956C058301e1DC04E29',
+      crossChainWrapper: '0xb25ABE97C7ff0Dd32F798f2f41b65418ad2D73Ef',
+      sameChainWrapper: '0x9236D569776AAD47d661E57D5a490bEbC3798145',
     })
   })
 

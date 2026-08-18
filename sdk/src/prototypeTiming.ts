@@ -1,4 +1,4 @@
-import {WrapperMode, timingPolicyId} from './protocol.js'
+import {WrapperMode} from './protocol.js'
 import type {TimingPolicy} from './protocol.js'
 
 export const BASE_SEPOLIA_CHAIN_ID = 84_532n
@@ -18,5 +18,3 @@ function policy(partyChainId: bigint, counterpartyChainId: bigint): TimingPolicy
 
 export const BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY = policy(BASE_SEPOLIA_CHAIN_ID, OP_SEPOLIA_CHAIN_ID)
 export const OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY = policy(OP_SEPOLIA_CHAIN_ID, BASE_SEPOLIA_CHAIN_ID)
-export const BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID = timingPolicyId(BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY)
-export const OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID = timingPolicyId(OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY)

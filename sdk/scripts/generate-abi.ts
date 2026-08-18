@@ -7,7 +7,6 @@ const generated = join(sdkRoot, 'src', 'generated')
 
 const contracts = [
   ['AssetSupportRegistry', 'assetSupportRegistryAbi'],
-  ['TimingPolicyRegistry', 'timingPolicyRegistryAbi'],
   ['PQIdentityRegistry', 'pqIdentityRegistryAbi'],
   ['PQAuthorizationGateway', 'pqAuthorizationGatewayAbi'],
   ['CrossChainWrapper', 'crossChainWrapperAbi'],

@@ -84,11 +84,6 @@ export const quipWalletAbi = [
             "internalType": "struct ProtocolTerms",
             "components": [
               {
-                "name": "timingPolicyId",
-                "type": "bytes32",
-                "internalType": "bytes32"
-              },
-              {
                 "name": "partySide",
                 "type": "tuple",
                 "internalType": "struct SideTerms",

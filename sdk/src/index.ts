@@ -19,7 +19,6 @@ export {
   deriveCommitLock,
   tradeId,
   settlementLock,
-  timingPolicyId,
   assetHash,
   commitPayloadHash,
   registrationDigest,
@@ -74,8 +73,6 @@ export {
   PROTOTYPE_FINAL_CLAIM_DELAY,
   BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
   OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
 } from './prototypeTiming.js'
 export {
   PROTOTYPE_OPERATING_PROFILE,
@@ -246,7 +243,6 @@ export type {
 } from './clientPersistence.js'
 
 export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
-export {timingPolicyRegistryAbi} from './generated/timingPolicyRegistryAbi.js'
 export {pqIdentityRegistryAbi} from './generated/pqIdentityRegistryAbi.js'
 export {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.js'
 export {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'

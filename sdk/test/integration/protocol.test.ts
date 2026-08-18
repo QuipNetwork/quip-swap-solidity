@@ -2,8 +2,7 @@ import type {Abi, Address, Hex} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {
   ActionTag, AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode,
-  assetHash, commitPayloadHash, deriveCommitLock, gateContextId, gateTerms, settlementLock,
-  timingPolicyId, tradeId, validateCommitProgression, validateProtocolTerms,
+  assetHash, commitPayloadHash, deriveCommitLock, gateContextId, gateTerms, settlementLock, tradeId, validateCommitProgression, validateProtocolTerms,
   encodeAuthorizationNonceKey, encodeRegistryNonceKey,
 } from '../../src/protocol.js'
 import type {ProtocolTerms, SideTerms, TimingPolicy} from '../../src/protocol.js'
@@ -49,7 +48,6 @@ function side(overrides: Partial<SideTerms> = {}): SideTerms {
 
 function vector(): ProtocolTerms {
   const gate: ProtocolTerms = {
-    timingPolicyId: timingPolicyId(policy),
     partySide: side(),
     counterpartySide: side({
       chainId: 31338n, principal: BOB, authorizationMode: AuthorizationMode.RegisteredDirect,
@@ -110,7 +108,6 @@ function deterministicVectors(): Array<{terms: ProtocolTerms, policy: TimingPoli
     }
     const bobSecret = `0x${(0x1000n + n).toString(16).padStart(64, '0')}` as Hex32
     const base: ProtocolTerms = {
-      timingPolicyId: timingPolicyId(generatedPolicy),
       partySide: side({
         chainId: generatedPolicy.partyChainId,
         assets: [{assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: n}],
@@ -140,7 +137,6 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
     const context = gateContextId(terms)
     const trade = tradeId(terms)
     const lock = settlementLock(trade, SECRET)
-    expect(await read<Hex32>('exposedTimingPolicyId', [policy])).toBe(timingPolicyId(policy))
     expect(await read<Hex32>('exposedGateContextId', [encoded])).toBe(context)
     expect(await read<Hex32>('exposedCommitLock', [context, BOB_SECRET])).toBe(terms.counterpartySide.commitLock)
     expect(await read<Hex32>('exposedTradeId', [encoded])).toBe(trade)
@@ -161,16 +157,25 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
   it('accepts the valid vector and rejects matching malformed vectors', async () => {
     const terms = vector()
     validateProtocolTerms(terms, policy)
-    await expect(read('exposedValidateTerms', [abiTerms(terms), policy])).resolves.toBeUndefined()
+    await expect(read('exposedValidateTerms', [abiTerms(terms)])).resolves.toBeUndefined()
     const invalid = [
       {...terms, partySide: {...terms.partySide, commitLock: terms.counterpartySide.commitLock}},
-      {...terms, timingPolicyId: ZERO32},
+      {...terms, partySide: {...terms.partySide, chainId: 0n}},
       {...terms, partySide: {...terms.partySide, assets: [...terms.partySide.assets].reverse()}},
     ]
     for (const candidate of invalid) {
       expect(() => validateProtocolTerms(candidate, policy)).toThrow()
-      await expect(read('exposedValidateTerms', [abiTerms(candidate), policy])).rejects.toThrow()
+      await expect(read('exposedValidateTerms', [abiTerms(candidate)])).rejects.toThrow()
     }
+  })
+
+  it('keeps configured finality margins off chain', async () => {
+    const terms = vector()
+    const strictPolicy = {...policy, partyToCounterpartyDelay: 201n}
+    expect(() => validateProtocolTerms(terms, strictPolicy)).toThrow()
+    expect(() => validateProtocolTerms(terms, {...policy, policyVersion: 0n})).toThrow()
+    expect(() => validateProtocolTerms(terms, {...policy, partyToCounterpartyDelay: 0n})).toThrow()
+    await expect(read('exposedValidateTerms', [abiTerms(terms)])).resolves.toBeUndefined()
   })
 
   it("domain-separates every v1.1 hash family and binds canonical fields", async () => {
@@ -181,8 +186,7 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
     const lock = await read<Hex32>("exposedSettlementLock", [trade, SECRET])
     const commitLock = await read<Hex32>("exposedCommitLock", [context, BOB_SECRET])
     const assets = await read<Hex32>("exposedAssetHash", [encoded, true])
-    const timing = await read<Hex32>("exposedTimingPolicyId", [policy])
-    expect(new Set([context, trade, lock, commitLock, assets, timing]).size).toBe(6)
+    expect(new Set([context, trade, lock, commitLock, assets]).size).toBe(5)
 
     const changed = {...terms, partySide: {...terms.partySide, sideNonce: SECRET}}
     expect(tradeId(changed)).not.toBe(trade)
@@ -198,7 +202,6 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
       const settlementSecret = `0x${(0x4000n + BigInt(index)).toString(16).padStart(64, '0')}` as Hex32
       const actionNonce = `0x${(0x5000n + BigInt(index)).toString(16).padStart(64, '0')}` as Hex32
       const lock = settlementLock(trade, settlementSecret)
-      expect(await read<Hex32>('exposedTimingPolicyId', [generatedPolicy])).toBe(timingPolicyId(generatedPolicy))
       expect(await read<Hex32>('exposedGateContextId', [encoded])).toBe(context)
       expect(await read<Hex32>('exposedCommitLock', [context, secret])).toBe(terms.counterpartySide.commitLock)
       expect(await read<Hex32>('exposedTradeId', [encoded])).toBe(trade)
@@ -218,7 +221,7 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
     for (const generated of deterministicVectors()) {
       const {terms, policy: generatedPolicy, secret} = generated
       const malformed: ProtocolTerms[] = [
-        {...terms, timingPolicyId: ZERO32},
+        {...terms, partySide: {...terms.partySide, chainId: 0n}},
         {...terms, partySide: {...terms.partySide, commitLock: terms.counterpartySide.commitLock}},
         {...terms, counterpartySide: {...terms.counterpartySide, commitLock: ZERO32}},
         {...terms, partySide: {...terms.partySide, claimDeadline: terms.partySide.commitmentDeadline}},
@@ -226,7 +229,7 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
       ]
       for (const candidate of [terms, ...malformed]) {
         const sdk = sdkAccepts(() => validateProtocolTerms(candidate, generatedPolicy))
-        const solidity = await solidityAccepts(() => read('exposedValidateTerms', [abiTerms(candidate), generatedPolicy]))
+        const solidity = await solidityAccepts(() => read('exposedValidateTerms', [abiTerms(candidate)]))
         expect(solidity, `ValidTerms parity for ${tradeId(candidate)}`).toBe(sdk)
       }
       const progressionCases: Array<[boolean, Hex32]> = [

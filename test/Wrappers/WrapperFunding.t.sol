@@ -5,7 +5,6 @@ import {AuthorizationSubmitter} from '../../src/authorization/AuthorizationSubmi
 import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
 import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
 import {QuipWallet} from '../../src/authorization/QuipWallet.sol';
-import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
 import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
 import {AssetSupport} from '../../src/protocol/AssetHandling.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
@@ -21,7 +20,6 @@ import {
   ProtocolTerms,
   SameChainState,
   SideTerms,
-  TimingPolicy,
   WrapperMode
 } from '../../src/protocol/ProtocolTypes.sol';
 import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
@@ -30,7 +28,6 @@ import {Settlement} from '../../src/protocol/Settlement.sol';
 import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
-import {TimingPolicyRegistry} from '../../src/registry/TimingPolicyRegistry.sol';
 import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
@@ -63,7 +60,6 @@ contract WrapperFundingTest is Test {
   KeyBoundVerifierMock internal verifier;
   PQIdentityRegistry internal registry;
   PQAuthorizationGateway internal gateway;
-  TimingPolicyRegistry internal policies;
   AssetSupportRegistry internal assetSupport;
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
@@ -87,10 +83,9 @@ contract WrapperFundingTest is Test {
     _register(bob, bobKey);
     _register(broker, brokerKey);
     gateway = new PQAuthorizationGateway(registry);
-    policies = new TimingPolicyRegistry(address(this));
     assetSupport = new AssetSupportRegistry(address(this));
-    cross = new CrossChainWrapper(address(gateway), policies, assetSupport);
-    same = new SameChainWrapper(address(gateway), policies, assetSupport);
+    cross = new CrossChainWrapper(address(gateway), assetSupport);
+    same = new SameChainWrapper(address(gateway), assetSupport);
     wallet = new QuipWallet(address(this), registry, walletKey);
     token = new ERC20Mock('Token', 'TOK', 18);
   }
@@ -538,9 +533,6 @@ contract WrapperFundingTest is Test {
     ProtocolTerms memory terms;
     terms.partySide = _side(alice, AuthorizationMode.RegisteredDirect, 1, partyAssets, 74);
     terms.counterpartySide = _side(bob, AuthorizationMode.RegisteredDirect, 1, counterpartyAssets, 174);
-    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.SameChain, block.chainid, block.chainid, 0, 0);
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
-    policies.registerPolicy(terms.timingPolicyId, policy);
     bytes32 lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
     token.mint(alice, 10 ether);
     malicious.mint(bob, 10);
@@ -665,37 +657,6 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Reclaimed));
   }
 
-  function test_pairedWrapperRejectsMissingSignedPolicyThenAcceptsExactPolicy() public {
-    TimingPolicyRegistry otherPolicies = new TimingPolicyRegistry(address(this));
-    TimingPolicy memory mismatched = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 11, 10);
-    otherPolicies.registerPolicy(ProtocolHashing.timingPolicyId(mismatched), mismatched);
-    CrossChainWrapper otherCross = new CrossChainWrapper(address(gateway), otherPolicies, assetSupport);
-    Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
-    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 90);
-    CommitAuthorizationRequest memory request = _request(address(otherCross), terms, true, lock, 90);
-    bytes memory signature = _signature(request, address(gateway), aliceKey);
-    token.mint(alice, 10 ether);
-    vm.prank(alice);
-    token.approve(address(otherCross), 10 ether);
-
-    vm.expectRevert(
-      abi.encodeWithSelector(ITimingPolicyRegistry.TimingPolicyNotRegistered.selector, terms.timingPolicyId)
-    );
-    vm.prank(alice);
-    gateway.authorizeCommit(request, signature);
-    assertEq(token.balanceOf(alice), 10 ether);
-    assertEq(token.balanceOf(address(otherCross)), 0);
-    assertEq(uint8(otherCross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
-
-    TimingPolicy memory exact = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 10, 10);
-    assertEq(ProtocolHashing.timingPolicyId(exact), terms.timingPolicyId);
-    otherPolicies.registerPolicy(terms.timingPolicyId, exact);
-    vm.prank(alice);
-    gateway.authorizeCommit(request, signature);
-    assertEq(token.balanceOf(address(otherCross)), 10 ether);
-    assertEq(uint8(otherCross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
-  }
-
   function test_crossChainClaimReclaimWinnerMakesStateAndPayoutTerminal() public {
     Asset[] memory assets = _oneAsset(AssetType.Native, address(0), 0, 1 ether);
     (ProtocolTerms memory claimedTerms, bytes32 claimedLock) =
@@ -787,9 +748,6 @@ contract WrapperFundingTest is Test {
     terms.counterpartySide.commitmentDeadline = 220;
     terms.counterpartySide.claimDeadline = 320;
     terms.counterpartySide.reclaimRelease = 520;
-    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.SameChain, block.chainid, block.chainid, 0, 0);
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
-    policies.registerPolicy(terms.timingPolicyId, policy);
     bytes32 lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
     token.mint(alice, 10 ether);
     bobToken.mint(bob, 20 ether);
@@ -823,9 +781,6 @@ contract WrapperFundingTest is Test {
     terms.counterpartySide.recipient = counterpartyRecipient;
     terms.partySide.reclaimRecipient = partyReclaimer;
     terms.counterpartySide.reclaimRecipient = counterpartyReclaimer;
-    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.SameChain, block.chainid, block.chainid, 0, 0);
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
-    if (!policies.isRegistered(terms.timingPolicyId)) policies.registerPolicy(terms.timingPolicyId, policy);
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
   }
 
@@ -883,11 +838,8 @@ contract WrapperFundingTest is Test {
     terms.counterpartySide =
       _side(bob, AuthorizationMode.RegisteredDirect, 1, _oneAsset(AssetType.Native, address(0), 0, 1), nonce + 100);
     terms.counterpartySide.chainId = block.chainid + 1;
-    TimingPolicy memory policy = TimingPolicy(1, WrapperMode.CrossChain, block.chainid, block.chainid + 1, 10, 10);
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
     terms.counterpartySide.commitLock =
       ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), BOB_COMMIT_SECRET);
-    if (!policies.isRegistered(terms.timingPolicyId)) policies.registerPolicy(terms.timingPolicyId, policy);
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
   }
 

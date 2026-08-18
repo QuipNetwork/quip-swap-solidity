@@ -18,7 +18,6 @@ import {
   prepareTradeCommand,
   registrationDigest,
   settlementLock as importedSettlementLock,
-  timingPolicyId,
   tradeId as importedTradeId,
   trustedClientStatus,
 } from '../src/index.js'
@@ -78,7 +77,6 @@ export async function runFullDemo(
   const deployment = await bootstrapDemoEnvironment(chainA, chainB, load)
   await Promise.all([chainA.warpTo(4_000_000_000n), chainB.warpTo(4_000_000_000n)])
   const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
-  if (deployment.chains.some(chain => chain.localCrossChainPolicyId !== timingPolicyId(localPolicy))) throw new Error('local timing policy mismatch')
   const now = await latestTime(chainA, chainB)
   const partySide = sideTemplate(chainA, chainB.bob.address, deployment.chains[0].funding.token, 10n * 10n ** 18n, now + 100n, now + 1_000n, now + 1_400n)
   const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 1_100n, now + 1_300n)
@@ -186,7 +184,7 @@ export async function runFullDemo(
 function sideTemplate(ctx: ChainContext, recipient: Address, token: Address, amount: bigint, commitmentDeadline: bigint, claimDeadline: bigint, reclaimRelease: bigint): SideTermsTemplate {
   return {chainId: BigInt(ctx.chainId), assets: [{assetType: AssetType.ERC20, target: token, id: 0n, amount}], principal: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n, reclaimRecipient: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, recipient, commitmentDeadline, claimDeadline, reclaimRelease, delegationPolicy: DelegationPolicy.NotAllowed, delegate: ZERO_ADDRESS, delegateKeyVersion: 0n}
 }
-function restoreTerms(state: {readonly terms: ClientState['terms']}) { return {timingPolicyId: state.terms.timingPolicyId, partySide: restoreSide(state.terms.partySide), counterpartySide: restoreSide(state.terms.counterpartySide)} }
+function restoreTerms(state: {readonly terms: ClientState['terms']}) { return {partySide: restoreSide(state.terms.partySide), counterpartySide: restoreSide(state.terms.counterpartySide)} }
 function restoreSide(side: ClientState['terms']['partySide']) { return {...side, chainId: BigInt(side.chainId), principalKeyVersion: BigInt(side.principalKeyVersion), commitmentDeadline: BigInt(side.commitmentDeadline), claimDeadline: BigInt(side.claimDeadline), reclaimRelease: BigInt(side.reclaimRelease), delegateKeyVersion: BigInt(side.delegateKeyVersion), assets: side.assets.map(asset => ({...asset, id: BigInt(asset.id), amount: BigInt(asset.amount)}))} }
 function preparedAuthorization(terms: ReturnType<typeof restoreTerms>, party: boolean, authorizationVerifier: Address, swapAddress: Address, lock: Hex32, actionNonce: Hex32, expiry: bigint) { const payload = {terms, party, authorizationVerifier, swapAddress, lock, expectedSourceState: 0, actionNonce, expiry} as const; return {payload, payloadHash: commitPayloadHash(payload)} }
 function request(prepared: ReturnType<typeof preparedAuthorization>, bobCommitSecret: Hex32): CommitAuthorizationRequest { return {receiver: prepared.payload.swapAddress, terms: prepared.payload.terms, party: prepared.payload.party, lock: prepared.payload.lock, actionNonce: prepared.payload.actionNonce, bobCommitSecret, expiry: prepared.payload.expiry, commitData: '0x'} }

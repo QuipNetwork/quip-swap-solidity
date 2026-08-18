@@ -31,7 +31,6 @@ export interface PersistedSideTerms {
 }
 
 export interface PersistedProtocolTerms {
-  readonly timingPolicyId: Hex32
   readonly partySide: PersistedSideTerms
   readonly counterpartySide: PersistedSideTerms
 }
@@ -115,7 +114,6 @@ const persistSide = (side: SideTerms): PersistedSideTerms => ({
 })
 
 export const persistProtocolTerms = (terms: ProtocolTerms): PersistedProtocolTerms => ({
-  timingPolicyId: terms.timingPolicyId,
   partySide: persistSide(terms.partySide),
   counterpartySide: persistSide(terms.counterpartySide),
 })
@@ -147,9 +145,7 @@ const restoreSide = (side: PersistedSideTerms): SideTerms => ({
 export function restoreProtocolTerms(terms: PersistedProtocolTerms): ProtocolTerms {
   side(terms.partySide, 'terms.partySide')
   side(terms.counterpartySide, 'terms.counterpartySide')
-  hex(terms.timingPolicyId, 32, 'terms.timingPolicyId')
   return {
-    timingPolicyId: terms.timingPolicyId,
     partySide: restoreSide(terms.partySide),
     counterpartySide: restoreSide(terms.counterpartySide),
   }
@@ -222,7 +218,6 @@ export function validateClientState(value: unknown): asserts value is ClientStat
   integer(value['sequence'], 'sequence')
   hex(value['tradeId'], 32, 'tradeId')
   record(value['terms'], 'terms')
-  hex(value['terms']['timingPolicyId'], 32, 'terms.timingPolicyId')
   side(value['terms']['partySide'], 'terms.partySide')
   side(value['terms']['counterpartySide'], 'terms.counterpartySide')
   record(value['derived'], 'derived')

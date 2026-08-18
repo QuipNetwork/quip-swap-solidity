@@ -1,6 +1,6 @@
 import type {Address} from 'viem'
 import {describe, expect, it} from 'vitest'
-import {AuthorizationMode, DelegationPolicy, WrapperMode, timingPolicyId} from '../../src/protocol.js'
+import {AuthorizationMode, DelegationPolicy, WrapperMode} from '../../src/protocol.js'
 import type {SideTerms, TimingPolicy} from '../../src/protocol.js'
 import {TrustedCrossChainWorkflow, submitWithFeeBumps} from '../../src/workflows/trustedCrossChain.js'
 import {AssetType} from '../../src/types.js'
@@ -28,7 +28,6 @@ const inclusion = {transactionHash: `0x${'aa'.repeat(32)}` as Hex32, blockNumber
 describe('trusted cross-chain workflow', () => {
   it('builds exact terms and authorizations before execution', () => {
     const flow = workflow()
-    expect(flow.terms.timingPolicyId).toBe(timingPolicyId(policy))
     expect(flow.terms.partySide.sideNonce).not.toBe(flow.terms.counterpartySide.sideNonce)
     expect(flow.partyAuthorization.payload.actionNonce).not.toBe(flow.counterpartyAuthorization.payload.actionNonce)
     expect(flow.terms.counterpartySide.commitLock).not.toMatch(/^0x0+$/)

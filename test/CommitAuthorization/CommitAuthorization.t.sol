@@ -316,7 +316,6 @@ contract CommitAuthorizationTest is Test {
   }
 
   function _crossChainTerms() internal pure returns (ProtocolTerms memory terms) {
-    terms.timingPolicyId = keccak256('policy');
     terms.partySide = _side(ALICE, 31_337, AuthorizationMode.QuipWallet, 0, 100, 300, 600);
     terms.counterpartySide = _side(BOB, 31_338, AuthorizationMode.RegisteredDirect, 7, 200, 400, 700);
     terms.counterpartySide.commitLock = keccak256('bob-commit-lock');

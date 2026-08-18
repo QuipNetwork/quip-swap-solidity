@@ -1,6 +1,6 @@
 
 import type {Address, Hex} from 'viem'
-import {DelegationPolicy, ExpectedSourceState, commitPayloadHash, deriveCommitLock, gateContextId, settlementLock, timingPolicyId, tradeId, validateProtocolTerms} from '../protocol.js'
+import {DelegationPolicy, ExpectedSourceState, commitPayloadHash, deriveCommitLock, gateContextId, settlementLock, tradeId, validateProtocolTerms} from '../protocol.js'
 import type {CommitPayloadArgs, ProtocolTerms, SideTerms, TimingPolicy} from '../protocol.js'
 import type {Hex32} from '../types.js'
 const ZERO = `0x${'00'.repeat(32)}` as Hex32
@@ -74,7 +74,7 @@ export class TrustedCrossChainWorkflow {
     if (new Set(values).size !== values.length) throw new Error('protocol randomness must be independent')
     const [secret, bobSecret, partyNonce, counterNonce, partyActionNonce, counterActionNonce] = values
     this.#secret = secret; this.#bobSecret = bobSecret; this.confirmations = args.requiredConfirmations; this.selected = args.selectedBobSubmitter
-    const gate: ProtocolTerms = {timingPolicyId: timingPolicyId(args.policy), partySide: {...args.partySide, commitLock: ZERO, sideNonce: partyNonce}, counterpartySide: {...args.counterpartySide, commitLock: ZERO, sideNonce: counterNonce}}
+    const gate: ProtocolTerms = {partySide: {...args.partySide, commitLock: ZERO, sideNonce: partyNonce}, counterpartySide: {...args.counterpartySide, commitLock: ZERO, sideNonce: counterNonce}}
     this.terms = {...gate, counterpartySide: {...gate.counterpartySide, commitLock: deriveCommitLock(gateContextId(gate), bobSecret)}}
     validateProtocolTerms(this.terms, args.policy); this.assertSelected()
     this.tradeId = tradeId(this.terms); this.lock = settlementLock(this.tradeId, secret)

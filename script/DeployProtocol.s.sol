@@ -4,12 +4,8 @@ pragma solidity 0.8.33;
 import {PQAuthorizationGateway} from '../src/authorization/PQAuthorizationGateway.sol';
 import {PQIdentityRegistry} from '../src/authorization/PQIdentityRegistry.sol';
 import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
-import {ProtocolHashing} from '../src/protocol/ProtocolHashing.sol';
-import {TimingPolicy, WrapperMode} from '../src/protocol/ProtocolTypes.sol';
 import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
 import {AssetSupportRegistry} from '../src/registry/AssetSupportRegistry.sol';
-import {PrototypeTimingPolicies} from '../src/registry/PrototypeTimingPolicies.sol';
-import {TimingPolicyRegistry} from '../src/registry/TimingPolicyRegistry.sol';
 import {Constants} from './Constants.sol';
 import {ICreateX} from './ICreateX.sol';
 import {PrototypeDeployment} from './PrototypeDeployment.sol';
@@ -19,7 +15,6 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
 contract DeployProtocol is Script {
   struct Addresses {
     address assetSupportRegistry;
-    address timingPolicyRegistry;
     address identityRegistry;
     address authorizationGateway;
     address crossChainWrapper;
@@ -57,13 +52,6 @@ contract DeployProtocol is Script {
     _deploy(
       Constants.CREATEX,
       deployer,
-      PrototypeDeployment.Component.TimingPolicyRegistry,
-      abi.encodePacked(type(TimingPolicyRegistry).creationCode, abi.encode(owner)),
-      addresses.timingPolicyRegistry
-    );
-    _deploy(
-      Constants.CREATEX,
-      deployer,
       PrototypeDeployment.Component.IdentityRegistry,
       abi.encodePacked(type(PQIdentityRegistry).creationCode, abi.encode(verifier)),
       addresses.identityRegistry
@@ -80,8 +68,7 @@ contract DeployProtocol is Script {
       deployer,
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
-        type(CrossChainWrapper).creationCode,
-        abi.encode(addresses.authorizationGateway, addresses.timingPolicyRegistry, addresses.assetSupportRegistry)
+        type(CrossChainWrapper).creationCode, abi.encode(addresses.authorizationGateway, addresses.assetSupportRegistry)
       ),
       addresses.crossChainWrapper
     );
@@ -90,12 +77,10 @@ contract DeployProtocol is Script {
       deployer,
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(
-        type(SameChainWrapper).creationCode,
-        abi.encode(addresses.authorizationGateway, addresses.timingPolicyRegistry, addresses.assetSupportRegistry)
+        type(SameChainWrapper).creationCode, abi.encode(addresses.authorizationGateway, addresses.assetSupportRegistry)
       ),
       addresses.sameChainWrapper
     );
-    _registerPolicies(TimingPolicyRegistry(addresses.timingPolicyRegistry));
     vm.stopBroadcast();
 
     _verify(addresses, owner, verifier);
@@ -106,8 +91,6 @@ contract DeployProtocol is Script {
   function predicted(address factory, address deployer) public pure returns (Addresses memory addresses) {
     addresses.assetSupportRegistry =
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.AssetSupportRegistry);
-    addresses.timingPolicyRegistry =
-      PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.TimingPolicyRegistry);
     addresses.identityRegistry =
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.IdentityRegistry);
     addresses.authorizationGateway =
@@ -130,28 +113,8 @@ contract DeployProtocol is Script {
     require(deployed == expected, 'CREATE3 address mismatch');
   }
 
-  function _registerPolicies(TimingPolicyRegistry registry) internal {
-    TimingPolicy memory baseToOp = PrototypeTimingPolicies.baseSepoliaToOpSepolia();
-    TimingPolicy memory opToBase = PrototypeTimingPolicies.opSepoliaToBaseSepolia();
-    bytes32 baseToOpId = PrototypeTimingPolicies.policyId(baseToOp);
-    bytes32 opToBaseId = PrototypeTimingPolicies.policyId(opToBase);
-    if (!registry.isRegistered(baseToOpId)) registry.registerPolicy(baseToOpId, baseToOp);
-    if (!registry.isRegistered(opToBaseId)) registry.registerPolicy(opToBaseId, opToBase);
-    TimingPolicy memory local = TimingPolicy({
-      policyVersion: 1,
-      mode: WrapperMode.SameChain,
-      partyChainId: block.chainid,
-      counterpartyChainId: block.chainid,
-      partyToCounterpartyDelay: 0,
-      counterpartyToPartyDelay: 0
-    });
-    bytes32 localId = ProtocolHashing.timingPolicyId(local);
-    if (!registry.isRegistered(localId)) registry.registerPolicy(localId, local);
-  }
-
   function _verify(Addresses memory a, address owner, address verifier) internal view {
     require(AssetSupportRegistry(a.assetSupportRegistry).owner() == owner, 'asset owner mismatch');
-    require(TimingPolicyRegistry(a.timingPolicyRegistry).owner() == owner, 'policy owner mismatch');
     require(PQIdentityRegistry(a.identityRegistry).TRUSTED_VERIFIER() == verifier, 'verifier mismatch');
     require(
       address(PQAuthorizationGateway(a.authorizationGateway).REGISTRY()) == a.identityRegistry, 'registry mismatch'
@@ -172,12 +135,9 @@ contract DeployProtocol is Script {
     console.log('Owner:', owner);
     console.log('Trusted verifier:', verifier);
     console.log('AssetSupportRegistry:', a.assetSupportRegistry);
-    console.log('TimingPolicyRegistry:', a.timingPolicyRegistry);
     console.log('PQIdentityRegistry:', a.identityRegistry);
     console.log('PQAuthorizationGateway:', a.authorizationGateway);
     console.log('CrossChainWrapper:', a.crossChainWrapper);
     console.log('SameChainWrapper:', a.sameChainWrapper);
-    console.logBytes32(PrototypeTimingPolicies.policyId(PrototypeTimingPolicies.baseSepoliaToOpSepolia()));
-    console.logBytes32(PrototypeTimingPolicies.policyId(PrototypeTimingPolicies.opSepoliaToBaseSepolia()));
   }
 }

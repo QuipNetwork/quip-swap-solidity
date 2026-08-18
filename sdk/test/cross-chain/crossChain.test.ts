@@ -45,16 +45,9 @@ import {assetSupportRegistryAbi} from '../../src/generated/assetSupportRegistryA
 import {crossChainWrapperAbi} from '../../src/generated/crossChainWrapperAbi.js'
 import {pqAuthorizationGatewayAbi} from '../../src/generated/pqAuthorizationGatewayAbi.js'
 import {pqIdentityRegistryAbi} from '../../src/generated/pqIdentityRegistryAbi.js'
-import {timingPolicyRegistryAbi} from '../../src/generated/timingPolicyRegistryAbi.js'
 import {generateLock} from '../../src/hashing.js'
 import {AuthorizationMode, DelegationPolicy} from '../../src/protocol.js'
 import type {ProtocolTerms} from '../../src/protocol.js'
-import {
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
-} from '../../src/prototypeTiming.js'
 import {AssetType, LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
@@ -86,7 +79,6 @@ let demoDeployment: DemoDeploymentArtifact
 
 interface PrototypeDeployment {
   readonly assetSupportRegistry: Address
-  readonly timingPolicyRegistry: Address
   readonly identityRegistry: Address
   readonly authorizationGateway: Address
   readonly crossChainWrapper: Address
@@ -99,9 +91,6 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
   const assetSupportRegistry = await ctx.deploy(loadArtifact('AssetSupportRegistry.sol', 'AssetSupportRegistry'), [
     ctx.deployer.address,
   ])
-  const timingPolicyRegistry = await ctx.deploy(loadArtifact('TimingPolicyRegistry.sol', 'TimingPolicyRegistry'), [
-    ctx.deployer.address,
-  ])
   const identityRegistry = await ctx.deploy(loadArtifact('PQIdentityRegistry.sol', 'PQIdentityRegistry'), [verifier])
   const authorizationGateway = await ctx.deploy(
     loadArtifact('PQAuthorizationGateway.sol', 'PQAuthorizationGateway'),
@@ -109,32 +98,15 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
   )
   const crossChainWrapper = await ctx.deploy(loadArtifact('CrossChainWrapper.sol', 'CrossChainWrapper'), [
     authorizationGateway,
-    timingPolicyRegistry,
     assetSupportRegistry,
   ])
   const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
     authorizationGateway,
-    timingPolicyRegistry,
     assetSupportRegistry,
   ])
-  for (const [policyId, policy] of [
-    [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY],
-    [OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY],
-  ] as const) {
-    const hash = await ctx.deployer.walletClient.writeContract({
-      address: timingPolicyRegistry,
-      abi: timingPolicyRegistryAbi,
-      functionName: 'registerPolicy',
-      args: [policyId, policy],
-      chain: ctx.publicClient.chain ?? null,
-      account: ctx.deployer.account,
-    })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
-  }
   return {
     verifier,
     assetSupportRegistry,
-    timingPolicyRegistry,
     identityRegistry,
     authorizationGateway,
     crossChainWrapper,
@@ -347,7 +319,6 @@ describe('v1.1 deployment smoke', () => {
     const zeroAddress = getAddress('0x0000000000000000000000000000000000000000')
     const zero32 = `0x${'00'.repeat(32)}` as Hex32
     const terms: ProtocolTerms = {
-      timingPolicyId: `0x${'11'.repeat(32)}` as Hex32,
       partySide: {
         chainId: 31337n, assets: [{assetType: AssetType.ERC20, target: demoDeployment.chains[0].funding.token, id: 0n, amount: DEMO_ALICE_AMOUNT}],
         principal: chainA.alice.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n,
@@ -398,14 +369,6 @@ describe('v1.1 deployment smoke', () => {
           functionName: 'DIRECT_GATEWAY',
         }),
       ).toBe(deployment.authorizationGateway)
-      expect(
-        await ctx.publicClient.readContract({
-          address: deployment.timingPolicyRegistry,
-          abi: timingPolicyRegistryAbi,
-          functionName: 'isRegistered',
-          args: [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID],
-        }),
-      ).toBe(true)
     }
   })
 })

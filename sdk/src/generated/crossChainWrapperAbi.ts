@@ -9,11 +9,6 @@ export const crossChainWrapperAbi = [
         "internalType": "address"
       },
       {
-        "name": "timingPolicies",
-        "type": "address",
-        "internalType": "contract ITimingPolicyRegistry"
-      },
-      {
         "name": "assetSupport",
         "type": "address",
         "internalType": "contract IAssetSupportRegistry"
@@ -49,19 +44,6 @@ export const crossChainWrapperAbi = [
   },
   {
     "type": "function",
-    "name": "TIMING_POLICIES",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "contract ITimingPolicyRegistry"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "claim",
     "inputs": [
       {
@@ -69,11 +51,6 @@ export const crossChainWrapperAbi = [
         "type": "tuple",
         "internalType": "struct ProtocolTerms",
         "components": [
-          {
-            "name": "timingPolicyId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
           {
             "name": "partySide",
             "type": "tuple",
@@ -425,11 +402,6 @@ export const crossChainWrapperAbi = [
         "internalType": "struct ProtocolTerms",
         "components": [
           {
-            "name": "timingPolicyId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
             "name": "partySide",
             "type": "tuple",
             "internalType": "struct SideTerms",
@@ -715,11 +687,6 @@ export const crossChainWrapperAbi = [
         "internalType": "struct ProtocolTerms",
         "components": [
           {
-            "name": "timingPolicyId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
             "name": "partySide",
             "type": "tuple",
             "internalType": "struct SideTerms",
@@ -993,11 +960,6 @@ export const crossChainWrapperAbi = [
         "type": "tuple",
         "internalType": "struct ProtocolTerms",
         "components": [
-          {
-            "name": "timingPolicyId",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
           {
             "name": "partySide",
             "type": "tuple",

@@ -6,7 +6,7 @@ import type {Hex32} from './types.js'
 import {prepareTradeCommand} from './cliCommands.js'
 import type {PreparedAuthorization} from './workflows/trustedCrossChain.js'
 import type {ProtocolRandomness} from './workflows/trustedCrossChain.js'
-import {AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode, commitPayloadHash, gateContextId, timingPolicyId, tradeId, validateProtocolTerms} from './protocol.js'
+import {AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode, commitPayloadHash, gateContextId, tradeId, validateProtocolTerms} from './protocol.js'
 import type {ProtocolTerms, SideTerms, TimingPolicy} from './protocol.js'
 import {restoreProtocolTerms, validateClientState} from './clientState.js'
 import type {BobClientState} from './clientState.js'
@@ -74,7 +74,6 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
   const value = record(JSON.parse(await readFile(path, 'utf8')), 'console config')
   const timing = record(value['timingPolicy'], 'timing policy')
   const policy: TimingPolicy = {policyVersion: decimal(timing['policyVersion'], 'policyVersion'), mode: WrapperMode.CrossChain, partyChainId: decimal(timing['partyChainId'], 'partyChainId'), counterpartyChainId: decimal(timing['counterpartyChainId'], 'counterpartyChainId'), partyToCounterpartyDelay: decimal(timing['partyToCounterpartyDelay'], 'partyToCounterpartyDelay'), counterpartyToPartyDelay: decimal(timing['counterpartyToPartyDelay'], 'counterpartyToPartyDelay')}
-  if (timingPolicyId(policy) !== timing['timingPolicyId']) throw new Error('console timing-policy identifier mismatch')
   const actors = record(value['actors'], 'actors')
   const deployment = record(value['deployment'], 'deployment')
   const deployedChains = deployment['chains'] as unknown[]
@@ -85,7 +84,7 @@ export async function loadConsoleRuntimeConfig(path: string, party: 'alice' | 'b
     const addresses = record(deployed['addresses'], 'deployment addresses')
     const funding = record(deployed['funding'], 'deployment funding')
     const configured = record(configuredChains[index], `configured chain ${index}`)
-    const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
+    const protocolAddresses = Object.fromEntries(['assetSupportRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper'].map(field => [field, address(addresses[field], field)])) as Record<string, Address>
     return {chainId: (index === 0 ? 31337 : 31338), rpcUrl: String(configured['rpcUrl']), token: address(funding['token'], 'funding token'), amount: decimal(funding['amount'], 'funding amount'), verifier: protocolAddresses['authorizationGateway']!, wrapper: protocolAddresses['crossChainWrapper']!, trustedVerifier: address(deployed['trustedVerifier'], 'trusted verifier'), addresses: protocolAddresses}
   }
   return {identity, requiredConfirmations: BigInt(value['requiredConfirmations'] as number), deterministicDemo: value['deterministicDemo'] === true, policy, actors: {alice: address(actors['alice'], 'Alice'), bob: address(actors['bob'], 'Bob'), executor: address(actors['permissionlessExecutor'], 'executor')}, exchangeDirectory: String(exchange['directory']), chains: [chain(0) as ConsoleRuntimeConfig['chains'][0], chain(1) as ConsoleRuntimeConfig['chains'][1]]}

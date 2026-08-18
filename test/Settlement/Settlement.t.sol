@@ -11,7 +11,6 @@ import {
   ProtocolTerms,
   SameChainState,
   SideTerms,
-  TimingPolicy,
   WrapperMode
 } from '../../src/protocol/ProtocolTypes.sol';
 import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
@@ -41,11 +40,11 @@ contract SettlementTest is Test {
   }
 
   function test_crossChainClaimIsPermissionlessImmediateAndPayoutFixed() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
 
     vm.prank(EXECUTOR);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
 
     assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 10 ether);
     assertEq(partyToken.balanceOf(EXECUTOR), 0);
@@ -53,12 +52,12 @@ contract SettlementTest is Test {
   }
 
   function test_leakedSettlementSecretClaimsPartyLegBeforeCounterpartyCommit() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
     assertEq(uint8(harness.crossState(terms, false, lock)), uint8(CrossChainLegState.Unused));
 
     vm.prank(EXECUTOR);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
 
     assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 10 ether);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
@@ -66,37 +65,37 @@ contract SettlementTest is Test {
   }
 
   function test_crossChainClaimRejectsWrongSecretAndExclusiveDeadlineWithoutEffects() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
 
     vm.expectRevert(Settlement.InvalidSettlementSecret.selector);
-    harness.claimCrossChain(terms, policy, true, lock, keccak256('wrong'));
+    harness.claimCrossChain(terms, true, lock, keccak256('wrong'));
     vm.warp(terms.partySide.claimDeadline);
     vm.expectRevert(Settlement.ClaimWindowClosed.selector);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
 
     assertEq(partyToken.balanceOf(address(harness)), 10 ether);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Committed));
   }
 
   function test_crossChainCounterpartyClaimUsesItsLocalDeadlineAndRecipient() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(false);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(false);
     _fundAndSeedCross(terms, false, lock);
 
     vm.prank(EXECUTOR);
-    harness.claimCrossChain(terms, policy, false, lock, SECRET);
+    harness.claimCrossChain(terms, false, lock, SECRET);
 
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECIPIENT), 20 ether);
     assertEq(uint8(harness.crossState(terms, false, lock)), uint8(CrossChainLegState.Claimed));
   }
 
   function test_crossChainReclaimIsPermissionlessAtReleaseAndPayoutFixed() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
     vm.warp(terms.partySide.reclaimRelease);
 
     vm.prank(EXECUTOR);
-    harness.reclaimCrossChain(terms, policy, true, lock);
+    harness.reclaimCrossChain(terms, true, lock);
 
     assertEq(partyToken.balanceOf(PARTY_RECLAIMER), 10 ether);
     assertEq(partyToken.balanceOf(EXECUTOR), 0);
@@ -104,23 +103,23 @@ contract SettlementTest is Test {
   }
 
   function test_crossChainReclaimRejectsBeforeReleaseAndClaimReclaimRaceIsTerminal() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
     vm.warp(terms.partySide.reclaimRelease - 1);
     vm.expectRevert(Settlement.ReclaimWindowClosed.selector);
-    harness.reclaimCrossChain(terms, policy, true, lock);
+    harness.reclaimCrossChain(terms, true, lock);
 
     vm.warp(terms.partySide.reclaimRelease);
-    harness.reclaimCrossChain(terms, policy, true, lock);
+    harness.reclaimCrossChain(terms, true, lock);
     vm.expectRevert(Settlement.ClaimWindowClosed.selector);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Reclaimed));
   }
 
   function test_crossChainClaimThenReclaimRacePreservesClaimedTerminalState() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
     vm.warp(terms.partySide.reclaimRelease);
 
     vm.expectRevert(
@@ -128,22 +127,22 @@ contract SettlementTest is Test {
         CrossChainStateMachine.InvalidCrossChainState.selector, CrossChainLegState.Committed, CrossChainLegState.Claimed
       )
     );
-    harness.reclaimCrossChain(terms, policy, true, lock);
+    harness.reclaimCrossChain(terms, true, lock);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
   function test_crossChainAsymmetricClaimedReclaimedOutcomeRemainsLocallyPossible() public {
     uint256 partyChain = block.chainid;
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundSide(terms.partySide, partyToken, 10 ether);
     _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
     harness.seedCrossChain(terms, true, lock);
     harness.seedCrossChain(terms, false, lock);
 
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
     vm.chainId(terms.counterpartySide.chainId);
     vm.warp(terms.counterpartySide.reclaimRelease);
-    harness.reclaimCrossChain(terms, policy, false, lock);
+    harness.reclaimCrossChain(terms, false, lock);
 
     vm.chainId(partyChain);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
@@ -153,27 +152,25 @@ contract SettlementTest is Test {
   }
 
   function test_crossChainRejectsWrongModeAndNonlocalSide() public {
-    (ProtocolTerms memory sameTerms, TimingPolicy memory samePolicy, bytes32 sameLock) = _sameTerms();
+    (ProtocolTerms memory sameTerms, bytes32 sameLock) = _sameTerms();
     vm.expectRevert(Settlement.InvalidSettlementMode.selector);
-    harness.claimCrossChain(sameTerms, samePolicy, true, sameLock, SECRET);
+    harness.claimCrossChain(sameTerms, true, sameLock, SECRET);
 
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     terms.partySide.chainId = block.chainid + 2;
-    policy.partyChainId = terms.partySide.chainId;
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
     terms.counterpartySide.commitLock =
       ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), bytes32(uint256(7)));
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
     vm.expectRevert(Settlement.InvalidLocalChain.selector);
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
   }
 
   function test_sameChainClaimAtomicallyPaysBothFixedRecipients() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundAndSeedSame(terms, lock, true);
 
     vm.prank(EXECUTOR);
-    harness.claimSameChain(terms, policy, lock, SECRET);
+    harness.claimSameChain(terms, lock, SECRET);
 
     assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 10 ether);
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECIPIENT), 20 ether);
@@ -181,7 +178,7 @@ contract SettlementTest is Test {
   }
 
   function test_leakedSettlementSecretCannotClaimHalfCommittedSameChainTrade() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundAndSeedSame(terms, lock, false);
 
     vm.expectRevert(
@@ -191,24 +188,24 @@ contract SettlementTest is Test {
         SameChainState.PartyCommitted
       )
     );
-    harness.claimSameChain(terms, policy, lock, SECRET);
+    harness.claimSameChain(terms, lock, SECRET);
 
     assertEq(partyToken.balanceOf(address(harness)), 10 ether);
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.PartyCommitted));
   }
 
   function test_sameChainClaimUsesMinimumExclusiveDeadline() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundAndSeedSame(terms, lock, true);
     vm.warp(terms.partySide.claimDeadline);
 
     vm.expectRevert(Settlement.ClaimWindowClosed.selector);
-    harness.claimSameChain(terms, policy, lock, SECRET);
+    harness.claimSameChain(terms, lock, SECRET);
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.BothCommitted));
   }
 
   function test_sameChainFailedSecondPayoutRollsBackFirstPayoutAndState() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundSide(terms.partySide, partyToken, 10 ether);
     _fundSide(terms.counterpartySide, counterpartyToken, 20 ether);
     harness.seedSameChainParty(terms, lock);
@@ -216,7 +213,7 @@ contract SettlementTest is Test {
     counterpartyToken.burn(address(harness), 20 ether);
 
     vm.expectRevert();
-    harness.claimSameChain(terms, policy, lock, SECRET);
+    harness.claimSameChain(terms, lock, SECRET);
 
     assertEq(partyToken.balanceOf(PARTY_RECIPIENT), 0);
     assertEq(partyToken.balanceOf(address(harness)), 10 ether);
@@ -224,13 +221,13 @@ contract SettlementTest is Test {
   }
 
   function test_sameChainOneSidedReclaimReturnsOnlyPartyLeg() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundSide(terms.partySide, partyToken, 10 ether);
     harness.seedSameChainParty(terms, lock);
     vm.warp(terms.partySide.reclaimRelease);
 
     vm.prank(EXECUTOR);
-    harness.reclaimSameChainParty(terms, policy, lock);
+    harness.reclaimSameChainParty(terms, lock);
 
     assertEq(partyToken.balanceOf(PARTY_RECLAIMER), 10 ether);
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECLAIMER), 0);
@@ -238,42 +235,36 @@ contract SettlementTest is Test {
   }
 
   function test_sameChainOneSidedReclaimRejectsBeforePartyRelease() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundSide(terms.partySide, partyToken, 10 ether);
     harness.seedSameChainParty(terms, lock);
     vm.warp(terms.partySide.reclaimRelease - 1);
 
     vm.expectRevert(Settlement.ReclaimWindowClosed.selector);
-    harness.reclaimSameChainParty(terms, policy, lock);
+    harness.reclaimSameChainParty(terms, lock);
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.PartyCommitted));
   }
 
   function test_sameChainDualReclaimRequiresBothReleasesAndIsAtomic() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _sameTerms();
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundAndSeedSame(terms, lock, true);
     vm.warp(terms.counterpartySide.reclaimRelease - 1);
     vm.expectRevert(Settlement.ReclaimWindowClosed.selector);
-    harness.reclaimSameChainBoth(terms, policy, lock);
+    harness.reclaimSameChainBoth(terms, lock);
 
     vm.warp(terms.counterpartySide.reclaimRelease);
     vm.prank(EXECUTOR);
-    harness.reclaimSameChainBoth(terms, policy, lock);
+    harness.reclaimSameChainBoth(terms, lock);
     assertEq(partyToken.balanceOf(PARTY_RECLAIMER), 10 ether);
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECLAIMER), 20 ether);
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.Reclaimed));
   }
 
-  function test_finalClaimDelayNeverCreatesAClaimWait() public {
-    (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) = _crossTerms(true);
-    policy.partyToCounterpartyDelay = 150;
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
-    terms.counterpartySide.commitLock =
-      ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), bytes32(uint256(7)));
-    terms.counterpartySide.reclaimRelease = terms.partySide.claimDeadline + 150;
-    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+  function test_validCrossChainClaimHasNoPermanentDelay() public {
+    (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(true);
     _fundAndSeedCross(terms, true, lock);
 
-    harness.claimCrossChain(terms, policy, true, lock, SECRET);
+    harness.claimCrossChain(terms, true, lock, SECRET);
     assertEq(uint8(harness.crossState(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
@@ -298,45 +289,23 @@ contract SettlementTest is Test {
     token.approve(address(harness), amount);
   }
 
-  function _crossTerms(bool partyLocal)
-    internal
-    view
-    returns (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock)
-  {
+  function _crossTerms(bool partyLocal) internal view returns (ProtocolTerms memory terms, bytes32 lock) {
     uint256 partyChain = partyLocal ? block.chainid : block.chainid + 1;
     uint256 counterpartyChain = partyLocal ? block.chainid + 1 : block.chainid;
     terms.partySide = _side(partyChain, partyToken, 10 ether, PARTY_RECIPIENT, PARTY_RECLAIMER, 110, 200, 400, 1);
     terms.counterpartySide = _side(
       counterpartyChain, counterpartyToken, 20 ether, COUNTERPARTY_RECIPIENT, COUNTERPARTY_RECLAIMER, 120, 220, 400, 2
     );
-    policy = TimingPolicy({
-      policyVersion: 1,
-      mode: WrapperMode.CrossChain,
-      partyChainId: partyChain,
-      counterpartyChainId: counterpartyChain,
-      partyToCounterpartyDelay: 10,
-      counterpartyToPartyDelay: 10
-    });
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
     terms.counterpartySide.commitLock =
       ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), bytes32(uint256(7)));
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
   }
 
-  function _sameTerms() internal view returns (ProtocolTerms memory terms, TimingPolicy memory policy, bytes32 lock) {
+  function _sameTerms() internal view returns (ProtocolTerms memory terms, bytes32 lock) {
     terms.partySide = _side(block.chainid, partyToken, 10 ether, PARTY_RECIPIENT, PARTY_RECLAIMER, 110, 200, 300, 1);
     terms.counterpartySide = _side(
       block.chainid, counterpartyToken, 20 ether, COUNTERPARTY_RECIPIENT, COUNTERPARTY_RECLAIMER, 120, 210, 310, 2
     );
-    policy = TimingPolicy({
-      policyVersion: 1,
-      mode: WrapperMode.SameChain,
-      partyChainId: block.chainid,
-      counterpartyChainId: block.chainid,
-      partyToCounterpartyDelay: 0,
-      counterpartyToPartyDelay: 0
-    });
-    terms.timingPolicyId = ProtocolHashing.timingPolicyId(policy);
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
   }
 

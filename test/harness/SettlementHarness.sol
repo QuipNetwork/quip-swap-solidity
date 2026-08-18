@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
 import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
-import {CrossChainLegState, ProtocolTerms, SameChainState, TimingPolicy} from '../../src/protocol/ProtocolTypes.sol';
+import {CrossChainLegState, ProtocolTerms, SameChainState} from '../../src/protocol/ProtocolTypes.sol';
 import {Settlement} from '../../src/protocol/Settlement.sol';
 import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
@@ -35,23 +35,12 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
     custody.collect(party ? terms.partySide : terms.counterpartySide, msg.value);
   }
 
-  function claimCrossChain(
-    ProtocolTerms calldata terms,
-    TimingPolicy calldata policy,
-    bool party,
-    bytes32 lock,
-    bytes32 secret
-  ) external {
-    crossChain.claimCrossChain(custody, terms, policy, party, lock, secret, block.timestamp);
+  function claimCrossChain(ProtocolTerms calldata terms, bool party, bytes32 lock, bytes32 secret) external {
+    crossChain.claimCrossChain(custody, terms, party, lock, secret, block.timestamp);
   }
 
-  function reclaimCrossChain(
-    ProtocolTerms calldata terms,
-    TimingPolicy calldata policy,
-    bool party,
-    bytes32 lock
-  ) external {
-    crossChain.reclaimCrossChain(custody, terms, policy, party, lock, block.timestamp);
+  function reclaimCrossChain(ProtocolTerms calldata terms, bool party, bytes32 lock) external {
+    crossChain.reclaimCrossChain(custody, terms, party, lock, block.timestamp);
   }
 
   function crossState(
@@ -78,21 +67,16 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
     custody.collect(terms.counterpartySide, msg.value);
   }
 
-  function claimSameChain(
-    ProtocolTerms calldata terms,
-    TimingPolicy calldata policy,
-    bytes32 lock,
-    bytes32 secret
-  ) external {
-    sameChain.claimSameChain(custody, terms, policy, lock, secret, block.timestamp);
+  function claimSameChain(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external {
+    sameChain.claimSameChain(custody, terms, lock, secret, block.timestamp);
   }
 
-  function reclaimSameChainParty(ProtocolTerms calldata terms, TimingPolicy calldata policy, bytes32 lock) external {
-    sameChain.reclaimSameChainParty(custody, terms, policy, lock, block.timestamp);
+  function reclaimSameChainParty(ProtocolTerms calldata terms, bytes32 lock) external {
+    sameChain.reclaimSameChainParty(custody, terms, lock, block.timestamp);
   }
 
-  function reclaimSameChainBoth(ProtocolTerms calldata terms, TimingPolicy calldata policy, bytes32 lock) external {
-    sameChain.reclaimSameChainBoth(custody, terms, policy, lock, block.timestamp);
+  function reclaimSameChainBoth(ProtocolTerms calldata terms, bytes32 lock) external {
+    sameChain.reclaimSameChainBoth(custody, terms, lock, block.timestamp);
   }
 
   function sameState(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {

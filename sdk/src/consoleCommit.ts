@@ -6,7 +6,7 @@ import {privateKeyToAccount} from 'viem/accounts'
 import {applyPartyCommand} from './cliCommands.js'
 import {loadConsoleRuntimeConfig, parseConsoleOffer} from './consoleTrade.js'
 import type {ConsoleRuntimeConfig} from './consoleTrade.js'
-import {CrossChainLegState, ExpectedSourceState, KeyRole, commitPayloadHash, keyPossessionDigest, registrationDigest} from './protocol.js'
+import {CrossChainLegState, ExpectedSourceState, KeyRole, commitPayloadHash, keyPossessionDigest, registrationDigest, tradeId} from './protocol.js'
 import type {CommitAuthorizationRequest, InitialRegistration, ProtocolTerms} from './protocol.js'
 import {createProtocolClient} from './protocolClient.js'
 import {pqAuthorizationGatewayAbi} from './generated/pqAuthorizationGatewayAbi.js'
@@ -103,7 +103,7 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
       const activeKey = pqKey(route.trustedVerifier, 'quip-swap-console-alice-active')
       const recoveryKey = pqKey(route.trustedVerifier, 'quip-swap-console-alice-recovery')
       const request: CommitAuthorizationRequest = {receiver: route.wrapper, terms, party: true, lock, actionNonce, bobCommitSecret, expiry, commitData: '0x'}
-      const registration: InitialRegistration = {eoa: config.actors.alice, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: route.verifier, commitPayloadHash: payloadHash, operationNonce: keccak256(concatHex([terms.timingPolicyId, actionNonce])), expiry}
+      const registration: InitialRegistration = {eoa: config.actors.alice, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: route.verifier, commitPayloadHash: payloadHash, operationNonce: keccak256(concatHex([tradeId(terms), actionNonce])), expiry}
       const digest = registrationDigest(31337n, addresses.identityRegistry, registration)
       const call = encodeFunctionData({abi: pqAuthorizationGatewayAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, payloadHash)]})
       const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4))

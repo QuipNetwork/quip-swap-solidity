@@ -9,7 +9,6 @@ import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol
 import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
-import {TimingPolicyRegistry} from '../../src/registry/TimingPolicyRegistry.sol';
 import {CreateXMock} from '../mocks/CreateXMock.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
@@ -29,8 +28,7 @@ contract DeployProtocolTest is Test {
 
   function test_componentSaltsAndAddressesAreDistinctAndConstructorIndependent() public view {
     DeployProtocol.Addresses memory a = script.predicted(address(factory), address(this));
-    assertTrue(a.assetSupportRegistry != a.timingPolicyRegistry);
-    assertTrue(a.timingPolicyRegistry != a.identityRegistry);
+    assertTrue(a.assetSupportRegistry != a.identityRegistry);
     assertTrue(a.identityRegistry != a.authorizationGateway);
     assertTrue(a.authorizationGateway != a.crossChainWrapper);
     assertTrue(a.crossChainWrapper != a.sameChainWrapper);
@@ -49,12 +47,11 @@ contract DeployProtocolTest is Test {
 
   function test_predictionMatchesPublishedSdkVector() public view {
     DeployProtocol.Addresses memory a = script.predicted(CANONICAL_CREATEX, VECTOR_DEPLOYER);
-    assertEq(a.assetSupportRegistry, 0x999Cbf13223e2421fAb3d16894a19E6A1DfEE12E);
-    assertEq(a.timingPolicyRegistry, 0x216B1ffa9B0b9b0075d3F452bA54418F3c7BFc6f);
-    assertEq(a.identityRegistry, 0x617f50EfC9D607d758F14221ce8f5757927A1F15);
-    assertEq(a.authorizationGateway, 0x132A36eDe5F30C9D00477d9c8181A3E8e1Ef356F);
-    assertEq(a.crossChainWrapper, 0x67F0DB16f0a61852a63c8c1771EB5440E89396D4);
-    assertEq(a.sameChainWrapper, 0x877ED96E48852fB3640c67e576B4ceC3C1C026A0);
+    assertEq(a.assetSupportRegistry, 0x87809f19A53302A03380189146c1291F5f4baDe9);
+    assertEq(a.identityRegistry, 0xeEe2445807eC6eCe54EA5614C9eedeE1CD5f3c58);
+    assertEq(a.authorizationGateway, 0xeEFC2Fc5Bd8F22D865Bd5956C058301e1DC04E29);
+    assertEq(a.crossChainWrapper, 0xb25ABE97C7ff0Dd32F798f2f41b65418ad2D73Ef);
+    assertEq(a.sameChainWrapper, 0x9236D569776AAD47d661E57D5a490bEbC3798145);
   }
 
   function test_localCreate3DeploymentPinsCompleteGraph() public {
@@ -63,11 +60,6 @@ contract DeployProtocolTest is Test {
       PrototypeDeployment.Component.AssetSupportRegistry,
       abi.encodePacked(type(AssetSupportRegistry).creationCode, abi.encode(address(this))),
       a.assetSupportRegistry
-    );
-    _deploy(
-      PrototypeDeployment.Component.TimingPolicyRegistry,
-      abi.encodePacked(type(TimingPolicyRegistry).creationCode, abi.encode(address(this))),
-      a.timingPolicyRegistry
     );
     _deploy(
       PrototypeDeployment.Component.IdentityRegistry,
@@ -82,26 +74,20 @@ contract DeployProtocolTest is Test {
     _deploy(
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
-        type(CrossChainWrapper).creationCode,
-        abi.encode(a.authorizationGateway, a.timingPolicyRegistry, a.assetSupportRegistry)
+        type(CrossChainWrapper).creationCode, abi.encode(a.authorizationGateway, a.assetSupportRegistry)
       ),
       a.crossChainWrapper
     );
     _deploy(
       PrototypeDeployment.Component.SameChainWrapper,
-      abi.encodePacked(
-        type(SameChainWrapper).creationCode,
-        abi.encode(a.authorizationGateway, a.timingPolicyRegistry, a.assetSupportRegistry)
-      ),
+      abi.encodePacked(type(SameChainWrapper).creationCode, abi.encode(a.authorizationGateway, a.assetSupportRegistry)),
       a.sameChainWrapper
     );
 
     assertEq(AssetSupportRegistry(a.assetSupportRegistry).owner(), address(this));
-    assertEq(TimingPolicyRegistry(a.timingPolicyRegistry).owner(), address(this));
     assertEq(PQIdentityRegistry(a.identityRegistry).TRUSTED_VERIFIER(), address(verifier));
     assertEq(address(PQAuthorizationGateway(a.authorizationGateway).REGISTRY()), a.identityRegistry);
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_GATEWAY(), a.authorizationGateway);
-    assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).TIMING_POLICIES()), a.timingPolicyRegistry);
     assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
     assertEq(SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_GATEWAY(), a.authorizationGateway);
   }

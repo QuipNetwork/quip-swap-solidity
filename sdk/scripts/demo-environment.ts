@@ -1,25 +1,11 @@
 import {encodeDeployData, getAddress} from 'viem'
-import type {Address, Hex} from 'viem'
-import {
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY,
-  BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY,
-  OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID,
-  PROTOTYPE_DEPLOYMENT_VERSION,
-  AssetType,
-  WrapperMode,
-  predictPrototypeAddresses,
-  prototypeComponents,
-  prototypeDeploymentSalt,
-  timingPolicyId,
-} from '../src/index.js'
+import type {Address} from 'viem'
+import {AssetType, PROTOTYPE_DEPLOYMENT_VERSION, predictPrototypeAddresses, prototypeComponents, prototypeDeploymentSalt} from '../src/index.js'
 import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
 import {crossChainWrapperAbi} from '../src/generated/crossChainWrapperAbi.js'
 import {pqAuthorizationGatewayAbi} from '../src/generated/pqAuthorizationGatewayAbi.js'
 import {pqIdentityRegistryAbi} from '../src/generated/pqIdentityRegistryAbi.js'
 import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
-import {timingPolicyRegistryAbi} from '../src/generated/timingPolicyRegistryAbi.js'
-import type {TimingPolicy} from '../src/index.js'
 import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
 import {erc20MockAbi} from '../test/helpers/mockAbis.js'
 
@@ -44,8 +30,6 @@ export interface DemoChainDeployment {
   readonly createX: Address
   readonly trustedVerifier: Address
   readonly addresses: Readonly<Record<(typeof prototypeComponents)[number], Address>>
-  readonly localSameChainPolicyId: Hex
-  readonly localCrossChainPolicyId: Hex
   readonly funding: DemoAssetSetup
 }
 
@@ -54,7 +38,6 @@ export interface DemoDeploymentArtifact {
   readonly deploymentVersion: typeof PROTOTYPE_DEPLOYMENT_VERSION
   readonly deployer: Address
   readonly identityRegistration: 'lazy-on-first-commit'
-  readonly canonicalPolicyIds: readonly [Hex, Hex]
   readonly chains: readonly [DemoChainDeployment, DemoChainDeployment]
 }
 
@@ -75,7 +58,6 @@ export async function bootstrapDemoEnvironment(
     deploymentVersion: PROTOTYPE_DEPLOYMENT_VERSION,
     deployer: chainA.deployer.address,
     identityRegistration: 'lazy-on-first-commit',
-    canonicalPolicyIds: [BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID],
     chains: [left, right],
   }
 }
@@ -91,11 +73,10 @@ async function bootstrapChain(
   const addresses = predictPrototypeAddresses(ctx.deployer.address, createX)
   const definitions: readonly [string, string, readonly unknown[]][] = [
     ['AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
-    ['TimingPolicyRegistry.sol', 'TimingPolicyRegistry', [ctx.deployer.address]],
     ['PQIdentityRegistry.sol', 'PQIdentityRegistry', [trustedVerifier]],
     ['PQAuthorizationGateway.sol', 'PQAuthorizationGateway', [addresses.identityRegistry]],
-    ['CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.authorizationGateway, addresses.timingPolicyRegistry, addresses.assetSupportRegistry]],
-    ['SameChainWrapper.sol', 'SameChainWrapper', [addresses.authorizationGateway, addresses.timingPolicyRegistry, addresses.assetSupportRegistry]],
+    ['CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.authorizationGateway, addresses.assetSupportRegistry]],
+    ['SameChainWrapper.sol', 'SameChainWrapper', [addresses.authorizationGateway, addresses.assetSupportRegistry]],
   ]
   for (const [index, [solFile, contract, args]] of definitions.entries()) {
     const artifact = load(solFile, contract)
@@ -105,16 +86,9 @@ async function bootstrapChain(
     const component = prototypeComponents[index]
     if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
   }
-  const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.SameChain, partyChainId: BigInt(ctx.chainId), counterpartyChainId: BigInt(ctx.chainId), partyToCounterpartyDelay: 0n, counterpartyToPartyDelay: 0n}
-  const localCrossPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
-  const policies = [[BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY_ID, BASE_SEPOLIA_TO_OP_SEPOLIA_POLICY], [OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY_ID, OP_SEPOLIA_TO_BASE_SEPOLIA_POLICY], [timingPolicyId(localPolicy), localPolicy], [timingPolicyId(localCrossPolicy), localCrossPolicy]] as const
-  for (const [policyId, policy] of policies) {
-    const hash = await ctx.deployer.walletClient.writeContract({address: addresses.timingPolicyRegistry, abi: timingPolicyRegistryAbi, functionName: 'registerPolicy', args: [policyId, policy], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
-    await ctx.publicClient.waitForTransactionReceipt({hash})
-  }
   await verifyGraph(ctx, addresses, trustedVerifier)
   const funding = await setupDemoFunding(ctx, addresses, principal, amount, load)
-  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, localSameChainPolicyId: timingPolicyId(localPolicy), localCrossChainPolicyId: timingPolicyId(localCrossPolicy), funding}
+  return {chainId: ctx.chainId, createX, trustedVerifier, addresses, funding}
 }
 
 async function setupDemoFunding(

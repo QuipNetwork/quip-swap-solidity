@@ -3,7 +3,6 @@ pragma solidity 0.8.33;
 
 import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
-import {ITimingPolicyRegistry} from '../interfaces/ITimingPolicyRegistry.sol';
 import {AssetCustody} from './AssetHandling.sol';
 import {AssetSupport} from './AssetHandling.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
@@ -14,7 +13,6 @@ import {
   ProtocolTerms,
   SideTag,
   SideTerms,
-  TimingPolicy,
   VerifiedCommitAuthorization,
   WrapperMode
 } from './ProtocolTypes.sol';
@@ -43,19 +41,17 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
 
   address public immutable DIRECT_GATEWAY;
-  ITimingPolicyRegistry public immutable TIMING_POLICIES;
   IAssetSupportRegistry public immutable ASSET_SUPPORT;
 
   CommitAuthorization.Layout private authorizations;
   CrossChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
 
-  constructor(address directGateway, ITimingPolicyRegistry timingPolicies, IAssetSupportRegistry assetSupport) {
-    if (directGateway == address(0) || address(timingPolicies) == address(0) || address(assetSupport) == address(0)) {
+  constructor(address directGateway, IAssetSupportRegistry assetSupport) {
+    if (directGateway == address(0) || address(assetSupport) == address(0)) {
       revert ZeroConfiguration();
     }
     DIRECT_GATEWAY = directGateway;
-    TIMING_POLICIES = timingPolicies;
     ASSET_SUPPORT = assetSupport;
   }
 
@@ -67,7 +63,7 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata
   ) external payable nonReentrant {
-    _policy(terms);
+    _validate(terms);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
     side.requireSupported(ASSET_SUPPORT);
@@ -86,12 +82,12 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   }
 
   function claim(ProtocolTerms calldata terms, bool party, bytes32 lock, bytes32 secret) external nonReentrant {
-    states.claimCrossChain(custody, terms, _policy(terms), party, lock, secret, block.timestamp);
+    states.claimCrossChain(custody, terms, party, lock, secret, block.timestamp);
     emit Claimed(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
   }
 
   function reclaim(ProtocolTerms calldata terms, bool party, bytes32 lock) external nonReentrant {
-    states.reclaimCrossChain(custody, terms, _policy(terms), party, lock, block.timestamp);
+    states.reclaimCrossChain(custody, terms, party, lock, block.timestamp);
     emit Reclaimed(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
   }
 
@@ -103,11 +99,8 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     return custody.reservedAmount(asset);
   }
 
-  function _policy(ProtocolTerms memory terms) private view returns (TimingPolicy memory policy) {
+  function _validate(ProtocolTerms memory terms) private pure {
     if (ProtocolHashing.mode(terms) != WrapperMode.CrossChain) revert InvalidWrapperMode();
-    policy = TIMING_POLICIES.resolvePolicyForRoute(
-      terms.timingPolicyId, WrapperMode.CrossChain, terms.partySide.chainId, terms.counterpartySide.chainId
-    );
-    ProtocolHashing.validateTerms(terms, policy);
+    ProtocolHashing.validateTerms(terms);
   }
 }

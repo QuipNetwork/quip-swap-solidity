@@ -140,7 +140,7 @@ export async function bootstrapConsoleLocal(args: {readonly profile: string; rea
       deterministicDemo: true,
       chains: profile.chains,
       actors: {alice: chainA.alice.address, bob: chainB.bob.address, permissionlessExecutor: chainA.charlie.address},
-      timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10', timingPolicyId: deployment.chains[0].localCrossChainPolicyId},
+      timingPolicy: {policyVersion: '1', mode: 'CrossChain', partyChainId: '31337', counterpartyChainId: '31338', partyToCounterpartyDelay: '10', counterpartyToPartyDelay: '10'},
       artifactExchange: {directory: outputDirectory},
       deployment,
     }

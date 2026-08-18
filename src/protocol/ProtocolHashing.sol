@@ -10,7 +10,6 @@ import {
   ProtocolTerms,
   SideTag,
   SideTerms,
-  TimingPolicy,
   WrapperMode
 } from './ProtocolTypes.sol';
 import {Asset, AssetType} from './ProtocolTypes.sol';
@@ -20,7 +19,6 @@ library ProtocolHashing {
   string internal constant GATE_CONTEXT_DOMAIN = 'InterlockBobCommitGateContext-v1.1';
   string internal constant BOB_COMMIT_GATE_DOMAIN = 'InterlockBobCommitGate-v1.1';
   string internal constant SETTLEMENT_LOCK_DOMAIN = 'InterlockSettlementLock-v1.1';
-  string internal constant TIMING_POLICY_DOMAIN = 'InterlockTimingPolicy-v1.1';
   string internal constant ASSETS_DOMAIN = 'InterlockAssets-v1.1';
   string internal constant COMMIT_DOMAIN = 'InterlockCommit-v1.1';
 
@@ -57,10 +55,6 @@ library ProtocolHashing {
 
   function settlementLock(bytes32 trade, bytes32 secret) internal pure returns (bytes32) {
     return keccak256(abi.encode(SETTLEMENT_LOCK_DOMAIN, trade, secret));
-  }
-
-  function timingPolicyId(TimingPolicy memory policy) internal pure returns (bytes32) {
-    return keccak256(abi.encode(TIMING_POLICY_DOMAIN, policy));
   }
 
   function assetHash(SideTerms memory side) internal pure returns (bytes32) {
@@ -127,13 +121,11 @@ library ProtocolHashing {
     return abi.encode(chainId, registryAddress, eoa, authorizingKeyRole, authorizingKeyVersion, operationNonce);
   }
 
-  function validateTerms(ProtocolTerms memory terms, TimingPolicy memory policy) internal pure {
+  function validateTerms(ProtocolTerms memory terms) internal pure {
     WrapperMode wrapperMode = mode(terms);
     if (
       terms.partySide.chainId == 0 || terms.counterpartySide.chainId == 0 || terms.partySide.principal == address(0)
-        || terms.counterpartySide.principal == address(0) || timingPolicyId(policy) != terms.timingPolicyId
-        || policy.mode != wrapperMode || policy.partyChainId != terms.partySide.chainId
-        || policy.counterpartyChainId != terms.counterpartySide.chainId
+        || terms.counterpartySide.principal == address(0)
     ) revert InvalidTerms();
 
     _validateSide(terms.partySide);
@@ -144,10 +136,7 @@ library ProtocolHashing {
 
     if (terms.partySide.commitLock != bytes32(0)) revert InvalidTerms();
     if (wrapperMode == WrapperMode.SameChain) {
-      if (
-        terms.counterpartySide.commitLock != bytes32(0) || policy.partyToCounterpartyDelay != 0
-          || policy.counterpartyToPartyDelay != 0
-      ) revert InvalidTerms();
+      if (terms.counterpartySide.commitLock != bytes32(0)) revert InvalidTerms();
       uint256 claimDeadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
         ? terms.partySide.claimDeadline
         : terms.counterpartySide.claimDeadline;
@@ -157,10 +146,8 @@ library ProtocolHashing {
     } else {
       if (terms.counterpartySide.commitLock == bytes32(0)) revert InvalidTerms();
       if (
-        !_sumLte(terms.partySide.claimDeadline, policy.partyToCounterpartyDelay, terms.counterpartySide.reclaimRelease)
-          || !_sumLte(
-            terms.counterpartySide.claimDeadline, policy.counterpartyToPartyDelay, terms.partySide.reclaimRelease
-          )
+        terms.partySide.claimDeadline > terms.counterpartySide.reclaimRelease
+          || terms.counterpartySide.claimDeadline > terms.partySide.reclaimRelease
       ) revert InvalidTerms();
     }
   }
@@ -202,9 +189,5 @@ library ProtocolHashing {
     if (uint8(a.assetType) != uint8(b.assetType)) return uint8(a.assetType) < uint8(b.assetType);
     if (a.target != b.target) return uint160(a.target) < uint160(b.target);
     return a.id < b.id;
-  }
-
-  function _sumLte(uint256 a, uint256 b, uint256 upper) private pure returns (bool) {
-    return b <= type(uint256).max - a && a + b <= upper;
   }
 }

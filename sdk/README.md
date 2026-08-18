@@ -4,8 +4,7 @@ The package root is the current protocol integration surface. It exports:
 
 - protocol terms, state enums, hashing, and validation;
 - generated ABIs for every current contract;
-- createProtocolClient for commits, claims, reclaims, registration, asset
-  support, and timing-policy operations;
+- createProtocolClient for commits, claims, reclaims, registration, asset support;
 - address-scoped protocol event and receipt decoding; and
 - TrustedCrossChainWorkflow for trusted-client coordination.
 

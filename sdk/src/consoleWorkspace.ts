@@ -67,7 +67,7 @@ export async function loadConsoleConfigIdentity(path: string): Promise<ConsoleCo
   const actors = object(parsed['actors'], 'console actors')
   for (const field of ['alice', 'bob', 'permissionlessExecutor']) if (typeof actors[field] !== 'string' || !ADDRESS.test(actors[field])) throw new Error(`invalid console actor ${field}`)
   const timing = object(parsed['timingPolicy'], 'console timing policy')
-  if (timing['policyVersion'] !== '1' || timing['mode'] !== 'CrossChain' || timing['partyChainId'] !== '31337' || timing['counterpartyChainId'] !== '31338' || typeof timing['partyToCounterpartyDelay'] !== 'string' || typeof timing['counterpartyToPartyDelay'] !== 'string' || typeof timing['timingPolicyId'] !== 'string' || !HEX32.test(timing['timingPolicyId'])) throw new Error('invalid console timing policy')
+  if (timing['policyVersion'] !== '1' || timing['mode'] !== 'CrossChain' || timing['partyChainId'] !== '31337' || timing['counterpartyChainId'] !== '31338' || typeof timing['partyToCounterpartyDelay'] !== 'string' || typeof timing['counterpartyToPartyDelay'] !== 'string') throw new Error('invalid console timing policy')
   const exchange = object(parsed['artifactExchange'], 'console artifact exchange')
   if (typeof exchange['directory'] !== 'string' || exchange['directory'] === '') throw new Error('invalid artifact exchange directory')
   const deployment = object(parsed['deployment'], 'console deployment')
@@ -76,7 +76,7 @@ export async function loadConsoleConfigIdentity(path: string): Promise<ConsoleCo
     const chain = object(deployment['chains'][index], `deployment chain ${chainId}`)
     if (chain['chainId'] !== chainId || typeof chain['trustedVerifier'] !== 'string' || !ADDRESS.test(chain['trustedVerifier'])) throw new Error(`invalid deployment chain ${chainId}`)
     const addresses = object(chain['addresses'], `deployment addresses ${chainId}`)
-    for (const field of ['assetSupportRegistry', 'timingPolicyRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper']) if (typeof addresses[field] !== 'string' || !ADDRESS.test(addresses[field])) throw new Error(`invalid deployment address ${field}`)
+    for (const field of ['assetSupportRegistry', 'identityRegistry', 'authorizationGateway', 'crossChainWrapper', 'sameChainWrapper']) if (typeof addresses[field] !== 'string' || !ADDRESS.test(addresses[field])) throw new Error(`invalid deployment address ${field}`)
   }
   return {schema: CONSOLE_CONFIG_SCHEMA, networkId: parsed['networkId'], localParty: parsed['localParty'], digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`, source}
 }

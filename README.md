@@ -2,7 +2,7 @@
 
 This branch contains the current multi-contract protocol prototype:
 
-- asset-support and timing-policy registries;
+- asset-support registry;
 - direct-user and broker PQ identity registration;
 - the direct authorization gateway and QuipWallet authorization boundary;
 - separate cross-chain and same-chain wrappers; and

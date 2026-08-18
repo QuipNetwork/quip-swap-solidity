@@ -115,7 +115,6 @@ contract ProgressionGateTest is Test {
     uint256 counterpartyChain,
     bytes32 runNonce
   ) internal pure returns (ProtocolTerms memory terms) {
-    terms.timingPolicyId = keccak256('policy');
     terms.partySide.chainId = partyChain;
     terms.partySide.principal = address(0xA11CE);
     terms.partySide.sideNonce = runNonce;

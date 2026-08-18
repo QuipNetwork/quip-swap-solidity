@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {AssetCustody} from './AssetHandling.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
-import {ProtocolTerms, SideTerms, TimingPolicy, WrapperMode} from './ProtocolTypes.sol';
+import {ProtocolTerms, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';
 import {SameChainStateMachine} from './StateMachines.sol';
 
@@ -22,13 +22,12 @@ library Settlement {
     CrossChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
-    TimingPolicy memory policy,
     bool party,
     bytes32 lock,
     bytes32 secret,
     uint256 timestamp
   ) internal {
-    _validate(terms, policy, WrapperMode.CrossChain);
+    _validate(terms, WrapperMode.CrossChain);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
     _requireSecret(terms, lock, secret);
@@ -43,12 +42,11 @@ library Settlement {
     CrossChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
-    TimingPolicy memory policy,
     bool party,
     bytes32 lock,
     uint256 timestamp
   ) internal {
-    _validate(terms, policy, WrapperMode.CrossChain);
+    _validate(terms, WrapperMode.CrossChain);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
     if (timestamp < side.reclaimRelease) revert ReclaimWindowClosed();
@@ -62,12 +60,11 @@ library Settlement {
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
-    TimingPolicy memory policy,
     bytes32 lock,
     bytes32 secret,
     uint256 timestamp
   ) internal {
-    _validate(terms, policy, WrapperMode.SameChain);
+    _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     _requireSecret(terms, lock, secret);
     uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
@@ -87,11 +84,10 @@ library Settlement {
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
-    TimingPolicy memory policy,
     bytes32 lock,
     uint256 timestamp
   ) internal {
-    _validate(terms, policy, WrapperMode.SameChain);
+    _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
 
@@ -106,11 +102,10 @@ library Settlement {
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
     ProtocolTerms memory terms,
-    TimingPolicy memory policy,
     bytes32 lock,
     uint256 timestamp
   ) internal {
-    _validate(terms, policy, WrapperMode.SameChain);
+    _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
       revert ReclaimWindowClosed();
@@ -124,8 +119,8 @@ library Settlement {
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
   }
 
-  function _validate(ProtocolTerms memory terms, TimingPolicy memory policy, WrapperMode expected) private pure {
-    ProtocolHashing.validateTerms(terms, policy);
+  function _validate(ProtocolTerms memory terms, WrapperMode expected) private pure {
+    ProtocolHashing.validateTerms(terms);
     if (ProtocolHashing.mode(terms) != expected) revert InvalidSettlementMode();
   }
 
