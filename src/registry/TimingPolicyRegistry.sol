@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 
-import {ProtocolHashing} from './ProtocolHashing.sol';
-import {TimingPolicy, WrapperMode} from './ProtocolTypes.sol';
-import {ITimingPolicyRegistry} from './interfaces/ITimingPolicyRegistry.sol';
+import {ITimingPolicyRegistry} from '../interfaces/ITimingPolicyRegistry.sol';
+import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
+import {TimingPolicy, WrapperMode} from '../protocol/ProtocolTypes.sol';
 
 contract TimingPolicyRegistry is ITimingPolicyRegistry, Ownable2Step {
   mapping(bytes32 policyId => TimingPolicy policy) private _policies;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Terms} from '../TermsLib.sol';
+import {Terms} from '../legacy/TermsLib.sol';
 import {IWalletFactory} from './IWalletFactory.sol';
 
 /// @notice the lock state for Omnibus swaps

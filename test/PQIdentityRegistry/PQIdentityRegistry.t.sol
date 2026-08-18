@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
+import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
 import {
   InitialRegistration,
   KeyRole,
@@ -9,7 +9,7 @@ import {
   RegistryActionTag,
   RegistryAuthorization,
   RegistryOperation
-} from '../../src/ProtocolTypes.sol';
+} from '../../src/protocol/ProtocolTypes.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {DigestVerifierMock} from '../mocks/DigestVerifierMock.sol';
 import {SHRINCS256sKeccak} from '@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol';

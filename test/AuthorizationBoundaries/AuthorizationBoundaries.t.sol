@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AuthorizationSubmitter} from '../../src/AuthorizationSubmitter.sol';
-import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
-import {ProgressionGate} from '../../src/ProgressionGate.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
+import {AuthorizationSubmitter} from '../../src/authorization/AuthorizationSubmitter.sol';
+import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
+import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
+import {QuipWallet} from '../../src/authorization/QuipWallet.sol';
+import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
@@ -19,9 +20,8 @@ import {
   RegistryOperation,
   SideTerms,
   VerifiedCommitAuthorization
-} from '../../src/ProtocolTypes.sol';
-import {QuipWallet} from '../../src/QuipWallet.sol';
-import {Asset, AssetType} from '../../src/TermsLib.sol';
+} from '../../src/protocol/ProtocolTypes.sol';
+import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
 import {AuthorizationReceiverHarness} from '../harness/AuthorizationReceiverHarness.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';

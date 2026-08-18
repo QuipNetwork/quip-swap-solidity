@@ -13,7 +13,7 @@ import {
   TimingPolicy,
   WrapperMode
 } from './ProtocolTypes.sol';
-import {Asset, AssetType} from './TermsLib.sol';
+import {Asset, AssetType} from './ProtocolTypes.sol';
 
 library ProtocolHashing {
   string internal constant TERMS_DOMAIN = 'InterlockTerms-v1.1';

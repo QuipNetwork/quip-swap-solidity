@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AuthorizationSubmitter} from './AuthorizationSubmitter.sol';
-import {KeyedVerifier} from './KeyedVerifier.sol';
-import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
-import {ProtocolHashing} from './ProtocolHashing.sol';
+import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
+import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
@@ -14,8 +12,10 @@ import {
   SideTerms,
   VerifiedCommitAuthorization,
   WrapperMode
-} from './ProtocolTypes.sol';
-import {ICommitAuthorizationReceiver} from './interfaces/ICommitAuthorizationReceiver.sol';
+} from '../protocol/ProtocolTypes.sol';
+import {AuthorizationSubmitter} from './AuthorizationSubmitter.sol';
+import {KeyedVerifier} from './KeyedVerifier.sol';
+import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
 
 /// @notice Prototype implementation of the deployable wallet-mode principal boundary.
 /// @dev The wallet stores its ERC-7913 keyed verifier and public key together as

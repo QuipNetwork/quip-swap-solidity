@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {CommitAuthorization} from '../../src/CommitAuthorization.sol';
-import {ProgressionGate} from '../../src/ProgressionGate.sol';
-import {ProtocolTerms, VerifiedCommitAuthorization} from '../../src/ProtocolTypes.sol';
 import {ICommitAuthorizationReceiver} from '../../src/interfaces/ICommitAuthorizationReceiver.sol';
+import {CommitAuthorization} from '../../src/protocol/CommitValidation.sol';
+import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
+import {ProtocolTerms, VerifiedCommitAuthorization} from '../../src/protocol/ProtocolTypes.sol';
 
 contract AuthorizationReceiverHarness is ICommitAuthorizationReceiver {
   using CommitAuthorization for CommitAuthorization.Layout;

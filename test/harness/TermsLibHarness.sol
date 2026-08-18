@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
+import {Terms, TermsLib} from '../../src/legacy/TermsLib.sol';
+import {Asset} from '../../src/protocol/ProtocolTypes.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 

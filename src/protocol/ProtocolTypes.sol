@@ -1,7 +1,21 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset} from './TermsLib.sol';
+/// @notice The type of asset exchanged by the protocol.
+enum AssetType {
+  Native,
+  ERC20,
+  ERC721,
+  ERC1155
+}
+
+/// @notice An asset transferred as part of a swap.
+struct Asset {
+  AssetType assetType;
+  address target;
+  uint256 id;
+  uint256 amount;
+}
 
 enum AuthorizationMode {
   QuipWallet,

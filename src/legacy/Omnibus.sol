@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {CommitAuth, IOmnibus, LockState} from '../interfaces/IOmnibus.sol';
+import {IWalletFactory} from '../interfaces/IWalletFactory.sol';
 import {Terms, TermsLib} from './TermsLib.sol';
-import {CommitAuth, IOmnibus, LockState} from './interfaces/IOmnibus.sol';
-import {IWalletFactory} from './interfaces/IWalletFactory.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';

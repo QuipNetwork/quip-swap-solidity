@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ProgressionGate} from '../../src/ProgressionGate.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
-import {DelegationPolicy, ProtocolTerms} from '../../src/ProtocolTypes.sol';
+import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
+import {DelegationPolicy, ProtocolTerms} from '../../src/protocol/ProtocolTypes.sol';
 import {ProgressionGateHarness} from '../harness/ProgressionGateHarness.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 

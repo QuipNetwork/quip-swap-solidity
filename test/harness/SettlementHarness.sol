@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from '../../src/AssetCustody.sol';
-import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
-import {CrossChainLegState, ProtocolTerms, SameChainState, TimingPolicy} from '../../src/ProtocolTypes.sol';
-import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
-import {Settlement} from '../../src/Settlement.sol';
+import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
+import {CrossChainLegState, ProtocolTerms, SameChainState, TimingPolicy} from '../../src/protocol/ProtocolTypes.sol';
+import {Settlement} from '../../src/protocol/Settlement.sol';
+import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {ERC1155Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/utils/ERC1155Holder.sol';
 import {ERC721Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/utils/ERC721Holder.sol';
 

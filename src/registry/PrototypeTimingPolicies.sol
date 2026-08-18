@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ProtocolHashing} from './ProtocolHashing.sol';
-import {TimingPolicy, WrapperMode} from './ProtocolTypes.sol';
+import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
+import {TimingPolicy, WrapperMode} from '../protocol/ProtocolTypes.sol';
 
 /// @notice Canonical testnet-only timing assumptions for the deployment prototype.
 library PrototypeTimingPolicies {

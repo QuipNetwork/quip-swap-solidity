@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {DelegationPolicy, SideTerms} from '../protocol/ProtocolTypes.sol';
 import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
-import {DelegationPolicy, SideTerms} from './ProtocolTypes.sol';
 
 library AuthorizationSubmitter {
   error InvalidTransportSubmitter();

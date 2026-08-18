@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {KeyedVerifier} from './KeyedVerifier.sol';
-import {ProtocolHashing} from './ProtocolHashing.sol';
+import {IProfiledPQVerifier} from '../interfaces/IProfiledPQVerifier.sol';
+import {IRegisteredCommitTarget} from '../interfaces/IRegisteredCommitTarget.sol';
+import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
 import {
   InitialRegistration,
   KeyRole,
@@ -10,9 +11,8 @@ import {
   RegistryActionTag,
   RegistryAuthorization,
   RegistryOperation
-} from './ProtocolTypes.sol';
-import {IProfiledPQVerifier} from './interfaces/IProfiledPQVerifier.sol';
-import {IRegisteredCommitTarget} from './interfaces/IRegisteredCommitTarget.sol';
+} from '../protocol/ProtocolTypes.sol';
+import {KeyedVerifier} from './KeyedVerifier.sol';
 import {
   IERC7913SignatureVerifier
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';

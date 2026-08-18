@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
-import {ExpectedSourceState, ProtocolTerms, TimingPolicy, WrapperMode} from '../../src/ProtocolTypes.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
+import {ExpectedSourceState, ProtocolTerms, TimingPolicy, WrapperMode} from '../../src/protocol/ProtocolTypes.sol';
 
 contract ProtocolHashingHarness {
   function exposedMode(ProtocolTerms calldata terms) external pure returns (WrapperMode) {

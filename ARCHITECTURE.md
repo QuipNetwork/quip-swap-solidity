@@ -9,13 +9,25 @@ assets on one chain or across two chains. Commit admission uses post-quantum
 deadlines.
 
 `Omnibus.sol`, `interfaces/IOmnibus.sol`, and the old `Terms` functionality
-in `TermsLib.sol` remain for comparison and regression testing. They are not
-the current integration or deployment surface. The current implementation does
+in `legacy/TermsLib.sol` remain for comparison and regression testing. They are not the current integration or deployment
+surface. The current implementation does
 not use the former QuipPortal/minimal-clone architecture.
 
 The normative design is under `../../interlock-ec/dev/v1.1/protocol/`,
 especially `protocol.md` and `technical-spec.md`. This document maps that
 design to Solidity.
+
+## Source layout
+
+- `src/protocol/` contains the v1.1 terms model, hashing, state machines,
+  escrow, commit validation, settlement, and wrappers. Related internal
+  libraries share `AssetHandling.sol`, `CommitValidation.sol`, and
+  `StateMachines.sol` source units while retaining their library names.
+- `src/authorization/` contains wallet and registered-direct PQ admission.
+- `src/registry/` contains independently deployed asset and timing policy
+  registries plus prototype policy constants.
+- `src/interfaces/` contains cross-component interfaces.
+- `src/legacy/` isolates the v1.0 Omnibus implementation and terms library.
 
 ## System map
 
@@ -55,7 +67,7 @@ entry points.
 
 ## Canonical trade model
 
-### `ProtocolTypes.sol`
+### `protocol/ProtocolTypes.sol`
 
 Defines the shared data model:
 
@@ -76,7 +88,7 @@ Defines the shared data model:
 side's own assets after timeout. These destinations need not be principals and
 cannot be changed by the transaction caller.
 
-### `ProtocolHashing.sol`
+### `protocol/ProtocolHashing.sol`
 
 Provides domain-separated hashes and static term validation:
 
@@ -101,7 +113,7 @@ possible secret-revealing claim on the other chain.
 Both authorization modes produce the same canonical payload and
 `VerifiedCommitAuthorization` evidence for the wrapper.
 
-### `QuipWallet.sol`
+### `authorization/QuipWallet.sol`
 
 The wallet-mode authorization boundary. It reconstructs the commit payload,
 verifies the active PQ key, identifies the authenticated submitter, and forwards
@@ -110,7 +122,7 @@ rotation using old-key authorization plus new-key proof of possession.
 `execute` remains controlled by the classical owner. Wallet key epochs are
 internal; wallet-mode terms use principal key version zero.
 
-### `PQIdentityRegistry.sol`
+### `authorization/PQIdentityRegistry.sol`
 
 Maps an EOA to independently versioned active and recovery PQ keys. It pins the
 trusted verifier by address, code hash, version tag, and profile tag so an
@@ -122,25 +134,25 @@ chain, registry, expected versions, proposed keys, action, nonce, and exclusive
 expiry. Newly installed keys prove possession. Failed registration-and-commit
 calls revert registration, nonce, escrow, and swap state together.
 
-### `PQAuthorizationGateway.sol`
+### `authorization/PQAuthorizationGateway.sol`
 
 The RegisteredDirect boundary. It reconstructs the exact commit payload,
 verifies it with the principal's active registered PQ key, establishes the
 logical submitter, and delivers evidence to the wrapper. It holds neither swap
 assets nor swap state.
 
-### `AuthorizationSubmitter.sol`
+### `authorization/AuthorizationSubmitter.sol`
 
 Derives the authenticated submitter and key version. Transaction sender,
 principal, broker, and relayer can differ, so downstream code must not equate
 `msg.sender` with the principal.
 
-### `KeyedVerifier.sol`
+### `authorization/KeyedVerifier.sol`
 
 Parses an encoded keyed-verifier value, extracts its verifier contract, and
 delegates digest/signature validation to it.
 
-### `CommitAuthorization.sol`
+### Commit authorization `protocol/CommitValidation.sol`
 
 The wrapper-side authorization check. It requires:
 
@@ -158,18 +170,18 @@ assets.
 
 ## Registries and admission policy
 
-### `TimingPolicyRegistry.sol`
+### `registry/TimingPolicyRegistry.sol`
 
 Stores immutable, content-addressed timing policies. A policy binds version,
 wrapper mode, ordered chains, and final-claim delays in both directions. A
 wrapper resolves the signed policy and requires its route and mode to match.
 
-### `PrototypeTimingPolicies.sol`
+### `registry/PrototypeTimingPolicies.sol`
 
 Provides prototype Base Sepolia/OP Sepolia policies for deployment and demos. It
 is convenience code, not general policy logic.
 
-### `AssetSupportRegistry.sol` and `AssetSupport.sol`
+### Asset admission `registry/AssetSupportRegistry.sol` and `protocol/AssetHandling.sol`
 
 The registry is an owner-managed allowlist keyed by asset type and token
 address. Native currency needs no entry. `AssetSupport` checks each token
@@ -178,7 +190,7 @@ remains claimable and reclaimable.
 
 ## Secrets and progression
 
-### `ProgressionGate.sol`
+### Progression gate `protocol/CommitValidation.sol`
 
 Enforces commit sequence separately from PQ approval:
 
@@ -194,7 +206,7 @@ claims escrow and enables the final cross-chain claim.
 
 ## Escrow
 
-### `AssetCustody.sol`
+### Asset custody `protocol/AssetHandling.sol`
 
 Collects and releases native currency and supported token standards. Collection
 requires exact native value and exact token balance or ownership changes,
@@ -204,14 +216,15 @@ unit.
 Reserved amounts are tracked by asset identity. Because multiple swaps share a
 wrapper, reservations prevent one trade from consuming another trade's funds.
 
-### `TermsLib.sol`
+### `protocol/ProtocolTypes.sol` and `legacy/TermsLib.sol`
 
-Defines `AssetType` and `Asset`, which current contracts still use. Its
-`Terms`, pair-digest, and older transfer helpers belong to legacy Omnibus.
+`protocol/ProtocolTypes.sol` defines the canonical `AssetType` and `Asset` used by
+the v1.1 protocol. The older `Terms`, pair-digest, and transfer helpers are
+isolated in `legacy/TermsLib.sol` for Omnibus regression testing.
 
 ## State machines
 
-### `CrossChainStateMachine.sol`
+### Cross-chain state machine `protocol/StateMachines.sol`
 
 Each chain stores one local leg keyed by `(tradeId, lock, side)`:
 
@@ -224,7 +237,7 @@ Commit stores a binding over trade, lock, side, terms, and assets. Settlement
 must reproduce it. Terminal states cannot be reused. No remote-chain state is
 read or proven.
 
-### `SameChainStateMachine.sol`
+### Same-chain state machine `protocol/StateMachines.sol`
 
 A local trade is keyed by `(tradeId, lock)`:
 
@@ -237,7 +250,7 @@ Unused -> PartyCommitted -> BothCommitted -> Claimed
 The first commit binds both asset lists and complete terms. The second must
 match, preventing substitution after party assets enter escrow.
 
-## `Settlement.sol`
+## `protocol/Settlement.sol`
 
 Combines validation, state transitions, time windows, secret checks, and asset
 release.
@@ -252,7 +265,7 @@ Claims and reclaims are permissionless because signed terms fix payouts.
 
 ## Wrappers
 
-### `CrossChainWrapper.sol`
+### `protocol/CrossChainWrapper.sol`
 
 The escrow and orchestration contract for one local cross-chain leg. A commit
 atomically:
@@ -268,7 +281,7 @@ atomically:
 It exposes permissionless claim/reclaim, state inspection, and reserved-balance
 inspection.
 
-### `SameChainWrapper.sol`
+### `protocol/SameChainWrapper.sol`
 
 The equivalent contract when both sides are on one chain. The party commits
 first, the counterparty second, and one claim exchanges both escrows atomically.

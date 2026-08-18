@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Asset} from '../../src/TermsLib.sol';
+import {Asset} from '../../src/protocol/ProtocolTypes.sol';
 
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';

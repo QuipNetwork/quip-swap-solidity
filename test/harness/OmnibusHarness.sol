@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Omnibus} from '../../src/Omnibus.sol';
-import {Terms, TermsLib} from '../../src/TermsLib.sol';
 import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
+import {Omnibus} from '../../src/legacy/Omnibus.sol';
+import {Terms, TermsLib} from '../../src/legacy/TermsLib.sol';
 
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing

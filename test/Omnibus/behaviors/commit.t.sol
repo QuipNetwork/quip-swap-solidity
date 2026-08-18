@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, AssetType, Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
+import {Terms, TermsLib} from '../../../src/legacy/TermsLib.sol';
+import {Asset, AssetType} from '../../../src/protocol/ProtocolTypes.sol';
 import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';

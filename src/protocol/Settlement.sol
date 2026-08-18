@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from './AssetCustody.sol';
-import {CrossChainStateMachine} from './CrossChainStateMachine.sol';
+import {AssetCustody} from './AssetHandling.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {ProtocolTerms, SideTerms, TimingPolicy, WrapperMode} from './ProtocolTypes.sol';
-import {SameChainStateMachine} from './SameChainStateMachine.sol';
+import {CrossChainStateMachine} from './StateMachines.sol';
+import {SameChainStateMachine} from './StateMachines.sol';
 
 library Settlement {
   using AssetCustody for AssetCustody.Layout;

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Terms, TermsLib} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
+import {Terms, TermsLib} from '../../../src/legacy/TermsLib.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';

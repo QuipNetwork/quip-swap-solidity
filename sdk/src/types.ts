@@ -1,6 +1,6 @@
 /**
- * Core protocol types mirroring `src/TermsLib.sol` and
- * `src/interfaces/IOmnibus.sol` exactly.
+ * Legacy protocol types mirroring `src/protocol/ProtocolTypes.sol`,
+ * `src/legacy/TermsLib.sol`, and `src/interfaces/IOmnibus.sol`.
  *
  * Every Solidity integer (`uint256`, token ids, amounts, chain ids,
  * timestamps, fees) is represented as `bigint` — never `number` — because

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {Terms, TermsLib} from '../../../src/legacy/TermsLib.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
 import {TermsLibTest} from '../TermsLib.t.sol';

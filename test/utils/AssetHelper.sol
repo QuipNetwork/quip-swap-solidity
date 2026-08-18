@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, AssetType} from '../../src/TermsLib.sol';
+import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
 
 /// @title Asset Helper
 /// @dev Utility functions for building Asset structs in tests

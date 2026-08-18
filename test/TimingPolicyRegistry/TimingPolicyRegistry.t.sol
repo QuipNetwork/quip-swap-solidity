@@ -4,11 +4,11 @@ pragma solidity 0.8.33;
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
-import {TimingPolicy, WrapperMode} from '../../src/ProtocolTypes.sol';
-import {PrototypeTimingPolicies} from '../../src/PrototypeTimingPolicies.sol';
-import {TimingPolicyRegistry} from '../../src/TimingPolicyRegistry.sol';
 import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
+import {TimingPolicy, WrapperMode} from '../../src/protocol/ProtocolTypes.sol';
+import {PrototypeTimingPolicies} from '../../src/registry/PrototypeTimingPolicies.sol';
+import {TimingPolicyRegistry} from '../../src/registry/TimingPolicyRegistry.sol';
 import {TimingPolicyConsumerHarness} from '../harness/TimingPolicyConsumerHarness.sol';
 
 contract TimingPolicyRegistryTest is Test {

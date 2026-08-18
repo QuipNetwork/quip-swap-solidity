@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AuthorizationSubmitter} from './AuthorizationSubmitter.sol';
-import {KeyedVerifier} from './KeyedVerifier.sol';
-import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
-import {ProtocolHashing} from './ProtocolHashing.sol';
+import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
+import {IRegisteredCommitTarget} from '../interfaces/IRegisteredCommitTarget.sol';
+import {ProtocolHashing} from '../protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
@@ -12,9 +11,10 @@ import {
   ExpectedSourceState,
   SideTerms,
   VerifiedCommitAuthorization
-} from './ProtocolTypes.sol';
-import {ICommitAuthorizationReceiver} from './interfaces/ICommitAuthorizationReceiver.sol';
-import {IRegisteredCommitTarget} from './interfaces/IRegisteredCommitTarget.sol';
+} from '../protocol/ProtocolTypes.sol';
+import {AuthorizationSubmitter} from './AuthorizationSubmitter.sol';
+import {KeyedVerifier} from './KeyedVerifier.sol';
+import {PQIdentityRegistry} from './PQIdentityRegistry.sol';
 
 contract PQAuthorizationGateway is IRegisteredCommitTarget {
   error InvalidAuthorizationMode();

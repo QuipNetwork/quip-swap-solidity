@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Terms} from '../../../src/TermsLib.sol';
 import {IOmnibus} from '../../../src/interfaces/IOmnibus.sol';
+import {Terms} from '../../../src/legacy/TermsLib.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';

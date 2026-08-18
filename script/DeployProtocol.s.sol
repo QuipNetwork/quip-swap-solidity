@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetSupportRegistry} from '../src/AssetSupportRegistry.sol';
-import {CrossChainWrapper} from '../src/CrossChainWrapper.sol';
-import {PQAuthorizationGateway} from '../src/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../src/PQIdentityRegistry.sol';
-import {ProtocolHashing} from '../src/ProtocolHashing.sol';
-import {TimingPolicy, WrapperMode} from '../src/ProtocolTypes.sol';
-import {PrototypeTimingPolicies} from '../src/PrototypeTimingPolicies.sol';
-import {SameChainWrapper} from '../src/SameChainWrapper.sol';
-import {TimingPolicyRegistry} from '../src/TimingPolicyRegistry.sol';
+import {PQAuthorizationGateway} from '../src/authorization/PQAuthorizationGateway.sol';
+import {PQIdentityRegistry} from '../src/authorization/PQIdentityRegistry.sol';
+import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
+import {ProtocolHashing} from '../src/protocol/ProtocolHashing.sol';
+import {TimingPolicy, WrapperMode} from '../src/protocol/ProtocolTypes.sol';
+import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
+import {AssetSupportRegistry} from '../src/registry/AssetSupportRegistry.sol';
+import {PrototypeTimingPolicies} from '../src/registry/PrototypeTimingPolicies.sol';
+import {TimingPolicyRegistry} from '../src/registry/TimingPolicyRegistry.sol';
 import {Constants} from './Constants.sol';
 import {ICreateX} from './ICreateX.sol';
 import {PrototypeDeployment} from './PrototypeDeployment.sol';

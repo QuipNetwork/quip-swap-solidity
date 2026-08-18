@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from '../../src/AssetCustody.sol';
-import {AssetSupport} from '../../src/AssetSupport.sol';
-import {AssetSupportRegistry} from '../../src/AssetSupportRegistry.sol';
-import {AuthorizationSubmitter} from '../../src/AuthorizationSubmitter.sol';
-import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
-import {CrossChainWrapper} from '../../src/CrossChainWrapper.sol';
-import {PQAuthorizationGateway} from '../../src/PQAuthorizationGateway.sol';
-import {PQIdentityRegistry} from '../../src/PQIdentityRegistry.sol';
-import {ProgressionGate} from '../../src/ProgressionGate.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
+import {AuthorizationSubmitter} from '../../src/authorization/AuthorizationSubmitter.sol';
+import {PQAuthorizationGateway} from '../../src/authorization/PQAuthorizationGateway.sol';
+import {PQIdentityRegistry} from '../../src/authorization/PQIdentityRegistry.sol';
+import {QuipWallet} from '../../src/authorization/QuipWallet.sol';
+import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
+import {AssetCustody} from '../../src/protocol/AssetHandling.sol';
+import {AssetSupport} from '../../src/protocol/AssetHandling.sol';
+import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
+import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CommitAuthorizationRequest,
@@ -23,14 +23,14 @@ import {
   SideTerms,
   TimingPolicy,
   WrapperMode
-} from '../../src/ProtocolTypes.sol';
-import {QuipWallet} from '../../src/QuipWallet.sol';
-import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
-import {SameChainWrapper} from '../../src/SameChainWrapper.sol';
-import {Settlement} from '../../src/Settlement.sol';
-import {Asset, AssetType} from '../../src/TermsLib.sol';
-import {TimingPolicyRegistry} from '../../src/TimingPolicyRegistry.sol';
-import {ITimingPolicyRegistry} from '../../src/interfaces/ITimingPolicyRegistry.sol';
+} from '../../src/protocol/ProtocolTypes.sol';
+import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
+import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
+import {Settlement} from '../../src/protocol/Settlement.sol';
+import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
+import {TimingPolicyRegistry} from '../../src/registry/TimingPolicyRegistry.sol';
 import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';

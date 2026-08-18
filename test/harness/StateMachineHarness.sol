@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
-import {CrossChainLegState, SameChainState, SideTag} from '../../src/ProtocolTypes.sol';
-import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
+import {CrossChainLegState, SameChainState, SideTag} from '../../src/protocol/ProtocolTypes.sol';
+import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 
 contract StateMachineHarness {
   using CrossChainStateMachine for CrossChainStateMachine.Layout;

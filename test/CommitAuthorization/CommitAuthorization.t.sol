@@ -3,8 +3,8 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {CommitAuthorization} from '../../src/CommitAuthorization.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
+import {CommitAuthorization} from '../../src/protocol/CommitValidation.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   DelegationPolicy,
@@ -12,8 +12,8 @@ import {
   ProtocolTerms,
   SideTerms,
   VerifiedCommitAuthorization
-} from '../../src/ProtocolTypes.sol';
-import {Asset, AssetType} from '../../src/TermsLib.sol';
+} from '../../src/protocol/ProtocolTypes.sol';
+import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
 import {CommitAuthorizationHarness} from '../harness/CommitAuthorizationHarness.sol';
 
 contract CommitAuthorizationTest is Test {

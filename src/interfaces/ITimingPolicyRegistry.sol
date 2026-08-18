@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {TimingPolicy, WrapperMode} from '../ProtocolTypes.sol';
+import {TimingPolicy, WrapperMode} from '../protocol/ProtocolTypes.sol';
 
 interface ITimingPolicyRegistry {
   error InvalidTimingPolicy();

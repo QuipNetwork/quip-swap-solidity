@@ -3,9 +3,9 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
-import {CrossChainLegState, SameChainState, SideTag} from '../../src/ProtocolTypes.sol';
-import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
+import {CrossChainLegState, SameChainState, SideTag} from '../../src/protocol/ProtocolTypes.sol';
+import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {StateMachineHarness} from '../harness/StateMachineHarness.sol';
 
 contract StateMachinesTest is Test {

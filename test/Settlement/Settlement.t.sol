@@ -3,8 +3,7 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {CrossChainStateMachine} from '../../src/CrossChainStateMachine.sol';
-import {ProtocolHashing} from '../../src/ProtocolHashing.sol';
+import {ProtocolHashing} from '../../src/protocol/ProtocolHashing.sol';
 import {
   AuthorizationMode,
   CrossChainLegState,
@@ -14,10 +13,11 @@ import {
   SideTerms,
   TimingPolicy,
   WrapperMode
-} from '../../src/ProtocolTypes.sol';
-import {SameChainStateMachine} from '../../src/SameChainStateMachine.sol';
-import {Settlement} from '../../src/Settlement.sol';
-import {Asset, AssetType} from '../../src/TermsLib.sol';
+} from '../../src/protocol/ProtocolTypes.sol';
+import {Asset, AssetType} from '../../src/protocol/ProtocolTypes.sol';
+import {Settlement} from '../../src/protocol/Settlement.sol';
+import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SettlementHarness} from '../harness/SettlementHarness.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 

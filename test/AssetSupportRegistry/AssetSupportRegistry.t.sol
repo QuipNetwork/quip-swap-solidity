@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetSupportRegistry} from '../../src/AssetSupportRegistry.sol';
-import {AssetType} from '../../src/TermsLib.sol';
+import {AssetType} from '../../src/protocol/ProtocolTypes.sol';
+import {AssetSupportRegistry} from '../../src/registry/AssetSupportRegistry.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 

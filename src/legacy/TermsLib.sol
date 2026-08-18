@@ -6,25 +6,7 @@ import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.s
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
-/// @notice the type of asset
-enum AssetType {
-  Native,
-  ERC20,
-  ERC721,
-  ERC1155
-}
-
-/// @notice an asset to be transferred as part of a swap
-struct Asset {
-  /// @notice the type of asset
-  AssetType assetType;
-  /// @notice the contract address of the asset, zero for native
-  address target;
-  /// @notice the token id, only used for erc721 and erc1155
-  uint256 id;
-  /// @notice the amount, only used for native, erc20, and erc1155
-  uint256 amount;
-}
+import {Asset, AssetType} from '../protocol/ProtocolTypes.sol';
 
 /// @notice the terms for a single party in an Omnibus swap
 struct Terms {

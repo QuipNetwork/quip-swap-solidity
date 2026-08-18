@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ProtocolTerms, VerifiedCommitAuthorization} from '../ProtocolTypes.sol';
+import {ProtocolTerms, VerifiedCommitAuthorization} from '../protocol/ProtocolTypes.sol';
 
 interface ICommitAuthorizationReceiver {
   function receiveAuthorizedCommit(

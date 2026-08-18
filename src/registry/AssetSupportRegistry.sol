@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetType} from './TermsLib.sol';
-import {IAssetSupportRegistry} from './interfaces/IAssetSupportRegistry.sol';
+import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
+import {AssetType} from '../protocol/ProtocolTypes.sol';
 import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
 
 ///  Commit-admission allowlist for token contracts. Native assets require no entry.

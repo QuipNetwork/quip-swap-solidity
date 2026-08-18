@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {SideTerms} from './ProtocolTypes.sol';
-import {Asset, AssetType, TermsLib} from './TermsLib.sol';
+import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
+import {Asset, AssetType, SideTerms} from './ProtocolTypes.sol';
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
@@ -26,12 +26,12 @@ library AssetCustody {
         expectedNative += asset.amount;
         self.reserved[key] += asset.amount;
       } else if (asset.assetType == AssetType.ERC721) {
-        TermsLib.transferAsset(asset, side.principal, address(this));
+        _transferAsset(asset, side.principal, address(this));
         _requireERC721Owner(asset, address(this));
         self.reserved[key] += 1;
       } else {
         uint256 beforeBalance = _balance(asset);
-        TermsLib.transferAsset(asset, side.principal, address(this));
+        _transferAsset(asset, side.principal, address(this));
         if (_balance(asset) - beforeBalance != asset.amount) revert UnexpectedAmountReceived();
         self.reserved[key] += asset.amount;
       }
@@ -57,16 +57,16 @@ library AssetCustody {
         uint256 beforeBalance = asset.assetType == AssetType.ERC1155
           ? IERC1155(asset.target).balanceOf(recipient, asset.id)
           : SafeTransferLib.balanceOf(asset.target, recipient);
-        TermsLib.transferAsset(asset, address(this), recipient);
+        _transferAsset(asset, address(this), recipient);
         uint256 afterBalance = asset.assetType == AssetType.ERC1155
           ? IERC1155(asset.target).balanceOf(recipient, asset.id)
           : SafeTransferLib.balanceOf(asset.target, recipient);
         if (afterBalance - beforeBalance != amount) revert UnexpectedAmountReceived();
       } else if (asset.assetType == AssetType.ERC721) {
-        TermsLib.transferAsset(asset, address(this), recipient);
+        _transferAsset(asset, address(this), recipient);
         _requireERC721Owner(asset, recipient);
       } else {
-        TermsLib.transferAsset(asset, address(this), recipient);
+        _transferAsset(asset, address(this), recipient);
       }
     }
   }
@@ -77,6 +77,22 @@ library AssetCustody {
 
   function assetKey(Asset memory asset) internal pure returns (bytes32) {
     return keccak256(abi.encode(asset.assetType, asset.target, asset.id));
+  }
+
+  function _transferAsset(Asset memory asset, address from, address to) private {
+    if (asset.assetType == AssetType.Native) {
+      SafeTransferLib.safeTransferETH(to, asset.amount);
+    } else if (asset.assetType == AssetType.ERC20) {
+      if (from == address(this)) {
+        SafeTransferLib.safeTransfer(asset.target, to, asset.amount);
+      } else {
+        SafeTransferLib.safeTransferFrom(asset.target, from, to, asset.amount);
+      }
+    } else if (asset.assetType == AssetType.ERC721) {
+      IERC721(asset.target).safeTransferFrom(from, to, asset.id);
+    } else {
+      IERC1155(asset.target).safeTransferFrom(from, to, asset.id, asset.amount, '');
+    }
   }
 
   function _requireERC721Owner(Asset memory asset, address expected) private view {
@@ -98,5 +114,20 @@ library AssetCustody {
       }
     }
     return SafeTransferLib.balanceOf(asset.target, address(this));
+  }
+}
+
+library AssetSupport {
+  error UnsupportedAsset(AssetType assetType, address target);
+
+  function requireSupported(SideTerms memory side, IAssetSupportRegistry registry) internal view {
+    for (uint256 i; i < side.assets.length; ++i) {
+      if (
+        side.assets[i].assetType != AssetType.Native
+          && !registry.isSupported(side.assets[i].assetType, side.assets[i].target)
+      ) {
+        revert UnsupportedAsset(side.assets[i].assetType, side.assets[i].target);
+      }
+    }
   }
 }
