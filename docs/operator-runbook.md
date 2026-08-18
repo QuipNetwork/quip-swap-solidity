@@ -227,8 +227,15 @@ NOW=$(cast block latest --rpc-url http://127.0.0.1:8545 --field timestamp)
 
 ### 2. Negotiations
 
-- Have Alice create terms with generous manual-operation windows and export
-  the public offer.
+The protocol commands below use `--summary-json`. It reports the action result,
+asset changes, locks, and only preimages already published by a successful
+on-chain submission. Use `--json` instead when the complete automation envelope
+is required.
+
+
+#### 2.1. Alice create terms
+
+Alice creates terms with generous manual-operation windows and export the public offer.
 
 ```sh
 jq -n --argjson now "$NOW" '{
@@ -242,149 +249,173 @@ jq -n --argjson now "$NOW" '{
   partyAuthorizationExpiry:($now + 432000 | tostring),
   counterpartyAuthorizationExpiry:($now + 518400 | tostring)
 }' |
-  bun run src/bin/quip-swap.ts prepare-trade --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+  bun run src/bin/quip-swap.ts prepare-trade --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
 ```
 
-- Have Bob import Alice's public offer into his own client state.
+#### 2.2. Bob imports terms
+
+Bob imports Alice's public offer into his own client state.
 
 ```sh
-bun run src/bin/quip-swap.ts import-offer --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json \
+bun run src/bin/quip-swap.ts import-offer --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json \
   < "$ALICE_ROOT/public/offer.json"
 ```
 
   Run `import-offer` only once. If the CLI says the exact offer is already
   imported, continue with `accept-trade`. If it says the offer is already
-  imported and accepted, skip both commands and continue with
-  `submit-alice-commit`.
+  imported and accepted, skip both commands. Alice's commit is independent of
+  this Bob-local review state.
 
-- Have Bob validate and accept the imported trade.
 
-```sh
-bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
+#### 2.3. Bob validates terms
 
-  Run `accept-trade` only once. If the CLI says the trade is already accepted,
-  continue with `submit-alice-commit`.
-
-- Combine Bob's acceptance with Alice's confirmation and submit Alice's funded
-  commit on chain 31337. This transaction verifies and publishes the
-  trade-bound Bob-commit preimage atomically with Alice's escrow.
+Bob validates the imported trade.
 
 ```sh
-jq -n --slurpfile acceptance "$BOB_ROOT/public/acceptance.json" \
-  '{schema:"quip-swap-alice-commit.v1",confirmed:true,acceptance:$acceptance[0]}' |
-  bun run src/bin/quip-swap.ts submit-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts accept-trade --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
-### 2. Alice.commit
-- Have Alice observe that her commit exists but is not final yet.
+  Run `accept-trade` only once. If the CLI says the trade is already accepted, continue with Bob's later observation and commit steps. This acceptance is a
+  local client decision and is never transferred to Alice or submitted on-chain.
+
+
+### 3. Alice.commit
+
+#### 3.1. submit-alice-commit
+Alice submits her funded commit on chain 31337 using the same canonical terms held by both parties. The transaction also verifies and publishes the trade-bound Bob-commit preimage atomically with Alice's escrow.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+jq -n '{schema:"quip-swap-alice-commit.v1",confirmed:true}' |
+  bun run src/bin/quip-swap.ts submit-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
 ```
 
-- Have Bob independently observe Alice's still-non-final commit and verify its
-  published Bob-commit preimage. Bob's client records the warning but does not
-  enable that preimage for submission yet.
+#### 3.2. Alice -> observe-alice-commit
+
+Alice observes that her commit exists but is not final yet.
+```sh
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
+```
+
+#### 3.3. Bob -> observe-alice-commit
+
+Bob independently observes Alice's still-non-final commit and verify its published Bob-commit preimage. Bob's client records the warning but does not enable that preimage for submission yet.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
-- Mine two additional blocks on chain 31337 to reach three confirmations.
+#### 3.4. Mine Alice confirmation blocks
+
+Mine two additional blocks on chain 31337 to reach three confirmations.
 
 ```sh
 cast rpc --rpc-url http://127.0.0.1:8545 anvil_mine 0x2
 ```
 
-- Have Alice record that her commit is now final.
+#### 3.5. Alice observes her commit's finality
+
+Alice records that her commit is now final.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-alice-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
 ```
+#### 3.6. Bob observes Alice commit's finality
 
-- Have Bob independently record that Alice's commit is now final. This command
-  extracts the authenticated on-chain preimage into Bob's private workspace and
-  enables `submit-bob-commit`; there is no separate Alice-to-Bob handoff.
+Bob independently records that Alice's commit is now final. This command extracts the authenticated on-chain preimage into Bob's private workspace and enables `submit-bob-commit`.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-alice-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
-### 3. Bob.commit
+### 4. Bob.commit
 
-- Have Bob submit his funded commit on chain 31338.
+#### 4.1. submit-bob-commit
 
-  Confirm that this command returns `ok: true` and a transaction hash before
-  running either `observe-bob-commit` command. Observation cannot reconstruct
-  a submission that never produced Bob's local transaction journal.
-
-  ```sh
-bun run src/bin/quip-swap.ts submit-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
-```
-
-- Have Bob observe and validate his submitted commit.
+Bob submits his funded commit on chain 31338.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts submit-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json --yes
 ```
 
-- Have Alice independently observe and validate Bob's commit.
+#### 4.2. Bob observe-bob-commit
+
+Bob observes and validates his submitted commit.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-bob-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-bob-commit --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
-### 4. Alice.claim
 
-- Have Alice reveal the settlement preimage by claiming Bob's asset on chain
+#### 4.3. Alice observe-bob-commit
+
+Alice independently observes and validates Bob's commit.
+
+```sh
+bun run src/bin/quip-swap.ts observe-bob-commit --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
+```
+### 5. Alice.claim
+
+
+#### 5.1. submit-revealing-claim
+Alice reveals the settlement preimage by claiming Bob's asset on chain
   31338.
 
 ```sh
-bun run src/bin/quip-swap.ts submit-revealing-claim --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json --yes
+bun run src/bin/quip-swap.ts submit-revealing-claim --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json --yes
 ```
 
-- Have Bob observe the revealing claim before it is final.
+#### 5.2. Bob observes the non-final reveal
+
+Bob observes the revealing claim before it is final.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
-- Mine two additional blocks on chain 31338 to finalize the revealing claim.
+#### 5.3. Mining
+
+Mine two additional blocks on chain 31338 to finalize the revealing claim.
 
 ```sh
 cast rpc --rpc-url http://127.0.0.1:8546 anvil_mine 0x2
 ```
 
-- Have Bob record the final reveal and recover its authenticated settlement
-  preimage.
+#### 5.4. Bob observe-reveal
+
+Bob records the final reveal and recovers its authenticated settlement preimage.
 
 ```sh
-bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
-```
-### 5. Bob.claim
-
-- Have Bob use the preimage to claim Alice's asset on chain 31337.
-
-```sh
-bun run src/bin/quip-swap.ts submit-final-claim --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json --yes
+bun run src/bin/quip-swap.ts observe-reveal --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
-- Show Alice's independently reconstructed cross-chain status.
+### 6. Bob.claim
+
+
+#### 6.1. Bob submit-final-claim
+Bob uses the preimage to claim Alice's asset on chain 31337.
 
 ```sh
-bun run src/bin/quip-swap.ts status --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --json
+bun run src/bin/quip-swap.ts submit-final-claim --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json --yes
 ```
 
-- Show Bob's independently reconstructed cross-chain status.
+#### 6.2. Alice checks status
+
+Show Alice's independently reconstructed cross-chain status.
 
 ```sh
-bun run src/bin/quip-swap.ts status --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --json
+bun run src/bin/quip-swap.ts status --party alice --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
+```
+#### 6.3. Bob checks status
+
+Show Bob's independently reconstructed cross-chain status.
+
+```sh
+bun run src/bin/quip-swap.ts status --party bob --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
 Both status commands must report `success`, `complete: true`, and `Claimed`
 on both chains. The chain-31337 recipient balance must be 10 demo tokens, the
 chain-31338 recipient balance 20 demo tokens, and both wrapper balances zero.
 
-### 6. cleanups
+### 7. cleanups
 - Stop only the Anvil processes recorded by this run.
 
 ```sh

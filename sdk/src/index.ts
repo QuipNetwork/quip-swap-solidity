@@ -236,6 +236,7 @@ export {
   assertRedactedOutput,
 } from './cliOutput.js'
 export type {TrustedClientStatusResult} from './cliOutput.js'
+export {CONSOLE_SUMMARY_SCHEMA, summarizeConsoleOutput} from './consoleSummary.js'
 export type {
   SecretStateMode,
   AliceSecretState,

@@ -4,7 +4,7 @@ import {concatHex, createPublicClient, createWalletClient, defineChain, encodeAb
 import type {Address, Hash, Hex, PublicClient, WalletClient} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {applyPartyCommand} from './cliCommands.js'
-import {loadConsoleRuntimeConfig, parseConsoleOffer, TRADE_ACCEPTANCE_SCHEMA} from './consoleTrade.js'
+import {loadConsoleRuntimeConfig, parseConsoleOffer} from './consoleTrade.js'
 import type {ConsoleRuntimeConfig} from './consoleTrade.js'
 import {CrossChainLegState, ExpectedSourceState, KeyRole, commitPayloadHash, keyPossessionDigest, registrationDigest} from './protocol.js'
 import type {CommitAuthorizationRequest, InitialRegistration, ProtocolTerms} from './protocol.js'
@@ -41,7 +41,6 @@ export interface AliceCommitBoundary {
 interface AliceCommitInput {
   readonly schema: typeof ALICE_COMMIT_INPUT_SCHEMA
   readonly confirmed: true
-  readonly acceptance: {readonly schema: typeof TRADE_ACCEPTANCE_SCHEMA; readonly networkId: string; readonly tradeId: Hex32; readonly bob: Address}
 }
 
 interface AliceCommitJournal {
@@ -67,9 +66,8 @@ const isHex32 = (value: unknown): value is Hex32 => typeof value === 'string' &&
 function parseInput(serialized: string): AliceCommitInput {
   if (/settlementSecret|bobCommitSecret|privateKey|signature/i.test(serialized)) throw new Error('Alice commit input contains forbidden sensitive material')
   const value = record(JSON.parse(serialized), 'Alice commit input')
-  const acceptance = record(value['acceptance'], 'trade acceptance')
   if (value['schema'] !== ALICE_COMMIT_INPUT_SCHEMA || value['confirmed'] !== true) throw new Error('Alice commit requires explicit confirmed=true input')
-  if (acceptance['schema'] !== TRADE_ACCEPTANCE_SCHEMA || typeof acceptance['networkId'] !== 'string' || !isHex32(acceptance['tradeId']) || !isAddress(acceptance['bob'])) throw new Error('invalid Bob acceptance')
+  if (Object.keys(value).some(key => key !== 'schema' && key !== 'confirmed')) throw new Error('Alice commit input contains unsupported fields; Bob acceptance is not part of Alice commit')
   return value as unknown as AliceCommitInput
 }
 
@@ -141,12 +139,11 @@ async function publishReference(config: ConsoleRuntimeConfig, journal: AliceComm
 
 export async function submitAliceCommit(args: {readonly workspace: string; readonly configPath: string; readonly input: string; readonly boundary?: AliceCommitBoundary; readonly onPreview?: (preview: AliceCommitPreview) => void}): Promise<{readonly tradeId: Hex32; readonly transactionHash: Hash; readonly lifecycle: 'pending' | 'success'; readonly reused: boolean; readonly preview: AliceCommitPreview}> {
   const config = await loadConsoleRuntimeConfig(args.configPath, 'alice')
-  const input = parseInput(args.input)
+  parseInput(args.input)
   return withWorkspaceMutation(args.workspace, async () => {
     const expected = {party: 'alice' as const, networkId: config.identity.networkId, configDigest: config.identity.digest}
     const restored = await restoreWorkspaceWorkflowState(args.workspace, expected)
     if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice') throw new Error('Alice commit requires Alice state')
-    if (input.acceptance.networkId !== config.identity.networkId || input.acceptance.tradeId !== restored.publicState.tradeId || input.acceptance.bob.toLowerCase() !== config.actors.bob.toLowerCase()) throw new Error('Bob acceptance does not match this exact trade')
     const offer = parseConsoleOffer(await readFile(join(resolve(args.workspace), 'public', 'offer.json'), 'utf8'))
     if (offer.tradeId !== restored.publicState.tradeId) throw new Error('workspace offer TradeID mismatch')
     const view = preview(config, restored.terms, offer.authorizationEvidence.partyExpiry)

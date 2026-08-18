@@ -4,14 +4,16 @@ The Step 14 CLI uses one executable and keeps Alice and Bob in separate client
 boundaries:
 
 ```text
-quip-swap <alice|bob> <command> --state-dir <party-directory> [--input <json-file|->] [--json]
+quip-swap <command> --party <alice|bob> --state-root <party-directory> --config <path> [--json|--summary-json]
 ```
 
-`--state-dir` always names only the selected party's directory. Structured command
-inputs come from a JSON file or standard input (`--input -`). Secrets are never
-accepted as command-line arguments. `--json` emits exactly one JSON object to stdout;
-operator diagnostics go to stderr. The trusted-workflow command layer is implemented;
-the operator-facing formatter and executable assembly follow in the remaining demo tasks.
+`--state-root` always names only the selected party's directory. Structured command
+inputs come from standard input. Secrets are never accepted as command-line
+arguments. `--json` preserves the complete stable automation envelope.
+`--summary-json` emits the smaller `quip-swap-summary.v1` operator view containing
+the action result, transaction state, relevant amounts, locks, warnings, and only
+those preimages already published on-chain. The two JSON modes are mutually
+exclusive and emit exactly one uncolored object to standard output.
 
 The public commands are defined by `cliCommandSpecs` in `cliSurface.ts`. `status` is
 the only read-only command; every other command writes only the selected party's
@@ -28,7 +30,10 @@ Every command returns the `quip-swap-cli.v1` envelope defined in `cliSurface.ts`
 - `ok: false` and a stable `error { code, message, details? }`.
 
 Big integers, hashes, addresses, and transaction identifiers are encoded as strings.
-No normal result or error field may contain a secret preimage.
+No normal `--json` result or error field contains a secret preimage. The explicit
+`--summary-json` view may show `BobCommitSecret` after Alice broadcasts her commit
+and may show `Secret` after Alice broadcasts the revealing claim; neither appears
+before its publication action succeeds.
 
 Each party directory publishes matched public and secret generations through an
 atomically replaced `current` pointer. Generation files are created with mode `0600`;

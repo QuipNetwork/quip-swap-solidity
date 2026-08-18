@@ -153,8 +153,8 @@ export async function importConsoleOffer(args: {readonly workspace: string; read
   if (manifest.tradeId !== null) {
     if (manifest.tradeId !== offer.tradeId) throw new Error(`Bob workspace already contains trade ${manifest.tradeId}. Reset the local demo before importing a different offer.`)
     try {
-      await readFile(join(resolve(args.workspace), 'public', 'acceptance.json'), 'utf8')
-      throw new Error('This exact offer is already imported and accepted. Continue with submit-alice-commit; do not run import-offer or accept-trade again.')
+      await readFile(join(resolve(args.workspace), 'journal', 'acceptance.json'), 'utf8')
+      throw new Error("This exact offer is already imported and accepted in Bob's workspace; do not run import-offer or accept-trade again.")
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('This exact offer')) throw error
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error

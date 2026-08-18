@@ -56,7 +56,7 @@ try {
   const tradeId = String(prepare.result.tradeId)
   command('import-offer', 'bob', bobRoot, bobConfig, read(join(aliceRoot, 'public', 'offer.json')))
   command('accept-trade', 'bob', bobRoot, bobConfig)
-  command('submit-alice-commit', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-alice-commit.v1', confirmed: true, acceptance: JSON.parse(read(join(bobRoot, 'public', 'acceptance.json')))}))
+  command('submit-alice-commit', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-alice-commit.v1', confirmed: true}))
   command('observe-alice-commit', 'alice', aliceRoot, aliceConfig)
   command('observe-alice-commit', 'bob', bobRoot, bobConfig)
   await rpc('http://127.0.0.1:8545', 'anvil_mine', ['0x2'])
