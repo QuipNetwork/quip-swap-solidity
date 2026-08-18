@@ -34,6 +34,7 @@
     "test:integration:verbose": "bun run scripts/run-integration-tests.ts --reporter=verbose",
     "test:cross-chain": "bun run scripts/run-cross-chain-tests.ts",
     "demo:full": "bun run scripts/run-full-demo.ts",
+    "demo:cross-chain:recovery": "bun run scripts/run-cross-chain-recovery-demo.ts",
     "demo:same-chain": "bun run scripts/run-same-chain-demo.ts",
     "demo:same-chain:validate": "bun run scripts/validate-same-chain-artifact.ts",
     "demo:console": "bun run scripts/run-console-demo.ts",

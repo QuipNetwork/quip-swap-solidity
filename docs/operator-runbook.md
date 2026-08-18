@@ -592,3 +592,25 @@ success traces, terminal custody mismatches, and forbidden sensitive fields.
 Transaction hashes may differ between fresh Anvil runs; the ordered logical
 transitions, authorization decisions, controls, recovery outcomes, and final
 custody must agree.
+
+## Run the two-chain recovery demo
+
+- Enter the SDK directory so the package command resolves its local toolchain.
+
+```sh
+cd sdk
+```
+
+- Run four snapshot-isolated live recovery branches on chains 31337 and 31338.
+
+```sh
+bun run demo:cross-chain:recovery
+```
+
+The command demonstrates `(Reclaimed, Reclaimed)` when neither party claims,
+`(Reclaimed, Claimed)` when the revealing claim lands but the final claim is
+omitted, and both claim-winning and reclaim-winning local terminal races. It
+also verifies that dropped, replaced, reverted, and reorganized observations do
+not advance trusted finality. The redacted artifact is written to
+`../demo-artifacts/cross-chain-recovery-demo.json`; pass another path as the
+first argument to select a different output file.

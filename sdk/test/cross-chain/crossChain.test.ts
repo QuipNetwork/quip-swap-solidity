@@ -23,6 +23,7 @@ import {
   serializeDemoDeploymentArtifact,
 } from '../../scripts/demo-environment.js'
 import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
+import {runCrossChainRecoveryDemo, validateCrossChainRecoveryArtifact} from '../../scripts/cross-chain-recovery-demo.js'
 import {readCrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
 import {
   fullDemoLogicalFingerprint,
@@ -265,6 +266,18 @@ describe('v1.1 deployment smoke', () => {
     }
     expect(() => validateFullDemoArtifact(incomplete)).toThrow('settlement trace is incomplete')
     expect(serializeFullDemo(artifact)).toContain('quip-swap-full-demo.v1')
+  })
+
+  it('runs live two-chain recovery and terminal-race branches', async () => {
+    const artifact = await runCrossChainRecoveryDemo(chainA, chainB, loadArtifact)
+    expect(() => validateCrossChainRecoveryArtifact(artifact)).not.toThrow()
+    expect(artifact.outcomes.map(outcome => outcome.finalStates.map(state => state.state))).toEqual([
+      ['Reclaimed', 'Reclaimed'],
+      ['Reclaimed', 'Claimed'],
+      ['Claimed', 'Claimed'],
+      ['Reclaimed', 'Claimed'],
+    ])
+    expect(artifact.observations.filter(value => value.lifecycle !== 'final').every(value => !value.advanced)).toBe(true)
   })
 
   it('emits the deterministic two-chain CREATE3 bootstrap artifact', () => {

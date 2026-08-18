@@ -55,6 +55,7 @@ contract WrapperFundingTest is Test {
   bytes internal bobKey;
   bytes internal brokerKey;
   bytes internal walletKey;
+  bytes internal bobWalletKey;
 
   KeyBoundVerifierMock internal verifier;
   DirectAuthorization internal registry;
@@ -63,6 +64,7 @@ contract WrapperFundingTest is Test {
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
   QuipWallet internal wallet;
+  QuipWallet internal bobWallet;
   RegisteredCommitTargetHarness internal registrationTarget;
   ERC20Mock internal token;
 
@@ -78,6 +80,7 @@ contract WrapperFundingTest is Test {
     bobKey = _key('bob');
     brokerKey = _key('broker');
     walletKey = _key('wallet');
+    bobWalletKey = _key('bob-wallet');
     _register(alice, aliceKey);
     _register(bob, bobKey);
     _register(broker, brokerKey);
@@ -86,6 +89,7 @@ contract WrapperFundingTest is Test {
     cross = new CrossChainWrapper(address(gateway), assetSupport);
     same = new SameChainWrapper(address(gateway), assetSupport);
     wallet = new QuipWallet(address(this), registry, walletKey);
+    bobWallet = new QuipWallet(bob, registry, bobWalletKey);
     token = new ERC20Mock('Token', 'TOK', 18);
   }
 
@@ -737,6 +741,104 @@ contract WrapperFundingTest is Test {
     assertEq(same.reserved(reclaimedTerms.partySide.assets[0]), 0);
   }
 
+  function test_authorizationMatrixCompletesDirectDirectWalletWalletAndMixedSwaps() public {
+    _completeMatrixSwap(AuthorizationMode.RegisteredDirect, AuthorizationMode.RegisteredDirect, 1000);
+    _completeMatrixSwap(AuthorizationMode.QuipWallet, AuthorizationMode.QuipWallet, 1100);
+    _completeMatrixSwap(AuthorizationMode.QuipWallet, AuthorizationMode.RegisteredDirect, 1200);
+  }
+
+  function test_specificDelegatePrincipalAndBrokerCompleteSwapsWithPrincipalSignature() public {
+    (ProtocolTerms memory principalTerms, bytes32 principalLock, ERC20Mock principalToken, ERC20Mock bobToken) =
+      _matrixTerms(AuthorizationMode.RegisteredDirect, AuthorizationMode.RegisteredDirect, 1300);
+    principalTerms.partySide.delegationPolicy = DelegationPolicy.SpecificDelegate;
+    principalTerms.partySide.delegate = broker;
+    principalTerms.partySide.delegateKeyVersion = 1;
+    principalLock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(principalTerms), SECRET);
+    _fundMatrix(principalTerms, principalToken, bobToken);
+    _matrixCommit(principalTerms, true, principalLock, 1301, alice, aliceKey);
+    _matrixCommit(principalTerms, false, principalLock, 1302, bob, bobKey);
+    vm.prank(RELAYER);
+    same.claim(principalTerms, principalLock, SECRET);
+    _assertMatrixFinal(principalTerms, principalLock, principalToken, bobToken);
+
+    (ProtocolTerms memory brokerTerms, bytes32 brokerLock, ERC20Mock brokerToken, ERC20Mock secondBobToken) =
+      _matrixTerms(AuthorizationMode.RegisteredDirect, AuthorizationMode.RegisteredDirect, 1400);
+    brokerTerms.partySide.delegationPolicy = DelegationPolicy.SpecificDelegate;
+    brokerTerms.partySide.delegate = broker;
+    brokerTerms.partySide.delegateKeyVersion = 1;
+    brokerLock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(brokerTerms), SECRET);
+    _fundMatrix(brokerTerms, brokerToken, secondBobToken);
+
+    CommitAuthorizationRequest memory brokerRequest = _request(address(same), brokerTerms, true, brokerLock, 1401);
+    vm.expectRevert(DirectAuthorization.InvalidPQAuthorization.selector);
+    vm.prank(broker);
+    gateway.authorizeCommit(brokerRequest, _signature(brokerRequest, address(gateway), brokerKey));
+    assertEq(brokerToken.balanceOf(alice), 10 ether);
+    assertEq(brokerToken.balanceOf(address(same)), 0);
+
+    _matrixCommit(brokerTerms, true, brokerLock, 1401, broker, aliceKey);
+    assertEq(brokerToken.balanceOf(alice), 0);
+    assertEq(brokerToken.balanceOf(broker), 0);
+    assertEq(brokerToken.balanceOf(address(same)), 10 ether);
+    _matrixCommit(brokerTerms, false, brokerLock, 1402, bob, bobKey);
+    vm.prank(RELAYER);
+    same.claim(brokerTerms, brokerLock, SECRET);
+    _assertMatrixFinal(brokerTerms, brokerLock, brokerToken, secondBobToken);
+  }
+
+  function test_permissionlessRelayerCompletesSwapWhilePrincipalsFundAndTermsFixPayouts() public {
+    (ProtocolTerms memory terms, bytes32 lock, ERC20Mock aliceToken, ERC20Mock bobToken) =
+      _matrixTerms(AuthorizationMode.RegisteredDirect, AuthorizationMode.RegisteredDirect, 1500);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
+    terms.counterpartySide.delegationPolicy = DelegationPolicy.Permissionless;
+    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+    _fundMatrix(terms, aliceToken, bobToken);
+
+    _matrixCommit(terms, true, lock, 1501, RELAYER, aliceKey);
+    _matrixCommit(terms, false, lock, 1502, RELAYER, bobKey);
+    assertEq(aliceToken.balanceOf(RELAYER), 0);
+    assertEq(bobToken.balanceOf(RELAYER), 0);
+    assertEq(aliceToken.balanceOf(address(same)), 10 ether);
+    assertEq(bobToken.balanceOf(address(same)), 20 ether);
+
+    vm.prank(RELAYER);
+    same.claim(terms, lock, SECRET);
+    _assertMatrixFinal(terms, lock, aliceToken, bobToken);
+    assertEq(aliceToken.balanceOf(RELAYER), 0);
+    assertEq(bobToken.balanceOf(RELAYER), 0);
+  }
+
+  function test_notAllowedRejectsNonprincipalOnDirectAndWalletBeforeAllEffects() public {
+    (ProtocolTerms memory terms, bytes32 lock, ERC20Mock aliceToken, ERC20Mock bobToken) =
+      _matrixTerms(AuthorizationMode.RegisteredDirect, AuthorizationMode.QuipWallet, 1600);
+    _fundMatrix(terms, aliceToken, bobToken);
+
+    CommitAuthorizationRequest memory aliceRequest = _request(address(same), terms, true, lock, 1601);
+    vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
+    vm.prank(RELAYER);
+    gateway.authorizeCommit(aliceRequest, _signature(aliceRequest, address(gateway), aliceKey));
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Unused));
+    assertEq(aliceToken.balanceOf(alice), 10 ether);
+    assertEq(aliceToken.balanceOf(address(same)), 0);
+
+    // The exact same authorization nonce succeeds for the principal, proving
+    // the rejected transport consumed neither wrapper nor nonce state.
+    _matrixCommit(terms, true, lock, 1601, alice, aliceKey);
+
+    CommitAuthorizationRequest memory bobRequest = _request(address(same), terms, false, lock, 1602);
+    vm.expectRevert(AuthorizationSubmitter.InvalidTransportSubmitter.selector);
+    vm.prank(RELAYER);
+    bobWallet.authorizeCommit(bobRequest, _signature(bobRequest, address(bobWallet), bobWalletKey));
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
+    assertEq(bobToken.balanceOf(address(bobWallet)), 20 ether);
+    assertEq(bobToken.balanceOf(address(same)), 0);
+
+    _matrixCommit(terms, false, lock, 1602, address(bobWallet), bobWalletKey);
+    vm.prank(RELAYER);
+    same.claim(terms, lock, SECRET);
+    _assertMatrixFinal(terms, lock, aliceToken, bobToken);
+  }
+
   function test_sameChainProductionWrapperCommitsAndSettlesBothPrincipalFundedLegs() public {
     ERC20Mock bobToken = new ERC20Mock('Bob', 'BOB', 18);
     ProtocolTerms memory terms;
@@ -763,6 +865,136 @@ contract WrapperFundingTest is Test {
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
     assertEq(bobToken.balanceOf(RECIPIENT), 20 ether);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function _completeMatrixSwap(
+    AuthorizationMode partyMode,
+    AuthorizationMode counterpartyMode,
+    uint256 nonce
+  ) internal {
+    (ProtocolTerms memory terms, bytes32 lock, ERC20Mock partyToken, ERC20Mock counterpartyToken) =
+      _matrixTerms(partyMode, counterpartyMode, nonce);
+    _fundMatrix(terms, partyToken, counterpartyToken);
+    _matrixCommit(
+      terms,
+      true,
+      lock,
+      nonce + 1,
+      terms.partySide.principal,
+      partyMode == AuthorizationMode.QuipWallet ? walletKey : aliceKey
+    );
+    _matrixCommit(
+      terms,
+      false,
+      lock,
+      nonce + 2,
+      terms.counterpartySide.principal,
+      counterpartyMode == AuthorizationMode.QuipWallet ? bobWalletKey : bobKey
+    );
+    vm.prank(RELAYER);
+    same.claim(terms, lock, SECRET);
+    _assertMatrixFinal(terms, lock, partyToken, counterpartyToken);
+  }
+
+  function _matrixTerms(
+    AuthorizationMode partyMode,
+    AuthorizationMode counterpartyMode,
+    uint256 nonce
+  ) internal returns (ProtocolTerms memory terms, bytes32 lock, ERC20Mock partyToken, ERC20Mock counterpartyToken) {
+    partyToken = new ERC20Mock('Matrix Party', 'MPA', 18);
+    counterpartyToken = new ERC20Mock('Matrix Counterparty', 'MCO', 18);
+    address partyPrincipal = partyMode == AuthorizationMode.QuipWallet ? address(wallet) : alice;
+    address counterpartyPrincipal = counterpartyMode == AuthorizationMode.QuipWallet ? address(bobWallet) : bob;
+    terms.partySide = _side(
+      partyPrincipal,
+      partyMode,
+      partyMode == AuthorizationMode.QuipWallet ? 0 : 1,
+      _oneAsset(AssetType.ERC20, address(partyToken), 0, 10 ether),
+      nonce
+    );
+    terms.counterpartySide = _side(
+      counterpartyPrincipal,
+      counterpartyMode,
+      counterpartyMode == AuthorizationMode.QuipWallet ? 0 : 1,
+      _oneAsset(AssetType.ERC20, address(counterpartyToken), 0, 20 ether),
+      nonce + 1
+    );
+    terms.partySide.commitmentDeadline = 200;
+    terms.partySide.claimDeadline = 300;
+    terms.partySide.reclaimRelease = 500;
+    terms.counterpartySide.commitmentDeadline = 220;
+    terms.counterpartySide.claimDeadline = 320;
+    terms.counterpartySide.reclaimRelease = 520;
+    terms.partySide.recipient = bob;
+    terms.counterpartySide.recipient = alice;
+    terms.partySide.reclaimRecipient = partyPrincipal;
+    terms.counterpartySide.reclaimRecipient = counterpartyPrincipal;
+    lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);
+  }
+
+  function _fundMatrix(ProtocolTerms memory terms, ERC20Mock partyToken, ERC20Mock counterpartyToken) internal {
+    partyToken.mint(terms.partySide.principal, 10 ether);
+    counterpartyToken.mint(terms.counterpartySide.principal, 20 ether);
+    if (terms.partySide.authorizationMode == AuthorizationMode.QuipWallet) {
+      wallet.execute(address(partyToken), 0, abi.encodeCall(partyToken.approve, (address(same), 10 ether)));
+    } else {
+      vm.prank(alice);
+      partyToken.approve(address(same), 10 ether);
+    }
+    if (terms.counterpartySide.authorizationMode == AuthorizationMode.QuipWallet) {
+      vm.prank(bob);
+      bobWallet.execute(
+        address(counterpartyToken), 0, abi.encodeCall(counterpartyToken.approve, (address(same), 20 ether))
+      );
+    } else {
+      vm.prank(bob);
+      counterpartyToken.approve(address(same), 20 ether);
+    }
+  }
+
+  function _matrixCommit(
+    ProtocolTerms memory terms,
+    bool party,
+    bytes32 lock,
+    uint256 nonce,
+    address caller,
+    bytes memory principalKey
+  ) internal {
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    address boundary = side.authorizationMode == AuthorizationMode.QuipWallet ? side.principal : address(gateway);
+    CommitAuthorizationRequest memory request = _request(address(same), terms, party, lock, nonce);
+    bytes memory signature = _signature(request, boundary, principalKey);
+    if (side.authorizationMode == AuthorizationMode.RegisteredDirect) {
+      vm.prank(caller);
+      gateway.authorizeCommit(request, signature);
+    } else if (caller == side.principal) {
+      if (side.principal == address(wallet)) {
+        wallet.execute(address(wallet), 0, abi.encodeCall(wallet.authorizeCommit, (request, signature)));
+      } else {
+        vm.prank(bob);
+        bobWallet.execute(address(bobWallet), 0, abi.encodeCall(bobWallet.authorizeCommit, (request, signature)));
+      }
+    } else {
+      vm.prank(caller);
+      QuipWallet(payable(side.principal)).authorizeCommit(request, signature);
+    }
+  }
+
+  function _assertMatrixFinal(
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    ERC20Mock partyToken,
+    ERC20Mock counterpartyToken
+  ) internal view {
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+    assertEq(partyToken.balanceOf(terms.partySide.principal), 0);
+    assertEq(counterpartyToken.balanceOf(terms.counterpartySide.principal), 0);
+    assertEq(partyToken.balanceOf(terms.partySide.recipient), 10 ether);
+    assertEq(counterpartyToken.balanceOf(terms.counterpartySide.recipient), 20 ether);
+    assertEq(partyToken.balanceOf(address(same)), 0);
+    assertEq(counterpartyToken.balanceOf(address(same)), 0);
+    assertEq(same.reserved(terms.partySide.assets[0]), 0);
+    assertEq(same.reserved(terms.counterpartySide.assets[0]), 0);
   }
 
   function _sameChainNativeTerms(
