@@ -2,7 +2,7 @@ import type {Abi, Address, Hex} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {
   ActionTag, AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode,
-  assetHash, commitPayloadHash, deriveCommitLock, gateContextId, gateTerms, settlementLock, tradeId, validateCommitProgression, validateProtocolTerms,
+  assetHash, commitPayloadHash, deriveCommitLock, expectedSourceState, gateContextId, gateTerms, settlementLock, tradeId, validateCommitProgression, validateProtocolTerms, wrapperMode,
   encodeAuthorizationNonceKey, encodeRegistryNonceKey,
 } from '../../src/protocol.js'
 import type {ProtocolTerms, SideTerms, TimingPolicy} from '../../src/protocol.js'
@@ -154,6 +154,31 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
     expect(ActionTag.Commit).toBe(0)
   })
 
+  it('matches same-chain projections and both commit sides', async () => {
+    const cross = vector()
+    const terms: ProtocolTerms = {
+      partySide: cross.partySide,
+      counterpartySide: {...cross.counterpartySide, chainId: cross.partySide.chainId, commitLock: ZERO32},
+    }
+    const encoded = abiTerms(terms)
+    const context = gateContextId(terms)
+    const trade = tradeId(terms)
+    const lock = settlementLock(trade, SECRET)
+    expect(wrapperMode(terms)).toBe(WrapperMode.SameChain)
+    expect(await read<Hex32>('exposedGateContextId', [encoded])).toBe(context)
+    expect(await read<Hex32>('exposedTradeId', [encoded])).toBe(trade)
+    expect(await read<Hex32>('exposedSettlementLock', [trade, SECRET])).toBe(lock)
+    for (const party of [true, false]) {
+      const source = expectedSourceState(party, WrapperMode.SameChain)
+      const payload = {terms, party, authorizationVerifier: VERIFIER, swapAddress: SWAP, lock,
+        expectedSourceState: source, actionNonce: ACTION_NONCE, expiry: 99n}
+      expect(await read<Hex32>('exposedAssetHash', [encoded, party]))
+        .toBe(assetHash(party ? terms.partySide : terms.counterpartySide))
+      expect(await read<Hex32>('exposedCommitPayloadHash', [encoded, party, VERIFIER, SWAP, lock,
+        source, ACTION_NONCE, 99n])).toBe(commitPayloadHash(payload))
+    }
+  })
+
   it('accepts the valid vector and rejects matching malformed vectors', async () => {
     const terms = vector()
     validateProtocolTerms(terms, policy)
@@ -222,10 +247,32 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
       const {terms, policy: generatedPolicy, secret} = generated
       const malformed: ProtocolTerms[] = [
         {...terms, partySide: {...terms.partySide, chainId: 0n}},
+        {...terms, partySide: {...terms.partySide, principal: '0x0000000000000000000000000000000000000000'}},
+        {...terms, partySide: {...terms.partySide, recipient: '0x0000000000000000000000000000000000000000'}},
+        {...terms, counterpartySide: {...terms.counterpartySide, reclaimRecipient: '0x0000000000000000000000000000000000000000'}},
+        {...terms, partySide: {...terms.partySide, authorizationMode: 9 as AuthorizationMode}},
+        {...terms, partySide: {...terms.partySide, principalKeyVersion: 1n}},
+        {...terms, counterpartySide: {...terms.counterpartySide, principalKeyVersion: 0n}},
+        {...terms, partySide: {...terms.partySide, delegationPolicy: 9 as DelegationPolicy}},
+        {...terms, partySide: {...terms.partySide, delegationPolicy: DelegationPolicy.SpecificDelegate}},
+        {...terms, counterpartySide: {...terms.counterpartySide, delegationPolicy: DelegationPolicy.NotAllowed}},
         {...terms, partySide: {...terms.partySide, commitLock: terms.counterpartySide.commitLock}},
         {...terms, counterpartySide: {...terms.counterpartySide, commitLock: ZERO32}},
         {...terms, partySide: {...terms.partySide, claimDeadline: terms.partySide.commitmentDeadline}},
-        {...terms, partySide: {...terms.partySide, delegationPolicy: DelegationPolicy.NotAllowed}},
+        {...terms, partySide: {...terms.partySide, commitmentDeadline: terms.counterpartySide.commitmentDeadline}},
+        {...terms, partySide: {...terms.partySide,
+          claimDeadline: terms.counterpartySide.reclaimRelease + 1n,
+          reclaimRelease: terms.counterpartySide.reclaimRelease + 2n}},
+        {...terms, counterpartySide: {...terms.counterpartySide,
+          claimDeadline: terms.partySide.reclaimRelease + 1n,
+          reclaimRelease: terms.partySide.reclaimRelease + 2n}},
+        {...terms, partySide: {...terms.partySide, assets: []}},
+        {...terms, partySide: {...terms.partySide, assets: [{...terms.partySide.assets[0]!, amount: 0n}]}},
+        {...terms, partySide: {...terms.partySide,
+          assets: [terms.partySide.assets[0]!, terms.partySide.assets[0]!]}},
+        {...terms, partySide: {...terms.partySide, assets: [{
+          ...terms.partySide.assets[0]!, assetType: 9 as AssetType,
+        }]}},
       ]
       for (const candidate of [terms, ...malformed]) {
         const sdk = sdkAccepts(() => validateProtocolTerms(candidate, generatedPolicy))

@@ -1,6 +1,7 @@
 import {encodeAbiParameters, keccak256, zeroAddress} from 'viem'
 import type {Address, Hex} from 'viem'
 import {assetArrayAbiParameter} from './hashing.js'
+import {AssetType} from './types.js'
 import type {Asset, Hex32} from './types.js'
 
 export enum AuthorizationMode { QuipWallet, RegisteredDirect }
@@ -120,6 +121,9 @@ function hashTerms(domain: string, terms: ProtocolTerms): Hex32 {
 
 export const wrapperMode = (terms: ProtocolTerms): WrapperMode =>
   terms.partySide.chainId === terms.counterpartySide.chainId ? WrapperMode.SameChain : WrapperMode.CrossChain
+
+export const expectedSourceState = (party: boolean, mode: WrapperMode): ExpectedSourceState =>
+  !party && mode === WrapperMode.SameChain ? ExpectedSourceState.PartyCommitted : ExpectedSourceState.Unused
 
 export const tradeId = (terms: ProtocolTerms): Hex32 => hashTerms(domains.terms, terms)
 
@@ -292,15 +296,20 @@ function validateSide(side: SideTerms): void {
   const invalid = () => { throw new Error('Invalid protocol side terms') }
   if (side.recipient === zeroAddress || side.reclaimRecipient === zeroAddress || side.assets.length === 0 ||
       !(side.commitmentDeadline < side.claimDeadline && side.claimDeadline < side.reclaimRelease)) invalid()
-  if ((side.authorizationMode === AuthorizationMode.QuipWallet && side.principalKeyVersion !== 0n) ||
+  if ((side.authorizationMode !== AuthorizationMode.QuipWallet &&
+      side.authorizationMode !== AuthorizationMode.RegisteredDirect) ||
+      (side.authorizationMode === AuthorizationMode.QuipWallet && side.principalKeyVersion !== 0n) ||
       (side.authorizationMode === AuthorizationMode.RegisteredDirect && side.principalKeyVersion === 0n)) invalid()
-  if ((side.delegationPolicy === DelegationPolicy.SpecificDelegate &&
+  if ((side.delegationPolicy !== DelegationPolicy.NotAllowed &&
+      side.delegationPolicy !== DelegationPolicy.Permissionless &&
+      side.delegationPolicy !== DelegationPolicy.SpecificDelegate) ||
+      (side.delegationPolicy === DelegationPolicy.SpecificDelegate &&
       (side.delegate === zeroAddress || side.delegateKeyVersion === 0n)) ||
       (side.delegationPolicy !== DelegationPolicy.SpecificDelegate &&
       (side.delegate !== zeroAddress || side.delegateKeyVersion !== 0n))) invalid()
   for (let i = 0; i < side.assets.length; i++) {
     const asset = side.assets[i]!
-    if (asset.amount <= 0n || (asset.assetType === 0 && (asset.target !== zeroAddress || asset.id !== 0n)) ||
+    if (asset.assetType < AssetType.Native || asset.assetType > AssetType.ERC1155 || asset.amount <= 0n || (asset.assetType === 0 && (asset.target !== zeroAddress || asset.id !== 0n)) ||
         (asset.assetType === 1 && (asset.target === zeroAddress || asset.id !== 0n)) ||
         (asset.assetType === 2 && (asset.target === zeroAddress || asset.amount !== 1n)) ||
         (asset.assetType === 3 && asset.target === zeroAddress)) invalid()

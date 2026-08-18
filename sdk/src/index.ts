@@ -14,6 +14,7 @@ export {
   CrossChainLegState,
   SameChainState,
   wrapperMode,
+  expectedSourceState,
   gateTerms,
   gateContextId,
   deriveCommitLock,
