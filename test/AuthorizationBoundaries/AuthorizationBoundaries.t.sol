@@ -462,6 +462,75 @@ contract AuthorizationBoundariesTest is Test {
     _assertReceiverRollback(false);
   }
 
+  function test_registeredCommitCallbackRejectsEveryInvalidContextWithoutEffects() public {
+    ProtocolTerms memory terms = _terms(directUser, AuthorizationMode.RegisteredDirect, 1);
+    CommitAuthorizationRequest memory request = _request(terms, keccak256('registered-callback'));
+    bytes32 payloadHash = _payload(request, address(gateway));
+    bytes memory signature = _signature(request, address(gateway));
+
+    vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
+    registry.completeRegisteredCommit(directUser, relayer, payloadHash, abi.encode(request, signature));
+    assertEq(receiver.commits(), 0);
+
+    vm.expectRevert(DirectAuthorization.RegistrationPayloadMismatch.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, keccak256('mismatch'), abi.encode(request, signature));
+    assertEq(receiver.commits(), 0);
+
+    ProtocolTerms memory wrongMode = _terms(directUser, AuthorizationMode.QuipWallet, 0);
+    CommitAuthorizationRequest memory invalid = _request(wrongMode, keccak256('callback-wrong-mode'));
+    vm.expectRevert(DirectAuthorization.InvalidAuthorizationMode.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, bytes32(0), abi.encode(invalid, hex''));
+    assertEq(receiver.commits(), 0);
+
+    invalid = _request(terms, keccak256('callback-wrong-chain'));
+    invalid.terms.partySide.chainId = block.chainid + 1;
+    vm.expectRevert(DirectAuthorization.InvalidChain.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, bytes32(0), abi.encode(invalid, hex''));
+    assertEq(receiver.commits(), 0);
+
+    invalid = _request(_terms(directUser, AuthorizationMode.RegisteredDirect, 1), keccak256('callback-expired'));
+    invalid.expiry = block.timestamp;
+    vm.expectRevert(DirectAuthorization.AuthorizationExpired.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, bytes32(0), abi.encode(invalid, hex''));
+    assertEq(receiver.commits(), 0);
+
+    invalid = _request(_terms(directUser, AuthorizationMode.RegisteredDirect, 1), keccak256('callback-wrong-version'));
+    invalid.terms.partySide.principalKeyVersion = 2;
+    vm.expectRevert(DirectAuthorization.InvalidVersion.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, bytes32(0), abi.encode(invalid, hex''));
+    assertEq(receiver.commits(), 0);
+
+    RegistryOperation memory revoke = RegistryOperation({
+      action: RegistryActionTag.Revoke,
+      eoa: directUser,
+      expectedActiveKeyVersion: 1,
+      expectedRecoveryKeyVersion: 1,
+      newActivePQKey: '',
+      newActiveKeyVersion: 0,
+      newRecoveryPQKey: '',
+      newRecoveryKeyVersion: 0,
+      operationNonce: keccak256('callback-revoke'),
+      expiry: 2000,
+      recoveryAuthorized: false
+    });
+    RegistryAuthorization memory authorization;
+    authorization.authorizingPQSignature = _pqSig(directPQKey, registry.operationDigest(revoke));
+    vm.prank(directUser);
+    registry.execute(revoke, authorization);
+    request = _request(_terms(directUser, AuthorizationMode.RegisteredDirect, 1), keccak256('callback-inactive'));
+    payloadHash = _payload(request, address(gateway));
+    signature = _signature(request, address(gateway));
+    vm.expectRevert(DirectAuthorization.IdentityNotActive.selector);
+    vm.prank(address(registry));
+    registry.completeRegisteredCommit(directUser, relayer, payloadHash, abi.encode(request, signature));
+    assertEq(receiver.commits(), 0);
+  }
+
   function test_atomicRegistrationEntersGatewayAndRollsBackOnCommitFailure() public {
     address newcomer = vm.addr(0xCA11);
     bytes memory newcomerKey = _key('newcomer');

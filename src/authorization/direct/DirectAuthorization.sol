@@ -81,14 +81,10 @@ contract DirectAuthorization is IActiveKeyRegistry {
 
   constructor(address trustedVerifier) {
     if (trustedVerifier.code.length == 0) revert InvalidVerifier();
-    try IProfiledPQVerifier(trustedVerifier).VERSION_TAG() returns (bytes32 version) {
-      if (version != EXPECTED_VERIFIER_VERSION) revert InvalidVerifier();
-    } catch {
+    if (_verifierMetadata(trustedVerifier, IProfiledPQVerifier.VERSION_TAG.selector) != EXPECTED_VERIFIER_VERSION) {
       revert InvalidVerifier();
     }
-    try IProfiledPQVerifier(trustedVerifier).PROFILE_TAG() returns (bytes32 profile) {
-      if (profile != EXPECTED_VERIFIER_PROFILE) revert InvalidVerifier();
-    } catch {
+    if (_verifierMetadata(trustedVerifier, IProfiledPQVerifier.PROFILE_TAG.selector) != EXPECTED_VERIFIER_PROFILE) {
       revert InvalidVerifier();
     }
     TRUSTED_VERIFIER = trustedVerifier;
@@ -396,6 +392,12 @@ contract DirectAuthorization is IActiveKeyRegistry {
 
   function _next(uint256 proposed, uint256 current) private pure {
     if (current == type(uint256).max || proposed != current + 1) revert InvalidVersion();
+  }
+
+  function _verifierMetadata(address verifier, bytes4 selector) private view returns (bytes32 metadata) {
+    (bool success, bytes memory returnData) = verifier.staticcall(abi.encodeWithSelector(selector));
+    if (!success || returnData.length != 32) revert InvalidVerifier();
+    metadata = abi.decode(returnData, (bytes32));
   }
 
   function _validateKey(bytes calldata key) private view {
