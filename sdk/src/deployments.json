@@ -10,14 +10,14 @@
     },
     {
       "chainId": 84532,
-      "deployed": false,
+      "deployed": true,
       "omnibus": "0x378417D8bC75EacA6dE0a6A6Aa16e15a7B8Ad513",
       "version": "QUIP:Omnibus:v1.0.0-alpha.3",
       "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
     },
     {
       "chainId": 11155420,
-      "deployed": false,
+      "deployed": true,
       "omnibus": "0x378417D8bC75EacA6dE0a6A6Aa16e15a7B8Ad513",
       "version": "QUIP:Omnibus:v1.0.0-alpha.3",
       "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
