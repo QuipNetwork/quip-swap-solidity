@@ -115,22 +115,18 @@ describe('registry drift — version label governs the address', () => {
   })
 
   /**
-   * KNOWN DRIFT, asserted rather than commented so it cannot be forgotten.
-   * 84532 and 11155420 were deployed against a testnet-only WalletFactory
-   * duplicate, which permanently breaks the wallet commit route there
-   * (`NotQuipWallet`). Both are pending a redeploy under a new version label.
-   * When that lands, flip these to the canonical factory — the failure is the
-   * reminder.
+   * FULL COVERAGE, asserted rather than commented so regressions cannot hide.
+   * 84532 and 11155420 originally shipped wired to a testnet-only WalletFactory
+   * duplicate (breaking the wallet commit route with `NotQuipWallet`) and were
+   * recorded not-live; both were redeployed under a bumped version label. Every
+   * registry row must now be live under the canonical factory — if a future
+   * `make sync-registry` demotes a chain, this failure is the alarm.
    */
-  it('records which chains are live under the canonical wallet factory', () => {
-    expect(resolveDeployment(BASE_MAINNET).walletFactory).toBe(CANONICAL_WALLET_FACTORY)
-
-    // Both testnets hold an Omnibus wired to a testnet-only factory duplicate,
-    // so `make sync-registry` marks them not-live. Flip these once the
-    // redeploy lands — the failure is the reminder.
-    for (const chainId of [BASE_SEPOLIA, OP_SEPOLIA]) {
+  it('records every chain as live under the canonical wallet factory', () => {
+    for (const chainId of [BASE_MAINNET, BASE_SEPOLIA, OP_SEPOLIA]) {
       const row = registryRows.find(r => r.chainId === chainId)
-      expect(row?.deployed, `chain ${chainId} unexpectedly live`).toBe(false)
+      expect(row?.deployed, `chain ${chainId} is not live`).toBe(true)
+      expect(resolveDeployment(chainId).walletFactory).toBe(CANONICAL_WALLET_FACTORY)
     }
   })
 })
