@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {Omnibus} from '../src/Omnibus.sol';
 import {IWalletFactory} from '../src/interfaces/IWalletFactory.sol';
 import {Constants} from './Constants.sol';
+import {Deployments} from './Deployments.sol';
 import {ICreateX} from './ICreateX.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
@@ -12,8 +13,16 @@ import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
  * @title DeployOmnibus
  * @dev Deploys the Omnibus singleton via the canonical CreateX factory using
  *      CREATE3. The address depends only on (CreateX, Constants.DEPLOYER, salt)
- *      — the same on every chain, independent of constructor args. Owner and
- *      wallet factory differ per chain; the address does not.
+ *      — independent of constructor args, so two chains sharing a version label
+ *      share an address, and a chain that needs a redeploy gets a new label
+ *      without disturbing the others.
+ *
+ *      THE REGISTRY IS THE INTENT, NOT THE TRANSCRIPT. The target chain must
+ *      already have a row in `sdk/src/deployments.json` naming the version label
+ *      and the wallet factory; this script reads it and refuses to broadcast if
+ *      the run disagrees with what was declared. Writing the row afterwards
+ *      would record whatever happened, which is how a wrong factory got baked
+ *      into two testnet deployments in the first place.
  *
  *      WHY THIS SCRIPT IS ALL ASSERTIONS. A wrong caller does NOT revert inside
  *      CreateX. It fails the sender-prefix match, silently takes a different
@@ -44,7 +53,8 @@ import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
  *   DEPLOYER_PK       - Ops wallet private key. MUST derive Constants.DEPLOYER.
  *   OMNIBUS_OWNER     - Initial owner of the Omnibus (Ownable2Step)
  *   WALLET_FACTORY    - The quip WalletFactory proxy on this chain (baked as an
- *                       immutable; gates the wallet commit route)
+ *                       immutable; gates the wallet commit route). MUST equal
+ *                       the `walletFactory` in this chain's registry row.
  *   EXPECTED_CHAIN_ID - Optional. When set, asserts the RPC really points at
  *                       that chain — catches an rpc-alias typo, which is a
  *                       likelier operator error than a wrong key.
@@ -61,23 +71,30 @@ contract DeployOmnibus is Script {
 
     address broadcaster = vm.addr(privateKey);
     string memory profile = vm.envOr('FOUNDRY_PROFILE', string('default'));
-    bytes32 rawSalt = Constants.omnibusSalt();
-    address expectedAddr = Constants.predictOmnibus();
+
+    // The registry row for THIS chain supplies the version label; the label is
+    // the only input to the address besides CreateX and DEPLOYER.
+    Deployments.Deployment memory row = Deployments.forChain(Deployments.readAll(), block.chainid);
+    bytes32 rawSalt = Constants.omnibusSalt(row.version);
+    address expectedAddr = Constants.predictOmnibus(row.version);
 
     // ── 0. Log the whole picture BEFORE the first require, so a run that fails
     //       a gate is diagnosable from the same output a successful run gives.
     console.log('Profile:           ', profile);
     console.log('Chain id:          ', block.chainid);
+    console.log('Version label:     ', row.version);
     console.log('Broadcaster (PK):  ', broadcaster);
     console.log('tx.origin:         ', tx.origin);
     console.log('Constants.DEPLOYER:', Constants.DEPLOYER);
     console.log('Expected Omnibus:  ', expectedAddr);
+    console.log('Registry Omnibus:  ', row.omnibus);
     console.log('Omnibus owner:     ', omnibusOwner);
     console.log('Wallet factory:    ', walletFactory);
+    console.log('Registry factory:  ', row.walletFactory);
     console.log('Raw salt:');
     console.logBytes32(rawSalt);
     console.log('Guarded salt:');
-    console.logBytes32(Constants.guardedSalt());
+    console.logBytes32(Constants.guardedSalt(row.version));
 
     // ── 1. Build provenance. Catches a dev-profile artifact reaching a chain.
     require(
@@ -118,12 +135,28 @@ contract DeployOmnibus is Script {
       revert('DeployOmnibus: WALLET_FACTORY does not implement vaultIdOf');
     }
 
+    // ── 5b. Registry agreement. Gate 5 only proves WALLET_FACTORY is *a*
+    //       working factory — 0x6de121F7 passed every one of those checks and
+    //       still bricked the wallet route on two testnets, because the factory
+    //       is invisible from the address and cannot be changed after deploy.
+    //       This is the gate that would have caught it: the row declares which
+    //       factory this chain is supposed to use, and the env var must match.
+    require(walletFactory == row.walletFactory, 'DeployOmnibus: WALLET_FACTORY does not match the registry row');
+
+    // A zero row address is the bootstrap case: the row was declared before the
+    // first deploy, and the operator fills it in from this run's output.
+    if (row.omnibus != address(0)) {
+      require(row.omnibus == expectedAddr, 'DeployOmnibus: registry address does not match the version label');
+    } else {
+      console.log('\nNOTE: registry row has no address yet. Record this one after the deploy:', expectedAddr);
+    }
+
     // ── 6. Factory presence + derivation agreement. The only gate that consults
     //       the real CreateX: it proves our local solady CREATE3 math and the
     //       on-chain factory derive the SAME address from the same guarded salt.
     require(Constants.CREATEX.code.length > 0, 'DeployOmnibus: CreateX not deployed on this chain');
     require(
-      ICreateX(Constants.CREATEX).computeCreate3Address(Constants.guardedSalt()) == expectedAddr,
+      ICreateX(Constants.CREATEX).computeCreate3Address(Constants.guardedSalt(row.version)) == expectedAddr,
       'DeployOmnibus: CreateX disagrees with the local CREATE3 prediction'
     );
 

@@ -8,7 +8,7 @@ import {ConstantsTest} from '../Constants.t.sol';
 /// @title Constants guardedSalt Tests
 /// @dev Tests for the local mirror of CreateX's `_guard`.
 ///
-///      `Constants.guardedSalt()` re-implements one branch of CreateX's salt
+///      `Constants.guardedSalt(SALT_LABEL)` re-implements one branch of CreateX's salt
 ///      guarding off-chain, so the deploy scripts can predict the address with
 ///      no RPC. A mirror that drifts from the real factory would predict an
 ///      address the factory never deploys to — which is why the deploy script
@@ -22,13 +22,13 @@ contract Constants_guardedSalt is ConstantsTest {
   // ============ Known-answer ============
 
   function test_guardedSalt_matchesLiveGuardedSalt() public pure {
-    assertEq(Constants.guardedSalt(), LIVE_GUARDED_SALT, 'guarded salt no longer matches the live deployment');
+    assertEq(Constants.guardedSalt(SALT_LABEL), LIVE_GUARDED_SALT, 'guarded salt no longer matches the live deployment');
   }
 
   function test_guardedSalt_matchesCreateXPermissionedFormula() public pure {
     assertEq(
-      Constants.guardedSalt(),
-      SaltRef.permissionedGuard(Constants.DEPLOYER, Constants.omnibusSalt()),
+      Constants.guardedSalt(SALT_LABEL),
+      SaltRef.permissionedGuard(Constants.DEPLOYER, Constants.omnibusSalt(SALT_LABEL)),
       'guard mirror disagrees with the reference MsgSender formula'
     );
   }
@@ -39,8 +39,8 @@ contract Constants_guardedSalt is ConstantsTest {
   ///      since the widening is easy to get wrong.
   function test_guardedSalt_packedWideningEqualsAbiEncode() public pure {
     assertEq(
-      Constants.guardedSalt(),
-      keccak256(abi.encode(Constants.DEPLOYER, Constants.omnibusSalt())),
+      Constants.guardedSalt(SALT_LABEL),
+      keccak256(abi.encode(Constants.DEPLOYER, Constants.omnibusSalt(SALT_LABEL))),
       'packed widening is not equivalent to abi.encode'
     );
   }
@@ -53,7 +53,7 @@ contract Constants_guardedSalt is ConstantsTest {
   ///      same value, the address would be claimable by anyone.
   function test_guardedSalt_differsFromPermissionlessGuard() public pure {
     assertTrue(
-      Constants.guardedSalt() != SaltRef.permissionlessGuard(Constants.omnibusSalt()),
+      Constants.guardedSalt(SALT_LABEL) != SaltRef.permissionlessGuard(Constants.omnibusSalt(SALT_LABEL)),
       'permissioned and permissionless guards collide: the address is squattable'
     );
   }
@@ -62,7 +62,8 @@ contract Constants_guardedSalt is ConstantsTest {
   ///      chain-invariance. Assert we are not accidentally on that branch.
   function test_guardedSalt_differsFromChainScopedGuard() public view {
     assertTrue(
-      Constants.guardedSalt() != SaltRef.chainScopedGuard(Constants.DEPLOYER, Constants.omnibusSalt()),
+      Constants.guardedSalt(SALT_LABEL)
+        != SaltRef.chainScopedGuard(Constants.DEPLOYER, Constants.omnibusSalt(SALT_LABEL)),
       'guarded salt matches the chain-scoped branch: the address would be per-chain'
     );
   }

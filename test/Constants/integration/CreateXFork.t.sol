@@ -36,7 +36,17 @@ contract Constants_CreateXFork is Test {
   /// @dev Base Sepolia, where the live Omnibus this suite anchors to lives.
   uint256 internal constant FORK_CHAIN_ID = 84_532;
 
-  /// @dev The WalletFactory baked into the live Omnibus's immutables.
+  /// @dev The salt label the live Base Sepolia Omnibus was deployed under.
+  ///      Pinned here rather than read from the registry: this suite anchors to
+  ///      what is ON the fork at FORK_BLOCK, which no later registry edit can
+  ///      change. When Base Sepolia is redeployed under a new label, this
+  ///      constant and FORK_BLOCK move together or not at all.
+  string internal constant SALT_LABEL = 'QUIP:Omnibus:v1.0.0-alpha.2';
+
+  /// @dev The WalletFactory baked into the live Omnibus's immutables. NOT the
+  ///      canonical proxy (0xdCD90563…): this deployment was wired to a
+  ///      testnet-only duplicate, which is why the wallet commit route reverts
+  ///      NotQuipWallet on Base Sepolia and why a redeploy is pending.
   address internal constant LIVE_WALLET_FACTORY = 0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5;
 
   /// @dev Fresh entropy for the deploy tests. The REAL salt's address is already
@@ -74,8 +84,8 @@ contract Constants_CreateXFork is Test {
   ///      for the same guarded salt.
   function test_computeCreate3Address_agreesWithLocalPrediction() public view {
     assertEq(
-      createX.computeCreate3Address(Constants.guardedSalt()),
-      Constants.predictOmnibus(),
+      createX.computeCreate3Address(Constants.guardedSalt(SALT_LABEL)),
+      Constants.predictOmnibus(SALT_LABEL),
       'CreateX disagrees with the local CREATE3 prediction'
     );
   }
@@ -105,8 +115,8 @@ contract Constants_CreateXFork is Test {
   ///      is safe: the stranger's code lands at a deterministic OTHER address,
   ///      and ours is untouched.
   function test_deployCreate3_asStranger_withOurSalt_landsElsewhere() public {
-    bytes32 ourSalt = Constants.omnibusSalt();
-    address ours = Constants.predictOmnibus();
+    bytes32 ourSalt = Constants.omnibusSalt(SALT_LABEL);
+    address ours = Constants.predictOmnibus(SALT_LABEL);
     bytes32 oursCodehashBefore = ours.codehash;
 
     vm.prank(STRANGER);
@@ -133,7 +143,7 @@ contract Constants_CreateXFork is Test {
     address deployed = createX.deployCreate3(strangerSalt, _omnibusInitCode());
 
     assertGt(deployed.code.length, 0, 'stranger deploy unexpectedly produced no code');
-    assertTrue(deployed != Constants.predictOmnibus(), 'a wrong signer reached OUR address');
+    assertTrue(deployed != Constants.predictOmnibus(SALT_LABEL), 'a wrong signer reached OUR address');
     assertEq(
       deployed,
       SaltRef.create3(SaltRef.permissionedGuard(STRANGER, strangerSalt), Constants.CREATEX),
@@ -147,7 +157,7 @@ contract Constants_CreateXFork is Test {
   ///      this one confirms the address our library predicts is occupied, on a
   ///      real chain, by the Omnibus we think is there.
   function test_predictOmnibus_matchesDeployedOmnibusOnBaseSepolia() public view {
-    address predicted = Constants.predictOmnibus();
+    address predicted = Constants.predictOmnibus(SALT_LABEL);
     assertGt(predicted.code.length, 0, 'no Omnibus deployed at the predicted address');
 
     Omnibus live = Omnibus(payable(predicted));

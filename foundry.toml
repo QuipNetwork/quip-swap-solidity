@@ -22,7 +22,7 @@ ignored_warnings_from = ["dependencies/"]
 gas_limit = "18446744073709551615" # u64::MAX
 memory_limit = 268_435_456
 # Allow VerifyOmnibus.s.sol to read the SDK's canonical address file (default) and
-# any repo-relative ADDRESS_JSON override (read-only verify script).
+# any repo-relative DEPLOYMENTS_JSON override (read-only verify script).
 fs_permissions = [{access = "read", path = "./"}]
 # hashsigs-solidity compiles itself with via_ir (UXMSS.sol is stack-too-deep
 # without it). Restricting its implementation sources pins every compilation

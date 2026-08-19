@@ -69,7 +69,7 @@ export {
 export type {CommitAuth, ComputeCommitDigestArgs} from './commitAuth.js'
 
 // deployments
-export {knownDeployments, resolveDeployment, OMNIBUS_CREATE3_ADDRESS} from './deployments.js'
+export {knownDeployments, resolveDeployment} from './deployments.js'
 export type {OmnibusDeployment} from './deployments.js'
 
 // gas estimation + transaction options

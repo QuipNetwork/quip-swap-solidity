@@ -1,25 +1,23 @@
 /**
  * Deployment-resolution unit tests.
  *
- * Two concerns:
- * - SHIPPED STATE (canonical CreateX address + verified chains): the registry
- *   resolves the SAME canonical wallet-route Omnibus for every verified chain
- *   — Base mainnet (8453) and Base Sepolia (84532) — because the CREATE3 salt
- *   is chain-invariant, while `resolveDeployment` still throws
- *   `UNKNOWN_DEPLOYMENT` for every other chain without an override; an override
- *   still resolves and still validates. This pins both the active deployments
- *   and the "no false defaults for unverified chains" guarantee.
- * - MECHANISM (so enabling a chain later is safe): a LOCAL registry built the
- *   same way (canonical address + a verified-chain set) returns the canonical
- *   address for a listed chain and nothing for an unlisted one — exercised
- *   without enabling any real chain in source.
+ * Three concerns:
+ * - SHIPPED STATE: the registry resolves exactly the chains recorded in
+ *   `src/deployments.json` and nothing else, and each row carries the fields
+ *   the SDK promises (address, version label, wallet factory).
+ * - DRIFT: rows sharing a version label must share an address, and rows with
+ *   different labels must not — the property that lets one chain redeploy
+ *   without moving the others.
+ * - MECHANISM: `resolveDeployment` still throws `UNKNOWN_DEPLOYMENT` for an
+ *   unrecorded chain, and an override still resolves and still validates.
  */
 import {getAddress} from 'viem'
 import type {Address} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {QuipSwapError} from '../../src/errors.js'
-import {knownDeployments, OMNIBUS_CREATE3_ADDRESS, resolveDeployment} from '../../src/deployments.js'
+import {knownDeployments, resolveDeployment} from '../../src/deployments.js'
 import type {OmnibusDeployment} from '../../src/deployments.js'
+import registry from '../../src/deployments.json'
 
 const OVERRIDE_ADDR: Address = getAddress('0x00000000000000000000000000000000000ab1ce')
 
@@ -33,34 +31,76 @@ function codeOf(fn: () => unknown): string {
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
-// The canonical Omnibus address + verified chains shipped in src/address.json:
-// the wallet-route Omnibus (salt entropy v1.0.0-alpha.2, CreateX CREATE3
-// deploy), verified on Base mainnet and Base Sepolia.
-const SHIPPED_OMNIBUS: Address = '0xf780Fc9C066D824bFF85758E381A3919B1817f09'
 const BASE_MAINNET = 8453n
 const BASE_SEPOLIA = 84_532n
-const VERIFIED_CHAINS = [BASE_MAINNET, BASE_SEPOLIA]
+const OP_SEPOLIA = 11_155_420n
 
-describe('resolveDeployment — shipped state (Base mainnet + Base Sepolia verified)', () => {
-  it('ships the canonical address for exactly the verified chains', () => {
-    expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
-    // Assert the exact membership, not just the count: a wrong chain id would
+/** The canonical quip WalletFactory proxy — the same address on every chain. */
+const CANONICAL_WALLET_FACTORY: Address = '0xdCD90563B912f82D2f23d5c7988B3Fec2da63471'
+
+describe('resolveDeployment — shipped state', () => {
+  it('registers exactly the chains recorded in deployments.json', () => {
+    // Assert exact membership, not just the count: a wrong chain id would
     // otherwise slip through while the size still matched.
-    expect([...knownDeployments.keys()].sort()).toEqual([...VERIFIED_CHAINS].sort())
+    expect([...knownDeployments.keys()].sort()).toEqual(registry.deployments.map(r => BigInt(r.chainId)).sort())
   })
 
-  it('resolves the SAME address on every verified chain (CREATE3 is chain-invariant)', () => {
-    for (const chainId of VERIFIED_CHAINS) {
-      expect(resolveDeployment(chainId)).toEqual({chainId, omnibusAddress: SHIPPED_OMNIBUS})
+  it('carries address, version and wallet factory on every row', () => {
+    for (const row of registry.deployments) {
+      const resolved = resolveDeployment(BigInt(row.chainId))
+      expect(resolved.omnibusAddress).toBe(row.omnibus)
+      expect(resolved.version).toBe(row.version)
+      expect(resolved.walletFactory).toBe(row.walletFactory)
     }
   })
 
-  it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
-    expect(codeOf(() => resolveDeployment(11_155_420n))).toBe('UNKNOWN_DEPLOYMENT')
+  it('throws UNKNOWN_DEPLOYMENT for any unrecorded chain without an override', () => {
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(42_161n))).toBe('UNKNOWN_DEPLOYMENT')
   })
+})
 
+describe('registry drift — version label governs the address', () => {
+  it('rows sharing a version label share an address', () => {
+    const byVersion = new Map<string, Set<string>>()
+    for (const row of registry.deployments) {
+      const seen = byVersion.get(row.version) ?? new Set<string>()
+      seen.add(row.omnibus)
+      byVersion.set(row.version, seen)
+    }
+    for (const [version, addresses] of byVersion) {
+      expect(addresses.size, `version ${version} maps to more than one address`).toBe(1)
+    }
+  })
+
+  it('distinct version labels do not share an address', () => {
+    const byAddress = new Map<string, Set<string>>()
+    for (const row of registry.deployments) {
+      const seen = byAddress.get(row.omnibus) ?? new Set<string>()
+      seen.add(row.version)
+      byAddress.set(row.omnibus, seen)
+    }
+    for (const [address, versions] of byAddress) {
+      expect(versions.size, `address ${address} is claimed by more than one version`).toBe(1)
+    }
+  })
+
+  /**
+   * KNOWN DRIFT, asserted rather than commented so it cannot be forgotten.
+   * 84532 and 11155420 were deployed against a testnet-only WalletFactory
+   * duplicate, which permanently breaks the wallet commit route there
+   * (`NotQuipWallet`). Both are pending a redeploy under a new version label.
+   * When that lands, flip these to the canonical factory — the failure is the
+   * reminder.
+   */
+  it('records which chains are wired to the canonical wallet factory', () => {
+    expect(resolveDeployment(BASE_MAINNET).walletFactory).toBe(CANONICAL_WALLET_FACTORY)
+    expect(resolveDeployment(BASE_SEPOLIA).walletFactory).not.toBe(CANONICAL_WALLET_FACTORY)
+    expect(resolveDeployment(OP_SEPOLIA).walletFactory).not.toBe(CANONICAL_WALLET_FACTORY)
+  })
+})
+
+describe('resolveDeployment — overrides', () => {
   it('resolves a valid override', () => {
     const override: OmnibusDeployment = {chainId: 8453n, omnibusAddress: OVERRIDE_ADDR}
     expect(resolveDeployment(8453n, override)).toEqual(override)
@@ -80,34 +120,9 @@ describe('resolveDeployment — shipped state (Base mainnet + Base Sepolia verif
       'UNKNOWN_DEPLOYMENT',
     )
   })
-})
 
-describe('resolveDeployment — mechanism (local verified set, no real chain enabled)', () => {
-  // mirror the source derivation: canonical address + a set of verified chains
-  const CANONICAL: Address = getAddress('0x000000000000000000000000000000000000c3c3')
-  const VERIFIED = new Set<bigint>([31337n])
-  const localRegistry: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
-    [...VERIFIED].map(chainId => [chainId, {chainId, omnibusAddress: CANONICAL}]),
-  )
-
-  /** resolveDeployment's logic, but against the local registry (proves enabling a chain works). */
-  function resolveLocal(chainId: bigint, override?: OmnibusDeployment): OmnibusDeployment {
-    if (override !== undefined) return resolveDeployment(chainId, override)
-    const known = localRegistry.get(chainId)
-    if (known === undefined) throw new QuipSwapError({code: 'UNKNOWN_DEPLOYMENT', message: `no deployment for ${chainId}`})
-    return known
-  }
-
-  it('returns the canonical address for a verified chain', () => {
-    expect(resolveLocal(31337n)).toEqual({chainId: 31337n, omnibusAddress: CANONICAL})
-  })
-
-  it('throws for an unlisted chain', () => {
-    expect(codeOf(() => resolveLocal(999n))).toBe('UNKNOWN_DEPLOYMENT')
-  })
-
-  it('an override wins even for a chain that is in the verified set', () => {
-    const override: OmnibusDeployment = {chainId: 31337n, omnibusAddress: OVERRIDE_ADDR}
-    expect(resolveLocal(31337n, override)).toEqual(override)
+  it('an override wins even for a chain that is in the registry', () => {
+    const override: OmnibusDeployment = {chainId: BASE_MAINNET, omnibusAddress: OVERRIDE_ADDR}
+    expect(resolveDeployment(BASE_MAINNET, override)).toEqual(override)
   })
 })

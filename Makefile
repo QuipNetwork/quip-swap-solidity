@@ -232,25 +232,25 @@ snapshot: ## Generate gas snapshot
 
 .PHONY: verify-omnibus
 # usage:
-#   make verify-omnibus                      # uses sdk/src/address.json
+#   make verify-omnibus                      # uses sdk/src/deployments.json
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
-verify-omnibus: ## Compare an address.json against the predicted CREATE3 address (no RPC, no env; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
-	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+verify-omnibus: ## Recompute every registry row's address from its version label (no RPC, no env; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/deployments.json.
+	$(if $(FILE),DEPLOYMENTS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
 
 .PHONY: verify-omnibus-base
-verify-omnibus-base: ## Same as verify-omnibus, pinned to the base mainnet rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
-	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+verify-omnibus-base: ## Same as verify-omnibus, pinned to the base mainnet rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/deployments.json.
+	$(if $(FILE),DEPLOYMENTS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base -v
 
 .PHONY: verify-omnibus-base-sepolia
-verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
-	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/deployments.json.
+	$(if $(FILE),DEPLOYMENTS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base_sepolia -v
 
 .PHONY: verify-omnibus-op-sepolia
-verify-omnibus-op-sepolia: ## Same as verify-omnibus, pinned to the op_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
-	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
+verify-omnibus-op-sepolia: ## Same as verify-omnibus, pinned to the op_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/deployments.json.
+	$(if $(FILE),DEPLOYMENTS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url op_sepolia -v
 
 .PHONY: help

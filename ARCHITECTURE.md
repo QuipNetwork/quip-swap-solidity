@@ -267,7 +267,7 @@ The `0x00` flag byte keeps `block.chainid` out of the guard, which is what makes
 - `script/Constants.sol` is the single source of truth for the salt math, and `DEPLOYER` is **compiled in** — not read from the environment. A prediction derived from the live signer would follow a wrong key to its wrong address and every post-deploy equality check would still pass.
 - `script/DeployOmnibus.s.sol` runs every gate before broadcasting: build profile, signer identity, `tx.origin`, optional chain id, wallet-factory code and ABI, agreement between the local prediction and the factory's own `computeCreate3Address`, and a **semantic** occupancy check on the `WALLET_FACTORY`/`DOMAIN_SEPARATOR` immutables (a CREATE3 address ignores init code, so "has code" says nothing about what is there).
 - Deploys build under `FOUNDRY_PROFILE=prod` — metadata stripped, dedicated `out-prod/`.
-- `test/Constants/` locks the math: known-answer tests anchored to the live deployment, layout and anti-squat invariants, a registry lock against `sdk/src/address.json`, and an env-gated fork test that executes the real CreateX bytecode.
+- `test/Constants/` locks the math: known-answer tests anchored to the live deployment, layout and anti-squat invariants, a registry lock against `sdk/src/deployments.json`, and an env-gated fork test that executes the real CreateX bytecode.
 
 **Safe / multisig routing is unsupported by construction.** CreateX keys its guard off `msg.sender`, so a Safe-executed deploy lands somewhere else entirely. The address is bound to an EOA key, and that key is address-load-bearing: losing it makes those addresses unreachable on any chain not yet deployed to.
 
@@ -320,7 +320,7 @@ script/
 ├── Constants.sol                # salt math — single source of truth
 ├── ICreateX.sol                 # minimal CreateX interface
 ├── DeployOmnibus.s.sol          # gated deploy
-├── VerifyOmnibus.s.sol          # offline address.json check
+├── VerifyOmnibus.s.sol          # offline registry check (every row)
 └── ActivateVerifier.s.sol       # post-deploy owner action
 
 test/
@@ -330,5 +330,5 @@ test/
 ├── attack/                              # adversarial scenarios
 └── {harness,mocks,utils}/               # SaltRef.sol lives in utils/
 
-sdk/                             # TypeScript SDK; address.json is the registry
+sdk/                             # TypeScript SDK; deployments.json is the registry
 ```

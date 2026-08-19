@@ -1,0 +1,23 @@
+{
+  "_comment": "Omnibus deployment registry — the single source of truth for both the Solidity tooling (script/Deployments.sol) and the SDK (deployments.ts). ONE ROW PER CHAIN, overwritten in place on redeploy; history lives in git. 'version' is the salt label: the address is derived from it via (CreateX, Constants.DEPLOYER, salt), so `make verify-omnibus` and CI recompute every row's 'omnibus' from its 'version' rather than trusting the literal. 'walletFactory' is the WalletFactory proxy baked into that Omnibus's immutables — it is invisible from the address (CREATE3 ignores constructor args) and cannot be changed after deploy, so it is recorded per row. KNOWN DRIFT: 84532 and 11155420 were deployed against the non-canonical WalletFactory proxy 0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5 instead of the canonical 0xdCD90563B912f82D2f23d5c7988B3Fec2da63471, which breaks the wallet commit route (Omnibus reverts NotQuipWallet). Both rows are pending a redeploy under a new 'version'; the wallet route is unusable on those chains until then. Base mainnet (8453) is correctly wired.",
+  "deployments": [
+    {
+      "chainId": 8453,
+      "omnibus": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
+      "version": "QUIP:Omnibus:v1.0.0-alpha.2",
+      "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
+    },
+    {
+      "chainId": 84532,
+      "omnibus": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
+      "version": "QUIP:Omnibus:v1.0.0-alpha.2",
+      "walletFactory": "0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5"
+    },
+    {
+      "chainId": 11155420,
+      "omnibus": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
+      "version": "QUIP:Omnibus:v1.0.0-alpha.2",
+      "walletFactory": "0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5"
+    }
+  ]
+}

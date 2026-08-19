@@ -80,7 +80,7 @@ Two free gates must both pass before any broadcast:
 
 ```shell
 make test-fork RPC=API_URL_BASE_SEPOLIA               # executes the REAL CreateX bytecode
-make deploy-dry RPC=API_URL_BASE_SEPOLIA              # must print the address in sdk/src/address.json
+make deploy-dry RPC=API_URL_BASE_SEPOLIA              # must print the address in sdk/src/deployments.json
 make deploy-dry-wrong-signer RPC=API_URL_BASE_SEPOLIA # and confirm the negative: this MUST fail
 ```
 

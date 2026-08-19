@@ -16,13 +16,14 @@ import {Constants} from '../../script/Constants.sol';
 ///      than agreeing with itself.
 ///
 ///      This is what makes the address a tested invariant instead of a
-///      convention: `sdk/src/address.json` and `sdk/src/deployments.ts` ship
+///      convention: `sdk/src/deployments.json` and `sdk/src/deployments.ts` ship
 ///      LIVE_OMNIBUS to every SDK consumer, and it is already occupied
 ///      on-chain. It cannot move.
 contract ConstantsTest is Test {
   // ============ Live on-chain anchors (Base Sepolia, chain id 84532) ============
 
-  /// @dev The deployed Omnibus. Also `sdk/src/address.json:.omnibusAddress`.
+  /// @dev The deployed Omnibus. Also the `omnibus` of every current row in
+  ///      `sdk/src/deployments.json` — they all still share one salt label.
   address public constant LIVE_OMNIBUS = 0xf780Fc9C066D824bFF85758E381A3919B1817f09;
 
   /// @dev The raw salt in the deployment transaction's `deployCreate3` calldata:
@@ -48,13 +49,13 @@ contract ConstantsTest is Test {
     assertEq(Constants.CREATEX, 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed, 'CreateX singleton changed');
     assertEq(Constants.DEPLOYER, 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26, 'DEPLOYER changed');
     assertEq(
-      Constants.OMNIBUS_SALT_ENTROPY, bytes11(keccak256(bytes(SALT_LABEL))), 'salt entropy does not match its label'
+      Constants.saltEntropy(SALT_LABEL), bytes11(keccak256(bytes(SALT_LABEL))), 'salt entropy does not match its label'
     );
     // The entropy is the leading 11 bytes of the label hash, and the raw salt's
     // trailing 11 bytes are that entropy — assert against the live salt so the
     // label is pinned to the chain, not just to itself.
     // forge-lint: disable-next-line(unsafe-typecast)
     bytes11 liveEntropy = bytes11(uint88(uint256(LIVE_RAW_SALT))); // intentional low-11-byte decode
-    assertEq(Constants.OMNIBUS_SALT_ENTROPY, liveEntropy, 'salt entropy does not match live salt');
+    assertEq(Constants.saltEntropy(SALT_LABEL), liveEntropy, 'salt entropy does not match live salt');
   }
 }

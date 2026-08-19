@@ -17,13 +17,13 @@ contract Constants_omnibusSalt is ConstantsTest {
   // ============ Known-answer ============
 
   function test_omnibusSalt_matchesLiveRawSalt() public pure {
-    assertEq(Constants.omnibusSalt(), LIVE_RAW_SALT, 'raw salt no longer matches the live deployment');
+    assertEq(Constants.omnibusSalt(SALT_LABEL), LIVE_RAW_SALT, 'raw salt no longer matches the live deployment');
   }
 
   function test_omnibusSalt_matchesReferenceEncoding() public pure {
     assertEq(
-      Constants.omnibusSalt(),
-      SaltRef.rawSalt(Constants.DEPLOYER, SaltRef.FLAG_NO_REDEPLOY_PROTECTION, Constants.OMNIBUS_SALT_ENTROPY),
+      Constants.omnibusSalt(SALT_LABEL),
+      SaltRef.rawSalt(Constants.DEPLOYER, SaltRef.FLAG_NO_REDEPLOY_PROTECTION, Constants.saltEntropy(SALT_LABEL)),
       'abi.encodePacked layout disagrees with the shift-based reference'
     );
   }
@@ -33,19 +33,23 @@ contract Constants_omnibusSalt is ConstantsTest {
   /// @dev Bytes 0-19 must equal DEPLOYER or CreateX drops to the permissionless
   ///      branch — the address stops being ours and becomes squattable.
   function test_omnibusSalt_hasDeployerPrefix() public pure {
-    assertEq(address(bytes20(Constants.omnibusSalt())), Constants.DEPLOYER, 'salt is not permissioned to DEPLOYER');
+    assertEq(
+      address(bytes20(Constants.omnibusSalt(SALT_LABEL))), Constants.DEPLOYER, 'salt is not permissioned to DEPLOYER'
+    );
   }
 
   /// @dev Byte 20 must be 0x00. A 0x01 here mixes block.chainid into the guard,
   ///      silently giving a DIFFERENT address on every chain.
   function test_omnibusSalt_hasZeroRedeployProtectionByte() public pure {
-    assertEq(Constants.omnibusSalt()[20], SaltRef.FLAG_NO_REDEPLOY_PROTECTION, 'redeploy-protection flag is not 0x00');
+    assertEq(
+      Constants.omnibusSalt(SALT_LABEL)[20], SaltRef.FLAG_NO_REDEPLOY_PROTECTION, 'redeploy-protection flag is not 0x00'
+    );
   }
 
   function test_omnibusSalt_hasEntropySuffix() public pure {
     // forge-lint: disable-next-line(unsafe-typecast)
-    bytes11 suffix = bytes11(uint88(uint256(Constants.omnibusSalt()))); // truncation IS the decode under test
-    assertEq(suffix, Constants.OMNIBUS_SALT_ENTROPY, 'entropy suffix mismatch');
+    bytes11 suffix = bytes11(uint88(uint256(Constants.omnibusSalt(SALT_LABEL)))); // truncation IS the decode under test
+    assertEq(suffix, Constants.saltEntropy(SALT_LABEL), 'entropy suffix mismatch');
   }
 
   // ============ Fuzz ============
