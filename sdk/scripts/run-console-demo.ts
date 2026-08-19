@@ -1,8 +1,11 @@
 import {spawnSync} from 'node:child_process'
 import {mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs'
+import {createServer} from 'node:net'
+import type {Server} from 'node:net'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
+import {parseSpawnedCliEnvelope} from './console-demo-io.js'
 
 const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const repoRoot = join(sdkRoot, '..')
@@ -13,7 +16,8 @@ const bobRoot = join(runtime, 'bob')
 const output = resolve(process.argv[2] ?? join(repoRoot, 'demo-artifacts', 'console-demo.json'))
 const referenceOutput = join(runtime, 'full-demo.json')
 const cli = join(sdkRoot, 'src', 'bin', 'quip-swap.ts')
-const profile = join(repoRoot, 'config', 'demo', 'console-bootstrap.json')
+const profileTemplate = join(repoRoot, 'config', 'demo', 'console-bootstrap.json')
+const profile = join(runtime, 'console-bootstrap.json')
 const transitions: string[] = []
 
 type Envelope = {readonly ok: boolean; readonly command: string; readonly tradeId?: string; readonly result?: any; readonly error?: {readonly message?: string}}
@@ -21,9 +25,7 @@ type Envelope = {readonly ok: boolean; readonly command: string; readonly tradeI
 function command(name: string, party: 'alice' | 'bob', stateRoot: string, config: string, input?: string, yes = false): Envelope {
   const args = [cli, name, '--party', party, '--state-root', stateRoot, '--config', config, '--json', ...(yes ? ['--yes'] : [])]
   const result = spawnSync(process.execPath, args, {cwd: sdkRoot, encoding: 'utf8', input: input ?? '', env: {...process.env, NO_COLOR: '1'}})
-  const line = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1)
-  if (line === undefined) throw new Error(`${name} produced no JSON: ${result.stderr}`)
-  const envelope = JSON.parse(line) as Envelope
+  const envelope = parseSpawnedCliEnvelope(result.stdout, name, result.stderr)
   if (result.status !== 0 || !envelope.ok) throw new Error(`${name} failed: ${envelope.error?.message ?? result.stderr}`)
   transitions.push(name)
   return envelope
@@ -38,6 +40,28 @@ async function rpc(url: string, method: string, params: readonly unknown[] = [])
 
 const json = (value: unknown) => `${JSON.stringify(value)}\n`
 const read = (path: string) => readFileSync(path, 'utf8')
+
+const listenOnFreePort = () => new Promise<Server>((resolve, reject) => {
+  const server = createServer()
+  server.once('error', reject)
+  server.listen(0, '127.0.0.1', () => resolve(server))
+})
+const closeServer = (server: Server) => new Promise<void>((resolve, reject) => {
+  server.close(error => error === undefined ? resolve() : reject(error))
+})
+const portOf = (server: Server): number => {
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('failed to allocate local demo port')
+  return address.port
+}
+const reservations = await Promise.all([listenOnFreePort(), listenOnFreePort()])
+const ports = reservations.map(portOf)
+await Promise.all(reservations.map(closeServer))
+const aliceRpcUrl = `http://127.0.0.1:${ports[0]}`
+const bobRpcUrl = `http://127.0.0.1:${ports[1]}`
+const localProfile = JSON.parse(read(profileTemplate)) as {chains: Array<{chainId: number; rpcUrl: string}>}
+localProfile.chains = localProfile.chains.map((chain, index) => ({...chain, rpcUrl: index === 0 ? aliceRpcUrl : bobRpcUrl}))
+writeFileSync(profile, `${JSON.stringify(localProfile, null, 2)}\n`)
 let startedPids: number[] = []
 let consoleResult: {tradeId: string; alice: any; bob: any; journals: readonly string[]} | undefined
 
@@ -49,7 +73,7 @@ try {
   command('init', 'alice', aliceRoot, aliceConfig)
   command('init', 'bob', bobRoot, bobConfig)
 
-  const latest = await rpc('http://127.0.0.1:8545', 'eth_getBlockByNumber', ['latest', false]) as {timestamp: string}
+  const latest = await rpc(aliceRpcUrl, 'eth_getBlockByNumber', ['latest', false]) as {timestamp: string}
   const now = BigInt(latest.timestamp)
   const base = now + 10n
   const prepare = command('prepare-trade', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-prepare-trade.v1', partyCommitmentDeadline: (base + 100n).toString(), counterpartyCommitmentDeadline: (base + 200n).toString(), partyClaimDeadline: (base + 1_000n).toString(), counterpartyClaimDeadline: (base + 1_100n).toString(), partyReclaimRelease: (base + 1_400n).toString(), counterpartyReclaimRelease: (base + 1_300n).toString(), partyAuthorizationExpiry: (base + 500n).toString(), counterpartyAuthorizationExpiry: (base + 600n).toString()}))
@@ -59,7 +83,7 @@ try {
   command('submit-alice-commit', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-alice-commit.v1', confirmed: true}))
   command('observe-alice-commit', 'alice', aliceRoot, aliceConfig)
   command('observe-alice-commit', 'bob', bobRoot, bobConfig)
-  await rpc('http://127.0.0.1:8545', 'anvil_mine', ['0x2'])
+  await rpc(aliceRpcUrl, 'anvil_mine', ['0x2'])
   command('observe-alice-commit', 'alice', aliceRoot, aliceConfig)
   command('observe-alice-commit', 'bob', bobRoot, bobConfig)
   command('submit-bob-commit', 'bob', bobRoot, bobConfig, undefined, true)
@@ -67,7 +91,7 @@ try {
   command('observe-bob-commit', 'alice', aliceRoot, aliceConfig)
   command('submit-revealing-claim', 'alice', aliceRoot, aliceConfig, undefined, true)
   command('observe-reveal', 'bob', bobRoot, bobConfig)
-  await rpc('http://127.0.0.1:8546', 'anvil_mine', ['0x2'])
+  await rpc(bobRpcUrl, 'anvil_mine', ['0x2'])
   command('observe-reveal', 'bob', bobRoot, bobConfig)
   command('submit-final-claim', 'bob', bobRoot, bobConfig, undefined, true)
   const alice = command('status', 'alice', aliceRoot, aliceConfig).result

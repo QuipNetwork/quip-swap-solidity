@@ -27,7 +27,6 @@ import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {Settlement} from '../../src/protocol/Settlement.sol';
 import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
-import {ReentrantRecipient} from '../attack/Reentrancy.t.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {AdversarialERC20Mock} from '../mocks/AdversarialERC20Mock.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
@@ -38,6 +37,7 @@ import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
 import {MaliciousERC721Mock} from '../mocks/MaliciousERC721Mock.sol';
 import {ReentrantERC1155Mock, ReentrantERC1155Recipient} from '../mocks/ReentrantERC1155Mock.sol';
+import {ReentrantRecipient} from '../mocks/ReentrantRecipient.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract WrapperFundingTest is Test {

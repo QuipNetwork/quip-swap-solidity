@@ -520,12 +520,21 @@ older artifact at the same path must not be mistaken for the failed run.
 Before handing the prototype to another operator, run:
 
 ```sh
-forge build --root "$PWD" --config-path config/demo/foundry.toml
+bash scripts/run-clean-foundry-build.sh
+forge fmt --check
+forge test
+bash scripts/run-current-coverage.sh
 cd sdk
+bun run generate:abi
 bun run typecheck
 bun run test
 bun run build
+bun run test:integration
 bun run test:cross-chain
+bun run demo:same-chain
+bun run demo:cross-chain:recovery
+bun run demo:full
+bun run demo:console
 cd ..
 ```
 

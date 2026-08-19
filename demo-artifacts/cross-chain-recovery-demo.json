@@ -1,0 +1,384 @@
+{
+  "schema": "quip-swap-cross-chain-recovery-demo.v1",
+  "mockVerifierDemo": true,
+  "deployment": {
+    "schema": "quip-swap-demo-deployment.v1",
+    "deploymentVersion": "v1.1.0-alpha.3",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "identityRegistration": "lazy-on-first-commit",
+    "chains": [
+      {
+        "chainId": 31337,
+        "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "addresses": {
+          "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
+          "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
+          "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+        },
+        "funding": {
+          "assetType": "ERC20",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "owner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "amount": "10000000000000000000",
+          "balance": "10000000000000000000",
+          "allowance": "10000000000000000000"
+        }
+      },
+      {
+        "chainId": 31338,
+        "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "addresses": {
+          "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
+          "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
+          "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+        },
+        "funding": {
+          "assetType": "ERC20",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "owner": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "amount": "20000000000000000000",
+          "balance": "20000000000000000000",
+          "allowance": "20000000000000000000"
+        }
+      }
+    ]
+  },
+  "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+  "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
+  "outcomes": [
+    {
+      "scenario": "both-reclaim",
+      "finalStates": [
+        {
+          "chainId": 31337,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Reclaimed",
+          "stateCode": 3,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        },
+        {
+          "chainId": 31338,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Reclaimed",
+          "stateCode": 3,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        }
+      ],
+      "transactionHashes": [
+        "0x1482211cff1c1e884782e2821131802d218b864c3adb5cbca3c1c892c09656df",
+        "0x11e2fef8b8b7d69cfb5f07ea5eb2916fd485491fc8eee1e07eb790a8c8dcf3a5",
+        "0x450125140ed03c1330c22b0205eb66bf12bdbb00bde388583de86a07b817d41f",
+        "0xc97175210c412f46660345ce956d31076fc5027c169c64f986bd802dad630e49"
+      ],
+      "fixedPayouts": true
+    },
+    {
+      "scenario": "final-claim-omitted",
+      "finalStates": [
+        {
+          "chainId": 31337,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Reclaimed",
+          "stateCode": 3,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        },
+        {
+          "chainId": 31338,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        }
+      ],
+      "transactionHashes": [
+        "0xefe267932c21f678489f9a6471f53b1c37b1c91453bcb74a843190b72012eddf",
+        "0xf5d2c97b478ebd4346a898c1e24079c3be2d988af56381416faef9071e0fd169",
+        "0x451b488b540642d77699a4331cabf2aa84545bd4f885d9c55d6a08481b09ac44",
+        "0xfafc5fd7862837d7b98ebed8293d07d3a5e7c061a18f279fabd92b4667da6766"
+      ],
+      "rejectedCompetingAction": {
+        "action": "claim",
+        "stateUnchanged": true
+      },
+      "fixedPayouts": true
+    },
+    {
+      "scenario": "claim-wins",
+      "finalStates": [
+        {
+          "chainId": 31337,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        },
+        {
+          "chainId": 31338,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        }
+      ],
+      "transactionHashes": [
+        "0x85b71a16d0efbf665a8f907fc03e2bd248d3dbebaa12babaf093c6bc7d1994a9",
+        "0x8def34a12e3eea2eea4a5c3edf175f7a83e0b47b08a3ea481f638253ac3c273c",
+        "0x10521670d87b1270ed4b0556447b137a25af011c1d176f57f3e99f5cbfac1424",
+        "0xb416a76d74d159fa2c4f4a437142388b3ff4a16b8715c6cbdb627651bef12d46"
+      ],
+      "rejectedCompetingAction": {
+        "action": "reclaim",
+        "stateUnchanged": true
+      },
+      "fixedPayouts": true
+    },
+    {
+      "scenario": "reclaim-wins",
+      "finalStates": [
+        {
+          "chainId": 31337,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Reclaimed",
+          "stateCode": 3,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "10000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        },
+        {
+          "chainId": 31338,
+          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "state": "Claimed",
+          "stateCode": 2,
+          "holdings": [
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+              "balance": "0"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+              "balance": "20000000000000000000"
+            },
+            {
+              "assetType": "erc20",
+              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "balance": "0"
+            }
+          ]
+        }
+      ],
+      "transactionHashes": [
+        "0x87fd823002ebda17aaf336fab83c6ebc4a0d2ad5c3d617efd16829c9d971ccad",
+        "0x155c6882879fb84fd97ee1abdb3dbce2e29b91691f8a9ff09c2e9edd722fd12e",
+        "0xe973b611f6805c94f16b19eaa7c631fcabffbfd63d4df41b20096814ccef1604",
+        "0x3528670e5e3c5c045105a329707e9964a1902089d3c50e1b1c338bb67c835c27"
+      ],
+      "rejectedCompetingAction": {
+        "action": "claim",
+        "stateUnchanged": true
+      },
+      "fixedPayouts": true
+    }
+  ],
+  "observations": [
+    {
+      "subject": "alice-commit",
+      "lifecycle": "dropped",
+      "stageBefore": "alice-commit",
+      "stageAfter": "alice-commit",
+      "advanced": false
+    },
+    {
+      "subject": "alice-commit",
+      "lifecycle": "replaced",
+      "stageBefore": "alice-commit",
+      "stageAfter": "alice-commit",
+      "advanced": false
+    },
+    {
+      "subject": "alice-commit",
+      "lifecycle": "reverted",
+      "stageBefore": "alice-commit",
+      "stageAfter": "alice-commit",
+      "advanced": false
+    },
+    {
+      "subject": "alice-commit",
+      "lifecycle": "reorganized",
+      "stageBefore": "alice-commit",
+      "stageAfter": "alice-commit",
+      "advanced": false
+    },
+    {
+      "subject": "alice-commit",
+      "lifecycle": "final",
+      "stageBefore": "alice-commit",
+      "stageAfter": "bob-enabled",
+      "advanced": true
+    },
+    {
+      "subject": "revealing-claim",
+      "lifecycle": "reverted",
+      "stageBefore": "bob-committed",
+      "stageAfter": "bob-committed",
+      "advanced": false
+    },
+    {
+      "subject": "revealing-claim",
+      "lifecycle": "reorganized",
+      "stageBefore": "bob-committed",
+      "stageAfter": "bob-committed",
+      "advanced": false
+    },
+    {
+      "subject": "revealing-claim",
+      "lifecycle": "final",
+      "stageBefore": "bob-committed",
+      "stageAfter": "reveal-final",
+      "advanced": true
+    }
+  ]
+}

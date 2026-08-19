@@ -1,0 +1,508 @@
+{
+  "schema": "quip-swap-same-chain-demo.v1",
+  "mockVerifier": true,
+  "deployment": {
+    "chainId": 31337,
+    "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "addresses": {
+      "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
+      "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
+      "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+      "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+    }
+  },
+  "terms": {
+    "partySide": {
+      "chainId": "31337",
+      "assets": [
+        {
+          "assetType": 1,
+          "target": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "id": "0",
+          "amount": "10000000000000000000"
+        }
+      ],
+      "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "authorizationMode": 1,
+      "principalKeyVersion": "1",
+      "reclaimRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "commitmentDeadline": "4000000100",
+      "claimDeadline": "4000001000",
+      "reclaimRelease": "4000001400",
+      "commitLock": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "delegationPolicy": 0,
+      "delegate": "0x0000000000000000000000000000000000000000",
+      "delegateKeyVersion": "0",
+      "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000002"
+    },
+    "counterpartySide": {
+      "chainId": "31337",
+      "assets": [
+        {
+          "assetType": 1,
+          "target": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "id": "0",
+          "amount": "20000000000000000000"
+        }
+      ],
+      "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "authorizationMode": 1,
+      "principalKeyVersion": "1",
+      "reclaimRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "commitmentDeadline": "4000000200",
+      "claimDeadline": "4000001100",
+      "reclaimRelease": "4000001300",
+      "commitLock": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "delegationPolicy": 0,
+      "delegate": "0x0000000000000000000000000000000000000000",
+      "delegateKeyVersion": "0",
+      "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000003"
+    }
+  },
+  "tradeId": "0xe32eab134e84afd1f08d7ec9f466ea9b61ca4d691755071d70a5aba868da3eab",
+  "lock": "0xf7e9654699095c900d302e98ac709d3c59aeb8c1f5b796fc1e5a5ce83996fadc",
+  "initialCustody": [
+    {
+      "role": "alice-asset",
+      "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "principalBalance": "10000000000000000000",
+      "recipientBalance": "0",
+      "wrapperBalance": "0",
+      "allowance": "10000000000000000000",
+      "reserved": "0"
+    },
+    {
+      "role": "bob-asset",
+      "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+      "principalBalance": "20000000000000000000",
+      "recipientBalance": "0",
+      "wrapperBalance": "0",
+      "allowance": "20000000000000000000",
+      "reserved": "0"
+    }
+  ],
+  "authorizationDecisions": [
+    {
+      "role": "alice",
+      "mode": "registered-direct",
+      "status": "accepted",
+      "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "keyVersion": "1",
+      "authorizationNonceKey": "0x857970bc865514bb914e8295debde58cc01924e453220b36fde8a691e85b7ac1",
+      "authorizationNonceConsumed": true,
+      "transactionHash": "0x6aa578db55e8c43711c4c55ea605e4d7facdb5533c25ac08b378420433b4032e"
+    },
+    {
+      "role": "bob",
+      "mode": "registered-direct",
+      "status": "accepted",
+      "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "keyVersion": "1",
+      "authorizationNonceKey": "0x2f3ecfc9b9c3771494cd9683ffa3e094a465fffcecc3e188a4e2cf471fc41cf4",
+      "authorizationNonceConsumed": true,
+      "transactionHash": "0x60401238261e2c367af6f879bd804ab61b8a06a9d95e32834bac7ba9fa950c9e"
+    }
+  ],
+  "transitions": [
+    {
+      "sequence": 1,
+      "action": "alice-commit",
+      "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "receipt": {
+        "transactionHash": "0x6aa578db55e8c43711c4c55ea605e4d7facdb5533c25ac08b378420433b4032e",
+        "blockNumber": "16",
+        "events": [
+          "directAuthorization.IdentityRegistered",
+          "sameChainWrapper.AuthorizationNonceConsumed",
+          "sameChainWrapper.Committed"
+        ]
+      },
+      "stateBefore": "Unused",
+      "stateAfter": "PartyCommitted",
+      "progression": "zero",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "wrapperBalance": "10000000000000000000",
+          "allowance": "0",
+          "reserved": "10000000000000000000"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "principalBalance": "20000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "20000000000000000000",
+          "reserved": "0"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "-10000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "10000000000000000000",
+          "allowance": "-10000000000000000000",
+          "reserved": "10000000000000000000"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        }
+      ]
+    },
+    {
+      "sequence": 2,
+      "action": "bob-commit",
+      "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "receipt": {
+        "transactionHash": "0x60401238261e2c367af6f879bd804ab61b8a06a9d95e32834bac7ba9fa950c9e",
+        "blockNumber": "17",
+        "events": [
+          "directAuthorization.IdentityRegistered",
+          "sameChainWrapper.AuthorizationNonceConsumed",
+          "sameChainWrapper.Committed"
+        ]
+      },
+      "stateBefore": "PartyCommitted",
+      "stateAfter": "BothCommitted",
+      "progression": "zero",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "wrapperBalance": "10000000000000000000",
+          "allowance": "0",
+          "reserved": "10000000000000000000"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "wrapperBalance": "20000000000000000000",
+          "allowance": "0",
+          "reserved": "20000000000000000000"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "-20000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "20000000000000000000",
+          "allowance": "-20000000000000000000",
+          "reserved": "20000000000000000000"
+        }
+      ]
+    },
+    {
+      "sequence": 3,
+      "action": "permissionless-claim",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "receipt": {
+        "transactionHash": "0x61ef2396d4f7794488275034892fedaa9c14bf2b3c916be59dc75e05b1e4a010",
+        "blockNumber": "18",
+        "events": [
+          "sameChainWrapper.Claimed"
+        ]
+      },
+      "stateBefore": "BothCommitted",
+      "stateAfter": "Claimed",
+      "progression": "not-applicable",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principalBalance": "0",
+          "recipientBalance": "10000000000000000000",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "principalBalance": "0",
+          "recipientBalance": "20000000000000000000",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "0",
+          "recipientBalance": "10000000000000000000",
+          "wrapperBalance": "-10000000000000000000",
+          "allowance": "0",
+          "reserved": "-10000000000000000000"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "0",
+          "recipientBalance": "20000000000000000000",
+          "wrapperBalance": "-20000000000000000000",
+          "allowance": "0",
+          "reserved": "-20000000000000000000"
+        }
+      ]
+    }
+  ],
+  "negativeControls": [
+    {
+      "scenario": "counterparty-first",
+      "errorName": "CommitCallbackFailed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "Unused"
+    },
+    {
+      "scenario": "commit-at-deadline",
+      "errorName": "CommitCallbackFailed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "Unused"
+    },
+    {
+      "scenario": "repeated-party-commit",
+      "errorName": "0x3be62907",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "mismatched-terms",
+      "errorName": "CommitCallbackFailed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "nonzero-progression",
+      "errorName": "CommitCallbackFailed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "wrong-authorization-caller",
+      "errorName": "InvalidAuthorizationCaller",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "wrong-signature",
+      "errorName": "InvalidPQAuthorization",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "replayed-action-nonce",
+      "errorName": "0x0199bef1",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "claim-from-party-committed",
+      "errorName": "InvalidSameChainState",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "PartyCommitted"
+    },
+    {
+      "scenario": "reclaim-before-both-releases",
+      "errorName": "ReclaimWindowClosed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "BothCommitted"
+    },
+    {
+      "scenario": "wrong-settlement-secret",
+      "errorName": "InvalidSettlementSecret",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "BothCommitted"
+    },
+    {
+      "scenario": "claim-at-deadline",
+      "errorName": "ClaimWindowClosed",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "BothCommitted"
+    },
+    {
+      "scenario": "claim-after-terminal",
+      "errorName": "InvalidSameChainState",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "Claimed"
+    },
+    {
+      "scenario": "reclaim-after-terminal",
+      "errorName": "InvalidSameChainState",
+      "reverted": true,
+      "stateAndCustodyUnchanged": true,
+      "authorizationNoncePreserved": true,
+      "state": "Claimed"
+    }
+  ],
+  "recoveries": [
+    {
+      "outcome": "party-only-reclaim",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "transactionHash": "0xa27417e2c69a52562ec33e8058bd0a43855c42e742f70d979cbb22786fae30c7",
+      "releaseTime": "4000001400",
+      "stateBefore": "PartyCommitted",
+      "stateAfter": "Reclaimed",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principalBalance": "10000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "principalBalance": "20000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "20000000000000000000",
+          "reserved": "0"
+        }
+      ],
+      "fixedReclaimRecipients": true
+    },
+    {
+      "outcome": "both-reclaim",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "transactionHash": "0x18c983c0ae8c0944eda827505a39c0ae2eee8d53254958443ffe42fbb2caead8",
+      "releaseTime": "4000001400",
+      "stateBefore": "BothCommitted",
+      "stateAfter": "Reclaimed",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "principalBalance": "10000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "principalBalance": "20000000000000000000",
+          "recipientBalance": "0",
+          "wrapperBalance": "0",
+          "allowance": "0",
+          "reserved": "0"
+        }
+      ],
+      "fixedReclaimRecipients": true
+    }
+  ],
+  "atomicRollback": {
+    "trigger": "counterparty-reserve-deficit",
+    "errorName": "InsufficientReservedBalance",
+    "stateBefore": "BothCommitted",
+    "stateAfter": "BothCommitted",
+    "firstPayoutRolledBack": true,
+    "reservesAndBalancesUnchanged": true
+  },
+  "terminalOutcome": {
+    "state": "Claimed",
+    "custody": [
+      {
+        "role": "alice-asset",
+        "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+        "principalBalance": "0",
+        "recipientBalance": "10000000000000000000",
+        "wrapperBalance": "0",
+        "allowance": "0",
+        "reserved": "0"
+      },
+      {
+        "role": "bob-asset",
+        "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+        "principalBalance": "0",
+        "recipientBalance": "20000000000000000000",
+        "wrapperBalance": "0",
+        "allowance": "0",
+        "reserved": "0"
+      }
+    ],
+    "payoutsFixedByTerms": true
+  }
+}

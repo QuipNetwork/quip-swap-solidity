@@ -25,6 +25,11 @@ contract WrongProfileVerifier {
   bytes32 public constant PROFILE_TAG = keccak256('shrincs-128s-q20-keccak');
 }
 
+contract WrongVersionVerifier {
+  bytes32 public constant VERSION_TAG = keccak256('quip.shrincs-verifier.v0');
+  bytes32 public constant PROFILE_TAG = keccak256('shrincs-256s-keccak');
+}
+
 contract RevertingVersionVerifier {
   function VERSION_TAG() external pure returns (bytes32) {
     revert();
@@ -182,6 +187,9 @@ contract DirectAuthorizationTest is Test {
   function test_registryRejectsMissingOrWrongVerifierProfile() public {
     vm.expectRevert(DirectAuthorization.InvalidVerifier.selector);
     new DirectAuthorization(address(0));
+    WrongVersionVerifier wrongVersion = new WrongVersionVerifier();
+    vm.expectRevert(DirectAuthorization.InvalidVerifier.selector);
+    new DirectAuthorization(address(wrongVersion));
     WrongProfileVerifier wrongProfile = new WrongProfileVerifier();
     vm.expectRevert(DirectAuthorization.InvalidVerifier.selector);
     new DirectAuthorization(address(wrongProfile));
