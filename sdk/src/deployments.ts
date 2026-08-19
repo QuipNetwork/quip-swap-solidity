@@ -12,24 +12,24 @@
  * Testnets churn and mainnet does not; a single canonical address across all
  * chains cannot survive the first testnet-only redeploy.
  *
- * The DATA is the single source of truth in `deployments.json` (imported
- * below), shared with the Solidity tooling via `script/Deployments.sol` so the
- * two cannot disagree. ONE ROW PER CHAIN, overwritten in place on redeploy;
- * history lives in git.
+ * `deployments.json` is GENERATED from `script/DeployConstants.sol` by
+ * `make sync-registry` — chains, labels and the wallet factory are compiled
+ * into the deploy scripts, and the address is `predictOmnibus(label)`. It is
+ * not hand-edited; `make verify-omnibus` and the CI test
+ * `Constants_predictOmnibus.test_predictOmnibus_registryMatchesDeployConstants`
+ * both re-derive it and fail on divergence.
  *
- * `script/VerifyOmnibus.s.sol` (run `make verify-omnibus`) recomputes every
- * row's address from its own `version` label and asserts it matches — pure
- * offline math, no RPC. The same assertion runs in CI as
- * `Constants_predictOmnibus.test_predictOmnibus_matchesRegistry`.
- *
- * WHAT THE REGISTRY DOES NOT PROMISE. A row is arithmetic plus an operator's
- * word that the deploy landed; it is not an on-chain semantic check. A CREATE3
- * address ignores init code, so the address alone says nothing about WHICH
- * Omnibus is there — which is exactly how two testnet rows ended up pointing at
- * an Omnibus wired to the wrong WalletFactory. `walletFactory` is recorded per
- * row for that reason: it is baked in at construction, invisible from the
- * address, and unchangeable afterwards. Check it against the chain before
- * trusting a deployment for the wallet commit route.
+ * WHY `deployed` EXISTS. Every other field is derivable, and a CREATE3 address
+ * is predictable whether or not anything was ever deployed to it — so a purely
+ * derived registry would happily name addresses with no code. `deployed` is set
+ * by `make sync-registry` run against a live RPC, and it means more than "has
+ * code": sync also checks the live `WALLET_FACTORY` immutable against the one
+ * the scripts compile in, because a CREATE3 address ignores init code and so
+ * proves nothing about WHAT is deployed at it. That check is why Base Sepolia
+ * and OP Sepolia currently read `false` — an Omnibus is live at their address,
+ * but wired to a non-canonical WalletFactory, so the wallet commit route
+ * rejects otherwise-valid wallets with `NotQuipWallet`. {@link resolveDeployment}
+ * refuses to hand out a row like that; {@link registryRows} still exposes it.
  */
 import {isAddress, zeroAddress} from 'viem'
 import type {Address} from 'viem'
@@ -49,6 +49,13 @@ export interface OmnibusDeployment {
    */
   readonly version?: string
   /**
+   * Whether the Omnibus this build describes is live on that chain — code
+   * present AND its `WALLET_FACTORY` immutable matching the one the deploy
+   * scripts compile in. Absent on caller-supplied overrides, which are trusted
+   * by definition.
+   */
+  readonly deployed?: boolean
+  /**
    * The quip WalletFactory proxy baked into this Omnibus's immutables. Present
    * on every registry row. The wallet commit route calls `vaultIdOf` on it, so
    * a deployment wired to the wrong factory rejects otherwise-valid wallets
@@ -57,21 +64,31 @@ export interface OmnibusDeployment {
   readonly walletFactory?: Address
 }
 
+const toDeployment = (row: (typeof registry.deployments)[number]): OmnibusDeployment => ({
+  chainId: BigInt(row.chainId),
+  omnibusAddress: row.omnibus as Address,
+  version: row.version,
+  walletFactory: row.walletFactory as Address,
+  deployed: row.deployed,
+})
+
 /**
- * Built-in deployments, keyed by chain id, derived from `deployments.json`.
+ * EVERY row in the registry, including chains where nothing usable is live.
  *
- * To add or move a chain: deploy, then edit that file. No code change here.
+ * Use this to inspect or report on the deployment landscape. For picking an
+ * address to transact against, use {@link resolveDeployment}, which refuses
+ * rows that are not live.
+ */
+export const registryRows: readonly OmnibusDeployment[] = registry.deployments.map(toDeployment)
+
+/**
+ * Live deployments, keyed by chain id — the rows with `deployed: true`.
+ *
+ * To add or move a chain: edit `script/DeployConstants.sol`, deploy, then run
+ * `make sync-registry`. No code change here.
  */
 export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
-  registry.deployments.map(row => [
-    BigInt(row.chainId),
-    {
-      chainId: BigInt(row.chainId),
-      omnibusAddress: row.omnibus as Address,
-      version: row.version,
-      walletFactory: row.walletFactory as Address,
-    },
-  ]),
+  registryRows.filter(row => row.deployed).map(row => [row.chainId, row]),
 )
 
 /**
@@ -111,13 +128,22 @@ export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment)
   }
   const known = knownDeployments.get(chainId)
   if (known === undefined) {
+    // Distinguish "we have never heard of this chain" from "we know this chain
+    // and what is deployed there is not usable" — the second is a far more
+    // actionable message, and it is the case that actually bites.
+    const recorded = registryRows.find(row => row.chainId === chainId)
     throw new QuipSwapError({
       code: 'UNKNOWN_DEPLOYMENT',
       message:
-        `No Omnibus deployment is recorded for chain ${chainId} and no override was provided. ` +
-        'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a CREATE3 address ignores ' +
-        'init code, so a deployment must be confirmed on-chain before it is trusted (run `make verify-omnibus`).',
-      details: {chainId, knownChains: [...knownDeployments.keys()]},
+        recorded === undefined
+          ? `No Omnibus deployment is recorded for chain ${chainId} and no override was provided. ` +
+            'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a CREATE3 address ignores ' +
+            'init code, so a deployment must be confirmed on-chain before it is trusted.'
+          : `Chain ${chainId} is recorded (version ${recorded.version}, address ${recorded.omnibusAddress}) but is ` +
+            'NOT live: either nothing is deployed there, or the deployed Omnibus does not use the wallet factory ' +
+            `this build expects (${recorded.walletFactory}). It needs a redeploy. Pass an explicit override if you ` +
+            'intend to use it anyway.',
+      details: {chainId, knownChains: [...knownDeployments.keys()], recorded},
     })
   }
   return known

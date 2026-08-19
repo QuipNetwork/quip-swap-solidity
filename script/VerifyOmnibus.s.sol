@@ -51,22 +51,13 @@ contract VerifyOmnibus is Script {
 
     for (uint256 i; i < rows.length; i++) {
       Deployments.Deployment memory row = rows[i];
-      address predicted = Constants.predictOmnibus(row.version);
-
       console.log('');
       console.log('  chain id:      ', row.chainId);
       console.log('  version:       ', row.version);
-      console.log('  recorded:      ', row.omnibus);
-      console.log('  predicted:     ', predicted);
+      console.log('  omnibus:       ', row.omnibus);
       console.log('  wallet factory:', row.walletFactory);
-
-      require(row.chainId != 0, 'VerifyOmnibus: row has chain id 0');
-      require(row.omnibus != address(0), 'VerifyOmnibus: row has a zero omnibus address');
-      require(row.walletFactory != address(0), 'VerifyOmnibus: row has a zero walletFactory');
-      require(bytes(row.version).length > 0, 'VerifyOmnibus: row has an empty version label');
-      require(
-        row.omnibus == predicted, 'VerifyOmnibus: recorded address does not match the address its version derives'
-      );
+      console.log('  deployed:      ', row.deployed);
+      console.log('  predicted:     ', Constants.predictOmnibus(row.version));
 
       // One row per chain. A duplicate would make resolution order-dependent —
       // and the SDK's Map build would silently keep only the last one.
@@ -75,7 +66,12 @@ contract VerifyOmnibus is Script {
       }
     }
 
+    // THE check: the committed file must be exactly what DeployConstants
+    // derives. Every per-field assertion lives in one place so this script and
+    // the CI test cannot disagree about what "correct" means.
+    Deployments.requireDerived(rows);
+
     console.log('');
-    console.log('OK - every registry row matches the address its version derives');
+    console.log('OK - registry matches DeployConstants (addresses, versions, wallet factory)');
   }
 }

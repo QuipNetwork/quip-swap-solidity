@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {Constants} from './Constants.sol';
+import {DeployConstants} from './DeployConstants.sol';
 import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
 
 /**
@@ -30,6 +32,11 @@ library Deployments {
   struct Deployment {
     /// @dev The chain the Omnibus is deployed on.
     uint256 chainId;
+    /// @dev Whether an Omnibus is actually live at `omnibus` on that chain.
+    ///      The one field `make sync-registry` cannot derive: a CREATE3 address
+    ///      is predictable whether or not anything was ever deployed to it, so
+    ///      without this a row would advertise an address with no code.
+    bool deployed;
     /// @dev The deployed Omnibus address. Zero means "row declared, not yet
     ///      deployed" — the bootstrap case DeployOmnibus fills in.
     address omnibus;
@@ -80,5 +87,54 @@ library Deployments {
       if (rows[i].chainId == chainId) return true;
     }
     return false;
+  }
+
+  /// @notice The rows `make sync-registry` would generate from DeployConstants.
+  ///
+  /// @dev Every field except `deployed` is derivable, so this is the whole
+  ///      registry minus liveness. `deployed` is left false here and compared
+  ///      separately (it cannot be recomputed without an RPC).
+  function derived() internal pure returns (Deployment[] memory rows) {
+    uint256[] memory mainnets = DeployConstants.mainnetChains();
+    uint256[] memory testnets = DeployConstants.testnetChains();
+    rows = new Deployment[](mainnets.length + testnets.length);
+
+    for (uint256 i; i < rows.length; i++) {
+      uint256 chainId = i < mainnets.length ? mainnets[i] : testnets[i - mainnets.length];
+      string memory versionLabel = DeployConstants.labelFor(chainId);
+      rows[i] = Deployment({
+        chainId: chainId,
+        deployed: false,
+        omnibus: Constants.predictOmnibus(versionLabel),
+        version: versionLabel,
+        walletFactory: DeployConstants.WALLET_FACTORY
+      });
+    }
+  }
+
+  /// @notice Asserts a parsed registry matches what DeployConstants derives.
+  ///
+  /// @dev The registry is GENERATED, so any divergence means the committed file
+  ///      was hand-edited or a `make sync-registry` was skipped after a
+  ///      constants change. Both are silent failures otherwise: the SDK would
+  ///      keep shipping stale addresses that still look internally consistent.
+  ///      `deployed` is deliberately not compared — it is the one field the
+  ///      file is allowed to know more about than the source.
+  function requireDerived(Deployment[] memory rows) internal pure {
+    Deployment[] memory want = derived();
+    require(rows.length == want.length, 'Deployments: registry row count does not match DeployConstants');
+
+    for (uint256 i; i < want.length; i++) {
+      require(rows[i].chainId == want[i].chainId, 'Deployments: registry chain ids do not match DeployConstants');
+      require(rows[i].omnibus == want[i].omnibus, 'Deployments: registry address is not predictOmnibus(version)');
+      require(
+        keccak256(bytes(rows[i].version)) == keccak256(bytes(want[i].version)),
+        'Deployments: registry version does not match the label for its family'
+      );
+      require(
+        rows[i].walletFactory == want[i].walletFactory,
+        'Deployments: registry walletFactory does not match DeployConstants.WALLET_FACTORY'
+      );
+    }
   }
 }

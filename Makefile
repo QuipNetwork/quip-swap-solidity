@@ -78,7 +78,7 @@ clean: ## Clean build artifacts
 #
 # The deployer EOA is COMPILED IN as Constants.DEPLOYER, not read from env: the
 # CreateX salt is permissioned to it, so it is part of the address. DEPLOYER_PK
-# must derive it — DeployOmnibus refuses to broadcast otherwise, because CreateX
+# must derive it — the deploy scripts refuse to broadcast otherwise, because CreateX
 # would NOT revert on a wrong signer, it would silently deploy elsewhere.
 #
 # Every deploy path runs under FOUNDRY_PROFILE=prod (metadata-stripped artifact,
@@ -110,7 +110,7 @@ anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SE
 # Recipe lines that carry $(DEPLOYER_PK) are prefixed with @ so make does not
 # echo the key into terminal scrollback / CI logs.
 deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make deploy RPC=API_URL_BASE_SEPOLIA
-	@$(FOUNDRY_PROD) forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) forge script script/DeployTestnet.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -121,7 +121,7 @@ deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs ver
 # SAME signer gates (and set the same tx.origin) as the real thing. Nothing is
 # sent without --broadcast.
 deploy-dry: ## Dry run Omnibus deployment (no broadcast; runs every pre-broadcast gate). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
-	@$(FOUNDRY_PROD) forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) forge script script/DeployTestnet.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK)
 
@@ -132,7 +132,7 @@ deploy-dry: ## Dry run Omnibus deployment (no broadcast; runs every pre-broadcas
 # it needs no funded account.
 deploy-dry-wrong-signer: ## Prove the signer gate works: the SAME command with a non-ops key MUST fail. Usage: make deploy-dry-wrong-signer RPC=API_URL_BASE_SEPOLIA
 	@echo 'Rehearsing with a public dev key - this MUST fail...'
-	@if $(FOUNDRY_PROD) DEPLOYER_PK=$(WRONG_PK) forge script script/DeployOmnibus.s.sol \
+	@if $(FOUNDRY_PROD) DEPLOYER_PK=$(WRONG_PK) forge script script/DeployTestnet.s.sol \
 		--rpc-url $(RPC_URL) --private-key $(WRONG_PK) >/dev/null 2>&1; then \
 		echo 'FAIL: the deploy script ACCEPTED a non-ops signer'; exit 1; \
 	else \
@@ -152,7 +152,7 @@ activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (own
 .PHONY: deploy-base
 # MAINNET. Run the full gate sequence first — see the Deployment header above.
 deploy-base: ## Deploy Omnibus to Base MAINNET + broadcast + verify (reads env from .env)
-	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployMainnet.s.sol \
 		--rpc-url base \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -160,13 +160,13 @@ deploy-base: ## Deploy Omnibus to Base MAINNET + broadcast + verify (reads env f
 
 .PHONY: deploy-base-dry
 deploy-base-dry: ## Dry run the Base MAINNET deployment (no broadcast; runs every pre-broadcast gate)
-	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=8453 forge script script/DeployMainnet.s.sol \
 		--rpc-url base \
 		--private-key $(DEPLOYER_PK)
 
 .PHONY: deploy-base-sepolia
 deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
-	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=84532 forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=84532 forge script script/DeployTestnet.s.sol \
 		--rpc-url base_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -174,7 +174,7 @@ deploy-base-sepolia: ## Deploy Omnibus to Base Sepolia + broadcast + verify (rea
 
 .PHONY: deploy-op-sepolia
 deploy-op-sepolia: ## Deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
-	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=11155420 forge script script/DeployOmnibus.s.sol \
+	@$(FOUNDRY_PROD) EXPECTED_CHAIN_ID=11155420 forge script script/DeployTestnet.s.sol \
 		--rpc-url op_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -229,6 +229,15 @@ check: fmt-check build build-prod test test-fork sdk-typecheck sdk-test sdk-buil
 .PHONY: snapshot
 snapshot: ## Generate gas snapshot
 	forge snapshot
+
+.PHONY: sync-registry
+# The registry is GENERATED from script/DeployConstants.sol; this is the only
+# supported way to change sdk/src/deployments.json. Without RPC it re-derives
+# every row and preserves the `deployed` flags; with one it additionally
+# re-checks THIS chain against live code + its WALLET_FACTORY immutable, so a
+# full refresh is one run per chain.
+sync-registry: ## Regenerate sdk/src/deployments.json from DeployConstants. Usage: make sync-registry [RPC=API_URL_BASE_SEPOLIA]
+	forge script script/SyncRegistry.s.sol $(if $(RPC),--rpc-url $(RPC_URL))
 
 .PHONY: verify-omnibus
 # usage:

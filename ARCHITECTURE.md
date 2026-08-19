@@ -265,7 +265,7 @@ The `0x00` flag byte keeps `block.chainid` out of the guard, which is what makes
 **The critical property:** a wrong caller does **not** revert inside CreateX. It fails the sender-prefix match, falls to the permissionless branch `keccak256(abi.encode(salt))`, and deploys *successfully* at an unrelated address. Everything below exists because that failure is silent.
 
 - `script/Constants.sol` is the single source of truth for the salt math, and `DEPLOYER` is **compiled in** — not read from the environment. A prediction derived from the live signer would follow a wrong key to its wrong address and every post-deploy equality check would still pass.
-- `script/DeployOmnibus.s.sol` runs every gate before broadcasting: build profile, signer identity, `tx.origin`, optional chain id, wallet-factory code and ABI, agreement between the local prediction and the factory's own `computeCreate3Address`, and a **semantic** occupancy check on the `WALLET_FACTORY`/`DOMAIN_SEPARATOR` immutables (a CREATE3 address ignores init code, so "has code" says nothing about what is there).
+- `script/DeployOmnibusBase.sol` runs every gate before broadcasting: build profile, signer identity, `tx.origin`, the script's own chain allowlist, wallet-factory code and ABI, agreement between the local prediction and the factory's own `computeCreate3Address`, and a **semantic** occupancy check on the `VERSION`/`WALLET_FACTORY`/`DOMAIN_SEPARATOR` immutables (a CREATE3 address ignores init code, so "has code" says nothing about what is there). `DeployMainnet` and `DeployTestnet` are thin subclasses supplying only a salt label and an allowlist; nothing that decides the address comes from the environment.
 - Deploys build under `FOUNDRY_PROFILE=prod` — metadata stripped, dedicated `out-prod/`.
 - `test/Constants/` locks the math: known-answer tests anchored to the live deployment, layout and anti-squat invariants, a registry lock against `sdk/src/deployments.json`, and an env-gated fork test that executes the real CreateX bytecode.
 
@@ -319,7 +319,11 @@ src/
 script/
 ├── Constants.sol                # salt math — single source of truth
 ├── ICreateX.sol                 # minimal CreateX interface
-├── DeployOmnibus.s.sol          # gated deploy
+├── DeployConstants.sol          # labels, wallet factory, chain lists (source of truth)
+├── DeployOmnibusBase.sol        # every deploy gate, shared
+├── DeployMainnet.s.sol          # mainnet family (thin)
+├── DeployTestnet.s.sol          # testnet family (thin)
+├── SyncRegistry.s.sol           # regenerates sdk/src/deployments.json
 ├── VerifyOmnibus.s.sol          # offline registry check (every row)
 └── ActivateVerifier.s.sol       # post-deploy owner action
 

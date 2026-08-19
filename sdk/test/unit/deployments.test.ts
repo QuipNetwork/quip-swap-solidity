@@ -15,7 +15,7 @@ import {getAddress} from 'viem'
 import type {Address} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {QuipSwapError} from '../../src/errors.js'
-import {knownDeployments, resolveDeployment} from '../../src/deployments.js'
+import {knownDeployments, registryRows, resolveDeployment} from '../../src/deployments.js'
 import type {OmnibusDeployment} from '../../src/deployments.js'
 import registry from '../../src/deployments.json'
 
@@ -39,24 +39,53 @@ const OP_SEPOLIA = 11_155_420n
 const CANONICAL_WALLET_FACTORY: Address = '0xdCD90563B912f82D2f23d5c7988B3Fec2da63471'
 
 describe('resolveDeployment — shipped state', () => {
-  it('registers exactly the chains recorded in deployments.json', () => {
-    // Assert exact membership, not just the count: a wrong chain id would
-    // otherwise slip through while the size still matched.
-    expect([...knownDeployments.keys()].sort()).toEqual(registry.deployments.map(r => BigInt(r.chainId)).sort())
+  it('exposes every registry row, live or not', () => {
+    expect(registryRows.map(r => r.chainId).sort()).toEqual(registry.deployments.map(r => BigInt(r.chainId)).sort())
   })
 
-  it('carries address, version and wallet factory on every row', () => {
-    for (const row of registry.deployments) {
+  it('registers exactly the LIVE chains as known deployments', () => {
+    // Assert exact membership, not just the count: a wrong chain id would
+    // otherwise slip through while the size still matched.
+    const live = registry.deployments.filter(r => r.deployed).map(r => BigInt(r.chainId))
+    expect([...knownDeployments.keys()].sort()).toEqual(live.sort())
+  })
+
+  it('carries address, version and wallet factory on every live row', () => {
+    for (const row of registry.deployments.filter(r => r.deployed)) {
       const resolved = resolveDeployment(BigInt(row.chainId))
       expect(resolved.omnibusAddress).toBe(row.omnibus)
       expect(resolved.version).toBe(row.version)
       expect(resolved.walletFactory).toBe(row.walletFactory)
+      expect(resolved.deployed).toBe(true)
     }
   })
 
   it('throws UNKNOWN_DEPLOYMENT for any unrecorded chain without an override', () => {
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(42_161n))).toBe('UNKNOWN_DEPLOYMENT')
+  })
+
+  /**
+   * A recorded-but-not-live row must never be handed out. This is the failure
+   * that started all of this: an Omnibus IS live at the testnet addresses, but
+   * wired to a non-canonical WalletFactory, so the wallet route rejects valid
+   * wallets with `NotQuipWallet`. Returning the address would launder that into
+   * every consumer.
+   */
+  it('refuses a recorded chain that is not live, and says why', () => {
+    for (const row of registry.deployments.filter(r => !r.deployed)) {
+      const chainId = BigInt(row.chainId)
+      expect(codeOf(() => resolveDeployment(chainId))).toBe('UNKNOWN_DEPLOYMENT')
+      expect(() => resolveDeployment(chainId)).toThrow(/NOT live/)
+    }
+  })
+
+  it('an explicit override still reaches a not-live chain', () => {
+    for (const row of registry.deployments.filter(r => !r.deployed)) {
+      const chainId = BigInt(row.chainId)
+      const override: OmnibusDeployment = {chainId, omnibusAddress: row.omnibus as Address}
+      expect(resolveDeployment(chainId, override)).toEqual(override)
+    }
   })
 })
 
@@ -93,10 +122,16 @@ describe('registry drift — version label governs the address', () => {
    * When that lands, flip these to the canonical factory — the failure is the
    * reminder.
    */
-  it('records which chains are wired to the canonical wallet factory', () => {
+  it('records which chains are live under the canonical wallet factory', () => {
     expect(resolveDeployment(BASE_MAINNET).walletFactory).toBe(CANONICAL_WALLET_FACTORY)
-    expect(resolveDeployment(BASE_SEPOLIA).walletFactory).not.toBe(CANONICAL_WALLET_FACTORY)
-    expect(resolveDeployment(OP_SEPOLIA).walletFactory).not.toBe(CANONICAL_WALLET_FACTORY)
+
+    // Both testnets hold an Omnibus wired to a testnet-only factory duplicate,
+    // so `make sync-registry` marks them not-live. Flip these once the
+    // redeploy lands — the failure is the reminder.
+    for (const chainId of [BASE_SEPOLIA, OP_SEPOLIA]) {
+      const row = registryRows.find(r => r.chainId === chainId)
+      expect(row?.deployed, `chain ${chainId} unexpectedly live`).toBe(false)
+    }
   })
 })
 

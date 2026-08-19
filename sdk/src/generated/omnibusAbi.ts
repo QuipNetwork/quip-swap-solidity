@@ -20,6 +20,11 @@ export const omnibusAbi = [
         "name": "walletFactory",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "version",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "nonpayable"
@@ -74,8 +79,8 @@ export const omnibusAbi = [
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -1410,6 +1415,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroVerifier",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroVersion",
     "inputs": []
   }
 ] as const

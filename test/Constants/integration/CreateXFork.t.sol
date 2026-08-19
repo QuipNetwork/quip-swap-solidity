@@ -175,6 +175,8 @@ contract Constants_CreateXFork is Test {
   ///      pair works. The factory must be non-zero (the Omnibus constructor
   ///      reverts on ZeroFactory).
   function _omnibusInitCode() internal pure returns (bytes memory) {
-    return abi.encodePacked(type(Omnibus).creationCode, abi.encode(Constants.DEPLOYER, LIVE_WALLET_FACTORY));
+    return abi.encodePacked(
+      type(Omnibus).creationCode, abi.encode(Constants.DEPLOYER, LIVE_WALLET_FACTORY, bytes32(bytes(SALT_LABEL)))
+    );
   }
 }

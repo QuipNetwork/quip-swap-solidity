@@ -115,7 +115,7 @@ contract OmnibusTest is TestBase {
     assertNotEq(address(mockERC20), address(0));
     assertNotEq(address(mockERC721), address(0));
     assertNotEq(address(mockERC1155), address(0));
-    assertEq(omnibus.VERSION(), 0);
+    assertEq(omnibus.VERSION(), omnibus.HARNESS_VERSION());
     assertTrue(omnibus.verifierActive(address(verifierA)));
     assertFalse(omnibus.verifierActive(address(verifierB)));
     assertEq(address(omnibus.WALLET_FACTORY()), address(walletFactory));

@@ -4,25 +4,18 @@ pragma solidity ^0.8.33;
 import {Omnibus} from '../src/Omnibus.sol';
 import {IWalletFactory} from '../src/interfaces/IWalletFactory.sol';
 import {Constants} from './Constants.sol';
-import {Deployments} from './Deployments.sol';
+import {DeployConstants} from './DeployConstants.sol';
 import {ICreateX} from './ICreateX.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
 
 /**
- * @title DeployOmnibus
- * @dev Deploys the Omnibus singleton via the canonical CreateX factory using
- *      CREATE3. The address depends only on (CreateX, Constants.DEPLOYER, salt)
- *      — independent of constructor args, so two chains sharing a version label
- *      share an address, and a chain that needs a redeploy gets a new label
- *      without disturbing the others.
- *
- *      THE REGISTRY IS THE INTENT, NOT THE TRANSCRIPT. The target chain must
- *      already have a row in `sdk/src/deployments.json` naming the version label
- *      and the wallet factory; this script reads it and refuses to broadcast if
- *      the run disagrees with what was declared. Writing the row afterwards
- *      would record whatever happened, which is how a wrong factory got baked
- *      into two testnet deployments in the first place.
+ * @title DeployOmnibusBase
+ * @dev Every gate for an Omnibus deployment, shared by DeployMainnet and
+ *      DeployTestnet. The subclasses supply only a label and an allowlist —
+ *      duplicating the gates across two scripts would be two copies free to
+ *      drift, and a gate that exists in one script and not the other is worse
+ *      than no split at all.
  *
  *      WHY THIS SCRIPT IS ALL ASSERTIONS. A wrong caller does NOT revert inside
  *      CreateX. It fails the sender-prefix match, silently takes a different
@@ -30,76 +23,75 @@ import {VmSafe} from 'forge-std-1.14.0/Vm.sol';
  *      gate below exists because that failure mode is silent, and they all run
  *      BEFORE `vm.startBroadcast` so a bad configuration costs nothing.
  *
- *      The deployer is compiled into `Constants.DEPLOYER` rather than read from
- *      the environment on purpose: a prediction derived from the live signer
- *      would follow a wrong key to its wrong address, and the post-deploy
- *      `deployed == expected` check would then PASS.
+ *      NOTHING THAT DECIDES THE ADDRESS COMES FROM THE ENVIRONMENT. The
+ *      deployer is `Constants.DEPLOYER`, the label and the wallet factory are
+ *      in `DeployConstants`, and the chain must be in the subclass's allowlist.
+ *      Env supplies only the signing key and the initial owner — neither of
+ *      which can move the address or brick a route. That is deliberate: the
+ *      wrong-factory incident happened through an env var that passed every
+ *      liveness check it was given.
  *
  *      SAFE / MULTISIG ROUTING IS NOT SUPPORTED, by construction. CreateX keys
  *      its guard off `msg.sender`, so a Safe-executed deploy has
  *      `msg.sender == theSafe`, parses as a non-permissioned salt, and lands at
- *      a completely different address. This design binds the address to an EOA
- *      key; routing through a contract would require the salt to embed that
- *      contract's address instead.
+ *      a completely different address.
  *
  *      Local rehearsal: bare Anvil has no CreateX — rehearse against a fork of a
  *      chain that does (`make anvil-fork RPC=...`).
  *
- * Usage:
- *   make deploy-dry RPC=API_URL_BASE_SEPOLIA    # rehearsal, no broadcast
- *   make deploy     RPC=API_URL_BASE_SEPOLIA    # broadcast + verify
- *
  * Environment:
  *   DEPLOYER_PK       - Ops wallet private key. MUST derive Constants.DEPLOYER.
  *   OMNIBUS_OWNER     - Initial owner of the Omnibus (Ownable2Step)
- *   WALLET_FACTORY    - The quip WalletFactory proxy on this chain (baked as an
- *                       immutable; gates the wallet commit route). MUST equal
- *                       the `walletFactory` in this chain's registry row.
- *   EXPECTED_CHAIN_ID - Optional. When set, asserts the RPC really points at
- *                       that chain — catches an rpc-alias typo, which is a
- *                       likelier operator error than a wrong key.
+ *   EXPECTED_CHAIN_ID - Optional. Belt-and-braces on top of the allowlist.
  */
-contract DeployOmnibus is Script {
+abstract contract DeployOmnibusBase is Script {
   /// @dev The build profile whose compiler settings produce the artifact we
   ///      ship (metadata stripped, dedicated out dir). See [profile.prod].
   string internal constant REQUIRED_PROFILE = 'prod';
 
+  /// @notice The salt version label this script deploys under.
+  function label() internal pure virtual returns (string memory);
+
+  /// @notice The chain ids this script is allowed to broadcast to.
+  function allowedChains() internal pure virtual returns (uint256[] memory);
+
+  /// @notice Human-readable family name, for logs and error messages.
+  function family() internal pure virtual returns (string memory);
+
   function run() external {
     uint256 privateKey = vm.envUint('DEPLOYER_PK');
     address omnibusOwner = vm.envAddress('OMNIBUS_OWNER');
-    address walletFactory = vm.envAddress('WALLET_FACTORY');
 
     address broadcaster = vm.addr(privateKey);
     string memory profile = vm.envOr('FOUNDRY_PROFILE', string('default'));
 
-    // The registry row for THIS chain supplies the version label; the label is
-    // the only input to the address besides CreateX and DEPLOYER.
-    Deployments.Deployment memory row = Deployments.forChain(Deployments.readAll(), block.chainid);
-    bytes32 rawSalt = Constants.omnibusSalt(row.version);
-    address expectedAddr = Constants.predictOmnibus(row.version);
+    string memory versionLabel = label();
+    bytes32 versionWord = DeployConstants.versionWord(versionLabel);
+    address walletFactory = DeployConstants.WALLET_FACTORY;
+    bytes32 rawSalt = Constants.omnibusSalt(versionLabel);
+    address expectedAddr = Constants.predictOmnibus(versionLabel);
 
     // ── 0. Log the whole picture BEFORE the first require, so a run that fails
     //       a gate is diagnosable from the same output a successful run gives.
+    console.log('Family:            ', family());
     console.log('Profile:           ', profile);
     console.log('Chain id:          ', block.chainid);
-    console.log('Version label:     ', row.version);
+    console.log('Version label:     ', versionLabel);
     console.log('Broadcaster (PK):  ', broadcaster);
     console.log('tx.origin:         ', tx.origin);
     console.log('Constants.DEPLOYER:', Constants.DEPLOYER);
     console.log('Expected Omnibus:  ', expectedAddr);
-    console.log('Registry Omnibus:  ', row.omnibus);
     console.log('Omnibus owner:     ', omnibusOwner);
     console.log('Wallet factory:    ', walletFactory);
-    console.log('Registry factory:  ', row.walletFactory);
     console.log('Raw salt:');
     console.logBytes32(rawSalt);
     console.log('Guarded salt:');
-    console.logBytes32(Constants.guardedSalt(row.version));
+    console.logBytes32(Constants.guardedSalt(versionLabel));
 
     // ── 1. Build provenance. Catches a dev-profile artifact reaching a chain.
     require(
       keccak256(bytes(profile)) == keccak256(bytes(REQUIRED_PROFILE)),
-      'DeployOmnibus: FOUNDRY_PROFILE must be prod (use `make deploy` / `make deploy-dry`)'
+      'DeployOmnibus: FOUNDRY_PROFILE must be prod (use the make deploy targets)'
     );
 
     // ── 2. Signer identity. THE gate. Any other key deploys a different,
@@ -110,15 +102,16 @@ contract DeployOmnibus is Script {
     //       where the broadcast identity is NOT derived from DEPLOYER_PK.
     //       Broadcast-only: a dry run without --private-key/--sender runs under
     //       forge's default sender and would trip this spuriously.
-    //       NOTE this checks tx.origin, so it passes for a Safe-routed deploy
-    //       even though CreateX would see the Safe as msg.sender. That case
-    //       still fails closed at gate 6 / the post-deploy check, just with a
-    //       vaguer message. See the Safe note in the contract docs.
     if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
       require(tx.origin == Constants.DEPLOYER, 'DeployOmnibus: tx.origin is not Constants.DEPLOYER');
     }
 
-    // ── 4. Target chain, when the caller pinned one.
+    // ── 4. Chain allowlist. THE gate the script split exists for: choosing the
+    //       right script does not stop an rpc-alias typo from pointing the
+    //       MAINNET label at a testnet, which would burn a mainnet address on a
+    //       throwaway chain and split the family.
+    require(_chainAllowed(block.chainid), string.concat('DeployOmnibus: chain id not in the ', family(), ' allowlist'));
+
     uint256 expectedChainId = vm.envOr('EXPECTED_CHAIN_ID', uint256(0));
     if (expectedChainId != 0) {
       require(block.chainid == expectedChainId, 'DeployOmnibus: connected to the wrong chain');
@@ -127,28 +120,13 @@ contract DeployOmnibus is Script {
     // ── 5. Constructor args. WALLET_FACTORY is an immutable and the wallet route
     //       calls vaultIdOf on it at runtime, so a wrong-but-nonempty address
     //       bricks that route permanently — probe the ABI, not just the code.
+    //       The address itself is compiled in; this proves it is really present
+    //       and really a factory ON THIS CHAIN.
     require(omnibusOwner != address(0), 'DeployOmnibus: OMNIBUS_OWNER must be non-zero');
-    require(walletFactory != address(0), 'DeployOmnibus: WALLET_FACTORY must be non-zero');
     require(walletFactory.code.length > 0, 'DeployOmnibus: WALLET_FACTORY has no code on this chain');
     try IWalletFactory(walletFactory).vaultIdOf(address(0)) returns (bytes32) {}
     catch {
       revert('DeployOmnibus: WALLET_FACTORY does not implement vaultIdOf');
-    }
-
-    // ── 5b. Registry agreement. Gate 5 only proves WALLET_FACTORY is *a*
-    //       working factory — 0x6de121F7 passed every one of those checks and
-    //       still bricked the wallet route on two testnets, because the factory
-    //       is invisible from the address and cannot be changed after deploy.
-    //       This is the gate that would have caught it: the row declares which
-    //       factory this chain is supposed to use, and the env var must match.
-    require(walletFactory == row.walletFactory, 'DeployOmnibus: WALLET_FACTORY does not match the registry row');
-
-    // A zero row address is the bootstrap case: the row was declared before the
-    // first deploy, and the operator fills it in from this run's output.
-    if (row.omnibus != address(0)) {
-      require(row.omnibus == expectedAddr, 'DeployOmnibus: registry address does not match the version label');
-    } else {
-      console.log('\nNOTE: registry row has no address yet. Record this one after the deploy:', expectedAddr);
     }
 
     // ── 6. Factory presence + derivation agreement. The only gate that consults
@@ -156,19 +134,20 @@ contract DeployOmnibus is Script {
     //       on-chain factory derive the SAME address from the same guarded salt.
     require(Constants.CREATEX.code.length > 0, 'DeployOmnibus: CreateX not deployed on this chain');
     require(
-      ICreateX(Constants.CREATEX).computeCreate3Address(Constants.guardedSalt(row.version)) == expectedAddr,
+      ICreateX(Constants.CREATEX).computeCreate3Address(Constants.guardedSalt(versionLabel)) == expectedAddr,
       'DeployOmnibus: CreateX disagrees with the local CREATE3 prediction'
     );
 
     // ── 7. Occupancy. A CREATE3 address ignores init code, so "has code" says
     //       nothing about WHAT is there. Never skip silently.
     if (expectedAddr.code.length > 0) {
-      _requireOurOmnibusAt(expectedAddr, omnibusOwner, walletFactory);
+      _requireOurOmnibusAt(expectedAddr, omnibusOwner, walletFactory, versionWord);
       console.log('\nOmnibus already deployed and verified at this address. Nothing to do.');
       return;
     }
 
-    bytes memory bytecode = abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner, walletFactory));
+    bytes memory bytecode =
+      abi.encodePacked(type(Omnibus).creationCode, abi.encode(omnibusOwner, walletFactory, versionWord));
 
     vm.startBroadcast(privateKey);
     address deployed = ICreateX(Constants.CREATEX).deployCreate3(rawSalt, bytecode);
@@ -176,16 +155,22 @@ contract DeployOmnibus is Script {
 
     // Backstop for any branch divergence between our mirror and the factory.
     require(deployed == expectedAddr, 'DeployOmnibus: deployed address does not match the prediction');
-    _requireOurOmnibusAt(deployed, omnibusOwner, walletFactory);
+    _requireOurOmnibusAt(deployed, omnibusOwner, walletFactory, versionWord);
     console.log('Omnibus deployed at:', deployed);
+    console.log('Now run `make sync-registry RPC=...` to record it in sdk/src/deployments.json.');
   }
 
   /// @dev Asserts the contract at `addr` really is OUR Omnibus, using its
   ///      IMMUTABLES. `owner()` is deliberately not a hard check: Ownable2Step
   ///      ownership is transferable, so a legitimate re-run after a handover
-  ///      must not revert. WALLET_FACTORY and DOMAIN_SEPARATOR are fixed at
-  ///      construction and cannot be changed by any post-deploy action.
-  function _requireOurOmnibusAt(address addr, address expectedOwner, address expectedFactory) internal view {
+  ///      must not revert. VERSION, WALLET_FACTORY and DOMAIN_SEPARATOR are
+  ///      fixed at construction and cannot be changed by any post-deploy action.
+  function _requireOurOmnibusAt(
+    address addr,
+    address expectedOwner,
+    address expectedFactory,
+    bytes32 expectedVersion
+  ) internal view {
     Omnibus existing = Omnibus(payable(addr));
 
     // A non-Omnibus contract fails this staticcall; catch it so the operator
@@ -195,6 +180,10 @@ contract DeployOmnibus is Script {
     } catch {
       revert('DeployOmnibus: address occupied by a contract that is not an Omnibus');
     }
+
+    // The label the occupant says it was deployed under. Without this, an
+    // occupied address can only be identified by inference.
+    require(existing.VERSION() == expectedVersion, 'DeployOmnibus: address occupied - VERSION mismatch');
 
     // Binds COMMIT_DIGEST_TAG + chainid + address, all recomputable locally.
     require(
@@ -206,5 +195,13 @@ contract DeployOmnibus is Script {
     if (currentOwner != expectedOwner) {
       console.log('WARNING: on-chain owner differs from OMNIBUS_OWNER (transferred?):', currentOwner);
     }
+  }
+
+  function _chainAllowed(uint256 chainId) private pure returns (bool) {
+    uint256[] memory chains = allowedChains();
+    for (uint256 i; i < chains.length; i++) {
+      if (chains[i] == chainId) return true;
+    }
+    return false;
   }
 }
