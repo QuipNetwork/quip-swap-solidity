@@ -541,66 +541,142 @@ cd ..
 All commands must pass, and a final `bun run demo:full` artifact must match the
 terminal states and asset outcomes described above.
 
-## Run and replay the current same-chain demo
+## Run the current same-chain demo
 
-This is the standalone demonstration of the current v1.1
-`SameChainWrapper`. It is separate from `bun run smoke`, which exercises the
-legacy Omnibus implementation and is not evidence for the current wrapper.
+This is the standalone demonstration of the current v1.1 `SameChainWrapper`.
+It is separate from `bun run smoke`, which exercises the legacy Omnibus and is
+not evidence for the current wrapper. The runner starts one temporary Anvil
+chain, deploys and funds the current protocol, executes success, rejection, and
+recovery branches, validates one artifact, and then stops the chain.
 
-- Enter the SDK directory so package commands and relative artifact paths resolve
-  consistently.
+### Run the demo
+
+From the repository root:
 
 ```sh
 cd sdk
-```
-
-- Run the current same-chain success, rejection, and recovery flows and write the
-  default owner-only artifact at `../demo-artifacts/same-chain-demo.json`.
-
-```sh
 bun run demo:same-chain
+cd ..
 ```
 
-- Alternatively, run the same deterministic logical flow and select a replay
-  artifact path explicitly.
+No manual Foundry configuration changes are required. The runner builds with
+the Soldeer-free demo profile, starts chain 31337 on an available local port,
+and writes the default owner-only artifact to:
+
+```text
+demo-artifacts/same-chain-demo.json
+```
+
+To select another path, pass it after the script name. Relative paths resolve
+against `sdk/`:
 
 ```sh
+cd sdk
 bun run demo:same-chain ../demo-artifacts/same-chain-replay.json
+cd ..
 ```
 
-The runner prints eleven green progress steps. Its final summary must report
-three ordered transitions
-`Unused -> PartyCommitted -> BothCommitted -> Claimed`, fourteen rejected
-controls, both `party-only-reclaim` and `both-reclaim`, a successful atomic
-rollback check, and `secretsPersisted: false`.
+During execution, the runner prints build and chain-start messages followed by
+11 green progress steps:
 
-The versioned `quip-swap-same-chain-demo.v1` artifact contains deployment
-metadata, canonical terms and TradeID, the settlement lock, redacted accepted
-authorization decisions, ordered receipt summaries, custody snapshots and
-balance deltas, negative controls, recovery outcomes, and the terminal result.
-It excludes settlement preimages, PQ signatures, private keys, PQ public-key
-bytes or hashes, and recovery-key material.
+```text
+[same-chain demo 01/11] Deploying the current four-contract protocol stack
+[same-chain demo 02/11] Deploying deterministic term assets
+[same-chain demo 03/11] Binding canonical terms to the settlement lock
+[same-chain demo 04/11] Funding, allowlisting, and approving both same-chain assets
+[same-chain demo 05/11] Preparing both lazy direct-authorization identities
+[same-chain demo 06/11] Running isolated same-chain invalid-action controls
+[same-chain demo 07/11] Demonstrating exact one-sided reclaim
+[same-chain demo 08/11] Demonstrating atomic two-sided reclaim and payout rollback
+[same-chain demo 09/11] Submitting Alice's lazy-registration party commit
+[same-chain demo 10/11] Submitting Bob's lazy-registration counterparty commit
+[same-chain demo 11/11] Submitting one permissionless atomic claim
+```
 
-- Validate the default persisted artifact without starting Anvil or executing
-  another swap.
+After success, the runner prints one pretty JSON summary. Expect:
+
+- `schema` equal to `quip-swap-same-chain-demo.v1`;
+- `mockVerifier` equal to `true` and `chainId` equal to `31337`;
+- nonzero `sameChainWrapper`, `tradeId`, and `lock` values;
+- three ordered transitions: `Unused -> PartyCommitted`,
+  `PartyCommitted -> BothCommitted`, and `BothCommitted -> Claimed`;
+- `negativeControls` equal to `14`;
+- `recoveries` equal to `["party-only-reclaim","both-reclaim"]`;
+- `atomicRollback.firstPayoutRolledBack` and
+  `atomicRollback.reservesAndBalancesUnchanged` equal to `true`;
+- `terminalOutcome.state` equal to `Claimed` and
+  `terminalOutcome.payoutsFixedByTerms` equal to `true`;
+- `secretsPersisted` equal to `false`; and
+- `artifact` equal to the resolved output path.
+
+The demo uses the prototype verifier mock. It proves current wrapper,
+authorization, custody, rollback, and state-machine integration, but it is not a
+production-verifier gas or cryptographic validation run.
+
+### Expected protocol progression
+
+| Order | Demo action | Expected result |
+| ---: | --- | --- |
+| 1 | Prepare terms and assets | Both sides use chain 31337, canonical zero progression locks, distinct assets, signed destinations, and one trade-bound settlement lock. |
+| 2 | Isolated invalid controls | Every rejected call preserves state, custody, and authorization-nonce usability. Snapshot reversion keeps these branches separate from the success path. |
+| 3 | Isolated one-sided recovery | From `PartyCommitted`, any caller reclaims only the party leg to its fixed reclaim recipient and enters `Reclaimed`. |
+| 4 | Isolated dual recovery | From `BothCommitted`, reclaim waits for both releases and atomically returns both legs to their fixed reclaim recipients. A forced second-payout failure rolls back the first payout and state. |
+| 5 | Alice party commit | Atomic lazy registration, PQ commit authorization, nonce consumption, and custody move `Unused -> PartyCommitted`. |
+| 6 | Bob counterparty commit | Local source-state validation, atomic lazy registration, authorization, nonce consumption, and custody move `PartyCommitted -> BothCommitted`. No progression secret is accepted. |
+| 7 | Permissionless claim | A third-party caller supplies the settlement secret; one transaction pays both signed recipients and moves `BothCommitted -> Claimed`. |
+
+The fourteen intentional invalid actions cover counterparty-first commit,
+commit at the exclusive deadline, repeated party commit, mismatched terms,
+nonzero same-chain progression input, wrong authorization caller, wrong PQ
+signature, replayed action nonce, claim from `PartyCommitted`, reclaim before
+both releases, wrong settlement secret, claim at the exclusive deadline, claim
+after terminal state, and reclaim after terminal state.
+
+At successful completion, the wrapper must be `Claimed`; wrapper balances and
+reserved amounts must be zero; Bob must hold the 10 Alice-demo tokens; Alice
+must hold the 20 Bob-demo tokens; both registered identities must be active at
+version 1; and both successful commit authorization nonces must be consumed.
+
+### Inspect and validate the artifact
+
+The versioned artifact contains deployment metadata, canonical terms and
+TradeID, the settlement lock, redacted authorization decisions, ordered receipt
+summaries, custody snapshots and balance deltas, fourteen negative controls,
+two recovery outcomes, atomic rollback evidence, and the terminal result. It
+excludes settlement preimages, PQ signatures, private keys, PQ public-key bytes
+or hashes, and recovery-key material.
+
+Validate the default artifact without starting Anvil or executing another swap:
 
 ```sh
+cd sdk
 bun run demo:same-chain:validate ../demo-artifacts/same-chain-demo.json
+cd ..
 ```
 
-- Validate an explicitly named replay artifact in the same way.
+Validate an explicitly named replay artifact in the same way:
 
 ```sh
+cd sdk
 bun run demo:same-chain:validate ../demo-artifacts/same-chain-replay.json
+cd ..
 ```
 
-Validation recomputes the TradeID from the persisted terms and rejects missing
-or reordered transitions, mismatched protocol identifiers, incomplete
-authorization and rejection evidence, malformed recovery outcomes, nonterminal
-success traces, terminal custody mismatches, and forbidden sensitive fields.
-Transaction hashes may differ between fresh Anvil runs; the ordered logical
-transitions, authorization decisions, controls, recovery outcomes, and final
-custody must agree.
+Validation recomputes the TradeID and rejects missing or reordered transitions,
+mismatched identifiers, incomplete authorization or rejection evidence,
+malformed recovery outcomes, nonterminal success traces, terminal custody
+mismatches, and forbidden sensitive fields. Transaction hashes may differ
+between runs; logical transitions, authorization decisions, controls, recovery
+outcomes, and final custody must agree.
+
+### Failure and recovery
+
+The runner writes the artifact only after every flow and validation succeeds. A
+missing artifact means the run is incomplete; an older artifact at the same
+path must not be treated as output from the failed run. The temporary Anvil
+process is normally stopped by the runner even after failure. Because its state
+is intentionally ephemeral, correct recovery is to rerun the complete command,
+not to hydrate or continue a partially executed chain.
 
 ## Run the two-chain recovery demo
 
