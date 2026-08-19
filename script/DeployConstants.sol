@@ -49,7 +49,7 @@ library DeployConstants {
   /// @notice Salt version label for TESTNET deployments.
   /// @dev Expected to churn far more often than the mainnet label. Bump it,
   ///      then redeploy every chain in TESTNET_CHAINS in one batch.
-  string internal constant TESTNET_LABEL = 'QUIP:Omnibus:v1.0.0-alpha.2';
+  string internal constant TESTNET_LABEL = 'QUIP:Omnibus:v1.0.0-alpha.3';
 
   /// @notice Chains the MAINNET label deploys to.
   /// @dev Doubles as the deploy script's allowlist: a mainnet deploy pointed at
