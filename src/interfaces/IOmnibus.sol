@@ -70,6 +70,9 @@ interface IOmnibus {
   /// @notice thrown at construction when the wallet factory address is zero
   error ZeroFactory();
 
+  /// @notice thrown at construction when the version label is zero
+  error ZeroVersion();
+
   /// @notice thrown when a signer blob is not an ERC-7913 keyed identity (20 bytes or shorter)
   error MalformedSigner();
 

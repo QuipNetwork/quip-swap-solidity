@@ -19,8 +19,20 @@ import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   using TermsLib for Terms;
 
-  /// @notice the version of this omnibus implementation
-  uint256 public constant VERSION = 0;
+  /// @notice the salt version label this Omnibus was deployed under, as a
+  /// right-padded ASCII word (read it with `cast --to-ascii`)
+  ///
+  /// @dev IMMUTABLE, and set from the SAME constant the deploy script feeds to
+  /// the CREATE3 salt — so the contract states which deployment family it
+  /// belongs to, on-chain, without an archaeology dig through broadcast logs.
+  ///
+  /// This exists because a CREATE3 address ignores init code: the address alone
+  /// proves nothing about WHAT is deployed at it, which is how two testnet
+  /// deployments ended up wired to the wrong WalletFactory without anything
+  /// visibly wrong. VERSION plus WALLET_FACTORY makes a live contract
+  /// self-describing — `_requireOurOmnibusAt` checks both before a redeploy is
+  /// allowed to treat an occupied address as ours.
+  bytes32 public immutable VERSION;
 
   /// @inheritdoc IOmnibus
   uint256 public constant MAX_FEE = 0.01 ether;
@@ -59,9 +71,19 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// verifiers are activated post-deploy via setVerifierActivity
   /// @param initialOwner the address that will own the contract
   /// @param walletFactory the quip WalletFactory proxy the wallet route trusts
-  constructor(address initialOwner, address walletFactory) Ownable(initialOwner) {
+  /// @param version the salt version label this deployment is made under,
+  /// right-padded ASCII; must match the label the CREATE3 salt derives from
+  ///
+  /// @dev `version` is deliberately NOT mixed into DOMAIN_SEPARATOR. The
+  /// separator already binds `address(this)`, and the address is a function of
+  /// the version, so versions are separated by construction — mixing it in
+  /// again would change every commit digest and break signatures the SDK
+  /// already produces.
+  constructor(address initialOwner, address walletFactory, bytes32 version) Ownable(initialOwner) {
     if (walletFactory == address(0)) revert ZeroFactory();
+    if (version == bytes32(0)) revert ZeroVersion();
     WALLET_FACTORY = IWalletFactory(walletFactory);
+    VERSION = version;
     DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
   }
 
