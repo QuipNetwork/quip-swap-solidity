@@ -28,6 +28,7 @@ library CommitAuthorization {
   }
 
   struct PreparedAuthorization {
+    bytes32 tradeId;
     bytes32 nonceKey;
     bytes32 actionNonce;
     address principal;
@@ -50,14 +51,22 @@ library CommitAuthorization {
       revert InvalidAuthorizationCaller();
     }
 
-    WrapperMode wrapperMode = ProtocolHashing.mode(terms);
-    ExpectedSourceState expectedState = ProtocolHashing.expectedSourceState(party, wrapperMode);
+    ExpectedSourceState expectedState = ProtocolHashing.expectedSourceState(party, ProtocolHashing.mode(terms));
     if (evidence.expectedSourceState != expectedState) revert InvalidExpectedSourceState();
     if (currentTime >= evidence.expiry) revert AuthorizationExpired();
     _validateSubmitter(side, evidence.authenticatedSubmitter, evidence.authenticatedSubmitterKeyVersion);
 
-    bytes32 expectedPayloadHash = ProtocolHashing.commitPayloadHash(
-      terms, party, verifier, swapAddress, lock, evidence.expectedSourceState, evidence.actionNonce, evidence.expiry
+    prepared.tradeId = ProtocolHashing.tradeId(terms);
+    bytes32 expectedPayloadHash = ProtocolHashing.commitPayloadHashWithTradeId(
+      terms,
+      party,
+      verifier,
+      swapAddress,
+      prepared.tradeId,
+      lock,
+      evidence.expectedSourceState,
+      evidence.actionNonce,
+      evidence.expiry
     );
     if (evidence.payloadHash != expectedPayloadHash) revert InvalidAuthorizationPayload();
 

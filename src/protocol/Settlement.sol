@@ -26,14 +26,13 @@ library Settlement {
     bytes32 lock,
     bytes32 secret,
     uint256 timestamp
-  ) internal {
+  ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.CrossChain);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
-    _requireSecret(terms, lock, secret);
+    trade = ProtocolHashing.tradeId(terms);
+    _requireSecret(trade, lock, secret);
     if (timestamp >= side.claimDeadline) revert ClaimWindowClosed();
-
-    bytes32 trade = ProtocolHashing.tradeId(terms);
     self.claim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.recipient);
   }
@@ -45,13 +44,13 @@ library Settlement {
     bool party,
     bytes32 lock,
     uint256 timestamp
-  ) internal {
+  ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.CrossChain);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
     if (timestamp < side.reclaimRelease) revert ReclaimWindowClosed();
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
+    trade = ProtocolHashing.tradeId(terms);
     self.reclaim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.reclaimRecipient);
   }
@@ -63,16 +62,16 @@ library Settlement {
     bytes32 lock,
     bytes32 secret,
     uint256 timestamp
-  ) internal {
+  ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
-    _requireSecret(terms, lock, secret);
+    trade = ProtocolHashing.tradeId(terms);
+    _requireSecret(trade, lock, secret);
     uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
       ? terms.partySide.claimDeadline
       : terms.counterpartySide.claimDeadline;
     if (timestamp >= deadline) revert ClaimWindowClosed();
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
     self.claim(trade, lock);
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
@@ -84,12 +83,12 @@ library Settlement {
     ProtocolTerms memory terms,
     bytes32 lock,
     uint256 timestamp
-  ) internal {
+  ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
+    trade = ProtocolHashing.tradeId(terms);
     self.reclaimParty(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
   }
@@ -100,21 +99,20 @@ library Settlement {
     ProtocolTerms memory terms,
     bytes32 lock,
     uint256 timestamp
-  ) internal {
+  ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
       revert ReclaimWindowClosed();
     }
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
+    trade = ProtocolHashing.tradeId(terms);
     self.reclaimBoth(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
   }
 
   function _validate(ProtocolTerms memory terms, WrapperMode expected) private pure {
-    ProtocolHashing.validateTerms(terms);
     if (ProtocolHashing.mode(terms) != expected) revert InvalidSettlementMode();
   }
 
@@ -128,8 +126,8 @@ library Settlement {
     }
   }
 
-  function _requireSecret(ProtocolTerms memory terms, bytes32 lock, bytes32 secret) private pure {
-    if (ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), secret) != lock) {
+  function _requireSecret(bytes32 trade, bytes32 lock, bytes32 secret) private pure {
+    if (ProtocolHashing.settlementLock(trade, secret) != lock) {
       revert InvalidSettlementSecret();
     }
   }

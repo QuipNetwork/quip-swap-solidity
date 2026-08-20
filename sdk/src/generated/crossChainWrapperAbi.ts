@@ -1362,11 +1362,6 @@ export const crossChainWrapperAbi = [
   },
   {
     "type": "error",
-    "name": "CrossChainBindingMismatch",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "IncorrectNativeAmount",
     "inputs": []
   },
@@ -1429,11 +1424,6 @@ export const crossChainWrapperAbi = [
   {
     "type": "error",
     "name": "InvalidLocalChain",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidProgressionTerms",
     "inputs": []
   },
   {

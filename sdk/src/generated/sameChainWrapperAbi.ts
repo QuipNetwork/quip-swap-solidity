@@ -1594,11 +1594,6 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "error",
-    "name": "InvalidProgressionTerms",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InvalidSameChainState",
     "inputs": [
       {
@@ -1646,11 +1641,6 @@ export const sameChainWrapperAbi = [
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SameChainBindingMismatch",
     "inputs": []
   },
   {

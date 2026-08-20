@@ -45,8 +45,11 @@ library ProtocolHashing {
     projected.counterpartySide.commitLock = bytes32(0);
   }
 
-  function gateContextId(ProtocolTerms memory terms) internal pure returns (bytes32) {
-    return hashTerms(GATE_CONTEXT_DOMAIN, gateTerms(terms));
+  function gateContextId(ProtocolTerms memory terms) internal pure returns (bytes32 contextId) {
+    bytes32 commitLock = terms.counterpartySide.commitLock;
+    terms.counterpartySide.commitLock = bytes32(0);
+    contextId = hashTerms(GATE_CONTEXT_DOMAIN, terms);
+    terms.counterpartySide.commitLock = commitLock;
   }
 
   function commitLock(bytes32 contextId, bytes32 bobCommitSecret) internal pure returns (bytes32) {
@@ -76,13 +79,29 @@ library ProtocolHashing {
     bytes32 actionNonce,
     uint256 expiry
   ) internal pure returns (bytes32) {
+    return commitPayloadHashWithTradeId(
+      terms, party, authorizationVerifier, swapAddress, tradeId(terms), lock, sourceState, actionNonce, expiry
+    );
+  }
+
+  function commitPayloadHashWithTradeId(
+    ProtocolTerms memory terms,
+    bool party,
+    address authorizationVerifier,
+    address swapAddress,
+    bytes32 trade,
+    bytes32 lock,
+    ExpectedSourceState sourceState,
+    bytes32 actionNonce,
+    uint256 expiry
+  ) internal pure returns (bytes32) {
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     CommitPayload memory payload = CommitPayload({
       chainId: side.chainId,
       mode: mode(terms),
       authorizationVerifier: authorizationVerifier,
       swapAddress: swapAddress,
-      tradeId: tradeId(terms),
+      tradeId: trade,
       lock: lock,
       side: sideTag(party),
       action: ActionTag.Commit,

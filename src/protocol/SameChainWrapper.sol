@@ -62,17 +62,18 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata
   ) external payable nonReentrant {
-    _validate(terms);
-    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    ProtocolTerms memory validatedTerms = terms;
+    _validate(validatedTerms);
+    SideTerms memory side = party ? validatedTerms.partySide : validatedTerms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
     side.requireSupported(ASSET_SUPPORT);
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
-      terms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
+      validatedTerms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
     );
-    ProgressionGate.validate(terms, bobCommitSecret);
+    ProgressionGate.validate(validatedTerms, bobCommitSecret);
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
+    bytes32 trade = prepared.tradeId;
     if (party) states.commitParty(trade, lock);
     else states.commitCounterparty(trade, lock);
     custody.collect(side, msg.value);
@@ -81,18 +82,18 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   }
 
   function claim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external nonReentrant {
-    states.claimSameChain(custody, terms, lock, secret, block.timestamp);
-    emit Claimed(ProtocolHashing.tradeId(terms), lock);
+    bytes32 trade = states.claimSameChain(custody, terms, lock, secret, block.timestamp);
+    emit Claimed(trade, lock);
   }
 
   function reclaimParty(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    states.reclaimSameChainParty(custody, terms, lock, block.timestamp);
-    emit Reclaimed(ProtocolHashing.tradeId(terms), lock);
+    bytes32 trade = states.reclaimSameChainParty(custody, terms, lock, block.timestamp);
+    emit Reclaimed(trade, lock);
   }
 
   function reclaimBoth(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    states.reclaimSameChainBoth(custody, terms, lock, block.timestamp);
-    emit Reclaimed(ProtocolHashing.tradeId(terms), lock);
+    bytes32 trade = states.reclaimSameChainBoth(custody, terms, lock, block.timestamp);
+    emit Reclaimed(trade, lock);
   }
 
   function state(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {

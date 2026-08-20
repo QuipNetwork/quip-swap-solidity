@@ -63,17 +63,18 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     VerifiedCommitAuthorization calldata evidence,
     bytes calldata
   ) external payable nonReentrant {
-    _validate(terms);
-    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    ProtocolTerms memory validatedTerms = terms;
+    _validate(validatedTerms);
+    SideTerms memory side = party ? validatedTerms.partySide : validatedTerms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
     side.requireSupported(ASSET_SUPPORT);
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
-      terms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
+      validatedTerms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
     );
-    ProgressionGate.validate(terms, bobCommitSecret);
+    ProgressionGate.validate(validatedTerms, bobCommitSecret);
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
-    bytes32 trade = ProtocolHashing.tradeId(terms);
+    bytes32 trade = prepared.tradeId;
     SideTag tag = ProtocolHashing.sideTag(party);
     states.commit(trade, lock, tag);
     custody.collect(side, msg.value);
@@ -83,13 +84,13 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   }
 
   function claim(ProtocolTerms calldata terms, bool party, bytes32 lock, bytes32 secret) external nonReentrant {
-    states.claimCrossChain(custody, terms, party, lock, secret, block.timestamp);
-    emit Claimed(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
+    bytes32 trade = states.claimCrossChain(custody, terms, party, lock, secret, block.timestamp);
+    emit Claimed(trade, lock, ProtocolHashing.sideTag(party));
   }
 
   function reclaim(ProtocolTerms calldata terms, bool party, bytes32 lock) external nonReentrant {
-    states.reclaimCrossChain(custody, terms, party, lock, block.timestamp);
-    emit Reclaimed(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
+    bytes32 trade = states.reclaimCrossChain(custody, terms, party, lock, block.timestamp);
+    emit Reclaimed(trade, lock, ProtocolHashing.sideTag(party));
   }
 
   function state(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (CrossChainLegState) {

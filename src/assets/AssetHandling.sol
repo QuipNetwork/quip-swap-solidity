@@ -44,15 +44,9 @@ library AssetCustody {
       Asset memory asset = side.assets[i];
       uint256 amount = asset.assetType == AssetType.ERC721 ? 1 : asset.amount;
       bytes32 key = assetKey(asset);
-      if (self.reserved[key] < amount || _balance(asset) < self.reserved[key]) {
-        revert InsufficientReservedBalance();
-      }
-    }
-
-    for (uint256 i; i < side.assets.length; ++i) {
-      Asset memory asset = side.assets[i];
-      uint256 amount = asset.assetType == AssetType.ERC721 ? 1 : asset.amount;
-      self.reserved[assetKey(asset)] -= amount;
+      uint256 reserved = self.reserved[key];
+      if (reserved < amount || _balance(asset) < reserved) revert InsufficientReservedBalance();
+      self.reserved[key] = reserved - amount;
       if (asset.assetType == AssetType.ERC20 || asset.assetType == AssetType.ERC1155) {
         uint256 beforeBalance = asset.assetType == AssetType.ERC1155
           ? IERC1155(asset.target).balanceOf(recipient, asset.id)
@@ -121,13 +115,20 @@ library AssetSupport {
   error UnsupportedAsset(AssetType assetType, address target);
 
   function requireSupported(SideTerms memory side, IAssetSupportRegistry registry) internal view {
+    AssetType previousType;
+    address previousTarget;
+    bool checkedPrevious;
+
     for (uint256 i; i < side.assets.length; ++i) {
-      if (
-        side.assets[i].assetType != AssetType.Native
-          && !registry.isSupported(side.assets[i].assetType, side.assets[i].target)
-      ) {
-        revert UnsupportedAsset(side.assets[i].assetType, side.assets[i].target);
+      Asset memory asset = side.assets[i];
+      if (asset.assetType == AssetType.Native) continue;
+      if (checkedPrevious && asset.assetType == previousType && asset.target == previousTarget) continue;
+      if (!registry.isSupported(asset.assetType, asset.target)) {
+        revert UnsupportedAsset(asset.assetType, asset.target);
       }
+      previousType = asset.assetType;
+      previousTarget = asset.target;
+      checkedPrevious = true;
     }
   }
 }
