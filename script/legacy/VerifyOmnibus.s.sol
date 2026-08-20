@@ -21,8 +21,8 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *      (usable as a hard pre-publish gate).
  *
  * Usage:
- *   forge script script/VerifyOmnibus.s.sol --rpc-url $RPC -v   (RPC unused; any works)
- *   ADDRESS_JSON=path/to/other.json forge script script/VerifyOmnibus.s.sol -v
+ *   forge script script/legacy/VerifyOmnibus.s.sol --rpc-url $RPC -v   (RPC unused; any works)
+ *   ADDRESS_JSON=path/to/other.json forge script script/legacy/VerifyOmnibus.s.sol -v
  *
  * Environment:
  *   DEPLOYER_ADDRESS - Deployer EOA the salt is permissioned to (the address

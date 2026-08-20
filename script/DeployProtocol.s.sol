@@ -5,7 +5,6 @@ import {AssetSupportRegistry} from '../src/assets/AssetSupportRegistry.sol';
 import {DirectAuthorization} from '../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
-import {Constants} from './Constants.sol';
 import {ICreateX} from './ICreateX.sol';
 import {PrototypeDeployment} from './PrototypeDeployment.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
@@ -35,27 +34,27 @@ contract DeployProtocol is Script {
     address verifier = vm.envAddress('TRUSTED_VERIFIER');
     require(owner != address(0), 'PROTOCOL_OWNER must be non-zero');
     require(owner == deployer, 'PROTOCOL_OWNER must initially be deployer');
-    require(Constants.CREATEX.code.length != 0, 'CreateX not deployed');
+    require(PrototypeDeployment.CREATEX.code.length != 0, 'CreateX not deployed');
     require(verifier.code.length != 0, 'TRUSTED_VERIFIER not deployed');
 
-    addresses = predicted(Constants.CREATEX, deployer);
+    addresses = predicted(PrototypeDeployment.CREATEX, deployer);
     vm.startBroadcast(privateKey);
     _deploy(
-      Constants.CREATEX,
+      PrototypeDeployment.CREATEX,
       deployer,
       PrototypeDeployment.Component.AssetSupportRegistry,
       abi.encodePacked(type(AssetSupportRegistry).creationCode, abi.encode(owner)),
       addresses.assetSupportRegistry
     );
     _deploy(
-      Constants.CREATEX,
+      PrototypeDeployment.CREATEX,
       deployer,
       PrototypeDeployment.Component.DirectAuthorization,
       abi.encodePacked(type(DirectAuthorization).creationCode, abi.encode(verifier)),
       addresses.directAuthorization
     );
     _deploy(
-      Constants.CREATEX,
+      PrototypeDeployment.CREATEX,
       deployer,
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
@@ -64,7 +63,7 @@ contract DeployProtocol is Script {
       addresses.crossChainWrapper
     );
     _deploy(
-      Constants.CREATEX,
+      PrototypeDeployment.CREATEX,
       deployer,
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {Omnibus} from '../src/legacy/Omnibus.sol';
+import {Omnibus} from '../../src/legacy/Omnibus.sol';
+import {ICreateX} from '../ICreateX.sol';
 import {Constants} from './Constants.sol';
-import {ICreateX} from './ICreateX.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 
 /**
@@ -22,7 +22,7 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *      of a chain that does (`make anvil-fork RPC=...`).
  *
  * Usage:
- *   forge script script/DeployOmnibus.s.sol \
+ *   forge script script/legacy/DeployOmnibus.s.sol \
  *       --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --verify
  *
  * Environment:

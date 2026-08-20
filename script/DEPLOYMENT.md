@@ -7,6 +7,9 @@ with component-specific, sender-permissioned CREATE3 salts under
 It is not yet a production deployment procedure. Read
 [`../docs/security-assumptions.md`](../docs/security-assumptions.md).
 
+Retired Omnibus deployment tooling is isolated under `script/legacy/` and is
+not part of this procedure.
+
 ## Required configuration
 
 - `DEPLOYER_PK`: broadcasting key.

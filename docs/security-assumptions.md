@@ -1,7 +1,8 @@
 # Security assumptions and known limitations
 
 The v1.1 code is a prototype. Passing tests and deterministic demos do not make
-it production-ready.
+it production-ready. This is a concise risk summary, not a severity-ranked bug
+tracker or remediation-status ledger.
 
 ## Protocol assumptions
 
@@ -15,6 +16,9 @@ it production-ready.
   claim and land the final claim before its deadline.
 - Confirmation counts and timing margins are operational assumptions, not
   objective economic finality.
+- Solidity currently accepts zero `sideNonce` values even though the SDK
+  rejects them. Contracts should reject zero to align validation and catch an
+  obvious nonce-generation failure.
 
 ## Authorization assumptions
 

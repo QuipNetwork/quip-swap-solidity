@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {Omnibus} from '../src/legacy/Omnibus.sol';
+import {Omnibus} from '../../src/legacy/Omnibus.sol';
 import {Constants} from './Constants.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 
@@ -20,7 +20,7 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *      broadcasting.
  *
  * Usage:
- *   forge script script/ActivateVerifier.s.sol \
+ *   forge script script/legacy/ActivateVerifier.s.sol \
  *       --sig 'run(address)' <VERIFIER_ADDRESS> \
  *       --rpc-url $RPC --broadcast
  *

@@ -12,7 +12,8 @@ handling, finality-aware observation, conservative deadlines, and a timely
 final-claim executor. See [security assumptions](docs/security-assumptions.md).
 
 The old `Omnibus` implementation under `src/legacy/` is not the current
-integration or deployment surface.
+integration or deployment surface. Its deployment tools are isolated under
+`script/legacy/`.
 
 ## Components
 

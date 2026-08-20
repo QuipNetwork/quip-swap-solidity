@@ -74,7 +74,7 @@ anvil-fork: ## Start Anvil with fork. Usage: make anvil-fork RPC=API_URL_BASE_SE
 
 .PHONY: legacy-deploy-omnibus
 legacy-deploy-omnibus: ## LEGACY: deploy Omnibus + broadcast + verify (needs the canonical hashsigs verifier on-chain first). Usage: make legacy-deploy-omnibus RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployOmnibus.s.sol \
+	forge script script/legacy/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL) \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -82,12 +82,12 @@ legacy-deploy-omnibus: ## LEGACY: deploy Omnibus + broadcast + verify (needs the
 
 .PHONY: legacy-deploy-omnibus-dry
 legacy-deploy-omnibus-dry: ## LEGACY: dry run Omnibus deployment (no broadcast). Usage: make legacy-deploy-omnibus-dry RPC=API_URL_BASE_SEPOLIA
-	forge script script/DeployOmnibus.s.sol \
+	forge script script/legacy/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL)
 
 .PHONY: legacy-activate-omnibus-verifier
 legacy-activate-omnibus-verifier: ## LEGACY: activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
-	forge script script/ActivateVerifier.s.sol \
+	forge script script/legacy/ActivateVerifier.s.sol \
 		--sig 'run(address)' $(VERIFIER) \
 		--rpc-url $(RPC_URL) \
 		--broadcast
@@ -95,7 +95,7 @@ legacy-activate-omnibus-verifier: ## LEGACY: activate an ERC-7913 verifier on th
 # ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
 .PHONY: legacy-deploy-omnibus-base-sepolia
 legacy-deploy-omnibus-base-sepolia: ## LEGACY: deploy Omnibus to Base Sepolia + broadcast + verify (reads env from .env)
-	forge script script/DeployOmnibus.s.sol \
+	forge script script/legacy/DeployOmnibus.s.sol \
 		--rpc-url base_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -103,7 +103,7 @@ legacy-deploy-omnibus-base-sepolia: ## LEGACY: deploy Omnibus to Base Sepolia + 
 
 .PHONY: legacy-deploy-omnibus-op-sepolia
 legacy-deploy-omnibus-op-sepolia: ## LEGACY: deploy Omnibus to OP Sepolia + broadcast + verify (reads env from .env)
-	forge script script/DeployOmnibus.s.sol \
+	forge script script/legacy/DeployOmnibus.s.sol \
 		--rpc-url op_sepolia \
 		--private-key $(DEPLOYER_PK) \
 		--broadcast \
@@ -185,17 +185,17 @@ snapshot: ## Generate gas snapshot
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
 verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (CreateX, deployer EOA, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
-	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
+	forge script script/legacy/VerifyOmnibus.s.sol:VerifyOmnibus -v
 
 .PHONY: verify-omnibus-base-sepolia
 verify-omnibus-base-sepolia: ## Same as verify-omnibus, pinned to the base_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
-	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base_sepolia -v
+	forge script script/legacy/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url base_sepolia -v
 
 .PHONY: verify-omnibus-op-sepolia
 verify-omnibus-op-sepolia: ## Same as verify-omnibus, pinned to the op_sepolia rpc alias (RPC unused; offline predict+compare). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
-	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url op_sepolia -v
+	forge script script/legacy/VerifyOmnibus.s.sol:VerifyOmnibus --rpc-url op_sepolia -v
 
 .PHONY: help
 help: ## Show this help

@@ -4,15 +4,14 @@ pragma solidity ^0.8.33;
 /**
  * @title ICreateX
  * @dev Thin interface to the canonical CreateX factory
- *      (https://github.com/pcaversaccio/createx), pre-deployed at
- *      `Constants.CREATEX` on essentially every EVM chain. Only the two
- *      functions the deploy scripts need are declared — deployment is a
- *      script/-only concern, so the full dependency is not vendored.
+ *      (https://github.com/pcaversaccio/createx), pre-deployed at `PrototypeDeployment.CREATEX` on essentially every EVM
+ *      chain. Only the two functions used by current and legacy deployment
+ *      scripts are declared, so the full dependency is not vendored.
  *
  *      NOTE on salts: CreateX guards every salt before use. The scripts use
  *      the permissioned form (first 20 bytes = msg.sender, byte 20 = 0x00),
  *      so only the ops EOA can claim the derived address on any chain; see
- *      `Constants.omnibusSalt` / `Constants.guardedSalt` for the exact math.
+ *      the selected deployment constants for the exact math.
  */
 interface ICreateX {
   /// @notice Deploys `initCode` via CREATE3 using the guarded form of `salt`.
