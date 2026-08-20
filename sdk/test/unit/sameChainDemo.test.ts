@@ -6,7 +6,7 @@ import {
   SAME_CHAIN_DEMO_CHAIN_ID,
   buildSameChainDemoTerms,
   sameChainDemoPolicy,
-} from '../../scripts/same-chain-demo.js'
+} from '../../scripts/demo/same-chain/demo.js'
 
 const address = (suffix: string) => getAddress(`0x${suffix.padStart(40, '0')}`)
 const ZERO32 = ('0x' + '00'.repeat(32)) as Hex

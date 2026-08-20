@@ -5,9 +5,9 @@ import {
   SETTLEMENT_TRACE_SCHEMA,
   SettlementTraceRecorder,
   serializeSettlementTrace,
-} from '../../scripts/demo-settlement-trace.js'
+} from '../../scripts/demo/shared/settlement-trace.js'
 import {CrossChainLegState, crossChainWrapperAbi} from '../../src/index.js'
-import type {CrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
+import type {CrossChainSettlementSnapshot} from '../../scripts/demo/shared/settlement-trace.js'
 import type {ProtocolAddresses} from '../../src/index.js'
 
 const address = (digit: string) => `0x${digit.repeat(40)}` as Address

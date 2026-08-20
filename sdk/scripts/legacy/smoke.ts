@@ -31,8 +31,6 @@
  * the exit code is what CI keys on.
  */
 import {spawnSync} from 'node:child_process'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
 import {getAddress} from 'viem'
 import type {Address, Hex} from 'viem'
 import {
@@ -49,18 +47,17 @@ import {
   submitApproval,
   validateCrossChainSchedule,
   verifyRemoteCommitment,
-} from '../src/legacy.js'
-import type {OmnibusClient} from '../src/legacy.js'
-import type {Terms} from '../src/legacy.js'
-import {startAnvil} from '../test/helpers/anvil.js'
-import type {AnvilInstance} from '../test/helpers/anvil.js'
-import {keyedAuth, registerWallet, walletAuth} from '../test/helpers/auth.js'
-import {connectChain, deployFixture} from '../test/helpers/chain.js'
-import type {ChainContext, Fixture} from '../test/helpers/chain.js'
-import {erc20MockAbi} from '../test/helpers/mockAbis.js'
+} from '../../src/legacy.js'
+import type {OmnibusClient} from '../../src/legacy.js'
+import type {Terms} from '../../src/legacy.js'
+import {startAnvil} from '../../test/helpers/anvil.js'
+import type {AnvilInstance} from '../../test/helpers/anvil.js'
+import {keyedAuth, registerWallet, walletAuth} from '../../test/helpers/auth.js'
+import {connectChain, deployFixture} from '../../test/helpers/chain.js'
+import type {ChainContext, Fixture} from '../../test/helpers/chain.js'
+import {erc20MockAbi} from '../../test/helpers/mockAbis.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../shared/paths.js'
 
 const CHAIN_A_ID = 31_337
 const CHAIN_B_ID = 31_338

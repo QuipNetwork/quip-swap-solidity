@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest'
-import {parseSpawnedCliEnvelope} from '../../scripts/console-demo-io.js'
+import {parseSpawnedCliEnvelope} from '../../scripts/demo/console/io.js'
 
 describe('console demo child-process output', () => {
   it('parses a pretty JSON CLI envelope after build output', () => {

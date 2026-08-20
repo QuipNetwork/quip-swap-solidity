@@ -18,12 +18,9 @@
  * the taker's off-chain commitment check are what bound each side's risk.
  */
 import {spawnSync} from 'node:child_process'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {startAnvil} from '../test/helpers/anvil.js'
+import {startAnvil} from '../../test/helpers/anvil.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../shared/paths.js'
 
 // 1. fresh artifacts
 console.log('[cross-chain] forge build ...')

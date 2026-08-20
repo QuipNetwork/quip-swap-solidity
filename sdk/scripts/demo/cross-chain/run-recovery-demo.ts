@@ -1,13 +1,11 @@
 import {spawnSync} from 'node:child_process'
 import {mkdirSync, writeFileSync} from 'node:fs'
 import {dirname, join, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {connectChain, loadArtifact} from '../test/helpers/chain.js'
-import {startAnvil} from '../test/helpers/anvil.js'
-import {runCrossChainRecoveryDemo, serializeCrossChainRecoveryArtifact} from './cross-chain-recovery-demo.js'
+import {connectChain, loadArtifact} from '../../../test/helpers/chain.js'
+import {startAnvil} from '../../../test/helpers/anvil.js'
+import {runCrossChainRecoveryDemo, serializeCrossChainRecoveryArtifact} from './recovery-demo.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../../shared/paths.js'
 const output = resolve(process.argv[2] ?? join(repoRoot, 'demo-artifacts', 'cross-chain-recovery-demo.json'))
 console.log('[recovery-demo] Building Solidity artifacts')
 const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})

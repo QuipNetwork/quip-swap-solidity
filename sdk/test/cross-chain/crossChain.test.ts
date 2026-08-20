@@ -21,16 +21,16 @@ import {
   DEMO_BOB_AMOUNT,
   bootstrapDemoEnvironment,
   serializeDemoDeploymentArtifact,
-} from '../../scripts/demo-environment.js'
-import type {DemoDeploymentArtifact} from '../../scripts/demo-environment.js'
-import {runCrossChainRecoveryDemo, validateCrossChainRecoveryArtifact} from '../../scripts/cross-chain-recovery-demo.js'
-import {readCrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
+} from '../../scripts/demo/shared/environment.js'
+import type {DemoDeploymentArtifact} from '../../scripts/demo/shared/environment.js'
+import {runCrossChainRecoveryDemo, validateCrossChainRecoveryArtifact} from '../../scripts/demo/cross-chain/recovery-demo.js'
+import {readCrossChainSettlementSnapshot} from '../../scripts/demo/shared/settlement-trace.js'
 import {
   fullDemoLogicalFingerprint,
   runFullDemo,
   serializeFullDemo,
   validateFullDemoArtifact,
-} from '../../scripts/full-demo.js'
+} from '../../scripts/demo/cross-chain/full-demo.js'
 import './trustedWorkflow.test.js'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'

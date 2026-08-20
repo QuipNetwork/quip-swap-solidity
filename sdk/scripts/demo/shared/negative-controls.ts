@@ -1,5 +1,5 @@
-import {extractContractErrorName} from '../src/errors.js'
-import type {CrossChainSettlementSnapshot} from './demo-settlement-trace.js'
+import {extractContractErrorName} from '../../../src/errors.js'
+import type {CrossChainSettlementSnapshot} from './settlement-trace.js'
 
 export const NEGATIVE_CONTROL_SCHEMA = 'quip-swap-negative-controls.v1' as const
 

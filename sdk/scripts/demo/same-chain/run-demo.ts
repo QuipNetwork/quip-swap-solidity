@@ -1,22 +1,20 @@
 import {spawnSync} from 'node:child_process'
 import {mkdirSync, writeFileSync} from 'node:fs'
 import {dirname, join, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {connectChain, loadArtifact} from '../test/helpers/chain.js'
-import {startAnvil} from '../test/helpers/anvil.js'
+import {connectChain, loadArtifact} from '../../../test/helpers/chain.js'
+import {startAnvil} from '../../../test/helpers/anvil.js'
 import {
   assertSameChainArtifactValidator,
   buildSameChainDemoArtifact,
   serializeSameChainDemoArtifact,
   validateSameChainDemoArtifact,
-} from './same-chain-artifact.js'
+} from './artifact.js'
 import {
   SAME_CHAIN_DEMO_CHAIN_ID,
   runSameChainDemoFoundation,
-} from './same-chain-demo.js'
+} from './demo.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../../shared/paths.js'
 const output = resolve(process.argv[2] ?? join(repoRoot, 'demo-artifacts', 'same-chain-demo.json'))
 
 console.log('[same-chain demo] Building Solidity artifacts')

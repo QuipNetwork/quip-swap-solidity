@@ -1,12 +1,12 @@
 import {encodeDeployData, getAddress} from 'viem'
 import type {Address} from 'viem'
-import {AssetType, PROTOTYPE_DEPLOYMENT_VERSION, predictPrototypeAddresses, prototypeComponents, prototypeDeploymentSalt} from '../src/index.js'
-import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
-import {crossChainWrapperAbi} from '../src/generated/crossChainWrapperAbi.js'
-import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
-import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
-import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
-import {erc20MockAbi} from '../test/helpers/mockAbis.js'
+import {AssetType, PROTOTYPE_DEPLOYMENT_VERSION, predictPrototypeAddresses, prototypeComponents, prototypeDeploymentSalt} from '../../../src/index.js'
+import {assetSupportRegistryAbi} from '../../../src/generated/assetSupportRegistryAbi.js'
+import {crossChainWrapperAbi} from '../../../src/generated/crossChainWrapperAbi.js'
+import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
+import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
+import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js'
+import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
 
 const createXAbi = [{type: 'function', name: 'deployCreate3', stateMutability: 'payable', inputs: [{name: 'salt', type: 'bytes32'}, {name: 'initCode', type: 'bytes'}], outputs: [{name: 'deployed', type: 'address'}]}] as const
 

@@ -3,21 +3,21 @@ import {
   ExpectedSourceState,
   commitPayloadHash,
   createProtocolClient,
-} from '../src/index.js'
-import type {Hex32, ProtocolTerms, VerifiedCommitAuthorization} from '../src/index.js'
-import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
-import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
-import {extractContractErrorName} from '../src/errors.js'
-import type {ChainContext} from '../test/helpers/chain.js'
-import {erc20MockAbi} from '../test/helpers/mockAbis.js'
-import type {DemoChainDeployment} from './demo-environment.js'
+} from '../../../src/index.js'
+import type {Hex32, ProtocolTerms, VerifiedCommitAuthorization} from '../../../src/index.js'
+import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
+import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
+import {extractContractErrorName} from '../../../src/errors.js'
+import type {ChainContext} from '../../../test/helpers/chain.js'
+import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
+import type {DemoChainDeployment} from '../shared/environment.js'
 import {
   SAME_CHAIN_SETTLEMENT_SECRET,
   readSameChainSnapshot,
   submitSameChainDirectCommit,
   submitSameChainLazyCommit,
-} from './same-chain-success.js'
-import type {SameChainSnapshot} from './same-chain-success.js'
+} from './success.js'
+import type {SameChainSnapshot} from './success.js'
 
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
 const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32

@@ -1,7 +1,7 @@
-import {tradeId} from '../src/index.js'
-import type {Hex32, ProtocolTerms} from '../src/index.js'
-import type {SameChainDemoFoundation, SameChainParticipantSetup} from './same-chain-demo.js'
-import type {SameChainAssetPosition} from './same-chain-success.js'
+import {tradeId} from '../../../src/index.js'
+import type {Hex32, ProtocolTerms} from '../../../src/index.js'
+import type {SameChainDemoFoundation, SameChainParticipantSetup} from './demo.js'
+import type {SameChainAssetPosition} from './success.js'
 
 export const SAME_CHAIN_ARTIFACT_SCHEMA = 'quip-swap-same-chain-demo.v1' as const
 

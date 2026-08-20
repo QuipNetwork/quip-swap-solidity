@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest'
 import {runConsole} from '../../src/index.js'
-import {LOCAL_BOOTSTRAP_SCHEMA, parseLocalBootstrapProfile} from '../../scripts/console-bootstrap.js'
+import {LOCAL_BOOTSTRAP_SCHEMA, parseLocalBootstrapProfile} from '../../scripts/demo/console/bootstrap.js'
 
 const profile = () => ({
   schema: LOCAL_BOOTSTRAP_SCHEMA,

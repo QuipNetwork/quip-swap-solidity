@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
-import {validateSameChainDemoArtifact} from './same-chain-artifact.js'
+import {validateSameChainDemoArtifact} from './artifact.js'
 
 const input = process.argv[2]
 if (input === undefined) {

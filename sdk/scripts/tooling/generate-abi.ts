@@ -1,8 +1,7 @@
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+import {sdkRoot} from '../shared/paths.js'
 const generated = join(sdkRoot, 'src', 'generated')
 
 const contracts = [

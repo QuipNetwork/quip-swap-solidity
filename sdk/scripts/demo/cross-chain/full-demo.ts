@@ -20,17 +20,17 @@ import {
   settlementLock as importedSettlementLock,
   tradeId as importedTradeId,
   trustedClientStatus,
-} from '../src/index.js'
-import type {ClientState, CommitAuthorizationRequest, Hex32, InitialRegistration, PartySecretState, ProtocolRandomness, SideTermsTemplate, TimingPolicy} from '../src/index.js'
-import {AuthorizationTraceRecorder} from './demo-authorization-trace.js'
-import type {AuthorizationTraceArtifact} from './demo-authorization-trace.js'
-import {bootstrapDemoEnvironment} from './demo-environment.js'
-import type {DemoDeploymentArtifact} from './demo-environment.js'
-import {NegativeControlRecorder} from './demo-negative-controls.js'
-import type {NegativeControlArtifact, NegativeControlScenario} from './demo-negative-controls.js'
-import {SettlementTraceRecorder, readCrossChainSettlementSnapshot} from './demo-settlement-trace.js'
-import type {CrossChainSettlementSnapshot, SettlementTraceArtifact, TrackedHolding} from './demo-settlement-trace.js'
-import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
+} from '../../../src/index.js'
+import type {ClientState, CommitAuthorizationRequest, Hex32, InitialRegistration, PartySecretState, ProtocolRandomness, SideTermsTemplate, TimingPolicy} from '../../../src/index.js'
+import {AuthorizationTraceRecorder} from '../shared/authorization-trace.js'
+import type {AuthorizationTraceArtifact} from '../shared/authorization-trace.js'
+import {bootstrapDemoEnvironment} from '../shared/environment.js'
+import type {DemoDeploymentArtifact} from '../shared/environment.js'
+import {NegativeControlRecorder} from '../shared/negative-controls.js'
+import type {NegativeControlArtifact, NegativeControlScenario} from '../shared/negative-controls.js'
+import {SettlementTraceRecorder, readCrossChainSettlementSnapshot} from '../shared/settlement-trace.js'
+import type {CrossChainSettlementSnapshot, SettlementTraceArtifact, TrackedHolding} from '../shared/settlement-trace.js'
+import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js'
 
 export const FULL_DEMO_SCHEMA = 'quip-swap-full-demo.v1' as const
 const ZERO_ADDRESS = getAddress('0x0000000000000000000000000000000000000000')

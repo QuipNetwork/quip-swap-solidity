@@ -1,7 +1,7 @@
 import {getAddress} from 'viem'
 import type {Address, Hex} from 'viem'
-import {AuthorizationMode, commitPayloadHash} from '../src/index.js'
-import type {Hex32, PreparedAuthorization} from '../src/index.js'
+import {AuthorizationMode, commitPayloadHash} from '../../../src/index.js'
+import type {Hex32, PreparedAuthorization} from '../../../src/index.js'
 
 export const AUTHORIZATION_TRACE_SCHEMA = 'quip-swap-authorization-trace.v1' as const
 

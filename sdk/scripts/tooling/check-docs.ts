@@ -1,8 +1,8 @@
 import {existsSync, readdirSync, readFileSync, statSync} from 'node:fs'
 import {dirname, extname, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
+import {repoRoot} from '../shared/paths.js'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const root = repoRoot
 
 function markdownFiles(directory: string): string[] {
   return readdirSync(directory, {withFileTypes: true}).flatMap(entry => {

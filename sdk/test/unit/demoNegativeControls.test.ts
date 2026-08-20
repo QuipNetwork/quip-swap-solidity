@@ -5,9 +5,9 @@ import {
   NegativeControlRecorder,
   negativeControlErrors,
   serializeNegativeControls,
-} from '../../scripts/demo-negative-controls.js'
+} from '../../scripts/demo/shared/negative-controls.js'
 import {CrossChainLegState} from '../../src/index.js'
-import type {CrossChainSettlementSnapshot} from '../../scripts/demo-settlement-trace.js'
+import type {CrossChainSettlementSnapshot} from '../../scripts/demo/shared/settlement-trace.js'
 
 const WRAPPER = `0x${'11'.repeat(20)}` as Address
 const TOKEN = `0x${'22'.repeat(20)}` as Address

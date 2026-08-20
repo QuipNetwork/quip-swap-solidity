@@ -9,18 +9,18 @@ import {
   tradeId,
   validateProtocolTerms,
   wrapperMode,
-} from '../src/index.js'
-import type {Hex32, ProtocolTerms, TimingPolicy} from '../src/index.js'
-import {assetSupportRegistryAbi} from '../src/generated/assetSupportRegistryAbi.js'
-import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
-import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
-import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
-import {erc20MockAbi} from '../test/helpers/mockAbis.js'
-import {bootstrapProtocolChain} from './demo-environment.js'
-import {runSameChainSuccess} from './same-chain-success.js'
-import {runSameChainAdversarial} from './same-chain-adversarial.js'
-import type {SameChainSuccessTrace} from './same-chain-success.js'
-import type {SameChainAdversarialTrace} from './same-chain-adversarial.js'
+} from '../../../src/index.js'
+import type {Hex32, ProtocolTerms, TimingPolicy} from '../../../src/index.js'
+import {assetSupportRegistryAbi} from '../../../src/generated/assetSupportRegistryAbi.js'
+import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
+import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
+import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js'
+import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
+import {bootstrapProtocolChain} from '../shared/environment.js'
+import {runSameChainSuccess} from './success.js'
+import {runSameChainAdversarial} from './adversarial.js'
+import type {SameChainSuccessTrace} from './success.js'
+import type {SameChainAdversarialTrace} from './adversarial.js'
 
 export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v1' as const
 export const SAME_CHAIN_DEMO_CHAIN_ID = 31_337

@@ -1,6 +1,6 @@
 import type {Address, Hash, Log, PublicClient, TransactionReceipt} from 'viem'
-import {CrossChainLegState, crossChainWrapperAbi, decodeProtocolEvents} from '../src/index.js'
-import type {Hex32, ProtocolAddresses, ProtocolEvent, ProtocolTerms} from '../src/index.js'
+import {CrossChainLegState, crossChainWrapperAbi, decodeProtocolEvents} from '../../../src/index.js'
+import type {Hex32, ProtocolAddresses, ProtocolEvent, ProtocolTerms} from '../../../src/index.js'
 
 export const SETTLEMENT_TRACE_SCHEMA = 'quip-swap-settlement-trace.v1' as const
 

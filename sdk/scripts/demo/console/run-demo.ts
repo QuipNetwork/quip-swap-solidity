@@ -4,11 +4,9 @@ import {createServer} from 'node:net'
 import type {Server} from 'node:net'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {parseSpawnedCliEnvelope} from './console-demo-io.js'
+import {parseSpawnedCliEnvelope} from './io.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../../shared/paths.js'
 const runtime = mkdtempSync(join(tmpdir(), 'quip-console-demo-'))
 const bootstrapOutput = join(runtime, 'bootstrap')
 const aliceRoot = join(runtime, 'alice')
@@ -115,7 +113,7 @@ try {
 }
 
 if (consoleResult === undefined) throw new Error('console demo did not complete')
-const reference = spawnSync(process.execPath, ['run', 'scripts/run-full-demo.ts', referenceOutput], {cwd: sdkRoot, encoding: 'utf8', env: process.env})
+const reference = spawnSync(process.execPath, ['run', 'scripts/demo/cross-chain/run-full-demo.ts', referenceOutput], {cwd: sdkRoot, encoding: 'utf8', env: process.env})
 if (reference.status !== 0) throw new Error(`demo:full reference failed: ${reference.stderr}`)
 const full = JSON.parse(read(referenceOutput))
 if (full.tradeId !== consoleResult.tradeId) throw new Error(`TradeID mismatch: console ${consoleResult.tradeId}, demo:full ${full.tradeId}`)

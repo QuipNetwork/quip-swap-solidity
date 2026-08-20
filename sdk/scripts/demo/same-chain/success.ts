@@ -16,19 +16,19 @@ import {
   encodeAuthorizationNonceKey,
   keyPossessionDigest,
   registrationDigest,
-} from '../src/index.js'
+} from '../../../src/index.js'
 import type {
   CommitAuthorizationRequest,
   Hex32,
   InitialRegistration,
   ProtocolTerms,
-} from '../src/index.js'
-import {directAuthorizationAbi} from '../src/generated/directAuthorizationAbi.js'
-import {sameChainWrapperAbi} from '../src/generated/sameChainWrapperAbi.js'
-import type {ProtocolEvent} from '../src/protocolEvents.js'
-import type {ChainContext} from '../test/helpers/chain.js'
-import {erc20MockAbi} from '../test/helpers/mockAbis.js'
-import type {DemoChainDeployment} from './demo-environment.js'
+} from '../../../src/index.js'
+import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
+import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
+import type {ProtocolEvent} from '../../../src/protocolEvents.js'
+import type {ChainContext} from '../../../test/helpers/chain.js'
+import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
+import type {DemoChainDeployment} from '../shared/environment.js'
 
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
 const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32

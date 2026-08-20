@@ -4,7 +4,7 @@ import {
   AUTHORIZATION_TRACE_SCHEMA,
   AuthorizationTraceRecorder,
   serializeAuthorizationTrace,
-} from '../../scripts/demo-authorization-trace.js'
+} from '../../scripts/demo/shared/authorization-trace.js'
 import {AssetType, AuthorizationMode, DelegationPolicy, TrustedCrossChainWorkflow, WrapperMode} from '../../src/index.js'
 import type {Hex32, SideTerms, TimingPolicy} from '../../src/index.js'
 

@@ -11,7 +11,7 @@ import {
   keyPossessionDigest,
   prepareTrustedCrossChainWorkflow,
   registrationDigest,
-} from '../src/index.js'
+} from '../../../src/index.js'
 import type {
   CommitAuthorizationRequest,
   Hex32,
@@ -20,12 +20,12 @@ import type {
   SideTermsTemplate,
   TimingPolicy,
   TrustedCrossChainWorkflow,
-} from '../src/index.js'
-import type {ChainContext, FoundryArtifact} from '../test/helpers/chain.js'
-import {bootstrapDemoEnvironment} from './demo-environment.js'
-import type {DemoChainDeployment, DemoDeploymentArtifact} from './demo-environment.js'
-import {readCrossChainSettlementSnapshot} from './demo-settlement-trace.js'
-import type {CrossChainSettlementSnapshot, TrackedHolding} from './demo-settlement-trace.js'
+} from '../../../src/index.js'
+import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js'
+import {bootstrapDemoEnvironment} from '../shared/environment.js'
+import type {DemoChainDeployment, DemoDeploymentArtifact} from '../shared/environment.js'
+import {readCrossChainSettlementSnapshot} from '../shared/settlement-trace.js'
+import type {CrossChainSettlementSnapshot, TrackedHolding} from '../shared/settlement-trace.js'
 
 export const CROSS_CHAIN_RECOVERY_SCHEMA = 'quip-swap-cross-chain-recovery-demo.v1' as const
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address

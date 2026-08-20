@@ -1,10 +1,9 @@
 import {spawn, spawnSync} from 'node:child_process'
 import {closeSync, constants, openSync} from 'node:fs'
 import {access, chmod, mkdir, open, readFile, rm} from 'node:fs/promises'
-import {dirname, join, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {bootstrapDemoEnvironment, serializeDemoDeploymentArtifact} from './demo-environment.js'
-import {connectChain, loadArtifact} from '../test/helpers/chain.js'
+import {join, resolve} from 'node:path'
+import {bootstrapDemoEnvironment, serializeDemoDeploymentArtifact} from '../shared/environment.js'
+import {connectChain, loadArtifact} from '../../../test/helpers/chain.js'
 
 export const LOCAL_BOOTSTRAP_SCHEMA = 'quip-swap-local-bootstrap.v1' as const
 
@@ -21,8 +20,7 @@ export interface LocalBootstrapProfile {
   ]
 }
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../../shared/paths.js'
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${label} must be an object`)

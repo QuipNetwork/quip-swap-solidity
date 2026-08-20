@@ -1,9 +1,8 @@
 import {spawnSync} from 'node:child_process'
 import {readdirSync} from 'node:fs'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+import {sdkRoot} from '../shared/paths.js'
 const directories = process.argv.slice(2)
 if (directories.length === 0) throw new Error('at least one test directory is required')
 

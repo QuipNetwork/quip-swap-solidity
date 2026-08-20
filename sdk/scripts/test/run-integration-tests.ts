@@ -21,12 +21,10 @@
  */
 import {spawnSync} from 'node:child_process'
 import {readdirSync} from 'node:fs'
-import {dirname, join} from 'node:path'
-import {fileURLToPath} from 'node:url'
-import {startAnvil} from '../test/helpers/anvil.js'
+import {join} from 'node:path'
+import {startAnvil} from '../../test/helpers/anvil.js'
 
-const sdkRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = join(sdkRoot, '..')
+import {repoRoot, sdkRoot} from '../shared/paths.js'
 
 /** Vitest flags/files passed after `--` (or directly to this script). */
 const vitestExtraArgs = process.argv.slice(2)
