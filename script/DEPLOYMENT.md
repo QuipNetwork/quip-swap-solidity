@@ -1,34 +1,89 @@
 # v1.1 prototype deployment
 
-The prototype stack is deployed through canonical CreateX using component-specific,
-sender-permissioned CREATE3 salts under version `v1.1.0-alpha.3`. The same deployer
-therefore receives the same four protocol addresses on every supported chain even
-though constructor configuration is checked independently on each chain.
+This procedure deploys the four-contract prototype through canonical CreateX
+with component-specific, sender-permissioned CREATE3 salts under
+`v1.1.0-alpha.3`.
 
-Required environment:
+It is not yet a production deployment procedure. Read
+[`../docs/security-assumptions.md`](../docs/security-assumptions.md).
 
-- `DEPLOYER_PK`: broadcasting operations key;
-- `PROTOCOL_OWNER`: the deployer EOA, used as the initial owner of the asset-support registry;
-- `TRUSTED_VERIFIER`: already-deployed pinned SHRINCS 256s-Keccak verifier; and
-- the selected RPC URL.
+## Required configuration
 
-Run a dry run with `make deploy-protocol-dry RPC=API_URL_BASE_SEPOLIA`, then broadcast
-with `make deploy-protocol RPC=API_URL_BASE_SEPOLIA`. The script deploys, in order:
+- `DEPLOYER_PK`: broadcasting key.
+- `PROTOCOL_OWNER`: nonzero initial `AssetSupportRegistry` owner. The current
+  script requires it to equal the deployer.
+- `TRUSTED_VERIFIER`: deployed SHRINCS 256s-Keccak verifier reporting the
+  expected version and profile.
+- `RPC`: Make variable naming an RPC URL variable loaded from `.env`, for
+  example `API_URL_BASE_SEPOLIA`.
+- Canonical CreateX must already exist at the configured address.
+
+Never commit private keys or RPC credentials.
+
+## Dry run and broadcast
+
+```sh
+make deploy-protocol-dry RPC=API_URL_BASE_SEPOLIA
+make deploy-protocol RPC=API_URL_BASE_SEPOLIA
+```
+
+Deployment order is:
 
 1. `AssetSupportRegistry`
 2. `DirectAuthorization`
 3. `CrossChainWrapper`
 4. `SameChainWrapper`
 
-Existing code is accepted only after the same immutable configuration checks, making a rerun idempotent. Timing and finality policy is configured and enforced by each client, not deployed on chain.
+The same deployer and versioned salts predict the same four addresses across
+chains. Constructor configuration can still differ by chain and must be
+verified independently.
 
-After every chain is configured and independently checked, ownership of the
-`AssetSupportRegistry` may be moved with its two-step ownership transfer. This post-deployment
-governance
-operation is intentionally separate from deterministic deployment.
+## Required verification
 
-The emitted `ProtocolDeployment` data and console output are the deployment record.
-Applications can reproduce the addresses and a chain-specific
-configuration vector with `buildPrototypeDeploymentManifest` from the SDK. Preserve
-that manifest with the broadcast artifacts; do not add an address to a public SDK
-registry until its bytecode and configuration have been independently verified.
+Before publishing an address, record and verify on every chain:
+
+- chain ID, CreateX address, deployer, version, and salt;
+- runtime bytecode identity for every component;
+- asset-registry owner;
+- direct authorization's verifier address, runtime code hash, version, and
+  profile;
+- both wrappers' `DIRECT_AUTHORIZATION`; and
+- both wrappers' `ASSET_SUPPORT`.
+
+Generate the SDK configuration vector with `buildPrototypeDeploymentManifest`
+and preserve it with Foundry broadcast artifacts and independent RPC results.
+The `ProtocolDeployment` event emitted by the script after `stopBroadcast` is a
+script log, not a durable on-chain registry entry.
+
+## Current rerun limitation
+
+The script skips a predicted address when it already contains code. Its current
+post-check does not verify every runtime bytecode identity or either wrapper's
+`ASSET_SUPPORT` immutable. Treat reruns and partial deployments as unsafe until
+those checks and wrong-dependency tests are added. Address equality alone is
+not release verification.
+
+## Verifier requirement
+
+Reject proxy, upgradeable, or metamorphic verifier deployments unless their
+implementation and upgrade controls are explicitly part of the reviewed trust
+model. The current authorization path does not recheck every pinned verifier
+property on every signature use.
+
+## Asset registry ownership
+
+Configure and independently verify all initial asset entries before transferring
+ownership. Ownership transfer uses OpenZeppelin's two-step flow and is separate
+from deterministic deployment. Define production multisig/timelock, monitoring,
+emergency delisting, and ownership-renunciation policy before deployment.
+
+## Release gate
+
+Do not add addresses to a public SDK registry until:
+
+- the full source revision and dependency lock are fixed;
+- every bytecode and immutable check passes on every chain;
+- real-verifier integration and gas tests pass;
+- asset and timing policies are approved; and
+- broadcast artifacts, manifests, and independent verification results are
+  archived.

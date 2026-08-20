@@ -15,8 +15,16 @@ out/
 
 # Docs
 docs/*
-!docs/operator-runbook.md
 !docs/asset-support.md
+!docs/protocol-flow.md
+!docs/security-assumptions.md
+!docs/demo/
+docs/demo/*
+!docs/demo/*.md
+!docs/legacy/
+docs/legacy/*
+!docs/legacy/QUIP_LIFECYCLE.md
+!docs/legacy/OMNIBUS_SDK_USAGE.md
 
 # Dotenv file
 .env

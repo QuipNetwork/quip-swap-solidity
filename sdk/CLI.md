@@ -1,52 +1,43 @@
-# Prototype trusted-client CLI contract
-
-The Step 14 CLI uses one executable and keeps Alice and Bob in separate client
-boundaries:
+# Prototype client CLI
 
 ```text
-quip-swap <command> --party <alice|bob> --state-root <party-directory> --config <path> [--json|--summary-json]
+quip-swap <command> --party <alice|bob> --state-root <party-dir> \
+  --config <file> [--json|--summary-json] [--yes]
 ```
 
-`--state-root` always names only the selected party's directory. Structured command
-inputs come from standard input. Secrets are never accepted as command-line
-arguments. `--json` preserves the complete stable automation envelope.
-`--summary-json` emits the smaller `quip-swap-summary.v1` operator view containing
-the action result, transaction state, relevant amounts, locks, warnings, and only
-those preimages already published on-chain. The two JSON modes are mutually
-exclusive and emit exactly one uncolored object to standard output.
+Each invocation owns only the selected party's client directory. Structured
+inputs arrive on standard input; secrets are never command-line arguments.
+`bootstrap-local` is the sole exception to the one-party boundary: it creates
+the local two-chain runtime and both generated configs.
 
-The public commands are defined by `cliCommandSpecs` in `cliSurface.ts`. `status` is
-the only read-only command; every other command writes only the selected party's
-state. Alice publishes `BobCommitSecret` in her on-chain commit. Bob's
-`observe-alice-commit` authenticates and verifies that publication, but enables it
-for Bob's submission only after the configured finality threshold. No private
-progression-secret transfer command exists.
+Use `--summary-json` for concise operator output and `--json` for the stable
+`quip-swap-cli.v1` automation envelope. They are mutually exclusive. Mutating
+commands use atomic generation files and a monotonic party-local sequence.
+Prototype state files are permission-restricted but not encrypted.
 
-Every command returns the `quip-swap-cli.v1` envelope defined in `cliSurface.ts`:
+## Commands
 
-- `schema`, `command`, `party`, `mutatesState`, and monotonic party-local `sequence`;
-- optional `tradeId`;
-- either `ok: true`, JSON `result`, and `warnings`; or
-- `ok: false` and a stable `error { code, message, details? }`.
+| Command | Party | Input | Purpose |
+| --- | --- | --- | --- |
+| `bootstrap-local` | either | none | Start and deploy the local two-chain demo runtime. |
+| `init` | either | none | Create an isolated party workspace. |
+| `prepare-trade` | Alice | JSON | Create canonical terms and the public offer. |
+| `import-offer` | Bob | JSON | Validate and import Alice's offer. |
+| `accept-trade` | Bob | none | Record Bob's local acceptance. |
+| `status` | either | none | Read reconstructed state without mutation. |
+| `submit-alice-commit` | Alice | JSON | Authorize, fund, and publish Alice's commit. |
+| `observe-alice-commit` | either | none | Verify inclusion, finality, and the published Bob preimage. |
+| `submit-bob-commit` | Bob | JSON | Fund Bob's leg with the finalized preimage. |
+| `observe-bob-commit` | either | none | Verify Bob's exact committed leg. |
+| `submit-revealing-claim` | Alice | JSON | Claim Bob's leg and reveal settlement. |
+| `observe-reveal` | Bob | none | Verify finality and recover the settlement preimage. |
+| `submit-final-claim` | Bob | none | Claim Alice's leg permissionlessly. |
+| `reclaim` | either | none | Reclaim an eligible leg to its fixed recipient. |
+| `enter-recovery` | either | JSON | Record party-local recovery mode and reason. |
 
-Big integers, hashes, addresses, and transaction identifiers are encoded as strings.
-No normal `--json` result or error field contains a secret preimage. The explicit
-`--summary-json` view may show `BobCommitSecret` after Alice broadcasts her commit
-and may show `Secret` after Alice broadcasts the revealing claim; neither appears
-before its publication action succeeds.
+Alice's commit publishes `BobCommitSecret`; Bob enables it only after canonical
+finality. The revealing claim similarly publishes the settlement secret. Full
+JSON output must redact unpublished secrets. Summary output may show a preimage
+only after the corresponding successful on-chain publication.
 
-Each party directory publishes matched public and secret generations through an
-atomically replaced `current` pointer. Generation files are created with mode `0600`;
-the containing directories use mode `0700`. Alice initially owns both preimages.
-Bob's file acquires the progression preimage only from a finalized, authenticated
-Alice-commit observation and acquires the settlement preimage only after a finalized
-revealing claim. Restoration
-recomputes `TradeID`, `GateContextID`, settlement `Lock`, and `commitLock` before
-accepting the state. The prototype files are intentionally not encrypted.
-
-Deterministic fixed preimages require `unsafe-demo` mode, are accepted only for local
-chain IDs `31337` and `31338`, and are explicitly marked as public test secrets.
-The demo supplies one named `ProtocolRandomness` object so settlement secret,
-progression secret, both side nonces, and both action nonces cannot be confused by
-positional ordering. Outside this mode the workflow generates six fresh independent
-nonzero values.
+See the [manual console demo](../docs/demo/console-demo.md) for an exact run.

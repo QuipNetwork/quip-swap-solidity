@@ -1,26 +1,45 @@
 # Asset compatibility
 
-The prototype admits non-native assets only when their exact `(assetType, target)`
-pair is enabled in `AssetSupportRegistry`. Enabling a contract is an assertion
-that its behavior is compatible with the custody accounting below; interface
-conformance alone is not sufficient.
+Non-native assets require their exact `(assetType, target)` pair in
+`AssetSupportRegistry`. Approval is an assertion of behavior, not merely
+interface conformance.
 
-Supported tokens must:
+Supported assets must:
 
-- return ABI-valid, stable `balanceOf` results during collection and release;
-- move the exact signed ERC-20 or ERC-1155 amount without fees, reflection, or
-  other balance changes;
-- report the actual ERC-721 owner before and after transfer; and
-- preserve these properties for as long as an escrow may remain open.
+- return ABI-valid, stable balance or ownership data;
+- move the exact signed amount without fees, reflection, or rebasing;
+- report the actual ERC-721 owner before and after transfer;
+- support the required safe-transfer receiver behavior; and
+- preserve those properties for the maximum escrow lifetime.
 
-Rebasing, elastic-supply, reflection, fee-on-transfer, balance-mutating hook,
-and otherwise nonstandard assets are unsupported. Upgradeable token contracts
-must be reassessed after an implementation change. The wrappers reject observed
-balance or ownership mismatches and atomically roll back the protocol state,
-reserve accounting, asset transfers, and commit-authorization nonce consumption.
-Delisting blocks new commits but intentionally does not block settlement of
-assets already held in escrow.
+Unsupported examples include fee-on-transfer, rebasing, elastic-supply,
+reflection, balance-mutating hooks, dishonest balance/ownership reporting, and
+unreviewed proxy upgrades. A target must not be approved under an incompatible
+asset type.
 
-ERC-721 and ERC-1155 safe-transfer callbacks are supported. Wrapper entry points
-are reentrancy guarded, so a token contract or recipient callback cannot perform
-a nested commit, claim, or reclaim.
+The wrappers check exact native value, fungible balance deltas, and ERC-721
+ownership. A failure rolls back protocol state, reserves, prior atomic payouts,
+and authorization nonce consumption. Reentrancy guards cover commit, claim,
+and reclaim entry points.
+
+## Governance and operations
+
+- Review implementation code and proxy controls before allowlisting.
+- Reassess and, when necessary, delist after any implementation change.
+- Recheck support immediately before every commit.
+- Warn users when support changes after terms are accepted. Delisting the
+  second side can force an already-funded first leg to wait for reclaim.
+- Define owner transfer, emergency, monitoring, and ownership-renunciation
+  policy before deployment.
+- Establish a conservative maximum asset count even though the contracts do
+  not currently enforce one.
+
+Delisting blocks new commits but does not block claim or reclaim of escrow
+already held by that wrapper. It does not guarantee that a changed token will
+remain transferable.
+
+## Destinations
+
+Contract recipients must support the applicable native/token receiver behavior.
+Do not sign a local wrapper as `recipient` or `reclaimRecipient`; the prototype
+does not yet reject this shape and settlement may fail or strand an ERC-721.

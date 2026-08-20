@@ -1,25 +1,38 @@
 # Quip Swap SDK
 
-The package root is the current protocol integration surface. It exports:
+TypeScript integration for the current v1.1 prototype. It provides protocol
+types and hashing, generated ABIs, Viem contract calls, receipt decoding, and
+the finality-aware trusted cross-chain workflow.
 
-- protocol terms, state enums, hashing, and validation;
-- generated ABIs for every current contract;
-- createProtocolClient for commits, claims, reclaims, registration, asset support;
-- address-scoped protocol event and receipt decoding; and
-- TrustedCrossChainWorkflow for trusted-client coordination.
+```ts
+import {
+  createProtocolClient,
+  waitForProtocolReceipt,
+} from '@quip.network/quip-swap-sdk'
+```
 
-    import {
-      createProtocolClient,
-      decodeProtocolEvents,
-      crossChainWrapperAbi,
-    } from '@quip.network/quip-swap-sdk'
+Applications must provide verified deployment addresses and configured Viem
+clients. The SDK does not discover deployments or manage signing keys.
 
-Applications supply existing Viem public and wallet clients plus explicit,
-verified contract addresses. The SDK does not guess deployments or hold keys.
+## Development
 
-The previous Omnibus API is retained only through the explicit compatibility
+From `sdk/`:
+
+```sh
+bun install --frozen-lockfile
+bun run check
+bun run test:integration
+bun run test:cross-chain
+```
+
+Generate ABIs after a contract build with `bun run generate:abi`.
+
+See [usage](USAGE.md), [CLI reference](CLI.md), and the
+[demo guides](../docs/demo/README.md).
+
+The retired Omnibus API is available only from the explicit compatibility
 entry point:
 
-    import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
-
-New integrations must not import the legacy entry point.
+```ts
+import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
+```

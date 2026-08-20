@@ -157,11 +157,19 @@ sdk-build: ## Build the publishable SDK bundle (dist/)
 	cd sdk && bun run build
 
 # ==============================================================================
+# Documentation
+# ==============================================================================
+
+.PHONY: docs-check
+docs-check: ## Check documentation links and stale current-protocol terminology
+	cd sdk && bun run docs:check
+
+# ==============================================================================
 # Full Verification
 # ==============================================================================
 
 .PHONY: check
-check: fmt-check build test sdk-typecheck sdk-test sdk-build sdk-test-integration ## Run all reasonable checks (Foundry + SDK; cross-chain excluded — run sdk-test-cross-chain separately)
+check: docs-check fmt-check build test sdk-typecheck sdk-test sdk-build sdk-test-integration ## Run all reasonable checks (Foundry + SDK; cross-chain excluded — run sdk-test-cross-chain separately)
 
 # ==============================================================================
 # Utilities

@@ -26,6 +26,7 @@
   ],
   "scripts": {
     "generate:abi": "bun run scripts/generate-abi.ts",
+    "docs:check": "bun run scripts/check-docs.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun run scripts/run-test-files.ts test/unit test/mocked-client",
     "test:unit": "bun run scripts/run-test-files.ts test/unit",

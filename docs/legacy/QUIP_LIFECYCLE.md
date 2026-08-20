@@ -1,4 +1,9 @@
-# QUIP Lifecycle
+# Archived QUIP lifecycle (legacy)
+
+> This document describes the retired WOTS+/Omnibus design. It is not the
+> current v1.1 protocol. See [protocol flow](../protocol-flow.md),
+> [architecture](../../ARCHITECTURE.md), and [security assumptions](../security-assumptions.md).
+
 
 A **QUIP** (Quick Interchange Protocol) is a WOTS+ signature-based atomic swap mechanism that enables trustless, quantum-resistant asset exchanges between two parties across potentially different chains or contexts.
 

@@ -1,44 +1,75 @@
-# Quip Swap
+# Quip Swap Solidity
 
-This branch contains the current multi-contract protocol prototype:
+This branch contains the v1.1 protocol prototype: same-chain and cross-chain
+escrow wrappers, PQ commit authorization, asset admission and custody, a
+TypeScript SDK, and deterministic local demos.
 
-- asset-support registry;
-- direct-user and broker PQ identity registration through `DirectAuthorization`;
-- separate direct-user and `QuipWallet` authorization boundaries;
-- separate cross-chain and same-chain wrappers; and
-- the trusted-client workflow in the TypeScript SDK.
+It is a prototype, not a production release. Read
+[security assumptions](docs/security-assumptions.md) before using it with
+assets of value.
 
-The previous Omnibus implementation remains only for comparison and regression
-testing. It is not the current integration or deployment surface.
+## Quick start
 
-## Build and test
+Prerequisites: Foundry, Bun, and dependencies under `dependencies/`.
 
-    forge build
-    forge test
-    forge fmt --check
-    make sdk-generate
-    make sdk-typecheck
-    make sdk-test
-    make sdk-build
+```sh
+forge build
+forge test
+forge fmt --check
+cd sdk
+bun install --frozen-lockfile
+bun run check
+cd ..
+```
 
-## SDK surfaces
+Run the current demos:
 
-The package root exports the current protocol types, hashing, ABIs, transaction
-helpers, event helpers, and trusted workflow. For example:
+```sh
+cd sdk
+bun run demo:full
+bun run demo:same-chain
+bun run demo:cross-chain:recovery
+bun run demo:console
+cd ..
+```
 
-    import {createProtocolClient, crossChainWrapperAbi} from '@quip.network/quip-swap-sdk'
+See [the demo guides](docs/demo/README.md) for prerequisites, expected results,
+manual console operation, and artifact validation.
 
-The old Omnibus SDK is explicitly isolated:
+## Current integration surface
 
-    import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
+- `src/protocol/`: terms, hashing, state machines, settlement, and wrappers.
+- `src/authorization/`: registered-direct and QuipWallet authorization.
+- `src/assets/`: asset allowlisting and escrow accounting.
+- `sdk/`: current API and prototype trusted-client CLI.
+- `script/DeployProtocol.s.sol`: deterministic prototype deployment.
 
-Current protocol deployment scripts are deferred to the deployment-prototype
-step. Existing Omnibus scripts are legacy utilities and must not deploy the
-current protocol.
+```ts
+import {
+  createProtocolClient,
+  crossChainWrapperAbi,
+} from '@quip.network/quip-swap-sdk'
+```
 
-## Asset support
+The old Omnibus implementation remains only for regression and comparison.
+Legacy SDK callers must use its explicit compatibility entry point:
 
-Native assets need no configuration. Token contracts must be enabled in the
-shared AssetSupportRegistry for their exact asset type before a new commit.
-Approval asserts standard exact balance or ownership behavior. Delisting blocks
-future commits only and does not affect claims or reclaims of existing escrow.
+```ts
+import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
+```
+
+## Documentation
+
+- [Architecture](ARCHITECTURE.md)
+- [Protocol flow](docs/protocol-flow.md)
+- [Security assumptions](docs/security-assumptions.md)
+- [Asset compatibility](docs/asset-support.md)
+- [Prototype deployment](script/DEPLOYMENT.md)
+- [SDK overview](sdk/README.md)
+- [SDK usage](sdk/USAGE.md)
+- [CLI reference](sdk/CLI.md)
+- [Demo guides](docs/demo/README.md)
+- [Legacy documentation](docs/legacy/)
+
+The normative protocol design is maintained in
+`../../interlock-ec/dev/v1.1/protocol/`.
