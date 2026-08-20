@@ -69,14 +69,12 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
       terms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
     );
-    ProgressionGate.validate(terms, party, bobCommitSecret);
+    ProgressionGate.validate(terms, bobCommitSecret);
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    bytes32 partyAssets = ProtocolHashing.assetHash(terms.partySide);
-    bytes32 counterpartyAssets = ProtocolHashing.assetHash(terms.counterpartySide);
-    if (party) states.commitParty(trade, lock, trade, partyAssets, counterpartyAssets);
-    else states.commitCounterparty(trade, lock, trade, partyAssets, counterpartyAssets);
+    if (party) states.commitParty(trade, lock);
+    else states.commitCounterparty(trade, lock);
     custody.collect(side, msg.value);
     authorizations.consume(prepared);
     emit Committed(trade, lock, ProtocolHashing.sideTag(party), side.principal);
@@ -98,7 +96,7 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   }
 
   function state(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {
-    return states.record(ProtocolHashing.tradeId(terms), lock).state;
+    return states.state(ProtocolHashing.tradeId(terms), lock);
   }
 
   function reserved(Asset calldata asset) external view returns (uint256) {

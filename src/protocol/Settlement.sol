@@ -34,7 +34,7 @@ library Settlement {
     if (timestamp >= side.claimDeadline) revert ClaimWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    self.claim(trade, lock, ProtocolHashing.sideTag(party), trade, ProtocolHashing.assetHash(side));
+    self.claim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.recipient);
   }
 
@@ -52,7 +52,7 @@ library Settlement {
     if (timestamp < side.reclaimRelease) revert ReclaimWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    self.reclaim(trade, lock, ProtocolHashing.sideTag(party), trade, ProtocolHashing.assetHash(side));
+    self.reclaim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.reclaimRecipient);
   }
 
@@ -73,9 +73,7 @@ library Settlement {
     if (timestamp >= deadline) revert ClaimWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    self.claim(
-      trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
-    );
+    self.claim(trade, lock);
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
   }
@@ -92,9 +90,7 @@ library Settlement {
     if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    self.reclaimParty(
-      trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
-    );
+    self.reclaimParty(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
   }
 
@@ -112,9 +108,7 @@ library Settlement {
     }
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    self.reclaimBoth(
-      trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
-    );
+    self.reclaimBoth(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
   }

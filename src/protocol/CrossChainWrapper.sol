@@ -70,12 +70,12 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
       terms, party, DIRECT_AUTHORIZATION, address(this), lock, msg.sender, evidence, block.timestamp
     );
-    ProgressionGate.validate(terms, party, bobCommitSecret);
+    ProgressionGate.validate(terms, bobCommitSecret);
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
     bytes32 trade = ProtocolHashing.tradeId(terms);
     SideTag tag = ProtocolHashing.sideTag(party);
-    states.commit(trade, lock, tag, trade, ProtocolHashing.assetHash(side));
+    states.commit(trade, lock, tag);
     custody.collect(side, msg.value);
     authorizations.consume(prepared);
     emit Committed(trade, lock, tag, side.principal);
@@ -93,7 +93,7 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   }
 
   function state(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (CrossChainLegState) {
-    return states.record(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party)).state;
+    return states.state(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
   }
 
   function reserved(Asset calldata asset) external view returns (uint256) {

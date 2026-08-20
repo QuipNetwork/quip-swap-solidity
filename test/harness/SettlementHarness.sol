@@ -25,13 +25,7 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
 
   function seedCrossChain(ProtocolTerms calldata terms, bool party, bytes32 lock) external payable {
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    crossChain.commit(
-      trade,
-      lock,
-      ProtocolHashing.sideTag(party),
-      trade,
-      ProtocolHashing.assetHash(party ? terms.partySide : terms.counterpartySide)
-    );
+    crossChain.commit(trade, lock, ProtocolHashing.sideTag(party));
     custody.collect(party ? terms.partySide : terms.counterpartySide, msg.value);
   }
 
@@ -48,22 +42,18 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
     bool party,
     bytes32 lock
   ) external view returns (CrossChainLegState) {
-    return crossChain.record(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party)).state;
+    return crossChain.state(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
   }
 
   function seedSameChainParty(ProtocolTerms calldata terms, bytes32 lock) external payable {
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    sameChain.commitParty(
-      trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
-    );
+    sameChain.commitParty(trade, lock);
     custody.collect(terms.partySide, msg.value);
   }
 
   function seedSameChainCounterparty(ProtocolTerms calldata terms, bytes32 lock) external payable {
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    sameChain.commitCounterparty(
-      trade, lock, trade, ProtocolHashing.assetHash(terms.partySide), ProtocolHashing.assetHash(terms.counterpartySide)
-    );
+    sameChain.commitCounterparty(trade, lock);
     custody.collect(terms.counterpartySide, msg.value);
   }
 
@@ -80,6 +70,6 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
   }
 
   function sameState(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {
-    return sameChain.record(ProtocolHashing.tradeId(terms), lock).state;
+    return sameChain.state(ProtocolHashing.tradeId(terms), lock);
   }
 }

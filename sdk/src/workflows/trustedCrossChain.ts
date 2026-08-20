@@ -29,6 +29,78 @@ export interface PreparedAuthorization {payload: CommitPayloadArgs; payloadHash:
 export interface Inclusion {transactionHash: Hex; blockNumber: bigint; blockHash: Hex32}
 export interface FinalClaimExecutor {funded: boolean; submit: (secret: Hex32) => Promise<Hex>}
 export interface WorkflowStatus {stage: WorkflowStage; aliceCommit: AliceCommitStatus; warning?: string; bobCommitEnabled: boolean; reclaimRecommended: boolean}
+export interface WorkflowLifecycle {
+  readonly stage: WorkflowStage
+  readonly aliceCommit: AliceCommitStatus
+  readonly inclusion?: Inclusion | undefined
+  readonly bobSubmissionEnabled: boolean
+  readonly unsafeReorg: boolean
+}
+export type WorkflowEvent =
+  | {readonly type: 'alice-pending'}
+  | {readonly type: 'alice-observed'; readonly inclusion: Inclusion; readonly final: boolean}
+  | {readonly type: 'alice-rollback'; readonly blockHash: Hex32}
+  | {readonly type: 'bob-submission-enabled'}
+  | {readonly type: 'bob-commit-pending'}
+  | {readonly type: 'bob-committed'}
+  | {readonly type: 'reveal-final'}
+  | {readonly type: 'final-claim'}
+  | {readonly type: 'complete'}
+  | {readonly type: 'recovery'}
+
+export const INITIAL_WORKFLOW_LIFECYCLE: WorkflowLifecycle = {
+  stage: 'prepared',
+  aliceCommit: 'not-submitted',
+  bobSubmissionEnabled: false,
+  unsafeReorg: false,
+}
+
+export function transitionWorkflow(state: WorkflowLifecycle, event: WorkflowEvent): WorkflowLifecycle {
+  switch (event.type) {
+    case 'alice-pending':
+      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
+      return {...state, stage: 'alice-commit', aliceCommit: 'pending', inclusion: undefined}
+    case 'alice-observed':
+      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
+      return {
+        ...state,
+        stage: event.final ? 'bob-enabled' : 'alice-commit',
+        aliceCommit: event.final ? 'final' : 'included-non-final',
+        inclusion: event.inclusion,
+      }
+    case 'alice-rollback':
+      if (state.inclusion?.blockHash !== event.blockHash) return state
+      return state.bobSubmissionEnabled
+        ? {...state, stage: 'recovery', aliceCommit: 'pending', inclusion: undefined, unsafeReorg: true}
+        : {...state, stage: 'alice-commit', aliceCommit: 'pending', inclusion: undefined}
+    case 'bob-submission-enabled':
+      if (state.aliceCommit !== 'final') throw new Error('Alice commit is not final')
+      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
+      return {...state, stage: 'bob-commit-pending', bobSubmissionEnabled: true}
+    case 'bob-commit-pending':
+      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(state.stage)) {
+        throw new Error('Bob commit is not enabled')
+      }
+      if (state.aliceCommit !== 'final') throw new Error('Alice commit is not final')
+      return {...state, stage: 'bob-commit-pending', bobSubmissionEnabled: true}
+    case 'bob-committed':
+      if (state.unsafeReorg) throw new Error('Alice commit was reorganized after Bob submission was enabled')
+      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(state.stage)) {
+        throw new Error('Bob commit is not pending')
+      }
+      return {...state, stage: 'bob-committed', bobSubmissionEnabled: true}
+    case 'reveal-final':
+      if (state.stage !== 'bob-committed') throw new Error('Bob is not committed')
+      return {...state, stage: 'reveal-final'}
+    case 'final-claim':
+      if (state.stage !== 'reveal-final') throw new Error('revealing claim is not final')
+      return {...state, stage: 'final-claim'}
+    case 'complete':
+      return {...state, stage: 'complete'}
+    case 'recovery':
+      return {...state, stage: 'recovery'}
+  }
+}
 export interface PreparedTrustedWorkflow {
   readonly workflow: TrustedCrossChainWorkflow
   readonly settlementSecret: Hex32
@@ -59,8 +131,7 @@ export class TrustedCrossChainWorkflow {
   readonly terms: ProtocolTerms; readonly tradeId: Hex32; readonly lock: Hex32
   readonly partyAuthorization: PreparedAuthorization; readonly counterpartyAuthorization: PreparedAuthorization
   readonly #secret: Hex32; readonly #bobSecret: Hex32; private readonly confirmations: bigint
-  private readonly selected: Address; private alice: AliceCommitStatus = 'not-submitted'
-  private stage: WorkflowStage = 'prepared'; private inclusion: Inclusion | undefined; private bobEnabled = false; private unsafeReorg = false
+  private readonly selected: Address; private lifecycle: WorkflowLifecycle = INITIAL_WORKFLOW_LIFECYCLE
   constructor(args: WorkflowArgs) {
     if (args.requiredConfirmations < 1n) throw new Error('requiredConfirmations must be positive')
     if (args.randomness !== undefined && args.randomHex32 !== undefined) throw new Error('choose named randomness or randomHex32, not both')
@@ -84,36 +155,61 @@ export class TrustedCrossChainWorkflow {
     this.counterpartyAuthorization = {payload: counter, payloadHash: commitPayloadHash(counter)}
   }
   status(now?: bigint): WorkflowStatus {
-    const warning = this.unsafeReorg ? 'Alice commit reorganized after Bob submission was enabled; stop submission and recover if possible.' : this.stage === 'bob-commit-pending' ? 'Bob submission was enabled; awaiting Bob commit confirmation.' : this.alice === 'pending' ? 'Alice commit is pending; its published preimage is not enabled for Bob yet.' : this.alice === 'included-non-final' ? 'Alice commit is not final; its published preimage is not enabled for Bob yet and the commit may be reorganized.' : undefined
-    return {stage: this.stage, aliceCommit: this.alice, ...(warning ? {warning} : {}), bobCommitEnabled: this.alice === 'final' && !this.bobEnabled, reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && this.stage !== 'complete'}
+    const {stage, aliceCommit, bobSubmissionEnabled, unsafeReorg} = this.lifecycle
+    const warning = unsafeReorg
+      ? 'Alice commit reorganized after Bob submission was enabled; stop submission and recover if possible.'
+      : stage === 'bob-commit-pending'
+        ? 'Bob submission was enabled; awaiting Bob commit confirmation.'
+        : aliceCommit === 'pending'
+          ? 'Alice commit is pending; its published preimage is not enabled for Bob yet.'
+          : aliceCommit === 'included-non-final'
+            ? 'Alice commit is not final; its published preimage is not enabled for Bob yet and the commit may be reorganized.'
+            : undefined
+    return {
+      stage,
+      aliceCommit,
+      ...(warning ? {warning} : {}),
+      bobCommitEnabled: aliceCommit === 'final' && !bobSubmissionEnabled,
+      reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && stage !== 'complete',
+    }
   }
-  markAlicePending(): void { this.beforeBobEnablement(); this.alice = 'pending'; this.inclusion = undefined; this.stage = 'alice-commit' }
+  markAlicePending(): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-pending'})
+  }
   observeAlice(inclusion: Inclusion, head: bigint): void {
-    this.beforeBobEnablement(); if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
-    this.inclusion = inclusion; this.alice = head - inclusion.blockNumber + 1n >= this.confirmations ? 'final' : 'included-non-final'; this.stage = this.alice === 'final' ? 'bob-enabled' : 'alice-commit'
+    if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
+    const final = head - inclusion.blockNumber + 1n >= this.confirmations
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-observed', inclusion, final})
   }
   rollbackAlice(blockHash: Hex32): void {
-    if (this.inclusion?.blockHash !== blockHash) return
-    this.inclusion = undefined; this.alice = 'pending'
-    if (this.bobEnabled) { this.unsafeReorg = true; this.stage = 'recovery' } else this.stage = 'alice-commit'
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-rollback', blockHash})
   }
   enableBobCommit(submitter: Address): Hex32 {
-    if (this.alice !== 'final') throw new Error('Alice commit is not final')
+    if (this.lifecycle.aliceCommit !== 'final') throw new Error('Alice commit is not final')
     if (submitter.toLowerCase() !== this.selected.toLowerCase()) throw new Error('submitter not selected')
-    this.beforeBobEnablement(); this.bobEnabled = true; this.stage = 'bob-commit-pending'; return this.#bobSecret
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'bob-submission-enabled'})
+    return this.#bobSecret
   }
-  markBobCommitted(): void { if (!this.bobEnabled) throw new Error('Bob submission was not enabled'); if (this.unsafeReorg) throw new Error('Alice commit was reorganized after Bob submission was enabled'); this.stage = 'bob-committed' }
-  observeFinalReveal(): void { if (this.stage !== 'bob-committed') throw new Error('Bob is not committed'); this.stage = 'reveal-final' }
+  markBobCommitted(): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'bob-committed'})
+  }
+  observeFinalReveal(): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'reveal-final'})
+  }
   async handoffFinalClaim(executors: readonly FinalClaimExecutor[]): Promise<Hex> {
-    if (this.stage !== 'reveal-final') throw new Error('revealing claim is not final')
+    if (this.lifecycle.stage !== 'reveal-final') throw new Error('revealing claim is not final')
     const funded = executors.filter(executor => executor.funded)
     if (funded.length === 0) throw new Error('no funded final-claim executor')
     const transactionHash = await Promise.any(funded.map(executor => executor.submit(this.#secret)))
-    this.stage = 'final-claim'; return transactionHash
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'final-claim'})
+    return transactionHash
   }
-  markComplete(): void { this.stage = 'complete' }
-  enterRecovery(): void { this.stage = 'recovery' }
-  private beforeBobEnablement(): void { if (this.bobEnabled) throw new Error('Bob submission already enabled') }
+  markComplete(): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'complete'})
+  }
+  enterRecovery(): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'recovery'})
+  }
   private assertSelected(): void {
     const side = this.terms.counterpartySide; const selected = this.selected.toLowerCase()
     if (side.delegationPolicy === DelegationPolicy.NotAllowed && selected !== side.principal.toLowerCase()) throw new Error('selected submitter must be Bob')

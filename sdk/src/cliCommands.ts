@@ -5,8 +5,8 @@ import {SECRET_STATE_SCHEMA, validatePartyWorkflowState} from './clientPersisten
 import type {AliceSecretState, BobSecretState, PartySecretState, SecretStateMode} from './clientPersistence.js'
 import {deriveCommitLock, gateContextId, settlementLock} from './protocol.js'
 import type {Hex32} from './types.js'
-import {prepareTrustedCrossChainWorkflow} from './workflows/trustedCrossChain.js'
-import type {WorkflowArgs} from './workflows/trustedCrossChain.js'
+import {INITIAL_WORKFLOW_LIFECYCLE, prepareTrustedCrossChainWorkflow, transitionWorkflow} from './workflows/trustedCrossChain.js'
+import type {Inclusion, WorkflowArgs, WorkflowEvent, WorkflowLifecycle} from './workflows/trustedCrossChain.js'
 
 export interface PrepareTradeCommandArgs {
   readonly workflow: WorkflowArgs
@@ -91,6 +91,47 @@ const next = <P extends ClientState, S extends PartySecretState>(publicState: P,
   secretState: {...secretState, generation: secretState.generation + 1},
 })
 
+const runtimeInclusion = (inclusion: PersistedInclusion): Inclusion => ({
+  transactionHash: inclusion.transactionHash,
+  blockNumber: BigInt(inclusion.blockNumber),
+  blockHash: inclusion.blockHash,
+})
+
+const persistedInclusion = (inclusion: Inclusion): PersistedInclusion => ({
+  transactionHash: inclusion.transactionHash,
+  blockNumber: inclusion.blockNumber.toString(10),
+  blockHash: inclusion.blockHash,
+})
+
+function lifecycleFromClientState(state: ClientState): WorkflowLifecycle {
+  const bobSubmissionEnabled = [
+    'bob-commit-pending',
+    'bob-committed',
+    'reveal-final',
+    'final-claim',
+    'complete',
+  ].includes(state.stage)
+  return {
+    ...INITIAL_WORKFLOW_LIFECYCLE,
+    stage: state.stage,
+    aliceCommit: state.aliceCommit.status,
+    ...(state.aliceCommit.inclusion === undefined ? {} : {inclusion: runtimeInclusion(state.aliceCommit.inclusion)}),
+    bobSubmissionEnabled,
+  }
+}
+
+function applyLifecycle(state: ClientState, event: WorkflowEvent): ClientState {
+  const lifecycle = transitionWorkflow(lifecycleFromClientState(state), event)
+  return {
+    ...state,
+    stage: lifecycle.stage,
+    aliceCommit: {
+      status: lifecycle.aliceCommit,
+      ...(lifecycle.inclusion === undefined ? {} : {inclusion: persistedInclusion(lifecycle.inclusion)}),
+    },
+  }
+}
+
 export function applyPartyCommand(
   publicState: ClientState,
   secretState: PartySecretState,
@@ -102,52 +143,78 @@ export function applyPartyCommand(
   switch (input.command) {
     case 'record-observation':
       break
-    case 'mark-alice-pending':
-      pair.publicState = pair.publicState.party === 'alice'
-        ? {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}, progression: {published: true}}
-        : {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'pending'}}
+    case 'mark-alice-pending': { // Alice publishes the progression secret in this commit.
+      const state = applyLifecycle(pair.publicState, {type: 'alice-pending'})
+      pair.publicState = state.party === 'alice'
+        ? {...state, progression: {published: true}}
+        : state
       break
+    }
     case 'mark-alice-included-non-final':
-      pair.publicState = {...pair.publicState, stage: 'alice-commit', aliceCommit: {status: 'included-non-final', inclusion: input.inclusion}}
+      pair.publicState = applyLifecycle(pair.publicState, {
+        type: 'alice-observed',
+        inclusion: runtimeInclusion(input.inclusion),
+        final: false,
+      })
       break
-    case 'mark-alice-final':
+    case 'mark-alice-final': {
       if (pair.publicState.party === 'bob') {
-        if (input.bobCommitSecret === undefined) throw new Error('final Alice observation lacks the on-chain Bob commit secret')
-        if (deriveCommitLock(pair.publicState.derived.gateContextId, input.bobCommitSecret) !== pair.publicState.terms.counterpartySide.commitLock) throw new Error('on-chain Bob commit secret does not match the signed commitLock')
+        if (input.bobCommitSecret === undefined) {
+          throw new Error('final Alice observation lacks the on-chain Bob commit secret')
+        }
+        if (
+          deriveCommitLock(pair.publicState.derived.gateContextId, input.bobCommitSecret)
+          !== pair.publicState.terms.counterpartySide.commitLock
+        ) throw new Error('on-chain Bob commit secret does not match the signed commitLock')
         pair.secretState = {...pair.secretState, bobCommitSecret: input.bobCommitSecret}
-        pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}, progression: {observed: true, observedFrom: pair.publicState.terms.partySide.principal}}
-      } else {
-        pair.publicState = {...pair.publicState, stage: 'bob-enabled', aliceCommit: {status: 'final', inclusion: input.inclusion}, progression: {published: true}}
       }
+      const state = applyLifecycle(pair.publicState, {
+        type: 'alice-observed',
+        inclusion: runtimeInclusion(input.inclusion),
+        final: true,
+      })
+      pair.publicState = state.party === 'bob'
+        ? {
+            ...state,
+            progression: {observed: true, observedFrom: state.terms.partySide.principal},
+          }
+        : {...state, progression: {published: true}}
       break
+    }
     case 'mark-bob-commit-pending':
       requireProgressionReady(pair.publicState, pair.secretState)
-      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(publicState.stage)) throw new Error('Bob commit is not enabled')
-      pair.publicState = {...pair.publicState, stage: 'bob-commit-pending'}
+      pair.publicState = applyLifecycle(pair.publicState, {type: 'bob-commit-pending'})
       break
     case 'mark-bob-committed':
       requireProgressionReady(pair.publicState, pair.secretState)
-      if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(publicState.stage)) throw new Error('Bob commit is not pending')
-      pair.publicState = {...pair.publicState, stage: 'bob-committed'}
+      pair.publicState = applyLifecycle(pair.publicState, {type: 'bob-committed'})
       break
     case 'observe-reveal':
       requireBob(pair.publicState, pair.secretState)
-      if (publicState.stage !== 'bob-committed') throw new Error('Bob is not committed')
-      if (settlementLock(publicState.tradeId, input.settlementSecret) !== publicState.derived.settlementLock) throw new Error('invalid settlement preimage')
+      if (settlementLock(publicState.tradeId, input.settlementSecret) !== publicState.derived.settlementLock) {
+        throw new Error('invalid settlement preimage')
+      }
       pair.secretState = {...pair.secretState, settlementSecret: input.settlementSecret}
-      pair.publicState = {...pair.publicState, stage: 'reveal-final'}
+      pair.publicState = applyLifecycle(pair.publicState, {type: 'reveal-final'})
       break
     case 'handoff-final-claim':
       requireBob(pair.publicState, pair.secretState)
-      if (publicState.stage !== 'reveal-final') throw new Error('revealing claim is not final')
-      if (!publicState.selected.finalClaimExecutors.some(value => value.toLowerCase() === input.executor.toLowerCase())) throw new Error('executor not selected')
-      pair.publicState = {...pair.publicState, stage: 'final-claim', selected: {...pair.publicState.selected, finalClaimExecutor: input.executor}}
+      if (!publicState.selected.finalClaimExecutors.some(value => value.toLowerCase() === input.executor.toLowerCase())) {
+        throw new Error('executor not selected')
+      }
+      pair.publicState = {
+        ...applyLifecycle(pair.publicState, {type: 'final-claim'}),
+        selected: {...pair.publicState.selected, finalClaimExecutor: input.executor},
+      }
       break
     case 'mark-complete':
-      pair.publicState = {...pair.publicState, stage: 'complete'}
+      pair.publicState = applyLifecycle(pair.publicState, {type: 'complete'})
       break
     case 'enter-recovery':
-      pair.publicState = {...pair.publicState, stage: 'recovery', recovery: {active: true, reason: input.reason}}
+      pair.publicState = {
+        ...applyLifecycle(pair.publicState, {type: 'recovery'}),
+        recovery: {active: true, reason: input.reason},
+      }
       break
   }
   const result = pair

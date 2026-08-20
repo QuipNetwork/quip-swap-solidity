@@ -31,7 +31,7 @@ contract AuthorizationReceiverHarness is ICommitAuthorizationReceiver {
     CommitAuthorization.PreparedAuthorization memory prepared = authorizations.validate(
       terms, party, directGateway, address(this), lock, msg.sender, evidence, block.timestamp
     );
-    ProgressionGate.validate(terms, party, bobCommitSecret);
+    ProgressionGate.validate(terms, bobCommitSecret);
     ++commits;
     lastSubmitter = evidence.authenticatedSubmitter;
     lastCommitData = commitData;

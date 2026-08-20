@@ -45,7 +45,7 @@ export type {
   RegistryOperation,
 } from './protocol.js'
 
-export {TrustedCrossChainWorkflow, prepareTrustedCrossChainWorkflow, randomProtocolValue, submitWithFeeBumps} from './workflows/trustedCrossChain.js'
+export {INITIAL_WORKFLOW_LIFECYCLE, TrustedCrossChainWorkflow, prepareTrustedCrossChainWorkflow, randomProtocolValue, submitWithFeeBumps, transitionWorkflow} from './workflows/trustedCrossChain.js'
 export type {
   AliceCommitStatus,
   WorkflowStage,
@@ -53,6 +53,8 @@ export type {
   WorkflowArgs,
   PreparedAuthorization,
   WorkflowStatus,
+  WorkflowLifecycle,
+  WorkflowEvent,
   Inclusion,
   FinalClaimExecutor,
   RetryPolicy,

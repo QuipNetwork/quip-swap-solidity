@@ -84,10 +84,10 @@ const read = async <T>(functionName: string, args: readonly unknown[]): Promise<
 let progressionHarness: Address
 let progressionAbi: Abi
 
-const progressionRead = async (terms: ProtocolTerms, party: boolean, secret: Hex32): Promise<void> =>
+const progressionRead = async (terms: ProtocolTerms, secret: Hex32): Promise<void> =>
   await ctx.publicClient.readContract({
     address: progressionHarness, abi: progressionAbi, functionName: 'validate',
-    args: [abiTerms(terms), party, secret],
+    args: [abiTerms(terms), secret],
   }) as void
 
 const sdkAccepts = (operation: () => void): boolean => {
@@ -284,7 +284,7 @@ describe('v1.1 canonical Solidity/TypeScript vectors', () => {
       ]
       for (const [party, candidateSecret] of progressionCases) {
         const sdk = sdkAccepts(() => validateCommitProgression(terms, party, candidateSecret))
-        const solidity = await solidityAccepts(() => progressionRead(terms, party, candidateSecret))
+        const solidity = await solidityAccepts(() => progressionRead(terms, candidateSecret))
         expect(solidity, `progression parity for party=${party}`).toBe(sdk)
       }
     }

@@ -5,7 +5,7 @@ import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
 import {ProtocolTerms} from '../../src/protocol/ProtocolTypes.sol';
 
 contract ProgressionGateHarness {
-  function validate(ProtocolTerms calldata terms, bool party, bytes32 secret) external pure {
-    ProgressionGate.validate(terms, party, secret);
+  function validate(ProtocolTerms calldata terms, bytes32 secret) external pure {
+    ProgressionGate.validate(terms, secret);
   }
 }
