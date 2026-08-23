@@ -1211,31 +1211,6 @@ export const crossChainWrapperAbi = [
   },
   {
     "type": "event",
-    "name": "AuthorizationNonceConsumed",
-    "inputs": [
-      {
-        "name": "nonceKey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "actionNonce",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "principal",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "BobCommitSecretPublished",
     "inputs": [
       {
@@ -1338,17 +1313,6 @@ export const crossChainWrapperAbi = [
     "type": "error",
     "name": "AuthorizationExpired",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AuthorizationNonceAlreadyConsumed",
-    "inputs": [
-      {
-        "name": "nonceKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",

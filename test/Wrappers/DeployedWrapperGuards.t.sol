@@ -28,7 +28,6 @@ import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract DeployedWrapperGuardsTest is Test {
-  event AuthorizationNonceConsumed(bytes32 indexed nonceKey, bytes32 indexed actionNonce, address indexed principal);
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
   event BobCommitSecretPublished(bytes32 indexed tradeId, bytes32 bobCommitSecret);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
@@ -299,11 +298,6 @@ contract DeployedWrapperGuardsTest is Test {
     ProtocolTerms memory claimTerms = _crossTerms();
     bytes32 claimLock = _lock(claimTerms);
     bytes32 claimTrade = ProtocolHashing.tradeId(claimTerms);
-    bytes32 claimNonce = bytes32(uint256(30));
-    bytes32 claimNonceKey = _nonceKey(claimTerms.partySide, claimNonce);
-
-    vm.expectEmit(true, true, true, true, address(cross));
-    emit AuthorizationNonceConsumed(claimNonceKey, claimNonce, ALICE);
     vm.expectEmit(true, true, true, true, address(cross));
     emit Committed(claimTrade, claimLock, SideTag.Party, ALICE);
     vm.expectEmit(true, false, false, true, address(cross));
@@ -333,9 +327,9 @@ contract DeployedWrapperGuardsTest is Test {
     bytes32 claimLock = _lock(claimTerms);
     bytes32 claimTrade = ProtocolHashing.tradeId(claimTerms);
 
-    _expectSameCommitEvents(claimTerms, true, claimLock, 40);
+    _expectSameCommitEvents(claimTerms, true, claimLock);
     _commitSame(claimTerms, true, claimLock, 40, 1);
-    _expectSameCommitEvents(claimTerms, false, claimLock, 41);
+    _expectSameCommitEvents(claimTerms, false, claimLock);
     _commitSame(claimTerms, false, claimLock, 41, 2);
 
     vm.expectEmit(true, true, false, true, address(same));
@@ -357,11 +351,8 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(uint8(same.state(reclaimTerms, reclaimLock)), uint8(SameChainState.Reclaimed));
   }
 
-  function _expectSameCommitEvents(ProtocolTerms memory terms, bool party, bytes32 lock, uint256 nonce) internal {
+  function _expectSameCommitEvents(ProtocolTerms memory terms, bool party, bytes32 lock) internal {
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
-    bytes32 actionNonce = bytes32(nonce);
-    vm.expectEmit(true, true, true, true, address(same));
-    emit AuthorizationNonceConsumed(_nonceKey(side, actionNonce), actionNonce, side.principal);
     vm.expectEmit(true, true, true, true, address(same));
     emit Committed(ProtocolHashing.tradeId(terms), lock, party ? SideTag.Party : SideTag.Counterparty, side.principal);
   }
@@ -398,14 +389,6 @@ contract DeployedWrapperGuardsTest is Test {
     evidence.expectedSourceState = source;
     evidence.actionNonce = bytes32(nonce);
     evidence.expiry = expiry;
-  }
-
-  function _nonceKey(SideTerms memory side, bytes32 actionNonce) internal pure returns (bytes32) {
-    return keccak256(
-      ProtocolHashing.encodeAuthorizationNonceKey(
-        side.chainId, GATEWAY, side.principal, side.principalKeyVersion, actionNonce
-      )
-    );
   }
 
   function _crossTerms() internal view returns (ProtocolTerms memory terms) {

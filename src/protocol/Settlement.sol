@@ -7,6 +7,10 @@ import {ProtocolTerms, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';
 import {SameChainStateMachine} from './StateMachines.sol';
 
+/// @title Settlement
+/// @notice Applies claim and reclaim predicates, advances state, and releases reserved assets.
+/// @dev Claim and reclaim are permissionless; terms fix the payout recipient. State is advanced
+///      before external asset transfers, and wrapper entry points additionally use a reentrancy guard.
 library Settlement {
   using AssetCustody for AssetCustody.Layout;
   using CrossChainStateMachine for CrossChainStateMachine.Layout;
@@ -18,6 +22,7 @@ library Settlement {
   error ClaimWindowClosed();
   error ReclaimWindowClosed();
 
+  /// @notice Claims one local cross-chain leg with the trade-bound settlement preimage.
   function claimCrossChain(
     CrossChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
@@ -27,16 +32,22 @@ library Settlement {
     bytes32 secret,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
+    // Reject same-chain terms at the cross-chain settlement entry point.
     _validate(terms, WrapperMode.CrossChain);
+    // Select the local escrow leg identified by the caller.
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
+    // Reconstruct the committed trade and verify its trade-bound HTLC preimage.
     trade = ProtocolHashing.tradeId(terms);
     _requireSecret(trade, lock, secret);
+    // Claim is valid strictly before this leg claim deadline.
     if (timestamp >= side.claimDeadline) revert ClaimWindowClosed();
+    // Make the terminal transition before releasing assets externally.
     self.claim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.recipient);
   }
 
+  /// @notice Returns one local cross-chain leg after its reclaim release time.
   function reclaimCrossChain(
     CrossChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
@@ -45,16 +56,20 @@ library Settlement {
     bytes32 lock,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
+    // Select and validate the locally deployed cross-chain leg.
     _validate(terms, WrapperMode.CrossChain);
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     _requireLocal(side);
+    // Reclaim opens at the inclusive reclaim release time.
     if (timestamp < side.reclaimRelease) revert ReclaimWindowClosed();
 
+    // Make the terminal transition before returning assets externally.
     trade = ProtocolHashing.tradeId(terms);
     self.reclaim(trade, lock, ProtocolHashing.sideTag(party));
     custody.release(side, side.reclaimRecipient);
   }
 
+  /// @notice Atomically claims and releases both same-chain escrows.
   function claimSameChain(
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
@@ -63,20 +78,26 @@ library Settlement {
     bytes32 secret,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
+    // Same-chain settlement requires both ordered sides to be local.
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     trade = ProtocolHashing.tradeId(terms);
+    // A single trade-bound preimage settles both escrows.
     _requireSecret(trade, lock, secret);
+    // Atomic settlement must fit inside both claim windows.
     uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
       ? terms.partySide.claimDeadline
       : terms.counterpartySide.claimDeadline;
     if (timestamp >= deadline) revert ClaimWindowClosed();
 
+    // Mark the joint state terminal before either external transfer.
     self.claim(trade, lock);
+    // Release each escrow to the recipient fixed by its own side terms.
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
   }
 
+  /// @notice Reclaims the party escrow when no counterparty commit was recorded.
   function reclaimSameChainParty(
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
@@ -86,6 +107,7 @@ library Settlement {
   ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
+    // Only the first escrow exists on this state-machine branch.
     if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
 
     trade = ProtocolHashing.tradeId(terms);
@@ -93,6 +115,7 @@ library Settlement {
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
   }
 
+  /// @notice Atomically reclaims both committed escrows after both reclaim releases.
   function reclaimSameChainBoth(
     SameChainStateMachine.Layout storage self,
     AssetCustody.Layout storage custody,
@@ -102,6 +125,7 @@ library Settlement {
   ) internal returns (bytes32 trade) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
+    // Dual reclaim waits for both independently signed release times.
     if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
       revert ReclaimWindowClosed();
     }

@@ -23,6 +23,20 @@ masquerading.
 
 ## High
 
+### Timing-policy enforcement differs from the normative protocol — open
+
+The protocol specification still places the removed timing-policy identifier in
+signed terms and claims that wrappers enforce immutable directional `FinalClaimDelay` margins.
+The Solidity terms contain no policy identifier and enforce only basic
+cross-chain deadline ordering; chain-specific margins are validated by clients.
+Consequently, the contracts can accept a signed schedule that does not satisfy
+the finality policy described by the specification.
+
+Required: preserve the current off-chain design by removing on-chain policy-ID
+claims from the protocol and proof, defining separate structural and
+client-safe timing predicates, and regenerating the canonical vectors. The
+alternative is to restore a terms-bound on-chain policy mechanism.
+
 ### Verifier identity is not rechecked on every use — open
 
 Registered-direct admission pins verifier address, code hash, version, and
@@ -73,22 +87,37 @@ every supported chain and asset type.
 
 ## Medium
 
+### Mutable admission is conflated with structural term validity — open specification mismatch
+
+The technical specification calls `ValidTerms` pure while including supported
+assets, and then requires `ValidTerms` again for claims and reclaims. Solidity
+checks structural asset validity in `validateTerms`, consults the mutable asset
+allowlist only when committing, and intentionally permits settlement after an
+asset is delisted. Rechecking mutable support during settlement would strand
+existing escrow.
+
+Required: define a pure `StructurallyValidTerms` predicate and separate mutable
+`CommitAssetSupported` admission. A committed binding should imply prior
+structural validity; claims and reclaims must not reconsult mutable admission.
+
+### Supported remote chains are enforced only by clients — open specification mismatch
+
+The specification says `ValidTerms` requires supported chain identifiers.
+Solidity requires nonzero identifiers and verifies only that the selected local
+side equals `block.chainid`; the SDK timing policy performs the supported-chain
+check. A locally valid commit can therefore bind a nonexistent or unsupported
+remote chain if a signer bypasses the conforming client.
+
+Required: classify remote-chain support as an explicit client/deployment
+predicate, or add an on-chain supported-chain policy if contract enforcement is
+required.
+
 ### Bob-commit finality is an off-chain policy — partially mitigated
 
 Alice's commit publishes `BobCommitSecret` immediately. Bob's client waits for
 configured finality, but the destination contract cannot verify the remote
 commit. Incorrect policy, compromised software, false RPC observations, or
 client bypass can leave Bob escrowed after Alice's commit reorganizes away.
-
-### Authorization nonces are wrapper-local — open specification mismatch
-
-The implementation consumes action nonces in each wrapper, while the protocol
-specification described verifier-owned nonce consumption. The signed wrapper
-address prevents direct signature replay, but the same logical nonce can appear
-in separately signed authorizations for different wrappers.
-
-Required: either consume nonces at each authorization boundary or formalize
-wrapper-local nonce ownership consistently in the protocol and proof.
 
 ### Transaction broadcast precedes durable journaling — open
 
@@ -143,11 +172,44 @@ all clients.
 
 ## Low
 
-### Solidity accepts zero side nonces — open
+### Settlement validity is cached only implicitly — open proof refinement
 
-The SDK rejects zero `sideNonce`, but Solidity term validation accepts it.
-Randomness cannot be proven on-chain, but rejecting zero would align both
-predicates and catch an obvious generation failure.
+The technical predicates require `ValidTerms` on every claim and reclaim.
+Solidity does not rerun structural validation during settlement; it relies on
+the fact that the `(TradeID, Lock, side)` or `(TradeID, Lock)` state key could
+only have been created by a valid commit. This is safe under the terms-hash
+binding assumption but is not stated in the specification or proof refinement.
+
+Required: specify and prove that committed state implies structural validity at
+commit time and that collision-resistant keyed lookup binds settlement to those
+same terms.
+
+### Authorization component names describe a superseded split — open documentation gap
+
+The protocol and proof refer to separate `PQIdentityRegistry` and
+`PQAuthorizationGateway` contracts. The prototype intentionally implements both
+logical roles in `DirectAuthorization`. This is not a behavioral vulnerability,
+but it makes deployment and proof-to-code mapping ambiguous.
+
+Required: use `DirectAuthorization` consistently or state explicitly that it is
+one contract implementing the registry and gateway roles.
+
+### Canonical vectors are not executable sources of truth — open conformance gap
+
+The checked-in canonical JSON still exposes the removed timing-policy identifier,
+while current Solidity terms omit it and current SDK documentation treats it as removed. The
+Solidity and SDK conformance tests do not load that JSON, so the file can drift
+without failing either suite.
+
+Required: regenerate vectors for the selected timing-policy model and make both
+Solidity and SDK tests consume the same checked-in values.
+
+### Solidity and SDK accept zero side nonces — open
+
+Neither Solidity term validation nor the SDK protocol validator rejects a zero
+`sideNonce`. Randomness cannot be proven on-chain, but rejecting zero in both
+layers would catch an obvious generation failure. Otherwise the documentation
+must classify nonce quality entirely as a client responsibility.
 
 ### Prototype client secret storage is plaintext — production gap
 

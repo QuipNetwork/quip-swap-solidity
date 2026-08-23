@@ -25,6 +25,11 @@ import {
   IERC7913SignatureVerifier
 } from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 
+/// @title DirectAuthorization
+/// @notice Registers versioned PQ identities for EOAs and authenticates RegisteredDirect commits.
+/// @dev Registration can be combined with the first commit. Key rotation, recovery, and revocation
+///      use separately scoped nonces. This prototype pins one verifier address, code hash, version,
+///      and parameter profile at deployment.
 contract DirectAuthorization is IActiveKeyRegistry {
   string internal constant REGISTRATION_DOMAIN = 'InterlockRegister-v1.1';
   string internal constant REGISTRY_DOMAIN = 'InterlockRegistry-v1.1';
@@ -44,6 +49,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
   error InvalidPQAuthorization();
   error RequestExpired();
   error RegistryNonceAlreadyConsumed(bytes32 nonceKey);
+  error AuthorizationNonceAlreadyConsumed(bytes32 nonceKey);
   error CommitCallbackFailed();
   error InvalidAuthorizationMode();
   error InvalidChain();
@@ -57,6 +63,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
   event RecoveryKeyRotated(address indexed eoa, uint256 indexed recoveryKeyVersion);
   event IdentityRevoked(address indexed eoa, KeyRole indexed authorizingRole, uint256 authorizingKeyVersion);
   event RegistryNonceConsumed(bytes32 indexed nonceKey, address indexed eoa, bytes32 indexed operationNonce);
+  event AuthorizationNonceConsumed(bytes32 indexed nonceKey, bytes32 indexed actionNonce, address indexed principal);
 
   struct RegistryPayload {
     RegistryActionTag action;
@@ -74,23 +81,36 @@ contract DirectAuthorization is IActiveKeyRegistry {
     bool recoveryAuthorized;
   }
 
+  /// @dev Current direct-user identity by EOA; historical key material is not retained.
   mapping(address => PQIdentity) private identities;
+  /// @dev Replay protection for version- and role-scoped registry operations.
   mapping(bytes32 => bool) private consumedNonces;
+  ///  Replay protection for commit authorizations verified by this boundary.
+  mapping(bytes32 => bool) private consumedCommitNonces;
+  /// @notice ERC-7913 verifier accepted by every registered keyed verifier.
   address public immutable TRUSTED_VERIFIER;
+  /// @notice Deployment-time verifier code hash checked whenever key material is accepted.
   bytes32 public immutable TRUSTED_VERIFIER_CODEHASH;
 
+  /// @notice Pins a deployed verifier with the expected version and cryptographic profile.
   constructor(address trustedVerifier) {
+    // Reject EOAs and undeployed verifier addresses.
     if (trustedVerifier.code.length == 0) revert InvalidVerifier();
+    // Pin both implementation family and parameter profile before accepting keys.
     if (_verifierMetadata(trustedVerifier, IProfiledPQVerifier.VERSION_TAG.selector) != EXPECTED_VERIFIER_VERSION) {
       revert InvalidVerifier();
     }
     if (_verifierMetadata(trustedVerifier, IProfiledPQVerifier.PROFILE_TAG.selector) != EXPECTED_VERIFIER_PROFILE) {
       revert InvalidVerifier();
     }
+    // Store the address and deployed bytecode identity as immutable trust anchors.
     TRUSTED_VERIFIER = trustedVerifier;
     TRUSTED_VERIFIER_CODEHASH = trustedVerifier.codehash;
   }
 
+  /// @notice Registers an EOA identity and atomically performs its first bound commit.
+  /// @dev The EOA authorizes registration, and both new PQ keys prove possession. If the
+  ///      callback fails, registration and its emitted event revert with the transaction.
   function registerAndCommit(
     InitialRegistration calldata request,
     bytes calldata eoaSignature,
@@ -98,12 +118,15 @@ contract DirectAuthorization is IActiveKeyRegistry {
     bytes calldata recoveryProof,
     bytes calldata commitData
   ) external payable {
+    // Validate identity, callback target, uniqueness, and request lifetime first.
     if (request.eoa == address(0)) revert InvalidEOAAuthorization();
     if (request.commitTarget.code.length == 0) revert CommitCallbackFailed();
     if (identities[request.eoa].activeKeyVersion != 0) revert AlreadyRegistered();
     if (block.timestamp >= request.expiry) revert RequestExpired();
+    // Both keys must use the verifier pinned by this registry deployment.
     _validateKey(request.activePQKey);
     _validateKey(request.recoveryPQKey);
+    // Bind EOA consent and both proofs of possession to this exact first commit.
     bytes32 digest = registrationDigest(request);
     if (msg.sender != request.eoa && !_validEOASignature(request.eoa, digest, eoaSignature)) {
       revert InvalidEOAAuthorization();
@@ -115,6 +138,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       request.recoveryPQKey, possessionDigest(digest, KeyRole.Recovery, request.recoveryPQKey), recoveryProof
     );
 
+    // Install version one only after all independent signatures succeed.
     PQIdentity storage identity = identities[request.eoa];
     identity.activePQKey = request.activePQKey;
     identity.activeKeyVersion = 1;
@@ -123,6 +147,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
     identity.active = true;
     emit IdentityRegistered(request.eoa, 1, 1);
 
+    // Complete the bound first commit in the same transaction; any failure rolls registration back.
     try IRegisteredCommitTarget(request.commitTarget).completeRegisteredCommit{value: msg.value}(
       request.eoa, msg.sender, request.commitPayloadHash, commitData
     ) {}
@@ -131,29 +156,45 @@ contract DirectAuthorization is IActiveKeyRegistry {
     }
   }
 
+  /// @notice Verifies a RegisteredDirect commit and atomically forwards it to the wrapper.
   function authorizeCommit(CommitAuthorizationRequest calldata request, bytes calldata signature) external payable {
-    _deliver(request, _verifyCommit(request, signature, msg.sender));
+    // Consume after verification and before wrapper delivery; callback failure rolls it back.
+    VerifiedCommitAuthorization memory evidence = _verifyCommit(request, signature, msg.sender);
+    _consumeCommitNonce(request, evidence.actionNonce);
+    _deliver(request, evidence);
   }
 
+  /// @notice Self-callback that reconstructs and completes the commit bound into registration.
+  /// @dev Only registerAndCommit can enter this path because msg.sender must be this contract.
   function completeRegisteredCommit(
     address eoa,
     address,
+    /* transportCaller: registration already authenticates the EOA below */
     bytes32 registeredPayloadHash,
     bytes calldata commitData
   ) external payable {
+    // External callers cannot manufacture the privileged registration callback context.
     if (msg.sender != address(this)) revert CommitCallbackFailed();
+    // Recover the exact commit request and PQ signature supplied to registerAndCommit.
     (CommitAuthorizationRequest memory request, bytes memory signature) =
       abi.decode(commitData, (CommitAuthorizationRequest, bytes));
+    // Registration may bootstrap the principal or the specifically named delegate only.
     SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
     if (eoa != side.principal && (side.delegationPolicy != DelegationPolicy.SpecificDelegate || eoa != side.delegate)) {
       revert InvalidRegisteredSubmitter();
     }
+    // Treat the newly registered EOA as the authenticated transport identity.
     VerifiedCommitAuthorization memory evidence = _verifyCommit(request, signature, eoa);
+    // Prevent callback calldata from substituting the commit bound into registration.
     if (evidence.payloadHash != registeredPayloadHash) revert RegistrationPayloadMismatch();
+    // Registration, nonce consumption, and the first commit remain one atomic transaction.
+    _consumeCommitNonce(request, evidence.actionNonce);
     _deliver(request, evidence);
   }
 
+  /// @notice Applies an authorized active-key rotation, recovery-key rotation, recovery, or revocation.
   function execute(RegistryOperation calldata request, RegistryAuthorization calldata authorization) external {
+    // Load the current versions before authenticating a lifecycle operation.
     PQIdentity storage identity = identities[request.eoa];
     if (identity.activeKeyVersion == 0) revert IdentityNotRegistered();
     if (block.timestamp >= request.expiry) revert RequestExpired();
@@ -162,15 +203,18 @@ contract DirectAuthorization is IActiveKeyRegistry {
         || request.expectedRecoveryKeyVersion != identity.recoveryKeyVersion
     ) revert InvalidVersion();
 
+    // Select active or recovery authority, then scope replay to that exact key version.
     bytes32 digest = operationDigest(request);
     (KeyRole role, uint256 version) = _authorizer(request, identity);
     bytes32 nonceKey = registryNonceKey(request.eoa, role, version, request.operationNonce);
     if (consumedNonces[nonceKey]) revert RegistryNonceAlreadyConsumed(nonceKey);
+    // Require the selected PQ authority for every lifecycle operation.
     _requireKeySignature(
       role == KeyRole.Active ? identity.activePQKey : identity.recoveryPQKey,
       digest,
       authorization.authorizingPQSignature
     );
+    // Active-authorized rotations and revocation also retain native EOA control.
     if (
       _requiresEOA(request) && msg.sender != request.eoa
         && !_validEOASignature(request.eoa, digest, authorization.eoaSignature)
@@ -178,6 +222,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       revert InvalidEOAAuthorization();
     }
 
+    // Validate action shape and new-key possession before mutating identity state.
     _apply(
       request,
       identity,
@@ -187,32 +232,53 @@ contract DirectAuthorization is IActiveKeyRegistry {
       role,
       version
     );
+    // Consume only after the requested state mutation succeeds.
     consumedNonces[nonceKey] = true;
     emit RegistryNonceConsumed(nonceKey, request.eoa, request.operationNonce);
   }
 
+  /// @notice Returns the current registered identity record for an EOA.
   function identityOf(address eoa) external view returns (PQIdentity memory) {
     return identities[eoa];
   }
 
+  /// @inheritdoc IActiveKeyRegistry
   function activeKey(address eoa, uint256 version) external view returns (bytes memory) {
     PQIdentity storage identity = identities[eoa];
+    // Inactive identities expose no commit or delegation key.
     if (!identity.active) revert IdentityNotActive();
     if (version != identity.activeKeyVersion) revert InvalidVersion();
     return identity.activePQKey;
   }
 
+  /// @notice Reports whether a boundary-owned commit nonce has been consumed.
+  function isCommitNonceConsumed(bytes32 nonceKey) external view returns (bool) {
+    return consumedCommitNonces[nonceKey];
+  }
+
+  /// @notice Computes the commit nonce scope owned by this direct boundary.
+  function commitNonceKey(address principal, uint256 keyVersion, bytes32 actionNonce) public view returns (bytes32) {
+    return keccak256(
+      ProtocolHashing.encodeAuthorizationNonceKey(block.chainid, address(this), principal, keyVersion, actionNonce)
+    );
+  }
+
+  /// @notice Reports whether a scoped registry-operation nonce has been consumed.
   function isRegistryNonceConsumed(bytes32 nonceKey) external view returns (bool) {
     return consumedNonces[nonceKey];
   }
 
+  /// @notice Validates key length, verifier prefix, and the pinned verifier code hash.
   function isTrustedKey(bytes memory key) public view returns (bool) {
+    // Key encoding is 20-byte verifier address plus 32-byte SHRINCS commitment.
     if (key.length != 52 || TRUSTED_VERIFIER.codehash != TRUSTED_VERIFIER_CODEHASH) return false;
+    // Read the verifier prefix without allocating a second key buffer.
     address verifier;
     assembly ('memory-safe') { verifier := shr(96, mload(add(key, 32))) }
     return verifier == TRUSTED_VERIFIER;
   }
 
+  /// @notice Computes the chain- and registry-bound digest for initial registration.
   function registrationDigest(InitialRegistration calldata request) public view returns (bytes32) {
     return keccak256(
       abi.encode(
@@ -230,6 +296,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
     );
   }
 
+  /// @notice Computes the chain- and registry-bound digest for an identity operation.
   function operationDigest(RegistryOperation calldata request) public view returns (bytes32) {
     RegistryPayload memory payload;
     payload.action = request.action;
@@ -248,16 +315,28 @@ contract DirectAuthorization is IActiveKeyRegistry {
     return keccak256(abi.encode(REGISTRY_DOMAIN, payload));
   }
 
+  /// @notice Binds a new key proof of possession to a request digest and key role.
   function possessionDigest(bytes32 requestDigest, KeyRole role, bytes calldata key) public pure returns (bytes32) {
     return keccak256(abi.encode(POSSESSION_DOMAIN, requestDigest, role, keccak256(key)));
   }
 
+  /// @notice Computes replay scope from chain, registry, EOA, authorizing role/version, and nonce.
   function registryNonceKey(address eoa, KeyRole role, uint256 version, bytes32 nonce) public view returns (bytes32) {
     return
       keccak256(ProtocolHashing.encodeRegistryNonceKey(block.chainid, address(this), eoa, uint8(role), version, nonce));
   }
 
+  function _consumeCommitNonce(CommitAuthorizationRequest memory request, bytes32 actionNonce) private {
+    SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
+    bytes32 nonceKey = commitNonceKey(side.principal, side.principalKeyVersion, actionNonce);
+    if (consumedCommitNonces[nonceKey]) revert AuthorizationNonceAlreadyConsumed(nonceKey);
+    // Write before the external wrapper call; transaction rollback restores it on rejection.
+    consumedCommitNonces[nonceKey] = true;
+    emit AuthorizationNonceConsumed(nonceKey, actionNonce, side.principal);
+  }
+
   function _deliver(CommitAuthorizationRequest memory request, VerifiedCommitAuthorization memory evidence) private {
+    // Forward authorization evidence and all native funding atomically.
     ICommitAuthorizationReceiver(request.receiver).receiveAuthorizedCommit{value: msg.value}(
       request.terms, request.party, request.lock, request.bobCommitSecret, evidence, request.commitData
     );
@@ -268,13 +347,17 @@ contract DirectAuthorization is IActiveKeyRegistry {
     bytes memory signature,
     address transportCaller
   ) private view returns (VerifiedCommitAuthorization memory evidence) {
+    // Select the signed side and reject use of this gateway for wallet-mode terms.
     SideTerms memory side = request.party ? request.terms.partySide : request.terms.counterpartySide;
     if (side.authorizationMode != AuthorizationMode.RegisteredDirect) revert InvalidAuthorizationMode();
     if (side.chainId != block.chainid) revert InvalidChain();
     if (block.timestamp >= request.expiry) revert AuthorizationExpired();
+    // Resolve only the currently active key at the exact signed version.
     bytes memory key = this.activeKey(side.principal, side.principalKeyVersion);
+    // Reconstruct and authenticate the complete protocol payload.
     (bytes32 payloadHash, ExpectedSourceState sourceState) = _commitPayload(request);
     if (!KeyedVerifier.isValid(key, payloadHash, signature)) revert InvalidPQAuthorization();
+    // Derive attribution from the actual transaction transport under the signed policy.
     (address submitter, uint256 submitterVersion) =
       AuthorizationSubmitter.derive(side, IActiveKeyRegistry(address(this)), transportCaller);
     evidence = VerifiedCommitAuthorization({
@@ -310,17 +393,20 @@ contract DirectAuthorization is IActiveKeyRegistry {
     RegistryOperation calldata request,
     PQIdentity storage identity
   ) private view returns (KeyRole, uint256) {
+    // Recovery authority is limited to active-key recovery or emergency revocation.
     if (request.action == RegistryActionTag.RecoverActive || request.recoveryAuthorized) {
       if (request.action != RegistryActionTag.RecoverActive && request.action != RegistryActionTag.Revoke) {
         revert InvalidOperationShape();
       }
       return (KeyRole.Recovery, identity.recoveryKeyVersion);
     }
+    // All non-recovery operations require the active identity key.
     if (!identity.active) revert IdentityNotActive();
     return (KeyRole.Active, identity.activeKeyVersion);
   }
 
   function _requiresEOA(RegistryOperation calldata request) private pure returns (bool) {
+    // Recovery is intentionally usable without the possibly compromised native EOA.
     return request.action == RegistryActionTag.RotateActive || request.action == RegistryActionTag.RotateRecovery
       || (request.action == RegistryActionTag.Revoke && !request.recoveryAuthorized);
   }
@@ -335,6 +421,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
     uint256 version
   ) private {
     if (request.action == RegistryActionTag.RotateActive) {
+      // Normal active rotation changes only the active key and requires its possession proof.
       _shape(request, true, false);
       _next(request.newActiveKeyVersion, identity.activeKeyVersion);
       _validateKey(request.newActivePQKey);
@@ -345,6 +432,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       identity.activeKeyVersion = request.newActiveKeyVersion;
       emit ActiveKeyRotated(request.eoa, request.newActiveKeyVersion);
     } else if (request.action == RegistryActionTag.RecoverActive) {
+      // Recovery replaces both keys so a compromised recovery key cannot remain installed.
       _shape(request, true, true);
       _next(request.newActiveKeyVersion, identity.activeKeyVersion);
       _next(request.newRecoveryKeyVersion, identity.recoveryKeyVersion);
@@ -363,6 +451,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       identity.active = true;
       emit IdentityRecovered(request.eoa, request.newActiveKeyVersion, request.newRecoveryKeyVersion);
     } else if (request.action == RegistryActionTag.RotateRecovery) {
+      // Normal recovery rotation leaves the active key and version unchanged.
       _shape(request, false, true);
       _next(request.newRecoveryKeyVersion, identity.recoveryKeyVersion);
       _validateKey(request.newRecoveryPQKey);
@@ -373,6 +462,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       identity.recoveryKeyVersion = request.newRecoveryKeyVersion;
       emit RecoveryKeyRotated(request.eoa, request.newRecoveryKeyVersion);
     } else if (request.action == RegistryActionTag.Revoke) {
+      // Revocation preserves keys and versions but makes active-key lookup fail.
       _shape(request, false, false);
       identity.active = false;
       emit IdentityRevoked(request.eoa, role, version);
@@ -382,6 +472,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
   }
 
   function _shape(RegistryOperation calldata request, bool changesActive, bool changesRecovery) private pure {
+    // Reject extra, missing, or semantically ignored key-update fields.
     if (
       changesActive != (request.newActivePQKey.length != 0) || changesActive != (request.newActiveKeyVersion != 0)
         || changesRecovery != (request.newRecoveryPQKey.length != 0)
@@ -391,10 +482,12 @@ contract DirectAuthorization is IActiveKeyRegistry {
   }
 
   function _next(uint256 proposed, uint256 current) private pure {
+    // Versions advance by exactly one and never wrap.
     if (current == type(uint256).max || proposed != current + 1) revert InvalidVersion();
   }
 
   function _verifierMetadata(address verifier, bytes4 selector) private view returns (bytes32 metadata) {
+    // Metadata calls must return one canonical bytes32 word.
     (bool success, bytes memory returnData) = verifier.staticcall(abi.encodeWithSelector(selector));
     if (!success || returnData.length != 32) revert InvalidVerifier();
     metadata = abi.decode(returnData, (bytes32));
@@ -409,6 +502,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
   }
 
   function _validEOASignature(address signer, bytes32 digest, bytes calldata signature) private pure returns (bool) {
+    // Accept only canonical-length secp256k1 signatures.
     if (signature.length != 65) return false;
     bytes32 r;
     bytes32 s;
@@ -418,6 +512,7 @@ contract DirectAuthorization is IActiveKeyRegistry {
       s := calldataload(add(signature.offset, 32))
       v := byte(0, calldataload(add(signature.offset, 64)))
     }
+    // Normalize v and reject high-s malleable signatures.
     if (v < 27) v += 27;
     if (v != 27 && v != 28 || uint256(s) > SECP256K1_HALF_ORDER) return false;
     return ecrecover(digest, v, r, s) == signer;

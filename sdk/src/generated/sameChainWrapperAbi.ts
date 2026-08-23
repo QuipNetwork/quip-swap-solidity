@@ -1424,31 +1424,6 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "event",
-    "name": "AuthorizationNonceConsumed",
-    "inputs": [
-      {
-        "name": "nonceKey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "actionNonce",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "principal",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Claimed",
     "inputs": [
       {
@@ -1520,17 +1495,6 @@ export const sameChainWrapperAbi = [
     "type": "error",
     "name": "AuthorizationExpired",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "AuthorizationNonceAlreadyConsumed",
-    "inputs": [
-      {
-        "name": "nonceKey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   },
   {
     "type": "error",

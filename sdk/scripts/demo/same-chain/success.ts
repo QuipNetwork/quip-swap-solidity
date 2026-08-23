@@ -382,7 +382,7 @@ function assertCommit(
 ): void {
   if (after.state !== expectedState) throw new Error(`expected ${expectedState}, got ${after.state}`)
   const nonce = result.events.find(event =>
-    event.source === 'sameChainWrapper'
+    event.source === 'directAuthorization'
     && event.eventName === 'AuthorizationNonceConsumed'
     && typeof event.args === 'object'
     && event.args !== null

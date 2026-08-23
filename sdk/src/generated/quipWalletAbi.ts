@@ -355,6 +355,25 @@ export const quipWalletAbi = [
   },
   {
     "type": "function",
+    "name": "commitNonceKey",
+    "inputs": [
+      {
+        "name": "actionNonce",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "consumedRotationNonces",
     "inputs": [
       {
@@ -400,6 +419,25 @@ export const quipWalletAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isCommitNonceConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -477,9 +515,45 @@ export const quipWalletAbi = [
     "stateMutability": "view"
   },
   {
+    "type": "event",
+    "name": "AuthorizationNonceConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actionNonce",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "principal",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AuthorizationExpired",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthorizationNonceAlreadyConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

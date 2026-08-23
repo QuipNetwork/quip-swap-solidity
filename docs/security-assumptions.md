@@ -26,8 +26,9 @@ tracker or remediation-status ledger.
   paths do not recheck its pinned runtime code hash and metadata on every use.
 - Wallet-mode wrappers do not yet authenticate an approved QuipWallet factory
   or implementation.
-- Commit authorization nonces are consumed by each wrapper, not globally by the
-  authorization boundary.
+- Commit authorization nonces are consumed by the QuipWallet or direct
+  authorization gateway before the wrapper callback. A rejected callback reverts
+  that consumption with the transaction.
 - Key revocation, verifier failure, or registry changes before a pending second
   commit can force the first side to wait for reclaim.
 

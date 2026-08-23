@@ -28,6 +28,7 @@ import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract AuthorizationBoundariesTest is Test {
+  event AuthorizationNonceConsumed(bytes32 indexed nonceKey, bytes32 indexed actionNonce, address indexed principal);
   uint256 internal constant DIRECT_KEY = 0xD1EC7;
   uint256 internal constant BROKER_KEY = 0xB0B0;
   address internal directUser;
@@ -306,6 +307,11 @@ contract AuthorizationBoundariesTest is Test {
   function test_bothPathsRejectBadSignatureExpiryReplayAndReceiverSubstitution() public {
     _assertCommonRejections(true);
     _assertCommonRejections(false);
+  }
+
+  function test_boundariesConsumeOneNonceAcrossDifferentWrappers() public {
+    _assertCrossWrapperNonceOwnership(true);
+    _assertCrossWrapperNonceOwnership(false);
   }
 
   function test_notAllowedRequiresActualPrincipalTransportOnBothPaths() public {
@@ -596,6 +602,7 @@ contract AuthorizationBoundariesTest is Test {
     terms.partySide.delegateKeyVersion = 1;
     CommitAuthorizationRequest memory request = _request(terms, keccak256('failed-lazy-broker'));
     request.commitData = 'fail';
+    bytes32 commitNonceKey = registry.commitNonceKey(directUser, 1, request.actionNonce);
     bytes32 payloadHash = _payload(request, address(gateway));
     bytes memory principalSignature = _pqSig(directPQKey, payloadHash);
     InitialRegistration memory registration = _lazyRegistration(newcomer, newcomerPQKey, payloadHash);
@@ -606,6 +613,7 @@ contract AuthorizationBoundariesTest is Test {
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, abi.encode(request, principalSignature));
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
     assertEq(receiver.commits(), 0);
+    assertFalse(registry.isCommitNonceConsumed(commitNonceKey));
 
     request.commitData = 'retry';
     vm.prank(newcomer);
@@ -613,6 +621,7 @@ contract AuthorizationBoundariesTest is Test {
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
     assertEq(receiver.lastSubmitter(), newcomer);
     assertEq(receiver.commits(), 1);
+    assertTrue(registry.isCommitNonceConsumed(commitNonceKey));
   }
 
   function test_lazyBrokerRegistrationRejectsNonDelegateAndNonPrincipalSignature() public {
@@ -731,6 +740,35 @@ contract AuthorizationBoundariesTest is Test {
     _authorize(walletPath, request, signature, relayer);
   }
 
+  function _assertCrossWrapperNonceOwnership(bool walletPath) internal {
+    address principal = walletPath ? address(wallet) : directUser;
+    AuthorizationMode mode = walletPath ? AuthorizationMode.QuipWallet : AuthorizationMode.RegisteredDirect;
+    uint256 version = walletPath ? 0 : 1;
+    address boundary = walletPath ? address(wallet) : address(gateway);
+    bytes32 nonce = keccak256(abi.encode(walletPath, 'cross-wrapper-nonce'));
+    ProtocolTerms memory terms = _terms(principal, mode, version);
+    terms.partySide.delegationPolicy = DelegationPolicy.Permissionless;
+
+    CommitAuthorizationRequest memory first = _request(terms, nonce);
+    bytes32 nonceKey = walletPath ? wallet.commitNonceKey(nonce) : gateway.commitNonceKey(principal, version, nonce);
+    vm.expectEmit(true, true, true, true, boundary);
+    emit AuthorizationNonceConsumed(nonceKey, nonce, principal);
+    _authorize(walletPath, first, _signature(first, boundary), relayer);
+    assertTrue(walletPath ? wallet.isCommitNonceConsumed(nonceKey) : gateway.isCommitNonceConsumed(nonceKey));
+
+    AuthorizationReceiverHarness other = new AuthorizationReceiverHarness(address(gateway));
+    CommitAuthorizationRequest memory second = _request(terms, nonce);
+    second.receiver = address(other);
+    bytes memory secondSignature = _signature(second, boundary);
+    if (walletPath) {
+      vm.expectRevert(abi.encodeWithSelector(QuipWallet.AuthorizationNonceAlreadyConsumed.selector, nonceKey));
+    } else {
+      vm.expectRevert(abi.encodeWithSelector(DirectAuthorization.AuthorizationNonceAlreadyConsumed.selector, nonceKey));
+    }
+    _authorize(walletPath, second, secondSignature, relayer);
+    assertEq(other.commits(), 0);
+  }
+
   function _assertReceiverRollback(bool walletPath) internal {
     address principal = walletPath ? address(wallet) : directUser;
     AuthorizationMode mode = walletPath ? AuthorizationMode.QuipWallet : AuthorizationMode.RegisteredDirect;
@@ -740,10 +778,15 @@ contract AuthorizationBoundariesTest is Test {
     CommitAuthorizationRequest memory request = _request(terms, keccak256(abi.encode(walletPath, 'rollback')));
     request.commitData = 'fail';
     bytes memory signature = _signature(request, boundary);
+    bytes32 nonceKey = walletPath
+      ? wallet.commitNonceKey(request.actionNonce)
+      : gateway.commitNonceKey(principal, walletPath ? 0 : 1, request.actionNonce);
     vm.expectRevert();
     _authorize(walletPath, request, signature, relayer);
+    assertFalse(walletPath ? wallet.isCommitNonceConsumed(nonceKey) : gateway.isCommitNonceConsumed(nonceKey));
     request.commitData = 'retry';
     _authorize(walletPath, request, signature, relayer);
+    assertTrue(walletPath ? wallet.isCommitNonceConsumed(nonceKey) : gateway.isCommitNonceConsumed(nonceKey));
   }
 
   function _authorize(

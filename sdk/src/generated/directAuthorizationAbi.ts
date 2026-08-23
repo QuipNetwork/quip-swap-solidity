@@ -359,6 +359,35 @@ export const directAuthorizationAbi = [
   },
   {
     "type": "function",
+    "name": "commitNonceKey",
+    "inputs": [
+      {
+        "name": "principal",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "actionNonce",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "completeRegisteredCommit",
     "inputs": [
       {
@@ -524,6 +553,25 @@ export const directAuthorizationAbi = [
             "internalType": "bool"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isCommitNonceConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -852,6 +900,31 @@ export const directAuthorizationAbi = [
   },
   {
     "type": "event",
+    "name": "AuthorizationNonceConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "actionNonce",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "principal",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "IdentityRecovered",
     "inputs": [
       {
@@ -978,6 +1051,17 @@ export const directAuthorizationAbi = [
     "type": "error",
     "name": "AuthorizationExpired",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AuthorizationNonceAlreadyConsumed",
+    "inputs": [
+      {
+        "name": "nonceKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

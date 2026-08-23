@@ -33,17 +33,14 @@ contract CommitAuthorizationTest is Test {
     harness = new CommitAuthorizationHarness(GATEWAY);
   }
 
-  function test_walletNotAllowedAcceptsPrincipalAndConsumesNonceLast() public {
+  function test_walletNotAllowedAcceptsPrincipalEvidence() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, true, ALICE, 0, NONCE, 2000);
-    bytes32 nonceKey = _nonceKey(terms.partySide, ALICE, NONCE);
-
     vm.prank(ALICE);
     harness.commitAuthorized(terms, true, LOCK, evidence, 0);
 
     assertEq(harness.stateEffects(), 1);
     assertEq(harness.custodyEffects(), 1);
-    assertTrue(harness.isConsumed(nonceKey));
   }
 
   function test_directNotAllowedAcceptsRegisteredPrincipalVersion() public {
@@ -51,7 +48,6 @@ contract CommitAuthorizationTest is Test {
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
     vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
-    assertTrue(harness.isConsumed(_nonceKey(terms.counterpartySide, GATEWAY, NONCE)));
   }
 
   function test_permissionlessAcceptsAnyAuthenticatedNonzeroSubmitter() public {
@@ -142,13 +138,12 @@ contract CommitAuthorizationTest is Test {
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
   }
 
-  function test_expiryIsExclusiveAndDoesNotConsumeNonce() public {
+  function test_expiryIsExclusive() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, block.timestamp);
     vm.expectRevert(CommitAuthorization.AuthorizationExpired.selector);
     vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
-    assertFalse(harness.isConsumed(_nonceKey(terms.counterpartySide, GATEWAY, NONCE)));
   }
 
   function test_notAllowedRejectsSubstitutedSubmitterAndVersion() public {
@@ -177,18 +172,15 @@ contract CommitAuthorizationTest is Test {
     _expectSubmitterError(terms, evidence, CommitAuthorization.InvalidAuthenticatedSubmitter.selector);
   }
 
-  function test_successfulAuthorizationCannotReplay() public {
+  function test_validationIsStatelessBecauseBoundariesOwnReplayProtection() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
-    bytes32 nonceKey = _nonceKey(terms.counterpartySide, GATEWAY, NONCE);
-    vm.prank(GATEWAY);
+    vm.startPrank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
-
-    vm.expectRevert(abi.encodeWithSelector(CommitAuthorization.AuthorizationNonceAlreadyConsumed.selector, nonceKey));
-    vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
-    assertEq(harness.stateEffects(), 1);
-    assertEq(harness.custodyEffects(), 1);
+    vm.stopPrank();
+    assertEq(harness.stateEffects(), 2);
+    assertEq(harness.custodyEffects(), 2);
   }
 
   function test_sameNonceIsScopedByPrincipalAndVerifier() public {
@@ -199,8 +191,6 @@ contract CommitAuthorizationTest is Test {
     harness.commitAuthorized(terms, true, LOCK, alice, 0);
     vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, bob, 0);
-    assertTrue(harness.isConsumed(_nonceKey(terms.partySide, ALICE, NONCE)));
-    assertTrue(harness.isConsumed(_nonceKey(terms.counterpartySide, GATEWAY, NONCE)));
   }
 
   function test_authorizationNonceKeyScopesEverySpecifiedField() public pure {
@@ -214,22 +204,18 @@ contract CommitAuthorizationTest is Test {
     );
   }
 
-  function test_sameAuthorizationNonceCannotAuthorizeDifferentTrade() public {
+  function test_validationAcceptsSeparatelySignedTradesAndBoundaryMustRejectNonceReuse() public {
     ProtocolTerms memory first = _crossChainTerms();
-    VerifiedCommitAuthorization memory firstEvidence = _evidence(first, false, BOB, 7, NONCE, 2000);
     vm.prank(GATEWAY);
-    harness.commitAuthorized(first, false, LOCK, firstEvidence, 0);
+    harness.commitAuthorized(first, false, LOCK, _evidence(first, false, BOB, 7, NONCE, 2000), 0);
 
     ProtocolTerms memory second = _crossChainTerms();
     second.partySide.sideNonce = keccak256('fresh-party-run');
     second.counterpartySide.sideNonce = keccak256('fresh-counterparty-run');
     assertNotEq(ProtocolHashing.tradeId(first), ProtocolHashing.tradeId(second));
-    VerifiedCommitAuthorization memory secondEvidence = _evidence(second, false, BOB, 7, NONCE, 2000);
-    bytes32 nonceKey = _nonceKey(second.counterpartySide, GATEWAY, NONCE);
-    vm.expectRevert(abi.encodeWithSelector(CommitAuthorization.AuthorizationNonceAlreadyConsumed.selector, nonceKey));
     vm.prank(GATEWAY);
-    harness.commitAuthorized(second, false, LOCK, secondEvidence, 0);
-    assertEq(harness.stateEffects(), 1);
+    harness.commitAuthorized(second, false, LOCK, _evidence(second, false, BOB, 7, NONCE, 2000), 0);
+    assertEq(harness.stateEffects(), 2);
   }
 
   function test_nonMonotonicAuthorizationNoncesAreAccepted() public {
@@ -243,8 +229,6 @@ contract CommitAuthorizationTest is Test {
     bytes32 lowNonce = bytes32(uint256(1));
     vm.prank(GATEWAY);
     harness.commitAuthorized(second, false, LOCK, _evidence(second, false, BOB, 7, lowNonce, 2000), 0);
-    assertTrue(harness.isConsumed(_nonceKey(first.counterpartySide, GATEWAY, highNonce)));
-    assertTrue(harness.isConsumed(_nonceKey(second.counterpartySide, GATEWAY, lowNonce)));
   }
 
   function test_sideNoncesBindRunsButAreNotAuthorizationCounters() public pure {
@@ -265,22 +249,19 @@ contract CommitAuthorizationTest is Test {
     );
   }
 
-  function test_stateFailureRollsBackEffectsAndNonceThenRetrySucceeds() public {
+  function test_stateFailureRollsBackEffectsThenRetrySucceeds() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
-    bytes32 nonceKey = _nonceKey(terms.counterpartySide, GATEWAY, NONCE);
     vm.expectRevert(CommitAuthorizationHarness.SimulatedStateFailure.selector);
     vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 1);
     assertEq(harness.stateEffects(), 0);
     assertEq(harness.custodyEffects(), 0);
-    assertFalse(harness.isConsumed(nonceKey));
     vm.prank(GATEWAY);
     harness.commitAuthorized(terms, false, LOCK, evidence, 0);
-    assertTrue(harness.isConsumed(nonceKey));
   }
 
-  function test_custodyFailureRollsBackStateCustodyAndNonce() public {
+  function test_custodyFailureRollsBackStateAndCustody() public {
     ProtocolTerms memory terms = _crossChainTerms();
     VerifiedCommitAuthorization memory evidence = _evidence(terms, false, BOB, 7, NONCE, 2000);
     vm.expectRevert(CommitAuthorizationHarness.SimulatedCustodyFailure.selector);
@@ -288,7 +269,6 @@ contract CommitAuthorizationTest is Test {
     harness.commitAuthorized(terms, false, LOCK, evidence, 2);
     assertEq(harness.stateEffects(), 0);
     assertEq(harness.custodyEffects(), 0);
-    assertFalse(harness.isConsumed(_nonceKey(terms.counterpartySide, GATEWAY, NONCE)));
   }
 
   function _evidence(

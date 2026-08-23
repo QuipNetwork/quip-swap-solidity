@@ -12,6 +12,9 @@ import {
   WrapperMode
 } from './ProtocolTypes.sol';
 
+/// @title CommitAuthorization
+/// @notice Validates authorization-boundary evidence before a wrapper accepts escrow.
+/// @dev Signature verification and action-nonce consumption belong to the wallet or direct gateway.
 library CommitAuthorization {
   error InvalidAuthorizationCaller();
   error InvalidAuthorizationPayload();
@@ -19,23 +22,9 @@ library CommitAuthorization {
   error InvalidAuthenticatedSubmitterKeyVersion();
   error InvalidExpectedSourceState();
   error AuthorizationExpired();
-  error AuthorizationNonceAlreadyConsumed(bytes32 nonceKey);
 
-  event AuthorizationNonceConsumed(bytes32 indexed nonceKey, bytes32 indexed actionNonce, address indexed principal);
-
-  struct Layout {
-    mapping(bytes32 nonceKey => bool consumed) consumedNonces;
-  }
-
-  struct PreparedAuthorization {
-    bytes32 tradeId;
-    bytes32 nonceKey;
-    bytes32 actionNonce;
-    address principal;
-  }
-
+  /// @notice Checks caller provenance, payload binding, submitter policy, expiry, and source state.
   function validate(
-    Layout storage self,
     ProtocolTerms memory terms,
     bool party,
     address configuredDirectGateway,
@@ -44,58 +33,47 @@ library CommitAuthorization {
     address actualWrapperCaller,
     VerifiedCommitAuthorization memory evidence,
     uint256 currentTime
-  ) internal view returns (PreparedAuthorization memory prepared) {
+  ) internal pure returns (bytes32 tradeId) {
+    // Derive the only contract allowed to attest this authorization mode.
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     address verifier = side.authorizationMode == AuthorizationMode.QuipWallet ? side.principal : configuredDirectGateway;
     if (verifier == address(0) || actualWrapperCaller != verifier || evidence.wrapperCaller != actualWrapperCaller) {
       revert InvalidAuthorizationCaller();
     }
 
+    // Prevent signatures from executing against a different state-machine position.
     ExpectedSourceState expectedState = ProtocolHashing.expectedSourceState(party, ProtocolHashing.mode(terms));
     if (evidence.expectedSourceState != expectedState) revert InvalidExpectedSourceState();
+    // Authorization expiry is an exclusive upper bound.
     if (currentTime >= evidence.expiry) revert AuthorizationExpired();
+    // Enforce the signed delegation policy against the boundary-authenticated transport.
     _validateSubmitter(side, evidence.authenticatedSubmitter, evidence.authenticatedSubmitterKeyVersion);
 
-    prepared.tradeId = ProtocolHashing.tradeId(terms);
+    // Recompute the exact payload rather than trusting fields supplied in evidence.
+    tradeId = ProtocolHashing.tradeId(terms);
     bytes32 expectedPayloadHash = ProtocolHashing.commitPayloadHashWithTradeId(
       terms,
       party,
       verifier,
       swapAddress,
-      prepared.tradeId,
+      tradeId,
       lock,
       evidence.expectedSourceState,
       evidence.actionNonce,
       evidence.expiry
     );
     if (evidence.payloadHash != expectedPayloadHash) revert InvalidAuthorizationPayload();
-
-    prepared.nonceKey = keccak256(
-      ProtocolHashing.encodeAuthorizationNonceKey(
-        side.chainId, verifier, side.principal, side.principalKeyVersion, evidence.actionNonce
-      )
-    );
-    if (self.consumedNonces[prepared.nonceKey]) revert AuthorizationNonceAlreadyConsumed(prepared.nonceKey);
-    prepared.actionNonce = evidence.actionNonce;
-    prepared.principal = side.principal;
-  }
-
-  function consume(Layout storage self, PreparedAuthorization memory prepared) internal {
-    if (self.consumedNonces[prepared.nonceKey]) revert AuthorizationNonceAlreadyConsumed(prepared.nonceKey);
-    self.consumedNonces[prepared.nonceKey] = true;
-    emit AuthorizationNonceConsumed(prepared.nonceKey, prepared.actionNonce, prepared.principal);
-  }
-
-  function isConsumed(Layout storage self, bytes32 nonceKey) internal view returns (bool) {
-    return self.consumedNonces[nonceKey];
   }
 
   function _validateSubmitter(SideTerms memory side, address submitter, uint256 submitterKeyVersion) private pure {
+    // Every policy requires a nonzero transport identity.
     if (submitter == address(0)) revert InvalidAuthenticatedSubmitter();
     if (side.delegationPolicy == DelegationPolicy.NotAllowed) {
+      // Only the principal at its signed key version may transport.
       if (submitter != side.principal) revert InvalidAuthenticatedSubmitter();
       if (submitterKeyVersion != side.principalKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
     } else if (side.delegationPolicy == DelegationPolicy.SpecificDelegate) {
+      // Principal remains valid; otherwise require the exact registered delegate version.
       if (submitter == side.principal) {
         if (submitterKeyVersion != side.principalKeyVersion) revert InvalidAuthenticatedSubmitterKeyVersion();
       } else if (submitter == side.delegate) {
@@ -107,17 +85,24 @@ library CommitAuthorization {
   }
 }
 
+/// @title ProgressionGate
+/// @notice Verifies the trade-bound Bob-commit preimage carried by cross-chain commits.
+/// @dev Same-chain commits must carry no Bob-commit secret.
 library ProgressionGate {
   error MissingBobCommitSecret();
   error InvalidBobCommitSecret();
   error UnexpectedBobCommitSecret();
 
+  /// @notice Enforces the cross-chain gate or the same-chain zero-secret rule.
   function validate(ProtocolTerms memory terms, bytes32 bobCommitSecret) internal pure {
+    // Same-chain progression is the second ordered commit, not a secret.
     if (ProtocolHashing.mode(terms) == WrapperMode.SameChain) {
       if (bobCommitSecret != bytes32(0)) revert UnexpectedBobCommitSecret();
       return;
     }
+    // Cross-chain commits reveal a nonzero preimage for the signed commit lock.
     if (bobCommitSecret == bytes32(0)) revert MissingBobCommitSecret();
+    // Reconstruct the projected context before checking the trade-bound lock.
     bytes32 contextId = ProtocolHashing.gateContextId(terms);
     if (ProtocolHashing.commitLock(contextId, bobCommitSecret) != terms.counterpartySide.commitLock) {
       revert InvalidBobCommitSecret();
