@@ -23,19 +23,22 @@ masquerading.
 
 ## High
 
-### Timing-policy enforcement differs from the normative protocol — open
+### Timing-policy enforcement is a trusted-client assumption — open
 
-The protocol specification still places the removed timing-policy identifier in
-signed terms and claims that wrappers enforce immutable directional `FinalClaimDelay` margins.
-The Solidity terms contain no policy identifier and enforce only basic
-cross-chain deadline ordering; chain-specific margins are validated by clients.
-Consequently, the contracts can accept a signed schedule that does not satisfy
-the finality policy described by the specification.
+The current Solidity prototype intentionally omits a signed on-chain
+`timingPolicyId` and does not resolve route timing policy inside wrappers.
+Contracts enforce only structural deadline ordering and local-chain predicates;
+chain-pair support and directional final-claim safety margins are validated by
+client software before authorization and submission.
 
-Required: preserve the current off-chain design by removing on-chain policy-ID
-claims from the protocol and proof, defining separate structural and
-client-safe timing predicates, and regenerating the canonical vectors. The
-alternative is to restore a terms-bound on-chain policy mechanism.
+Consequently, the contracts can accept structurally valid terms that a
+conforming client should reject as timing-unsafe. This is an intentional
+prototype simplification for gas efficiency, but it moves part of admissibility
+from the contracts into the trusted client.
+
+Required: document the split explicitly everywhere the prototype is described,
+define a clear client-side timing-safety predicate, and ensure every supported
+signing or submission path applies it before producing commit authorization.
 
 ### Verifier identity is not rechecked on every use — open
 

@@ -1,7 +1,7 @@
 # Protocol flow
 
-This is the implementation-facing v1.1 flow. The normative definition remains
-in `../../../interlock-ec/dev/v1.1/protocol/`.
+This is the implementation-facing v1.1 flow for the current Solidity
+prototype.
 
 ## Participants and values
 

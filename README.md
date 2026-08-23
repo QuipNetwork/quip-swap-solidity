@@ -72,5 +72,6 @@ import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
 - [Demo guides](docs/demo/README.md)
 - [Legacy documentation](docs/legacy/)
 
-The normative protocol design is maintained in
-`../../interlock-ec/dev/v1.1/protocol/`.
+The broader protocol design and proof materials are maintained outside this
+repository. This repository documents and implements the current Solidity
+prototype surface.
