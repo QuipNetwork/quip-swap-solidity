@@ -55,6 +55,7 @@ export type QuipSwapErrorCode =
   // cross-chain schedule validation
   | 'SECRET_HOLDER_NOT_PROPOSER'
   | 'INSUFFICIENT_BUFFER'
+  | 'INSUFFICIENT_REACTION_BUFFER'
   // deployments
   | 'UNKNOWN_DEPLOYMENT'
   // receipts / events
