@@ -879,32 +879,46 @@ describe('reclaim flows', () => {
     expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
   })
 
-  it('dual-leg reclaim: both committed, nobody claimed — one reclaim returns BOTH legs (two Reclaimed events)', async () => {
+  it('per-side reclaim: both committed, nobody claimed — each party reclaims ONLY its own leg (independent, either order)', async () => {
+    // Finding 4: reclaim returns only the caller's own leg to its own
+    // reclaimRecipient. A same-chain refund is therefore TWO reclaims; a
+    // hostile counterparty recipient can never block the other side.
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const NATIVE = 3_333n
     const TOKENS = 4_444n
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, TOKENS)])
+    const id = swapId(lock, alice, bob)
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
     await ctx.warpTo(s.anchors.takerCommit)
     await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
 
-    // bob reclaims his own leg after HIS release; alice's local Committed
-    // counterparty leg comes back in the same transaction
+    // both releases have passed; bob reclaims his OWN token leg first
     await ctx.warpTo(s.anchors.takerReclaim)
     const aliceReclaimBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
     const bobReclaimBefore = await erc20Balance(fixture.erc20, BOB_RECLAIM)
-    const result = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}),
-    )
-    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
-    expect(result.reclaims).toHaveLength(2)
+    const bobResult = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}))
+    // exactly one Reclaimed, bob's own leg only; alice's native is untouched
+    expect(bobResult.reclaims).toHaveLength(1)
+    expect(bobResult.reclaims[0]?.recipient.toLowerCase()).toBe(BOB_RECLAIM.toLowerCase())
     expect(await erc20Balance(fixture.erc20, BOB_RECLAIM)).toBe(bobReclaimBefore + TOKENS)
+    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore)
+    // lock is Spent, but only bob's side is flagged reclaimed
+    expect(await aliceClient.getLockState(id)).toBe(LockState.Spent)
+    expect(await aliceClient.getReclaimed(id, digestTerms(bob))).toBe(true)
+    expect(await aliceClient.getReclaimed(id, digestTerms(alice))).toBe(false)
+
+    // alice reclaims her OWN native leg from the Spent lock (mid-reclaim)
+    const aliceResult = await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}))
+    expect(aliceResult.reclaims).toHaveLength(1)
+    expect(aliceResult.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
     expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
+    expect(await aliceClient.getReclaimed(id, digestTerms(alice))).toBe(true)
   })
 
-  it('double reclaim reverts InvalidLockAdvancement', async () => {
+  it('double reclaim of the same side reverts AlreadyReclaimed (and SDK preflight INVALID_LOCK_STATE)', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
@@ -912,8 +926,17 @@ describe('reclaim flows', () => {
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
     await ctx.warpTo(s.anchors.proposerReclaim)
-    await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}),
-    )
+    await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}))
+
+    // SDK preflight catches the already-reclaimed side before submitting
+    try {
+      await aliceClient.reclaim({lock, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('already reclaimed')
+    }
+    // the contract agrees (raw call bypassing preflight)
     await expectContractError(
       ctx.publicClient.simulateContract({
         address: fixture.omnibus,
@@ -922,7 +945,7 @@ describe('reclaim flows', () => {
         args: [lock, toTuple(alice), toTuple(bob)],
         account: ctx.alice.account,
       }),
-      'InvalidLockAdvancement',
+      'AlreadyReclaimed',
     )
   })
 
@@ -967,16 +990,20 @@ describe('reclaim flows', () => {
     })
     await ctx.publicClient.waitForTransactionReceipt({hash: burnHash})
 
-    // before the clamp this reclaim reverted forever (TransferFailed) and froze
-    // both legs; now the SDK write path (preflight + estimate) goes through and
-    // the token leg pays the remainder while the native leg is returned in full
-    await ctx.warpTo(s.anchors.proposerReclaim)
+    // the shortfall is on BOB's token leg, so BOB reclaims it. Before the clamp
+    // this reverted forever (TransferFailed) and froze the escrow; now the SDK
+    // write path (preflight + estimate) goes through and the token leg pays the
+    // clamped remainder. Alice's native leg is a separate, full-value reclaim.
+    await ctx.warpTo(s.anchors.takerReclaim)
     const aliceReclaimBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
-    const result = await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}))
-    expect(result.reclaims).toHaveLength(2)
+    const bobResult = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}))
+    expect(bobResult.reclaims).toHaveLength(1)
     expect(await erc20Balance(rebaseToken, BOB_RECLAIM)).toBe(TOKENS - 1n)
-    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
     expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
+
+    const aliceResult = await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}))
+    expect(aliceResult.reclaims).toHaveLength(1)
+    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
   })
 })
 
@@ -1086,10 +1113,11 @@ describe('invalid operations', () => {
     expect(await aliceClient.getPosted(swapId(lock, bob, mutatedAlice), digestTerms(bob))).toBe(true)
   })
 
-  it('reclaim on an Unused lock: INVALID_LOCK_STATE preflight; contract TermsMismatch with the flag off', async () => {
+  it('reclaim on an Unused lock: TERMS_NOT_ON_CHAIN preflight; contract TermsMismatch with the flag off', async () => {
     // nothing was ever committed under this lock; the contract hits the
-    // termsHash check first (zero != canonical digest), the preflight names
-    // the actual cause
+    // termsHash check first (zero != canonical digest) and the preflight
+    // mirrors that ordering (termsHash before the lock-state checks), naming
+    // the actual cause instead of a misleading lock-state error
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
@@ -1099,7 +1127,7 @@ describe('invalid operations', () => {
       await aliceClient.reclaim({lock, party: alice, counterparty: bob})
       expect.unreachable()
     } catch (error) {
-      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).code).toBe('TERMS_NOT_ON_CHAIN')
     }
     await expectContractError(
       aliceClient.reclaim({lock, party: alice, counterparty: bob, verifyOnChainState: false}),

@@ -22,7 +22,8 @@
  *
  * Unhappy paths: reclaim from `Free` (only the proposer committed) is valid
  * once the proposer's `reclaimRelease` passes; reclaim from `Committed`
- * returns BOTH legs in one transaction when the counterparty leg is local.
+ * returns ONLY the caller's own leg — each side reclaims independently in a
+ * separate transaction once its own `reclaimRelease` passes (Finding 4).
  *
  * These helpers never hide wallet signing, never auto-approve, and never
  * submit transactions on their own — every transaction is an explicit
@@ -188,7 +189,14 @@ export type SameChainSwapStatus =
   | 'reclaimable'
   /** Lock Free and the proposer's reclaim window is open (reclaim-from-Free). */
   | 'reclaimable-from-free'
-  /** Terminal: the lock is Spent (claimed or reclaimed). */
+  /**
+   * The lock is Spent because ONE side already reclaimed its own leg, but
+   * the other side has not — that side should still call reclaim to recover
+   * its escrowed leg (per-side reclaim, Finding 4). Not terminal for the
+   * un-reclaimed side.
+   */
+  | 'partially-reclaimed'
+  /** Terminal: the lock is Spent and fully settled (claimed, or both sides reclaimed). */
   | 'settled'
 
 /** The full status report returned by {@link getSameChainSwapStatus}. */
@@ -201,6 +209,10 @@ export interface SameChainSwapStatusReport {
   readonly proposerPosted: boolean
   /** Whether the taker's side is posted on-chain. */
   readonly takerPosted: boolean
+  /** Whether the proposer's side has reclaimed its own leg (per-side reclaim). */
+  readonly proposerReclaimed: boolean
+  /** Whether the taker's side has reclaimed its own leg (per-side reclaim). */
+  readonly takerReclaimed: boolean
   /** The chain timestamp the report was computed at. */
   readonly timestamp: bigint
 }
@@ -227,10 +239,12 @@ export async function getSameChainSwapStatus(
   plan: SameChainSwapPlan,
 ): Promise<SameChainSwapStatusReport> {
   const id = swapIdFromDigest(lock, plan.canonicalDigest)
-  const [state, proposerPosted, takerPosted, block] = await Promise.all([
+  const [state, proposerPosted, takerPosted, proposerReclaimed, takerReclaimed, block] = await Promise.all([
     client.getLockState(id),
     client.getPosted(id, plan.proposerDigest),
     client.getPosted(id, plan.takerDigest),
+    client.getReclaimed(id, plan.proposerDigest),
+    client.getReclaimed(id, plan.takerDigest),
     client.publicClient.getBlock(),
   ])
   const timestamp = block.timestamp
@@ -273,9 +287,12 @@ export async function getSameChainSwapStatus(
       }
       break
     case LockState.Spent:
-      status = 'settled'
+      // Spent via claim -> neither side reclaimed -> fully settled. Spent via
+      // reclaim -> at least one side reclaimed; when exactly one has, the
+      // other still needs to reclaim its own leg (per-side reclaim).
+      status = proposerReclaimed !== takerReclaimed ? 'partially-reclaimed' : 'settled'
       break
   }
 
-  return {status, lockState: state, proposerPosted, takerPosted, timestamp}
+  return {status, lockState: state, proposerPosted, takerPosted, proposerReclaimed, takerReclaimed, timestamp}
 }

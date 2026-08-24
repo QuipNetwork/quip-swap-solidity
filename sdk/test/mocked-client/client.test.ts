@@ -88,6 +88,8 @@ function setup(
     termsHash?: `0x${string}`
     posted?: boolean
     lockState?: LockState
+    /** Side terms digests that have already reclaimed (per-side reclaim); default none. */
+    reclaimedDigests?: readonly `0x${string}`[]
     balance?: bigint
     withWallet?: boolean
     estimateError?: unknown
@@ -106,6 +108,7 @@ function setup(
     withWallet = true,
   } = options
   const termsHash = options.termsHash ?? digestTermsCanonically(alice, bob)
+  const reclaimedDigests = new Set((options.reclaimedDigests ?? []).map(d => d.toLowerCase()))
 
   const log: CallLog = {sequence: [], estimations: [], writes: [], stateReads: []}
 
@@ -121,7 +124,12 @@ function setup(
     // call it fails loudly here
     readContract: async (args: {address: Address; functionName: string; args?: readonly unknown[]}) => {
       log.sequence.push(`read:${args.functionName}`)
-      if (args.functionName === 'lockState' || args.functionName === 'termsHash' || args.functionName === 'posted') {
+      if (
+        args.functionName === 'lockState' ||
+        args.functionName === 'termsHash' ||
+        args.functionName === 'posted' ||
+        args.functionName === 'reclaimed'
+      ) {
         log.stateReads.push({functionName: args.functionName, key: args.args?.[0]})
       }
       switch (args.functionName) {
@@ -142,6 +150,8 @@ function setup(
           return termsHash
         case 'posted':
           return posted
+        case 'reclaimed':
+          return reclaimedDigests.has(String(args.args?.[1]).toLowerCase())
         default:
           throw new Error(`unexpected read: ${args.functionName}`)
       }
@@ -523,6 +533,40 @@ describe('getSameChainSwapStatus (window-derived statuses)', () => {
     expect(report.status).toBe('reclaimable')
   })
 
+  it("reports 'partially-reclaimed' when a Spent lock has exactly one side reclaimed", async () => {
+    // per-side reclaim: after one side pulls its leg the lock is Spent, but the
+    // OTHER side still needs to reclaim — status must not read as terminal
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [plan.proposerDigest],
+    })
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('partially-reclaimed')
+    expect(report.proposerReclaimed).toBe(true)
+    expect(report.takerReclaimed).toBe(false)
+  })
+
+  it("reports 'settled' when a Spent lock has BOTH sides reclaimed", async () => {
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [plan.proposerDigest, plan.takerDigest],
+    })
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('settled')
+    expect(report.proposerReclaimed).toBe(true)
+    expect(report.takerReclaimed).toBe(true)
+  })
+
+  it("reports 'settled' for a claim-settled Spent lock (neither side reclaimed)", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Spent})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('settled')
+    expect(report.proposerReclaimed).toBe(false)
+    expect(report.takerReclaimed).toBe(false)
+  })
+
   it('keys every state read by the swap id derived from the plan', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Committed})
     await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
@@ -545,11 +589,13 @@ describe('reclaim orchestration', () => {
     expectAbiTerms(est.args[2], bob)
   })
 
-  it('accepts Free and Committed locks; rejects Unused and Spent with INVALID_LOCK_STATE', async () => {
+  it('accepts Free and Committed locks; rejects Unused and claim-settled Spent with INVALID_LOCK_STATE', async () => {
     for (const state of [LockState.Free, LockState.Committed]) {
       const ok = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
       await expect(ok.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
     }
+    // Unused => never committed here; Spent with NO counterparty reclaim => claim-settled.
+    // Both reject; a Spent lock mid-reclaim (counterparty already reclaimed) is covered separately.
     for (const state of [LockState.Unused, LockState.Spent]) {
       const bad = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
       try {
@@ -557,7 +603,7 @@ describe('reclaim orchestration', () => {
         expect.unreachable()
       } catch (error) {
         expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
-        expect((error as QuipSwapError).details).toMatchObject({lockState: state, required: 'Free or Committed'})
+        expect((error as QuipSwapError).details).toMatchObject({lockState: state})
       }
       expect(bad.log.writes).toHaveLength(0)
     }
@@ -569,6 +615,56 @@ describe('reclaim orchestration', () => {
       mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, verifyOnChainState: false}),
     ).resolves.toBe(TX_HASH)
     expect(mocks.log.sequence).not.toContain('read:lockState')
+  })
+
+  it('reads BOTH sides reclaimed flags in the state batch (per-side reclaim)', async () => {
+    // mirrors Omnibus.reclaim: it consults reclaimed[party] (AlreadyReclaimed)
+    // AND reclaimed[counterparty] (to allow a Spent lock only mid-reclaim)
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Committed})
+    await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    const reclaimedReads = mocks.log.sequence.filter(s => s === 'read:reclaimed')
+    expect(reclaimedReads).toHaveLength(2)
+  })
+
+  it('accepts a Spent lock mid-reclaim (the counterparty already reclaimed its own leg)', async () => {
+    // Committed -> first reclaim advances to Spent and flags that side; the
+    // OTHER side must still be able to reclaim its own leg from Spent
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [digestTerms(bob)],
+    })
+    await expect(mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
+  })
+
+  it('rejects when THIS side already reclaimed (contract AlreadyReclaimed)', async () => {
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [digestTerms(alice)],
+    })
+    try {
+      await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('already reclaimed')
+    }
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('rejects a claim-settled Spent lock — Spent with no counterparty reclaim (contract InvalidLockState)', async () => {
+    // a claim leaves the lock Spent with NEITHER reclaimed flag set; a reclaim
+    // here would revert InvalidLockState, and the preflight names that cause
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Spent})
+    try {
+      await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('Spent from a claim')
+    }
+    expect(mocks.log.writes).toHaveLength(0)
   })
 
   it('rejects before the reclaimRelease', async () => {

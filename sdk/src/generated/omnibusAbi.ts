@@ -906,6 +906,30 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "reclaimed",
+    "inputs": [
+      {
+        "name": "swapId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sideDigest",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isReclaimed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
@@ -1406,6 +1430,11 @@ export const omnibusAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyReclaimed",
+    "inputs": []
   },
   {
     "type": "error",

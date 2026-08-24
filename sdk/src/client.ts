@@ -108,12 +108,16 @@ export interface ReclaimArgs {
   /** The other side's terms. */
   readonly counterparty: Terms
   /**
-   * When `true` (default), preflight additionally verifies on-chain state
-   * in one parallel read batch: `lockState(swapId)` must be `Free` or
-   * `Committed` (`INVALID_LOCK_STATE` otherwise — `Unused` was never
-   * committed, `Spent` was already settled), `termsHash(swapId)` must equal
-   * the canonical digest, and the party's side must be `posted`
-   * (`TERMS_NOT_ON_CHAIN` otherwise).
+   * When `true` (default), preflight additionally verifies on-chain state in
+   * one parallel read batch, mirroring the per-side `Omnibus.reclaim`:
+   * `termsHash(swapId)` must equal the canonical digest and the party's side
+   * must be `posted` (`TERMS_NOT_ON_CHAIN` otherwise); the party side must
+   * not have already reclaimed; and the lock must permit this side's reclaim
+   * — `Free`/`Committed` are the first reclaim, a `Spent` lock is allowed
+   * ONLY mid-reclaim (the counterparty already reclaimed, this side has not),
+   * while a claim-settled `Spent` and an `Unused` lock reject with
+   * `INVALID_LOCK_STATE`. Reads `lockState`, `termsHash`, `posted`, and both
+   * sides' `reclaimed` flags.
    */
   readonly verifyOnChainState?: boolean
 }
@@ -208,6 +212,8 @@ export interface OmnibusClient {
   getTermsHash(swapIdKey: Hex32): Promise<Hex32>
   /** Reads whether a side's terms digest was posted for a swap; key with {@link swapId}. @see Omnibus.posted */
   getPosted(swapIdKey: Hex32, termsDigest: Hex32): Promise<boolean>
+  /** Reads whether a side has already reclaimed its own leg; key with {@link swapId} and that side's terms digest. @see Omnibus.reclaimed */
+  getReclaimed(swapIdKey: Hex32, sideDigest: Hex32): Promise<boolean>
   /** Reads the current owner. @see Ownable.owner */
   getOwner(): Promise<Address>
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
@@ -364,14 +370,18 @@ export interface OmnibusClient {
   claim(args: ClaimArgs, opts?: TxOptions): Promise<Hash>
 
   /**
-   * Reclaims escrowed assets after the local leg's `reclaimRelease`.
-   * PERMISSIONLESS — assets always go to the terms' `reclaimRecipient`
+   * Reclaims THIS party's own escrowed leg after its `reclaimRelease`.
+   * PERMISSIONLESS — the assets always go to the terms' `reclaimRecipient`
    * regardless of caller, so the SDK adds no caller restriction.
    *
-   * Dual-leg note: when the counterparty leg is also local and the lock is
-   * `Committed`, one reclaim returns BOTH legs to their respective
-   * `reclaimRecipient` addresses and emits two `Reclaimed` events. Reclaim
-   * is also valid from `Free` (a half-committed same-chain swap).
+   * Per-side note: reclaim returns ONLY the party's own leg to
+   * `party.reclaimRecipient` and emits exactly ONE `Reclaimed` event — each
+   * side reclaims independently, in either order. For a same-chain swap that
+   * means TWO reclaim transactions (each party pulls its own leg); a hostile
+   * or blocklisted counterparty recipient therefore can never block this
+   * party's recovery. Reclaim is valid from `Committed` or from `Free` (a
+   * half-committed same-chain swap); once one side has reclaimed the lock is
+   * `Spent`, yet the other side may still reclaim its leg.
    *
    * Shortfall note: fungible payouts are clamped on-chain to the balance the
    * contract actually holds, so reclaim cannot be permanently blocked by a
@@ -381,8 +391,8 @@ export interface OmnibusClient {
    *
    * Preflight: terms valid and paired; `party.chainId` matches the
    * connected chain; current timestamp `>= party.reclaimRelease`; unless
-   * disabled, the lock is `Free` or `Committed` and its
-   * `termsHash`/`posted` state matches (see
+   * disabled, this party side has not already reclaimed, the lock permits
+   * this side's reclaim, and its `termsHash`/`posted` state matches (see
    * {@link ReclaimArgs.verifyOnChainState}); then balance preflight,
    * estimate+buffer gas (the pre-submission revert check), submit.
    *
@@ -390,7 +400,8 @@ export interface OmnibusClient {
    * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash (not finality).
    * @throws QuipSwapError structural/pairing codes | `CHAIN_ID_MISMATCH` |
-   *   `WINDOW_VIOLATED` | `INVALID_LOCK_STATE` | `TERMS_NOT_ON_CHAIN` |
+   *   `WINDOW_VIOLATED` | `INVALID_LOCK_STATE` (also the already-reclaimed
+   *   and claim-settled cases) | `TERMS_NOT_ON_CHAIN` |
    *   `MISSING_WALLET_CLIENT` | `GAS_ESTIMATION_FAILED` |
    *   `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.reclaim
@@ -616,29 +627,60 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   }
 
   /**
-   * Reclaim preflight against on-chain state: `_advanceLockTo` permits
-   * only Free→Spent and Committed→Spent, so the lock must be `Free` or
-   * `Committed`; the termsHash must bind this pairing; and the reclaimed
-   * (party) side must be posted.
+   * Reclaim preflight against on-chain state, mirroring the per-side
+   * `Omnibus.reclaim` (Finding 4): reclaim returns ONLY the party's own leg,
+   * so the state check is per side, not per lock.
+   *
+   * The termsHash must bind this pairing and the party side must be posted.
+   * Then, in the contract's order: the party side must not have already
+   * reclaimed (`AlreadyReclaimed`); and the lock must permit this side's
+   * reclaim — `Free`/`Committed` advance to `Spent` (`_advanceLockTo`),
+   * while `Spent` is allowed ONLY mid-reclaim (the counterparty side already
+   * reclaimed and this side has not), a claim-settled `Spent` is rejected
+   * (`InvalidLockState`), and `Unused` is rejected (`InvalidLockAdvancement`).
    */
   async function verifyReclaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
     const swapIdKey = swapId(lock, party, counterparty)
-    const {state, onChainTermsHash, isPosted} = await readLockBatch(swapIdKey, digestTerms(party))
-    if (state !== LockState.Free && state !== LockState.Committed) {
-      const cause =
-        state === LockState.Unused
-          ? 'nothing has been committed under this lock on this chain'
-          : 'the lock was already claimed or reclaimed'
+    const partyDigest = digestTerms(party)
+    const [state, onChainTermsHash, isPosted, partyReclaimed, counterpartyReclaimed] = await Promise.all([
+      read<number>('lockState', [swapIdKey]),
+      read<Hex32>('termsHash', [swapIdKey]),
+      read<boolean>('posted', [swapIdKey, partyDigest]),
+      read<boolean>('reclaimed', [swapIdKey, partyDigest]),
+      read<boolean>('reclaimed', [swapIdKey, digestTerms(counterparty)]),
+    ])
+    checkTermsHash(lock, onChainTermsHash, party, counterparty)
+    checkPosted(lock, isPosted)
+    if (partyReclaimed) {
       throw new QuipSwapError({
         code: 'INVALID_LOCK_STATE',
         message:
-          `Cannot reclaim: lock state is ${lockStateName(state)} but reclaim requires Free or Committed — ` +
-          `${cause} (contract would revert InvalidLockAdvancement)`,
-        details: {lock, lockState: state, required: 'Free or Committed'},
+          'Cannot reclaim: this party side has already reclaimed its leg ' +
+          '(contract would revert AlreadyReclaimed)',
+        details: {lock, side: partyDigest},
       })
     }
-    checkTermsHash(lock, onChainTermsHash, party, counterparty)
-    checkPosted(lock, isPosted)
+    if (state === LockState.Spent && !counterpartyReclaimed) {
+      // Spent with no counterparty reclaim = the lock was claim-settled;
+      // the party leg is gone and this reclaim would revert InvalidLockState.
+      throw new QuipSwapError({
+        code: 'INVALID_LOCK_STATE',
+        message:
+          'Cannot reclaim: the lock is Spent from a claim (not mid-reclaim) — this leg was already settled by ' +
+          'claim (contract would revert InvalidLockState)',
+        details: {lock, lockState: state},
+      })
+    }
+    if (state === LockState.Unused) {
+      throw new QuipSwapError({
+        code: 'INVALID_LOCK_STATE',
+        message:
+          'Cannot reclaim: nothing has been committed under this swap id on this chain ' +
+          '(contract would revert InvalidLockAdvancement)',
+        details: {lock, lockState: state},
+      })
+    }
+    // Free / Committed -> first reclaim; Spent && counterpartyReclaimed -> second side mid-reclaim: both allowed.
   }
 
   /**
@@ -793,6 +835,11 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       assertHex32(swapIdKey, 'swapId')
       assertHex32(termsDigest, 'termsDigest')
       return read('posted', [swapIdKey, termsDigest])
+    },
+    getReclaimed: (swapIdKey: Hex32, sideDigest: Hex32) => {
+      assertHex32(swapIdKey, 'swapId')
+      assertHex32(sideDigest, 'sideDigest')
+      return read('reclaimed', [swapIdKey, sideDigest])
     },
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),
