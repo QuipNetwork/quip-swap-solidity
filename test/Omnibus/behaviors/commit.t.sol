@@ -31,6 +31,14 @@ contract Omnibus_commit is OmnibusTest {
     );
   }
 
+  /// @dev `count` valid one-wei native assets — the gas-griefing padding shape
+  function _nativeAssetsOfCount(uint256 count) internal pure returns (Asset[] memory assets) {
+    assets = new Asset[](count);
+    for (uint256 i; i < count; ++i) {
+      assets[i] = AssetHelper.makeNative(1);
+    }
+  }
+
   // ============ Success Cases ============
 
   function test_commit_sameChainFirstCommit() public {
@@ -555,6 +563,49 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: _totalNativeForCommit(alice)}(
       lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
     );
+  }
+
+  function test_commit_revertsWhen_tooManyPartyAssets() public {
+    // a party leg padded past the cap is rejected at commit — it can never enter escrow, so
+    // it can never make claim/reclaim exceed the block gas limit (freeze / cross-chain theft)
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE + 1));
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.TooManyAssets.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+  }
+
+  function test_commit_revertsWhen_tooManyCounterpartyAssets() public {
+    // commit validates BOTH sides, so a padded COUNTERPARTY leg is rejected too — the victim
+    // cannot be tricked into committing against an over-capped counterparty leg
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTermsOn(block.chainid, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE + 1));
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.TooManyAssets.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+  }
+
+  function test_commit_succeedsWhen_exactlyMaxAssets() public {
+    // the cap boundary is inclusive: a leg with exactly MAX_ASSETS_PER_SIDE commits through the
+    // real path (not just the exposed validator)
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE));
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   // ============ Fee Tests ============

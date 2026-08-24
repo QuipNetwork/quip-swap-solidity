@@ -45,6 +45,19 @@ struct Terms {
 }
 
 library TermsLib {
+  // ============ Constants ============
+
+  /// @notice the maximum number of assets permitted in a single side's terms
+  /// @dev bounds the per-side `assets` array so the combined cost of settling BOTH
+  /// sides together (same-chain `claim`, which moves both legs in one call) always
+  /// fits well within the block gas limit of every chain Omnibus is deployed to.
+  /// Without this cap a leg could be padded (e.g. thousands of one-wei native
+  /// entries) to commit within one block yet make every subsequent claim/reclaim
+  /// exceed the block gas limit forever — a permanent freeze, and cross-chain a
+  /// theft (the padded leg's chain can never settle while the healthy leg pays out).
+  /// A low-tens bound is ample for any realistic basket swap.
+  uint256 internal constant MAX_ASSETS_PER_SIDE = 20;
+
   // ============ Errors ============
 
   /// @notice thrown when an asset has zero amount
@@ -73,6 +86,9 @@ library TermsLib {
 
   /// @notice thrown when terms have no assets
   error EmptyAssets();
+
+  /// @notice thrown when a side's terms carry more than MAX_ASSETS_PER_SIDE assets
+  error TooManyAssets();
 
   /// @notice thrown when a lifecycle deadline is zero
   error ZeroDeadline();
@@ -166,6 +182,9 @@ library TermsLib {
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal pure {
     if (terms.assets.length == 0) revert EmptyAssets();
+    // cap the per-side asset count so settling both legs together always fits the
+    // block gas limit (see MAX_ASSETS_PER_SIDE) — blocks the gas-griefing padded leg
+    if (terms.assets.length > MAX_ASSETS_PER_SIDE) revert TooManyAssets();
     if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
       revert ZeroAddressRecipient();
     }
