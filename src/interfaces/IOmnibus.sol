@@ -241,6 +241,14 @@ interface IOmnibus {
   /// legs settle independently on separate chains, so there is no atomic point at
   /// which under-delivery of one leg can undo receipt of the other — you trust the
   /// counter-leg's value
+  ///
+  /// ERC721 has no deposit reconciliation (unlike ERC20/ERC1155, whose balance
+  /// delta is checked): safeTransferFrom returns nothing, and a custody (ownerOf)
+  /// probe would be defeated by the same dishonest-contract case above (a token
+  /// that lies about ownership lies about its transfer too). There is no honest
+  /// lossy ERC721 behavior to catch (unlike fee-on-transfer for fungibles), so an
+  /// NFT contract that no-ops its transfer or lies about ownerOf falls under the
+  /// same UNSUPPORTED / vet-the-counter-leg rule — it is not separately checked
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

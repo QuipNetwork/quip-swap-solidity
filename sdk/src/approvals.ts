@@ -26,7 +26,10 @@
  * UNSUPPORTED. Vet the counterparty's asset contract before committing — the
  * protocol guarantees atomicity, not that the counter-leg is well-behaved — and
  * note this is unenforceable on-chain for cross-chain swaps (legs settle
- * independently): you trust the counter-leg's value.
+ * independently): you trust the counter-leg's value. ERC721 gets no deposit
+ * reconciliation (unlike ERC20/ERC1155 balance deltas) — an ownerOf probe would
+ * be defeated by the same dishonest contract, and NFTs have no honest lossy case
+ * to catch — so a fake or non-compliant NFT contract falls under the same rule.
  */
 import type {Address, PublicClient, WalletClient} from 'viem'
 import {QuipSwapError, wrapContractError} from './errors.js'
