@@ -329,6 +329,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function withdrawFees(address to) external onlyOwner {
+    if (to == address(0)) revert ZeroFeeRecipient();
     // only accrued fees are withdrawable; escrowed native stays owed to reclaimRecipients
     uint256 amount = accruedFees;
     delete accruedFees;

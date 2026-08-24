@@ -1595,6 +1595,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "ZeroFeeRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroVerifier",
     "inputs": []
   },

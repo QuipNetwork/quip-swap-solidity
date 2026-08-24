@@ -13,7 +13,7 @@
  * Run via `bun run test:integration` (the runner starts Anvil, builds
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex} from 'viem'
+import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex, zeroAddress} from 'viem'
 import type {Address, Hash} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -476,6 +476,10 @@ describe('native commits and fee handling', () => {
 
   it('setCommitmentFee above MAX_FEE reverts FeeExceedsMax', async () => {
     await expectContractError(ownerClient.admin.setCommitmentFee(10n ** 16n + 1n), 'FeeExceedsMax')
+  })
+
+  it('withdrawFees to the zero address reverts ZeroFeeRecipient', async () => {
+    await expectContractError(ownerClient.admin.withdrawFees(zeroAddress), 'ZeroFeeRecipient')
   })
 })
 

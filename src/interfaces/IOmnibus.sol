@@ -67,6 +67,9 @@ interface IOmnibus {
   /// @notice thrown when a verifier address is zero
   error ZeroVerifier();
 
+  /// @notice thrown when the fee-withdrawal recipient address is zero
+  error ZeroFeeRecipient();
+
   /// @notice thrown at construction when the wallet factory address is zero
   error ZeroFactory();
 
@@ -335,6 +338,7 @@ interface IOmnibus {
   function setCommitmentFee(uint256 newFee) external;
 
   /// @notice withdraws accumulated fees to recipient (owner only)
-  /// @param to the recipient address
+  /// @param to the recipient address (must be non-zero; a zero `to` reverts ZeroFeeRecipient
+  ///   rather than irrecoverably burning the accrued balance)
   function withdrawFees(address to) external;
 }

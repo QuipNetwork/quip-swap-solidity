@@ -138,9 +138,10 @@ export interface OmnibusAdmin {
   setCommitmentFee(newFee: bigint, opts?: TxOptions): Promise<Hash>
   /**
    * Withdraws all accrued fees to `to`. Owner only. Escrowed swap native is
-   * NOT withdrawable — only accrued fees.
+   * NOT withdrawable — only accrued fees. Reverts `ZeroFeeRecipient` for the
+   * zero address, so a mistaken `to` cannot burn the accrued balance.
    *
-   * @param to - The recipient of the accrued fees.
+   * @param to - The recipient of the accrued fees (non-zero).
    * @param opts - Optional per-transaction gas/fee/nonce options.
    * @returns The transaction hash.
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `CONTRACT_REVERT` |
