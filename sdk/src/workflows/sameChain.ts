@@ -46,7 +46,6 @@ import {
   proposerClaimWindow,
   proposerCommitWindow,
   reclaimWindow,
-  takerClaimWindow,
   takerCommitWindow,
 } from '../windows.js'
 import type {TimeWindow} from '../windows.js'
@@ -178,8 +177,13 @@ export type SameChainSwapStatus =
   | 'awaiting-claim-window'
   /** Both committed; the claim window is open — the secret holder should claim. */
   | 'claimable'
-  /** Both committed; the proposer-claim window closed (taker-claim window may run until proposer.reclaimRelease). */
-  | 'late-claimable'
+  /**
+   * Both committed; the claim window closed with no claim. Nothing can
+   * happen until `proposer.reclaimRelease` opens reclaim — the contract
+   * derives claim roles from the terms themselves, so no argument ordering
+   * reopens a claim path in this region.
+   */
+  | 'claim-expired'
   /** Both committed; no claim landed and a leg's reclaim window is open. */
   | 'reclaimable'
   /** Lock Free and the proposer's reclaim window is open (reclaim-from-Free). */
@@ -256,9 +260,10 @@ export async function getSameChainSwapStatus(
       } else if (isWithinWindow(plan.proposerReclaimWindow, timestamp)) {
         status = 'reclaimable'
       } else if (timestamp >= plan.proposerTerms.claimDeadline) {
-        // between proposer.claimDeadline and proposer.reclaimRelease the
-        // taker-role claim path is still open (it settles both legs too)
-        status = 'late-claimable'
+        // between proposer.claimDeadline and proposer.reclaimRelease nothing
+        // can happen: the claim window is closed for BOTH argument orderings
+        // and reclaim has not opened yet
+        status = 'claim-expired'
       } else {
         // Committed before taker.commitmentDeadline: the taker committed
         // early in its window; the proposer-claim window opens at

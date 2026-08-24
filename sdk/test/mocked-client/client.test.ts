@@ -26,12 +26,14 @@ import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
+import {getSameChainSwapStatus, planSameChainSwap} from '../../src/workflows/sameChain.js'
 import {claimLog} from '../helpers/logs.js'
 import {
   aliceTerms,
   AT_PROPOSER_CLAIM,
   AT_PROPOSER_COMMIT,
   AT_PROPOSER_RECLAIM,
+  AT_TAKER_CLAIM,
   AT_TAKER_COMMIT,
   bobTerms,
   CHAIN_A,
@@ -480,6 +482,34 @@ describe('claim orchestration', () => {
       'TERMS_NOT_ON_CHAIN',
     )
     expect(mocks.log.writes).toHaveLength(0)
+  })
+})
+
+describe('getSameChainSwapStatus (window-derived statuses)', () => {
+  // the canonical 1000s-gap schedule is tighter than the default buffer, so
+  // the plan is built with the buffer floor lowered — buffer sizing is not
+  // under test here
+  const plan = planSameChainSwap(alice, bob, {minimumBufferSeconds: 0n})
+
+  it("reports 'claimable' inside the proposer claim window", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('claimable')
+  })
+
+  it("REGRESSION (audit): reports 'claim-expired' between proposer.claimDeadline and proposer.reclaimRelease", async () => {
+    // this region previously reported 'late-claimable', advertising the
+    // role-swapped claim the contract has since closed; nothing can happen
+    // here until reclaim opens
+    const mocks = setup({timestamp: AT_TAKER_CLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('claim-expired')
+  })
+
+  it("reports 'reclaimable' once proposer.reclaimRelease passes", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('reclaimable')
   })
 })
 

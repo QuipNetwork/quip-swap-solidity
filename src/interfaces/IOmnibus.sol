@@ -196,14 +196,30 @@ interface IOmnibus {
   ) external payable;
 
   /// @notice executes the swap by revealing the secret
-  /// @dev a cross-chain claim is gated only on the local (party) leg's deadline; the
-  /// counterparty leg's deadline is enforced only when it settles on this chain too.
-  /// for a cross-chain swap the secret holder claims the counterparty's leg first, so
-  /// the leg the secret holder claims must expire BEFORE the other leg: set the secret
-  /// holder's own deposit with the later deadline and the counterparty's deposit (the
-  /// one the secret holder takes) with the earlier deadline. the gap between the two is
-  /// the buffer the second claimant has after the secret is revealed; mis-ordering it
-  /// lets the secret holder take both legs
+  /// @dev permissionless: anyone holding the secret may claim, and the transaction
+  /// makes the secret public. the counterparty leg is the leg being claimed and must
+  /// be on this chain; a same-chain claim settles BOTH legs atomically.
+  ///
+  /// the enforced window derives from the terms themselves — the proposer is the side
+  /// with the earlier commitment deadline — never from which side is passed as `party`
+  /// vs `counterparty`, so submitting the terms role-swapped cannot select a different
+  /// window. which window applies depends only on whose assets this chain holds:
+  /// - the taker's assets are here (every same-chain claim, and the proposer's
+  ///   cross-chain leg): the proposer's reveal window
+  ///   [taker.commitmentDeadline, proposer.claimDeadline)
+  /// - only the proposer's assets are here (the cross-chain taker leg): the taker's
+  ///   redeem window [proposer.claimDeadline, proposer.reclaimRelease)
+  ///
+  /// the redeem window's width, proposer.reclaimRelease - proposer.claimDeadline, is
+  /// the cross-chain taker's reaction buffer after the secret is revealed; size it to
+  /// cover finality and downtime, since a missed redeem strands the taker's leg until
+  /// its reclaimRelease.
+  ///
+  /// FUND-LOSS WARNING: in a cross-chain swap the secret holder MUST be the proposer.
+  /// a taker who knows the secret can withhold their own commitment, wait for the
+  /// redeem window on the proposer's chain, and take the proposer's leg while giving
+  /// nothing — the contract cannot verify the remote leg, so this is enforceable only
+  /// off-chain when the terms are negotiated
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

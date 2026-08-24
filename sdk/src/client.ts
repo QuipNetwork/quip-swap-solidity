@@ -345,7 +345,9 @@ export interface OmnibusClient {
    * Preflight: secret is valid 32-byte hex; both terms valid and paired;
    * `counterparty.chainId` matches the connected chain (the CLAIMED leg is
    * local; `party.chainId` may be remote in a cross-chain claim); the
-   * timestamp is inside the claimant role's window; unless disabled, the
+   * timestamp is inside the window the contract enforces for this pairing
+   * (derived from the terms' roles and chains, not argument order); unless
+   * disabled, the
    * lock is `Committed` and its `termsHash`/`posted` state matches (see
    * {@link ClaimArgs.verifyOnChainState}); then balance preflight,
    * estimate+buffer gas (the pre-submission revert check), submit.
