@@ -1550,6 +1550,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "TooManyAssets",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "UnexpectedAmountReceived",
     "inputs": []
   },

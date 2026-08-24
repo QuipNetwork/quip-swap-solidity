@@ -26,7 +26,7 @@ export type {QuipSwapErrorCode, QuipSwapErrorDetails} from './errors.js'
 export {nativeAsset, erc20Asset, erc721Asset, erc1155Asset, validateAsset, totalNative} from './assets.js'
 
 // terms + pairing
-export {createTerms, validateTerms, validateTermPairing, proposedBy} from './terms.js'
+export {createTerms, validateTerms, validateTermPairing, proposedBy, MAX_ASSETS_PER_SIDE} from './terms.js'
 export type {CreateTermsArgs} from './terms.js'
 
 // windows

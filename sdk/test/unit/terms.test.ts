@@ -13,7 +13,7 @@ import {zeroAddress} from 'viem'
 import {describe, expect, it} from 'vitest'
 import {nativeAsset} from '../../src/assets.js'
 import {QuipSwapError} from '../../src/errors.js'
-import {createTerms, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
+import {createTerms, MAX_ASSETS_PER_SIDE, proposedBy, validateTermPairing, validateTerms} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
 import type {Asset} from '../../src/types.js'
 import {ALICE, aliceTerms, BOB, bobTerms, CHAIN_A, withOverrides} from '../helpers/fixtures.js'
@@ -76,6 +76,17 @@ describe('validateTerms', () => {
 
   it('rejects empty assets (contract: EmptyAssets)', () => {
     expect(codeOf(() => validateTerms(withOverrides(valid, {assets: []})))).toBe('EMPTY_ASSETS')
+  })
+
+  it('accepts exactly MAX_ASSETS_PER_SIDE assets (inclusive boundary)', () => {
+    const maxAssets = Array.from({length: MAX_ASSETS_PER_SIDE}, () => nativeAsset(1n))
+    expect(() => validateTerms(withOverrides(valid, {assets: maxAssets}))).not.toThrow()
+  })
+
+  it('rejects more than MAX_ASSETS_PER_SIDE assets (contract: TooManyAssets)', () => {
+    // the gas-griefing padded leg is rejected structurally, before any tx is built
+    const tooMany = Array.from({length: MAX_ASSETS_PER_SIDE + 1}, () => nativeAsset(1n))
+    expect(codeOf(() => validateTerms(withOverrides(valid, {assets: tooMany})))).toBe('TOO_MANY_ASSETS')
   })
 
   it('rejects invalid nested assets', () => {

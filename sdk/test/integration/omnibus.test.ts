@@ -28,6 +28,7 @@ import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock, swapId} from '../../src/hashing.js'
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import type {OmnibusReceipt} from '../../src/receipts.js'
+import {MAX_ASSETS_PER_SIDE} from '../../src/terms.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {keyedAuth as keyedAuthFor, deregisterWallet, registerWallet, walletAuth} from '../helpers/auth.js'
@@ -298,6 +299,32 @@ describe('commit authorization', () => {
     await expectContractError(
       rawCommit(ctx.alice, lock, alice, bob, 10n, {signer: '0x1234', signature: '0x'}),
       'MalformedSigner',
+    )
+  })
+
+  it('a leg padded past MAX_ASSETS_PER_SIDE rejects TOO_MANY_ASSETS in preflight; the contract agrees (TooManyAssets)', async () => {
+    // the gas-griefing padded leg (thousands of one-wei native entries) is bounded so
+    // settling both legs together can never exceed the block gas limit
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const padded = Array.from({length: MAX_ASSETS_PER_SIDE + 1}, () => nativeAsset(1n))
+    const alice = s.aliceTerms(padded)
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('TOO_MANY_ASSETS')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract enforces the same cap (raw call bypassing preflight)
+    await expectContractError(
+      rawCommit(ctx.alice, lock, alice, bob, BigInt(MAX_ASSETS_PER_SIDE + 1)),
+      'TooManyAssets',
     )
   })
 
