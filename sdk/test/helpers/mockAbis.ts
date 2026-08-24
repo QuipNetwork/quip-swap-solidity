@@ -7,7 +7,7 @@
  * Test infrastructure only — never exported from the SDK package.
  */
 
-/** ERC20Mock surface: mint, balanceOf, approve, allowance. */
+/** ERC20Mock surface: mint, burn, balanceOf, approve, allowance. */
 export const erc20MockAbi = [
   {
     type: 'function',
@@ -15,6 +15,16 @@ export const erc20MockAbi = [
     stateMutability: 'nonpayable',
     inputs: [
       {name: 'to', type: 'address'},
+      {name: 'amount', type: 'uint256'},
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'burn',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {name: 'from', type: 'address'},
       {name: 'amount', type: 'uint256'},
     ],
     outputs: [],

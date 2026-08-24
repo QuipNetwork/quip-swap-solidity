@@ -31,7 +31,7 @@ import type {OmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {keyedAuth as keyedAuthFor, deregisterWallet, registerWallet, walletAuth} from '../helpers/auth.js'
-import {connectChain, deployFixture} from '../helpers/chain.js'
+import {connectChain, deployFixture, loadArtifact} from '../helpers/chain.js'
 import type {ChainContext, Fixture, TestActor} from '../helpers/chain.js'
 import {erc1155MockAbi, erc20MockAbi, erc721MockAbi} from '../helpers/mockAbis.js'
 
@@ -924,6 +924,59 @@ describe('reclaim flows', () => {
       }),
       'InvalidLockAdvancement',
     )
+  })
+
+  it('reclaim pays the clamped remainder after an escrow shortfall (negative rebase regression)', async () => {
+    // a fresh token isolates this swap's escrow from the shared fixture pool,
+    // so burning from the Omnibus creates a REAL shortfall for this swap
+    const rebaseToken = await ctx.deploy(loadArtifact('ERC20Mock.sol', 'ERC20Mock'), ['Rebase', 'REB', 18])
+    const TOKENS = 500n
+    for (const [fn, args] of [
+      ['mint', [ctx.bob.address, TOKENS]],
+      ['approve', [fixture.omnibus, (1n << 256n) - 1n]],
+    ] as const) {
+      const hash = await ctx.bob.walletClient.writeContract({
+        address: rebaseToken,
+        abi: erc20MockAbi,
+        functionName: fn,
+        args: args as never,
+        chain: ctx.bob.walletClient.chain,
+        account: ctx.bob.account,
+      })
+      await ctx.publicClient.waitForTransactionReceipt({hash})
+    }
+
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const NATIVE = 1000n
+    const alice = s.aliceTerms([nativeAsset(NATIVE)])
+    const bob = s.bobTerms([erc20Asset(rebaseToken, TOKENS)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await ctx.warpTo(s.anchors.takerCommit)
+    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+
+    // negative rebase: the pooled escrow is now 1 short of Bob's declared amount
+    const burnHash = await ctx.deployer.walletClient.writeContract({
+      address: rebaseToken,
+      abi: erc20MockAbi,
+      functionName: 'burn',
+      args: [fixture.omnibus, 1n],
+      chain: ctx.deployer.walletClient.chain,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash: burnHash})
+
+    // before the clamp this reclaim reverted forever (TransferFailed) and froze
+    // both legs; now the SDK write path (preflight + estimate) goes through and
+    // the token leg pays the remainder while the native leg is returned in full
+    await ctx.warpTo(s.anchors.proposerReclaim)
+    const aliceReclaimBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
+    const result = await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}))
+    expect(result.reclaims).toHaveLength(2)
+    expect(await erc20Balance(rebaseToken, BOB_RECLAIM)).toBe(TOKENS - 1n)
+    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
   })
 })
 

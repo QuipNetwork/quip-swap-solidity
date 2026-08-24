@@ -331,6 +331,75 @@ contract Omnibus_reclaim is OmnibusTest {
     omnibus.reclaim(lock, alice, bob);
   }
 
+  // ============ Shortfall Clamping (audit regression: negative rebase) ============
+  // fungible payouts are clamped to the held balance (TermsLib.transferAssetsClamped)
+  // so a balance-mutable token shrinking the pooled escrow in place can never
+  // permanently block reclaim or hold the healthy leg hostage
+
+  /// @dev the base setUp pre-funds the omnibus with a large mockERC20 float; a shortfall
+  /// must be created against the ACTUAL held balance, so burn down to a target
+  function _burnOmnibusERC20To(uint256 target) internal {
+    mockERC20.burn(address(omnibus), mockERC20.balanceOf(address(omnibus)) - target);
+  }
+
+  function test_reclaim_clampsCounterpartyERC20PayoutWhenEscrowShrunk() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    // negative rebase: escrow is now 1 wei short of Bob's declared amount
+    _burnOmnibusERC20To(DEFAULT_AMOUNT - 1);
+
+    _warpToProposerReclaim();
+    uint256 aliceBefore = ALICE.balance;
+    uint256 bobBefore = mockERC20.balanceOf(BOB);
+
+    // dual-leg reclaim: Bob is the counterparty leg here (Omnibus.reclaim counterparty site)
+    omnibus.reclaim(lock, alice, bob);
+
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT); // healthy leg unaffected
+    assertEq(mockERC20.balanceOf(BOB) - bobBefore, DEFAULT_AMOUNT - 1); // clamped remainder
+    _assertSwapState(lock, alice, bob, LockState.Spent);
+  }
+
+  function test_reclaim_clampsPartyERC20PayoutWhenEscrowShrunk() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    _burnOmnibusERC20To(DEFAULT_AMOUNT - 1);
+
+    _warpToTakerReclaim();
+    uint256 aliceBefore = ALICE.balance;
+    uint256 bobBefore = mockERC20.balanceOf(BOB);
+
+    // Bob reclaims as party (Omnibus.reclaim party site); Alice is the counterparty leg
+    omnibus.reclaim(lock, bob, alice);
+
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
+    assertEq(mockERC20.balanceOf(BOB) - bobBefore, DEFAULT_AMOUNT - 1);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
+  }
+
+  function test_reclaim_clampsToZeroWhenEscrowEmptied() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    // worst case: the whole fungible escrow is gone
+    _burnOmnibusERC20To(0);
+
+    _warpToProposerReclaim();
+    uint256 aliceBefore = ALICE.balance;
+    uint256 bobBefore = mockERC20.balanceOf(BOB);
+
+    omnibus.reclaim(lock, alice, bob);
+
+    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT); // native leg still recovered
+    assertEq(mockERC20.balanceOf(BOB), bobBefore); // nothing left to pay
+    _assertSwapState(lock, alice, bob, LockState.Spent);
+  }
+
   // ============ Fuzz Tests ============
 
   function testFuzz_reclaim_anyTimeAfterRelease(uint256 t) public {
