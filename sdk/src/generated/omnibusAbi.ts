@@ -1201,16 +1201,16 @@ export const omnibusAbi = [
     "name": "Claim",
     "inputs": [
       {
-        "name": "recipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "lock",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       },
       {
         "name": "secret",

@@ -68,6 +68,31 @@ describe('decodeCommitmentEvents (new event shape)', () => {
   })
 })
 
+describe('decodeClaimEvents (recipient semantics)', () => {
+  const RECIPIENT_B: Address = getAddress('0x00000000000000000000000000000000000a0002')
+
+  it('decodes the terms-pinned recipient from the indexed topic (not the caller)', () => {
+    const [claim] = decodeClaimEvents([
+      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT}),
+    ])
+    expect(claim?.recipient).toBe(RECIPIENT)
+    expect(claim?.lock).toBe(FOUNDRY_LOCK)
+    expect(claim?.secret).toBe(FOUNDRY_SECRET)
+  })
+
+  it('decodes a same-chain claim as TWO Claim legs, one per recipient (shared lock + secret)', () => {
+    // a same-chain claim emits one Claim per payout leg; both carry the same lock
+    // and secret but distinct terms-pinned recipients
+    const claims = decodeClaimEvents([
+      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT, logIndex: 0}),
+      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT_B, logIndex: 1}),
+    ])
+    expect(claims).toHaveLength(2)
+    expect(claims.map(c => c.recipient)).toEqual([RECIPIENT, RECIPIENT_B])
+    expect(claims.every(c => c.lock === FOUNDRY_LOCK && c.secret === FOUNDRY_SECRET)).toBe(true)
+  })
+})
+
 describe('extractRevealedSecret', () => {
   it('returns the real secret when lock matches and generateLock(secret) === lock', () => {
     const logs = [claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT})]

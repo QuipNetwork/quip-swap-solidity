@@ -3,7 +3,7 @@
  *
  * ```solidity
  * event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
- * event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
+ * event Claim(bytes32 indexed lock, address indexed recipient, bytes32 secret);
  * event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
  * event FeeUpdated(uint256 oldFee, uint256 newFee);
  * event FeesWithdrawn(address indexed to, uint256 amount);
@@ -16,9 +16,13 @@
  * - `Reclaimed` is emitted once per `reclaim` call — each call settles only
  *   the caller's own side. Helpers return arrays because a range query can
  *   still span many reclaims; a single reclaim transaction has exactly one.
- * - `Claim.secret` lives in event DATA (not a topic): the lock is the only
- *   filterable topic, and the secret becomes public the moment the event
- *   is emitted.
+ * - `Claim` is emitted once per payout LEG naming that leg's terms-pinned
+ *   recipient: a cross-chain claim emits one, a same-chain claim emits TWO
+ *   (one per recipient) in a single transaction. The submitting caller is
+ *   NOT a field — it is the transaction sender.
+ * - `Claim.secret` lives in event DATA (not a topic); `lock` and `recipient`
+ *   are the indexed/filterable topics. The secret becomes public the moment
+ *   the event is emitted.
  */
 import {parseEventLogs} from 'viem'
 import type {Address, BlockNumber, BlockTag, Hex, Log, PublicClient} from 'viem'
@@ -51,11 +55,14 @@ export interface CommitmentEvent {
   readonly logIndex: number | null
 }
 
-/** A decoded `Claim` event. The `secret` field is public once emitted. */
+/**
+ * A decoded `Claim` event — one per payout leg (a same-chain claim emits two,
+ * one per recipient). The `secret` field is public once emitted.
+ */
 export interface ClaimEvent {
-  /** The address that called `claim` (event data, NOT the asset recipient per se). */
+  /** The terms-pinned address that received this leg's assets (indexed topic). */
   readonly recipient: Address
-  /** The hashlock that was claimed (indexed topic — the only filterable field). */
+  /** The hashlock that was claimed (indexed topic). */
   readonly lock: Hex32
   /** The revealed 32-byte preimage. Public from this moment on. */
   readonly secret: Hex32

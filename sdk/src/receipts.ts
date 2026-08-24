@@ -59,7 +59,7 @@ export interface OmnibusReceipt {
   readonly receipt: TransactionReceipt
   /** Decoded `Commitment` events emitted by the transaction (0 or 1). */
   readonly commitments: readonly CommitmentEvent[]
-  /** Decoded `Claim` events emitted by the transaction (0 or 1). */
+  /** Decoded `Claim` events (0, 1, or 2 — a same-chain claim emits one per recipient leg). */
   readonly claims: readonly ClaimEvent[]
   /** Decoded `Reclaimed` events (0 or 1 — each reclaim settles one side's own leg). */
   readonly reclaims: readonly ReclaimedEvent[]

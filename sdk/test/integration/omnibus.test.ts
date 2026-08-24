@@ -420,7 +420,9 @@ describe('commit authorization', () => {
     await ctx.warpTo(s.anchors.proposerClaim)
     const hash = await charlieClient.claim({secret, party: alice, counterparty: bob})
     const result = await confirmReceipt(hash)
-    expect(result.claims).toHaveLength(1)
+    // same-chain claim emits one Claim per leg; neither recipient is charlie (the caller)
+    expect(result.claims).toHaveLength(2)
+    expect(result.claims.map(c => c.recipient.toLowerCase())).not.toContain(ctx.charlie.address.toLowerCase())
     expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
   })
 })
@@ -746,10 +748,14 @@ describe('same-chain happy path', () => {
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
     expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
 
-    // the Claim event reveals the ORIGINAL secret
-    expect(claim.claims).toHaveLength(1)
-    expect(claim.claims[0]?.secret).toBe(secret)
-    expect(claim.claims[0]?.lock).toBe(lock)
+    // a same-chain claim emits one Claim per payout leg, each naming its terms-pinned
+    // recipient (NOT the caller) and revealing the ORIGINAL secret
+    expect(claim.claims).toHaveLength(2)
+    expect(claim.claims.every(c => c.secret === secret && c.lock === lock)).toBe(true)
+    const recipients = claim.claims.map(c => c.recipient.toLowerCase()).sort()
+    expect(recipients).toEqual([ALICE_RECIPIENT.toLowerCase(), BOB_RECIPIENT.toLowerCase()].sort())
+    // the caller (aliceClient's sender) is NOT among the emitted recipients
+    expect(recipients).not.toContain(ctx.alice.address.toLowerCase())
   })
 })
 
