@@ -246,13 +246,16 @@ contract Omnibus_HappyPath is OmnibusTest {
     omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB));
     _assertSwapState(lock, aliceTerms, bobTerms, LockState.Committed);
 
-    // Proposer reclaim after release refunds both sides
-    _warpToProposerReclaim();
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
+    // each party independently reclaims their own leg after their own release
+    _warpToProposerReclaim();
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
+    _warpToTakerReclaim();
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
 
     _assertSwapState(lock, aliceTerms, bobTerms, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);
@@ -351,12 +354,16 @@ contract Omnibus_HappyPath is OmnibusTest {
     vm.prank(BOB);
     omnibus.commit{value: assetAmount + fee}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB));
 
-    _warpToProposerReclaim();
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
+    // each party independently reclaims their own escrowed leg (fee stays accrued)
+    _warpToProposerReclaim();
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
+    _warpToTakerReclaim();
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
 
     // each side gets back exactly its escrowed assets, not the fee it paid
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);

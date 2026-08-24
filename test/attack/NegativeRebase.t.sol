@@ -132,10 +132,12 @@ contract Omnibus_NegativeRebase is Test {
     vm.expectRevert(SafeTransferLib.TransferFailed.selector);
     omnibus.claim(SECRET, alice, bob);
 
-    // ... but reclaim is not: one dual-leg reclaim returns everything that exists
-    vm.warp(A_RECLAIM + 1);
+    // ... but reclaim is not: each side independently recovers its own leg
     uint256 aliceBefore = ALICE.balance;
-    omnibus.reclaim(lock, alice, bob);
+    vm.warp(A_RECLAIM + 1);
+    omnibus.reclaim(lock, alice, bob); // healthy native leg, in full
+    vm.warp(B_RECLAIM + 1);
+    omnibus.reclaim(lock, bob, alice); // shrunk token leg, clamped remainder
 
     assertEq(ALICE.balance - aliceBefore, 1 ether, 'healthy native leg recovered in full');
     assertEq(token.balanceOf(BOB), AMOUNT - 1, 'token leg pays the clamped remainder');

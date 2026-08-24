@@ -76,14 +76,16 @@ contract Omnibus_UnhappyPath is OmnibusTest {
 
     _commitBoth(aliceTerms, bobTerms, assetAmount);
 
-    // lower bound of the proposer reclaim window is inclusive
-    vm.warp(ALICE_RECLAIM_RELEASE);
-
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
+    // each party's own reclaim window opens at its own release (lower bound inclusive)
+    vm.warp(ALICE_RECLAIM_RELEASE);
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
+    vm.warp(BOB_RECLAIM_RELEASE);
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
 
     _assertSwapState(lock, aliceTerms, bobTerms, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);

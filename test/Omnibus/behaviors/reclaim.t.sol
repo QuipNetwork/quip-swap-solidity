@@ -68,13 +68,15 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _warpToProposerReclaim();
 
     uint256 aliceBefore = ALICE.balance;
     uint256 bobERC20Before = mockERC20.balanceOf(BOB);
 
-    // proposer reclaim same-chain refunds both committed sides in one call
+    // each party reclaims their own leg independently, after their own release
+    _warpToProposerReclaim();
     omnibus.reclaim(lock, alice, bob);
+    _warpToTakerReclaim();
+    omnibus.reclaim(lock, bob, alice);
 
     // Alice gets her native assets back
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
@@ -93,21 +95,19 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.reclaim(lock, alice, bob);
 
-    // same-chain proposer reclaim refunds the COUNTERPARTY first, then the party; pin the
-    // recipients and their order (the spend-then-pay ordering the reentrancy reasoning relies on)
-    address[2] memory expectedRecipients = [BOB, ALICE];
+    // independent reclaim emits exactly one Reclaimed for the party's own leg
+    // (recipient = alice.reclaimRecipient, caller = CHARLIE)
     Vm.Log[] memory logs = vm.getRecordedLogs();
     uint256 reclaimedCount = 0;
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IOmnibus.Reclaimed.selector) {
         assertEq(logs[i].topics[1], lock);
-        assertEq(address(uint160(uint256(logs[i].topics[2]))), expectedRecipients[reclaimedCount]);
+        assertEq(address(uint160(uint256(logs[i].topics[2]))), ALICE);
         assertEq(abi.decode(logs[i].data, (address)), CHARLIE); // caller
         reclaimedCount++;
       }
     }
-    // Should emit Reclaimed for both parties (same chain)
-    assertEq(reclaimedCount, 2);
+    assertEq(reclaimedCount, 1);
   }
 
   function test_reclaim_anyoneCanReclaim() public {
@@ -149,12 +149,12 @@ contract Omnibus_reclaim is OmnibusTest {
     uint256 bobERC20Before = mockERC20.balanceOf(BOB);
     uint256 aliceBefore = ALICE.balance;
 
-    // party = bob (taker), counterparty = alice; same-chain committed -> refunds both
+    // party = bob (taker) reclaims his own leg after his own release
     vm.prank(BOB);
     omnibus.reclaim(lock, bob, alice);
 
     assertEq(mockERC20.balanceOf(BOB) - bobERC20Before, DEFAULT_AMOUNT);
-    assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
+    assertEq(ALICE.balance, aliceBefore); // Alice's leg is hers to reclaim separately
     _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
@@ -169,7 +169,9 @@ contract Omnibus_reclaim is OmnibusTest {
     uint256 bob1155Before = mockERC1155.balanceOf(BOB, ERC1155_TOKEN_ID);
 
     _warpToProposerReclaim();
-    omnibus.reclaim(lock, alice, bob);
+    omnibus.reclaim(lock, alice, bob); // Alice's ERC721
+    _warpToTakerReclaim();
+    omnibus.reclaim(lock, bob, alice); // Bob's ERC1155
 
     assertEq(mockERC721.ownerOf(ERC721_ALICE_TOKEN), ALICE);
     assertEq(mockERC1155.balanceOf(BOB, ERC1155_TOKEN_ID) - bob1155Before, 100);
@@ -215,25 +217,32 @@ contract Omnibus_reclaim is OmnibusTest {
 
     _warpToProposerReclaim();
 
-    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
+    vm.expectRevert(IOmnibus.InvalidLockState.selector);
     omnibus.reclaim(lock, alice, bob);
   }
 
   function test_reclaim_revertsWhen_alreadyReclaimed() public {
-    // the proposer's same-chain reclaim refunds BOTH sides; a follow-up reclaim by the taker
-    // must revert rather than refund a second time
+    // each side reclaims its own leg once; a second reclaim of the SAME side reverts, while the
+    // other side's reclaim is independent and still succeeds
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
 
     _warpToProposerReclaim();
+    omnibus.reclaim(lock, alice, bob); // Alice's leg
+
+    // Alice cannot reclaim her leg a second time
+    vm.expectRevert(IOmnibus.AlreadyReclaimed.selector);
     omnibus.reclaim(lock, alice, bob);
+
+    // Bob's independent reclaim still works, then likewise cannot be replayed
+    _warpToTakerReclaim();
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bob, alice);
     _assertSwapState(lock, alice, bob, LockState.Spent);
 
-    _warpToTakerReclaim();
-    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
-    vm.prank(BOB);
+    vm.expectRevert(IOmnibus.AlreadyReclaimed.selector);
     omnibus.reclaim(lock, bob, alice);
   }
 
@@ -252,18 +261,22 @@ contract Omnibus_reclaim is OmnibusTest {
     omnibus.reclaim(lock, bob, alice);
   }
 
-  function test_reclaim_revertsWhen_counterpartySideNotPosted() public {
-    // defense-in-depth (harness-staged): a Committed same-chain lock must not refund a
-    // counterparty side that was never posted
+  function test_reclaim_revertsWhen_reclaimingUnpostedSide_onCommittedLock() public {
+    // defense-in-depth (harness-staged): on a Committed same-chain lock where only the party
+    // side was posted, the never-posted side cannot reclaim, while the posted side can
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     omnibus.setTermsHash(_swapIdFor(lock, alice, bob), omnibus.computeTermsHash(alice, bob));
     omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
-    omnibus.setPosted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(alice), true); // party side only
+    omnibus.setPosted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(alice), true); // alice only
 
-    _warpToProposerReclaim();
+    _warpToTakerReclaim();
+    // the never-posted bob side cannot reclaim
     vm.expectRevert(IOmnibus.TermsNotPosted.selector);
+    omnibus.reclaim(lock, bob, alice);
+
+    // the posted alice side reclaims her own leg
     omnibus.reclaim(lock, alice, bob);
   }
 
@@ -354,8 +367,10 @@ contract Omnibus_reclaim is OmnibusTest {
     uint256 aliceBefore = ALICE.balance;
     uint256 bobBefore = mockERC20.balanceOf(BOB);
 
-    // dual-leg reclaim: Bob is the counterparty leg here (Omnibus.reclaim counterparty site)
+    // Alice reclaims her healthy native leg; Bob reclaims his shrunk ERC20 leg (clamped)
     omnibus.reclaim(lock, alice, bob);
+    _warpToTakerReclaim();
+    omnibus.reclaim(lock, bob, alice);
 
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT); // healthy leg unaffected
     assertEq(mockERC20.balanceOf(BOB) - bobBefore, DEFAULT_AMOUNT - 1); // clamped remainder
@@ -373,8 +388,9 @@ contract Omnibus_reclaim is OmnibusTest {
     uint256 aliceBefore = ALICE.balance;
     uint256 bobBefore = mockERC20.balanceOf(BOB);
 
-    // Bob reclaims as party (Omnibus.reclaim party site); Alice is the counterparty leg
+    // Bob reclaims his shrunk ERC20 leg (clamped); Alice reclaims her healthy native leg
     omnibus.reclaim(lock, bob, alice);
+    omnibus.reclaim(lock, alice, bob);
 
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
     assertEq(mockERC20.balanceOf(BOB) - bobBefore, DEFAULT_AMOUNT - 1);

@@ -65,6 +65,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   mapping(bytes32 swapId => mapping(bytes32 termsDigest => bool isPosted)) public posted;
 
   /// @inheritdoc IOmnibus
+  mapping(bytes32 swapId => mapping(bytes32 sideDigest => bool isReclaimed)) public reclaimed;
+
+  /// @inheritdoc IOmnibus
   mapping(address verifier => bool active) public verifierActive;
 
   /// @notice initializes the contract with an owner and the quip WalletFactory;
@@ -230,7 +233,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     bool isSameChain = party.chainId == counterparty.chainId;
 
-    // prevent double-spend by atomic claim & spend lock for both sides
+    // same-chain settles both legs atomically: either both transfers succeed or the whole
+    // claim reverts, so no one can take their incoming leg without delivering the outgoing one
     if (isSameChain) {
       // party's side must have been posted for this lock
       _enforcePosted(swapId, party.digestTerms());
@@ -259,36 +263,23 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // proven genuine so the more specific reverts surface first
     _enforcePosted(swapId, party.digestTerms());
 
+    // reclaim returns ONLY the party's own leg to the party's own reclaimRecipient. each
+    // side reclaims independently, so a hostile counterparty recipient can never block the
+    // party's recovery, and no one can ever receive the counterparty's assets here
+    bytes32 partyDigest = party.digestTerms();
+    if (reclaimed[swapId][partyDigest]) revert AlreadyReclaimed();
+
     LockState current = lockState[swapId];
-
-    bool reclaimCounterparty = counterparty.chainId == block.chainid && current == LockState.Committed;
-
-    // reclaim counterparty if on this chain and the current lock state is committed
-    // meaning counterparty has committed their assets
-    if (reclaimCounterparty) {
-      // lock is advanced here to ensure that reentrant calls fail since
-      // lock will be spent:
-      //
-      // reclaim allowed on free or committed only
-      // marking as spent enforces only free or committed as previous state
-      // will revert if lock state is unused or spent
-      // ie if claim has completed successfully
-      _advanceLockTo(swapId, current, LockState.Spent);
-
-      // return everything to counterparty's recipient
-      // counterparty's side must have been posted for this lock
-      _enforcePosted(swapId, counterparty.digestTerms());
-      counterparty.transferAssetsClamped(counterparty.reclaimRecipient);
-
-      emit Reclaimed(msg.sender, lock, counterparty.reclaimRecipient);
-    }
-
-    // must advance lock if it will not be updated by counterparty reclaim
-    if (!reclaimCounterparty) {
+    if (current == LockState.Spent) {
+      // a spent lock is reclaimable only mid-reclaim (the counterparty side already reclaimed);
+      // a claim-settled lock is spent with no reclaimed flag set, and must not be reclaimable
+      if (!reclaimed[swapId][counterparty.digestTerms()]) revert InvalidLockState();
+    } else {
+      // first reclaim of this swap: Committed or Free -> Spent (reverts on Unused/Spent)
       _advanceLockTo(swapId, current, LockState.Spent);
     }
 
-    // return everything to party's recipient
+    reclaimed[swapId][partyDigest] = true;
     party.transferAssetsClamped(party.reclaimRecipient);
 
     emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
@@ -455,4 +446,5 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function _swapId(bytes32 lock, bytes32 canonicalDigest) internal pure returns (bytes32 swapId) {
     swapId = EfficientHashLib.hash(lock, canonicalDigest);
   }
+
 }

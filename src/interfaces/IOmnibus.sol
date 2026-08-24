@@ -86,6 +86,9 @@ interface IOmnibus {
   /// deployed by the quip WalletFactory
   error NotQuipWallet();
 
+  /// @notice thrown when a side attempts to reclaim its leg twice
+  error AlreadyReclaimed();
+
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
   /// @param newFee the new fee
@@ -120,6 +123,7 @@ interface IOmnibus {
   /// @param recipient the address that received the reclaim
   event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
 
+
   /// @notice returns the state of a swap
   /// @dev state is keyed by swap id, not by bare lock: swapId =
   /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), where
@@ -145,6 +149,14 @@ interface IOmnibus {
   /// @param termsDigest the digest of the side's terms
   /// @return isPosted whether that side has been committed
   function posted(bytes32 swapId, bytes32 termsDigest) external view returns (bool isPosted);
+
+  /// @notice returns whether a side has reclaimed its own leg
+  /// @dev each side reclaims independently and exactly once. keyed by swap id (see lockState)
+  /// and the side's digestTerms
+  /// @param swapId the swap identifier
+  /// @param sideDigest the digestTerms of the side
+  /// @return isReclaimed true once the side has reclaimed
+  function reclaimed(bytes32 swapId, bytes32 sideDigest) external view returns (bool isReclaimed);
 
   /// @notice returns whether an ERC-7913 verifier is active for the keyed route
   /// @param verifier the verifier address
@@ -281,6 +293,7 @@ interface IOmnibus {
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
+
 
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei

@@ -208,12 +208,16 @@ contract Omnibus_AttackScenarios is Test {
   function test_attack_griefingCommitNoClaim_victimCanReclaim() public {
     (Terms memory aliceTerms, Terms memory bobTerms) = _commitBothSameChainNative(1 ether);
 
-    vm.warp(AT_PROPOSER_RECLAIM);
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
+    // each party independently reclaims their own leg after their own release
+    vm.warp(AT_PROPOSER_RECLAIM);
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
+    vm.warp(B_RECLAIM + 500);
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
 
     assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Spent));
     assertEq(ALICE.balance - aliceBalBefore, 1 ether);
