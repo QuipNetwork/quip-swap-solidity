@@ -37,7 +37,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     // Only alice commits (Free state)
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     _warpToProposerReclaim();
 
@@ -47,7 +47,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     // Alice gets everything back
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_fromCommittedState() public {
@@ -55,12 +55,12 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     _warpToProposerReclaim();
 
     omnibus.reclaim(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_sameChainBothPartiesReclaim() public {
@@ -121,7 +121,7 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.reclaim(lock, alice, bob);
 
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_setsLockStateToSpent() public {
@@ -129,13 +129,13 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     _warpToProposerReclaim();
 
     omnibus.reclaim(lock, alice, bob);
 
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_takerReclaimsAfterOwnRelease() public {
@@ -155,7 +155,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     assertEq(mockERC20.balanceOf(BOB) - bobERC20Before, DEFAULT_AMOUNT);
     assertEq(ALICE.balance - aliceBefore, DEFAULT_AMOUNT);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_refundsERC721AndERC1155() public {
@@ -173,7 +173,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     assertEq(mockERC721.ownerOf(ERC721_ALICE_TOKEN), ALICE);
     assertEq(mockERC1155.balanceOf(BOB, ERC1155_TOKEN_ID) - bob1155Before, 100);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   // ============ Revert Cases ============
@@ -196,7 +196,7 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    _assertLockState(lock, LockState.Unused);
+    _assertSwapState(lock, alice, bob, LockState.Unused);
 
     _warpToProposerReclaim();
 
@@ -211,7 +211,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     // commit + settle via same-chain claim
     _settleSameChain(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
 
     _warpToProposerReclaim();
 
@@ -229,7 +229,7 @@ contract Omnibus_reclaim is OmnibusTest {
 
     _warpToProposerReclaim();
     omnibus.reclaim(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
 
     _warpToTakerReclaim();
     vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
@@ -244,7 +244,7 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     _warpToTakerReclaim();
     vm.expectRevert(IOmnibus.TermsNotPosted.selector);
@@ -258,9 +258,9 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    omnibus.setTermsHash(lock, omnibus.computeTermsHash(alice, bob));
-    omnibus.setLockState(lock, LockState.Committed);
-    omnibus.setPosted(lock, omnibus.computeTermsDigest(alice), true); // party side only
+    omnibus.setTermsHash(_swapIdFor(lock, alice, bob), omnibus.computeTermsHash(alice, bob));
+    omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
+    omnibus.setPosted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(alice), true); // party side only
 
     _warpToProposerReclaim();
     vm.expectRevert(IOmnibus.TermsNotPosted.selector);
@@ -273,8 +273,8 @@ contract Omnibus_reclaim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     bytes32 hash = omnibus.computeTermsHash(alice, bob);
-    omnibus.setLockState(lock, LockState.Committed);
-    omnibus.setTermsHash(lock, hash);
+    omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
+    omnibus.setTermsHash(_swapIdFor(lock, alice, bob), hash);
 
     vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     omnibus.reclaim(lock, alice, bob);
@@ -317,7 +317,7 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.warp(ALICE_RECLAIM_RELEASE);
 
     omnibus.reclaim(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_reclaim_revertsWhen_oneSecondBeforeRelease() public {
@@ -344,6 +344,6 @@ contract Omnibus_reclaim is OmnibusTest {
     vm.warp(t);
 
     omnibus.reclaim(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 }

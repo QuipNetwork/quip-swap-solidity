@@ -115,7 +115,7 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ALICE);
     omnibus.commit{value: _totalNativeForCommit(alice)}(lock, alice, bob, aliceAuth);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     // 2. Bob: his OWN real identity signs HIS commit digest (sides swap roles)
     bytes32 bobDigest = omnibus.commitDigest(lock, bob, alice, keccak256(bobKeyedSigner));
@@ -125,13 +125,13 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bob, alice, bobAuth);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     // 3. claim settles to terms-pinned recipients
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
   }
@@ -161,7 +161,7 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     // SHRINCS identity rides along as attribution only
     vm.warp(AT_PROPOSER_COMMIT);
     wallet.commitAs(omnibus, _totalNativeForCommit(alice), lock, alice, bob, AuthHelper.walletAuth(aliceKeyedSigner));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     // Bob completes keyed; the swap settles exactly like the all-keyed flow
     bytes32 bobDigest = omnibus.commitDigest(lock, bob, alice, keccak256(bobKeyedSigner));
@@ -170,12 +170,12 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bob, alice, bobAuth);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
   }

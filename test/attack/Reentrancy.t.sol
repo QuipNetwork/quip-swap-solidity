@@ -133,7 +133,7 @@ contract Omnibus_Reentrancy is Test {
     assertEq(address(attacker).balance, BOB_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, ALICE_AMOUNT);
     assertEq(address(omnibus).balance, 0);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 
   /// @notice a reclaim recipient that re-enters reclaim mid-refund fails on the spent lock
@@ -160,6 +160,6 @@ contract Omnibus_Reentrancy is Test {
     assertEq(address(attacker).balance, ALICE_AMOUNT);
     assertEq(BOB.balance - bobBalBefore, BOB_AMOUNT);
     assertEq(address(omnibus).balance, 0);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 }

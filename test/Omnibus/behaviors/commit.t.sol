@@ -43,7 +43,7 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: nativeAmount}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
     // First commit on same-chain transitions to Free
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function test_commit_sameChainSecondCommit() public {
@@ -52,11 +52,11 @@ contract Omnibus_commit is OmnibusTest {
 
     // First commit
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     // Second commit transitions to Committed (taker commits after proposer's deadline)
     _commitFor(BOB, lock, bob, alice);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   function test_commit_crossChainCommit() public {
@@ -66,7 +66,7 @@ contract Omnibus_commit is OmnibusTest {
     _commitFor(ALICE, lock, alice, bob);
 
     // Cross-chain commit transitions directly to Committed
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   function test_commit_withNativeCollateral() public {
@@ -171,7 +171,7 @@ contract Omnibus_commit is OmnibusTest {
     _commitFor(ALICE, lock, alice, bob);
 
     // the stored hash is the canonical (order-independent) digest of both sides
-    assertEq(omnibus.termsHash(lock), omnibus.computeTermsHash(alice, bob));
+    assertEq(omnibus.termsHash(_swapIdFor(lock, alice, bob)), omnibus.computeTermsHash(alice, bob));
   }
 
   function test_commit_marksSidePosted() public {
@@ -180,17 +180,17 @@ contract Omnibus_commit is OmnibusTest {
 
     bytes32 aliceDigest = omnibus.computeTermsDigest(alice);
     bytes32 bobDigest = omnibus.computeTermsDigest(bob);
-    assertFalse(omnibus.posted(lock, aliceDigest));
-    assertFalse(omnibus.posted(lock, bobDigest));
+    assertFalse(omnibus.posted(_swapIdFor(lock, alice, bob), aliceDigest));
+    assertFalse(omnibus.posted(_swapIdFor(lock, alice, bob), bobDigest));
 
     // each commit posts exactly the committing side
     _commitFor(ALICE, lock, alice, bob);
-    assertTrue(omnibus.posted(lock, aliceDigest));
-    assertFalse(omnibus.posted(lock, bobDigest));
+    assertTrue(omnibus.posted(_swapIdFor(lock, alice, bob), aliceDigest));
+    assertFalse(omnibus.posted(_swapIdFor(lock, alice, bob), bobDigest));
 
     _commitFor(BOB, lock, bob, alice);
-    assertTrue(omnibus.posted(lock, aliceDigest));
-    assertTrue(omnibus.posted(lock, bobDigest));
+    assertTrue(omnibus.posted(_swapIdFor(lock, alice, bob), aliceDigest));
+    assertTrue(omnibus.posted(_swapIdFor(lock, alice, bob), bobDigest));
   }
 
   function test_commit_anyoneCanCommitOwnSide() public {
@@ -200,7 +200,7 @@ contract Omnibus_commit is OmnibusTest {
 
     _commitFor(CHARLIE, lock, charlie, bob);
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, charlie, bob, LockState.Free);
   }
 
   // ============ State Transition Tests ============
@@ -209,9 +209,9 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    _assertLockState(lock, LockState.Unused);
+    _assertSwapState(lock, alice, bob, LockState.Unused);
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function test_commit_lockStateFreeToCommitted() public {
@@ -219,19 +219,19 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     _commitFor(BOB, lock, bob, alice);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   function test_commit_lockStateUnusedToCommitted() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobCrossChainTerms();
 
-    _assertLockState(lock, LockState.Unused);
+    _assertSwapState(lock, alice, bob, LockState.Unused);
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   // ============ Access Control ============
@@ -250,7 +250,7 @@ contract Omnibus_commit is OmnibusTest {
       lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), anySender)
     );
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   // ============ Revert Cases ============
@@ -329,7 +329,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), BOB));
 
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   function test_commit_revertsWhen_takerCommitsAtOwnDeadline() public {
@@ -387,7 +387,7 @@ contract Omnibus_commit is OmnibusTest {
 
     // Both parties commit
     _commitBothParties(lock, alice, bob);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     // Try to commit again (re-enter the proposer commit window)
     vm.warp(AT_PROPOSER_COMMIT);
@@ -404,7 +404,7 @@ contract Omnibus_commit is OmnibusTest {
 
     // Commit both and settle (same-chain claim by the proposer)
     _settleSameChain(lock, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
 
     // Try to commit again (re-enter the proposer commit window)
     vm.warp(AT_PROPOSER_COMMIT);
@@ -415,22 +415,30 @@ contract Omnibus_commit is OmnibusTest {
     );
   }
 
-  function test_commit_revertsWhen_termsMismatchOnSecondCommit() public {
+  function test_commit_mismatchedSecondCommit_opensIsolatedSwap() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     // First commit
     _commitFor(ALICE, lock, alice, bob);
 
-    // Second commit with different terms (still a valid taker schedule, different amount)
-    Terms memory bobModified = _bobTermsOn(block.chainid, _makeERC20Assets(DEFAULT_AMOUNT + 1 ether));
+    // Second commit with different terms (still a valid taker schedule, different amount):
+    // state is swap-scoped, so the mismatched pairing cannot join (or corrupt) the first
+    // swap — it lands in its own isolated swap
+    Terms memory bobModified = _bobTermsOn(block.chainid, _makeERC20Assets(DEFAULT_AMOUNT - 1));
 
     vm.warp(AT_TAKER_COMMIT);
-    vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(BOB);
     omnibus.commit{value: _totalNativeForCommit(bobModified)}(
       lock, bobModified, alice, AuthHelper.keyedAuth(address(verifierA), BOB)
     );
+
+    // the original swap is untouched: still Free, only alice's side posted
+    _assertSwapState(lock, alice, bob, LockState.Free);
+    assertFalse(omnibus.posted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(bob)));
+    // the mismatched pairing is tracked entirely under its own swap id
+    _assertSwapState(lock, alice, bobModified, LockState.Free);
+    assertTrue(omnibus.posted(_swapIdFor(lock, alice, bobModified), omnibus.computeTermsDigest(bobModified)));
   }
 
   function test_commit_revertsWhen_repostingSameSide() public {
@@ -440,7 +448,7 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     vm.warp(AT_PROPOSER_COMMIT); // still inside the proposer commit window
     vm.expectRevert(IOmnibus.TermsAlreadyPosted.selector);
@@ -567,7 +575,7 @@ contract Omnibus_commit is OmnibusTest {
 
     // Both native assets and fee should be received
     assertEq(address(omnibus).balance - omnibusBalanceBefore, nativeAmount + fee);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function test_commit_revertsWhen_feeNotIncluded() public {
@@ -611,7 +619,7 @@ contract Omnibus_commit is OmnibusTest {
 
     _commitFor(ALICE, lock, alice, bob);
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function test_commit_withMaxFee() public {
@@ -627,7 +635,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: nativeAmount + maxFee}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function test_commit_incrementsAccruedFees() public {
@@ -678,7 +686,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: amount}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function testFuzz_commit_acceptsAnyTimeInProposerWindow(uint256 t) public {
@@ -694,7 +702,7 @@ contract Omnibus_commit is OmnibusTest {
       lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
     );
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   function testFuzz_commit_acceptsAnyTimeInTakerWindow(uint256 t) public {
@@ -710,7 +718,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(BOB);
     omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), BOB));
 
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
   }
 
   // ============ Commit authorization: wiring + digest binding ============
@@ -809,7 +817,7 @@ contract Omnibus_commit is OmnibusTest {
   function test_commit_keyed_succeeds() public {
     // no mock needed: the one-function VerifierMock accepts everything
     _commitAliceSideAs(ALICE, AuthHelper.auth(aliceSigner));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, _aliceTerms(), _bobTerms(), LockState.Free);
   }
 
   function test_commit_keyed_succeedsOnExactDigest() public {
@@ -820,7 +828,7 @@ contract Omnibus_commit is OmnibusTest {
     _mockVerifierAcceptsOnly(bytes('alice-key'), mirror, bytes('envelope'));
 
     _commitAliceSideAs(ALICE, CommitAuth({signer: aliceSigner, signature: bytes('envelope')}));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, _aliceTerms(), _bobTerms(), LockState.Free);
   }
 
   function test_commit_keyed_revertsWhen_digestNotAccepted() public {
@@ -859,7 +867,7 @@ contract Omnibus_commit is OmnibusTest {
     // Alice's keyed identity endorses; CHARLIE submits and FUNDS (sender pays,
     // identity authorizes)
     _commitAliceSideAs(CHARLIE, AuthHelper.auth(aliceSigner));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, _aliceTerms(), _bobTerms(), LockState.Free);
   }
 
   // ============ Digest exactness: tampered context is rejected ============
@@ -946,7 +954,7 @@ contract Omnibus_commit is OmnibusTest {
   function test_commit_wallet_succeeds() public {
     _registerWallet(ALICE);
     _commitAliceSideAs(ALICE, AuthHelper.walletAuth(aliceSigner));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, _aliceTerms(), _bobTerms(), LockState.Free);
   }
 
   function test_commit_wallet_revertsWhen_senderNotRegistered() public {
@@ -973,7 +981,7 @@ contract Omnibus_commit is OmnibusTest {
     _registerWallet(ALICE);
     CommitAuth memory auth = AuthHelper.walletAuth(aliceSigner);
     _commitAliceSideAs(ALICE, auth);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, _aliceTerms(), _bobTerms(), LockState.Free);
 
     _expectCommitAliceSideRevert(ALICE, auth, abi.encodePacked(IOmnibus.TermsAlreadyPosted.selector));
   }
@@ -998,7 +1006,7 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     uint256 charlieErc20Before = mockERC20.balanceOf(CHARLIE);
     uint256 bobErc20Before = mockERC20.balanceOf(BOB);
@@ -1007,7 +1015,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(CHARLIE);
     omnibus.commit{value: 0}(lock, bob, alice, AuthHelper.keyedAuth(address(verifierA), CHARLIE));
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     // the SENDER funded the leg; the side's named party paid nothing
     assertEq(charlieErc20Before - mockERC20.balanceOf(CHARLIE), DEFAULT_AMOUNT);
@@ -1018,7 +1026,7 @@ contract Omnibus_commit is OmnibusTest {
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
   }
@@ -1038,7 +1046,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.prank(relayer);
     omnibus.commit{value: required}(lock, alice, bob, AuthHelper.auth(aliceSigner));
 
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
     assertEq(relayer.balance, 0); // relayer paid everything
     assertEq(omnibus.accruedFees(), fee);
   }

@@ -79,4 +79,9 @@ contract OmnibusHarness is Omnibus {
   function exposed_generateLock(bytes32 secret) external pure returns (bytes32) {
     return _generateLock(secret);
   }
+
+  /// @notice exposes _swapId
+  function exposed_swapId(bytes32 lock, bytes32 canonicalDigest) external pure returns (bytes32) {
+    return _swapId(lock, canonicalDigest);
+  }
 }

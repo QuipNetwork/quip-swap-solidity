@@ -120,21 +120,31 @@ interface IOmnibus {
   /// @param recipient the address that received the reclaim
   event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
 
-  /// @notice returns the state of a lock
-  /// @param lock the hashlock identifier
+  /// @notice returns the state of a swap
+  /// @dev state is keyed by swap id, not by bare lock: swapId =
+  /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), where
+  /// canonicalTermsDigest is TermsLib.digestTermsCanonically over the pairing.
+  /// binding the key to the negotiated terms means an unrelated pairing reusing
+  /// an observed lock occupies its own slot and cannot block or alter another
+  /// swap's state
+  /// @param swapId the swap identifier
   /// @return state the lock state
-  function lockState(bytes32 lock) external view returns (LockState state);
+  function lockState(bytes32 swapId) external view returns (LockState state);
 
-  /// @notice returns the terms hash for a lock
-  /// @param lock the hashlock identifier
-  /// @return canonicalDigest the canonical terms hash
-  function termsHash(bytes32 lock) external view returns (bytes32 canonicalDigest);
+  /// @notice returns the canonical terms digest recorded for a swap
+  /// @dev keyed by swap id (see lockState); nonzero iff the pairing has been
+  /// committed on this chain, and then always equal to the digest the swap id
+  /// itself was derived from
+  /// @param swapId the swap identifier
+  /// @return canonicalDigest the canonical hash of the swap's term pairing
+  function termsHash(bytes32 swapId) external view returns (bytes32 canonicalDigest);
 
-  /// @notice returns whether a side was posted for a lock
-  /// @param lock the hashlock identifier
-  /// @param termsDigest the side's terms digest
-  /// @return isPosted whether that side has been posted
-  function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
+  /// @notice returns whether a side was posted for a swap
+  /// @dev keyed by swap id (see lockState)
+  /// @param swapId the swap identifier
+  /// @param termsDigest the digest of the side's terms
+  /// @return isPosted whether that side has been committed
+  function posted(bytes32 swapId, bytes32 termsDigest) external view returns (bool isPosted);
 
   /// @notice returns whether an ERC-7913 verifier is active for the keyed route
   /// @param verifier the verifier address
@@ -159,6 +169,18 @@ interface IOmnibus {
   /// baked immutably at construction (the factory proxy address is permanent)
   /// @return factory the wallet factory registry
   function WALLET_FACTORY() external view returns (IWalletFactory factory);
+
+  /// @notice computes the swap id binding a lock to a term pairing
+  /// @dev the key all swap state (lockState, termsHash, posted) is stored under:
+  /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), with
+  /// canonicalTermsDigest = TermsLib.digestTermsCanonically over the pairing —
+  /// so the result is independent of which side is passed as `party` vs
+  /// `counterparty`
+  /// @param lock the hashlock identifier
+  /// @param party the first party's terms
+  /// @param counterparty the second party's terms
+  /// @return id the swap identifier
+  function swapId(bytes32 lock, Terms calldata party, Terms calldata counterparty) external pure returns (bytes32 id);
 
   /// @notice computes the digest a committer's identity must sign
   /// @dev pure function of caller-known data; the SDK computes it locally and

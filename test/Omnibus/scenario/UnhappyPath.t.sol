@@ -47,7 +47,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.expectRevert(TermsLib.WindowViolated.selector);
     omnibus.claim(SECRET, aliceTerms, bobTerms);
 
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Committed);
   }
 
   // ============ Scenario 8: Claim Fails Before Proposer Claim Window ============
@@ -64,7 +64,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.expectRevert(TermsLib.WindowViolated.selector);
     omnibus.claim(SECRET, aliceTerms, bobTerms);
 
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Committed);
   }
 
   // ============ Scenario 9: Reclaim Succeeds At Exact Release ============
@@ -85,14 +85,14 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Spent);
     assertEq(ALICE.balance - aliceBalBefore, assetAmount);
     assertEq(BOB.balance - bobBalBefore, assetAmount);
   }
 
   // ============ Scenario 10: Second Commit With Mismatched Terms ============
 
-  function test_scenario_secondCommitMismatchedTerms_reverts() public {
+  function test_scenario_secondCommitMismatchedTerms_opensIsolatedSwap() public {
     uint256 assetAmount = 1 ether;
     Terms memory aliceTerms = _aliceNative(assetAmount);
     Terms memory bobTerms = _bobNative(assetAmount);
@@ -102,17 +102,29 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.prank(ALICE);
     omnibus.commit{value: assetAmount}(lock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifierA), ALICE));
 
-    // Bob commits with DIFFERENT terms (1.5 ETH instead of 1 ETH) in the taker window
+    // Bob commits with DIFFERENT terms (1.5 ETH instead of 1 ETH) in the taker window:
+    // state is swap-scoped, so the mismatched pairing cannot join (or corrupt) Alice's
+    // swap — it opens its own isolated swap instead
     Terms memory mismatchedBobTerms = _bobNative(1.5 ether);
 
     vm.warp(AT_TAKER_COMMIT);
-    vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(BOB);
     omnibus.commit{value: 1.5 ether}(
       lock, mismatchedBobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB)
     );
 
-    _assertLockState(lock, LockState.Free);
+    // Alice's swap is untouched, still awaiting HER pairing's taker leg
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Free);
+    // the mismatched pairing sits in its own half-committed swap
+    _assertSwapState(lock, aliceTerms, mismatchedBobTerms, LockState.Free);
+
+    // Bob's self-inflicted escrow is recoverable from Free after his own release
+    _warpToTakerReclaim();
+    uint256 bobBalBefore = BOB.balance;
+    vm.prank(BOB);
+    omnibus.reclaim(lock, mismatchedBobTerms, aliceTerms);
+    _assertSwapState(lock, aliceTerms, mismatchedBobTerms, LockState.Spent);
+    assertEq(BOB.balance - bobBalBefore, 1.5 ether);
   }
 
   // ============ Scenario 11: Commit After Lock Already Spent ============
@@ -126,7 +138,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     _commitBoth(aliceTerms, bobTerms, assetAmount);
     _warpToProposerClaim();
     omnibus.claim(SECRET, aliceTerms, bobTerms);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Spent);
 
     // Re-enter the proposer commit window and try to commit the spent lock again
     vm.warp(AT_PROPOSER_COMMIT);
@@ -149,7 +161,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
 
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Committed);
   }
 
   // ============ Scenario 13: Taker Commits First (Dead-End Swap) ============
@@ -167,7 +179,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.warp(AT_TAKER_COMMIT);
     vm.prank(BOB);
     omnibus.commit{value: assetAmount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifierA), BOB));
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Free);
 
     // the proposer can no longer commit: her window [0, ALICE_COMMIT_DEADLINE) has elapsed
     vm.expectRevert(TermsLib.WindowViolated.selector);
@@ -185,7 +197,7 @@ contract Omnibus_UnhappyPath is OmnibusTest {
     vm.prank(BOB);
     omnibus.reclaim(lock, bobTerms, aliceTerms);
 
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, aliceTerms, bobTerms, LockState.Spent);
     assertEq(BOB.balance - bobBalBefore, assetAmount);
   }
 }

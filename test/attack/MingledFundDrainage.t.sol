@@ -130,7 +130,7 @@ contract Omnibus_MingledFundDrainage is Test {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
     omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, cheap, expensive))), uint8(LockState.Free));
 
     // after the expensive side's reclaim release, reclaim with roles flipped: the never-posted
     // expensive side as `party`. payout is gated on `posted`.
@@ -157,7 +157,7 @@ contract Omnibus_MingledFundDrainage is Test {
     vm.warp(AT_PROPOSER_COMMIT);
     vm.prank(ATTACKER);
     omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, cheap, expensive))), uint8(LockState.Free));
 
     // re-posting the SAME cheap side would drive Free -> Committed, which claim treats as
     // "both sides posted"; the guard rejects the second post
@@ -166,7 +166,7 @@ contract Omnibus_MingledFundDrainage is Test {
     omnibus.commit{value: CHEAP_NATIVE}(lock, cheap, expensive, AuthHelper.keyedAuth(address(verifier), ATTACKER));
 
     // never reached the drainable Committed state; pool intact
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, cheap, expensive))), uint8(LockState.Free));
     assertEq(usdc.balanceOf(address(omnibus)), POOLED_USDC);
     assertEq(usdc.balanceOf(ATTACKER), 0);
   }
