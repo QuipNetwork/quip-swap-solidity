@@ -19,6 +19,14 @@
  * revert (exact-or-revert protects the secret) and `reclaim` pay a clamped
  * remainder; positive rebases strand the yield in the contract. Escrow the
  * non-rebasing wrapper instead (wstETH, not stETH).
+ *
+ * Dishonest-transfer caveat: deposits are reconciled but payouts are not, so a
+ * token whose transfer behavior is address-dependent or dishonest (honest at
+ * deposit, then delivering nothing or over-debiting the pool on payout) is also
+ * UNSUPPORTED. Vet the counterparty's asset contract before committing — the
+ * protocol guarantees atomicity, not that the counter-leg is well-behaved — and
+ * note this is unenforceable on-chain for cross-chain swaps (legs settle
+ * independently): you trust the counter-leg's value.
  */
 import type {Address, PublicClient, WalletClient} from 'viem'
 import {QuipSwapError, wrapContractError} from './errors.js'

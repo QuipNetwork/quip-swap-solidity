@@ -229,6 +229,18 @@ interface IOmnibus {
   /// the contract with no recovery path, and a token that blocks transfers can
   /// freeze every asset escrowed in the same terms. Escrow the non-rebasing
   /// wrapper instead (e.g. wstETH, not stETH)
+  ///
+  /// Deposits are reconciled but PAYOUTS are not: claim and reclaim trust that a
+  /// successful transfer moved exactly the declared amount. A token whose transfer
+  /// behavior is address-dependent or otherwise dishonest — honest at deposit, then
+  /// returning success while delivering nothing (or over-debiting this contract) on
+  /// the way out — is UNSUPPORTED. A party can only be harmed by an asset they
+  /// AGREED to receive as the counter-leg, so vet the counterparty's asset contract
+  /// before committing; the protocol guarantees atomicity, not that the counter-leg
+  /// is well-behaved. This cannot be enforced on-chain for cross-chain swaps: the
+  /// legs settle independently on separate chains, so there is no atomic point at
+  /// which under-delivery of one leg can undo receipt of the other — you trust the
+  /// counter-leg's value
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
