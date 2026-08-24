@@ -25,6 +25,7 @@ sdk/                  TypeScript SDK (Bun + Viem + Vitest) — see sdk/README.md
 - **Funding model:** in every route the transaction SENDER funds the committed leg + fee; the identity only authorizes. "Relayed" means the sender pays.
 - `claim` (settlement, reveals the secret) and `reclaim` (post-deadline recovery) are unchanged and identity-free — claim is secret-gated, reclaim recipients are terms-pinned.
 - All timing windows are half-open `[lower, upper)`.
+- **Token compatibility (fund-loss warning):** escrow accounting assumes balances change only via transfers. Fee-on-transfer / deflationary / rounding-lossy tokens (stETH's 1–2 wei corner) are rejected at commit by exact-receipt reconciliation. Balance-mutable tokens (rebasing, slashable, admin-burnable) and transfer-blockable tokens (blacklisting, pausable) are **unsupported** — escrow the non-rebasing wrapper instead (wstETH, not stETH). If a token shrinks the pooled escrow in place anyway: `claim` stays exact-or-revert (a shortfall aborts the trade into reclaims rather than revealing the secret for less than was priced), and `reclaim` clamps fungible payouts to the held balance so no lock can freeze forever — first reclaimer out is paid in full, the last gets the remainder. Positive rebases strand the accrued yield in the contract; there is no sweep. Partial-fill claims via a per-asset `minReceived` floor in the terms digest are a deliberate non-feature while these tokens are unsupported.
 
 ## Smart contracts (Foundry)
 

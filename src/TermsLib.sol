@@ -277,6 +277,30 @@ library TermsLib {
     }
   }
 
+  /// @notice transfers all assets from this contract to `to`, clamping fungible
+  /// amounts to the balance actually held
+  /// @dev escape hatch for balance-mutable tokens (rebasing/slashable): if the pooled
+  /// escrow was externally reduced below the declared amount, transferring the declared
+  /// amount would revert forever and permanently freeze every asset in the terms. Used
+  /// by reclaim only; claim must stay exact-or-revert so a shortfall can never buy the
+  /// secret at a discount. Native and ERC721 are never clamped: a specific NFT is either
+  /// held or the transfer should revert, and the native pool cannot shrink in place.
+  /// Loss allocation across swaps pooled in the same token is first-come-first-served:
+  /// earlier reclaims are paid in full and the last is paid the remainder.
+  /// @param terms the terms containing assets to transfer
+  /// @param to the address to transfer to
+  function transferAssetsClamped(Terms calldata terms, address to) internal {
+    uint256 length = terms.assets.length;
+    for (uint256 i; i < length; ++i) {
+      Asset memory asset = terms.assets[i];
+      if (asset.assetType == AssetType.ERC20 || asset.assetType == AssetType.ERC1155) {
+        uint256 held = heldBalance(asset, address(this));
+        if (held < asset.amount) asset.amount = held;
+      }
+      transferAsset(asset, address(this), to);
+    }
+  }
+
   /// @notice calculates total native amount from terms
   /// @param terms the party's terms
   /// @return total the total native amount required

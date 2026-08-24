@@ -278,7 +278,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       // return everything to counterparty's recipient
       // counterparty's side must have been posted for this lock
       _enforcePosted(swapId, counterparty.digestTerms());
-      counterparty.transferAssets(address(this), counterparty.reclaimRecipient);
+      counterparty.transferAssetsClamped(counterparty.reclaimRecipient);
 
       emit Reclaimed(msg.sender, lock, counterparty.reclaimRecipient);
     }
@@ -289,7 +289,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     }
 
     // return everything to party's recipient
-    party.transferAssets(address(this), party.reclaimRecipient);
+    party.transferAssetsClamped(party.reclaimRecipient);
 
     emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
   }

@@ -206,6 +206,17 @@ interface IOmnibus {
   /// verifier; with an empty auth.signature msg.sender must be a wallet deployed
   /// by the quip WalletFactory (see CommitAuth — on that route the identity is
   /// attribution only, not a proven endorsement)
+  ///
+  /// TOKEN COMPATIBILITY / FUND-LOSS WARNING: escrow accounting assumes balances
+  /// change only via transfers. Fee-on-transfer, deflationary, and rounding-lossy
+  /// tokens (e.g. stETH's 1-2 wei transfer corner) are rejected at commit by
+  /// exact-receipt reconciliation (UnexpectedAmountReceived). Balance-mutable
+  /// tokens — rebasing, slashable, admin-burnable — and transfer-blockable tokens
+  /// (blacklisting, pausable) are UNSUPPORTED: a post-commit balance reduction
+  /// makes claim revert (see claim), positive rebases strand the accrued yield in
+  /// the contract with no recovery path, and a token that blocks transfers can
+  /// freeze every asset escrowed in the same terms. Escrow the non-rebasing
+  /// wrapper instead (e.g. wstETH, not stETH)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
@@ -242,12 +253,30 @@ interface IOmnibus {
   /// redeem window on the proposer's chain, and take the proposer's leg while giving
   /// nothing — the contract cannot verify the remote leg, so this is enforceable only
   /// off-chain when the terms are negotiated
+  ///
+  /// claim payouts are exact-or-revert: it never pays less than the declared
+  /// amounts, so revealing the secret is conditional on receiving exactly what was
+  /// priced (a clamped claim would let a balance-mutable token's shortfall buy the
+  /// secret at a discount). If the pooled escrow was externally reduced (negative
+  /// rebase, slash), claim reverts and the swap falls through to reclaim, which
+  /// clamps — the trade aborts, but no funds are frozen
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function claim(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
 
   /// @notice reclaims assets after deadline expires
+  /// @dev permissionless: assets go to the terms' reclaimRecipient regardless of
+  /// caller. Valid from party.reclaimRelease onward; when the counterparty leg is
+  /// also local and the lock is Committed, one call returns BOTH legs.
+  ///
+  /// reclaim is the terminal backstop — nothing exists after it — so it must never
+  /// brick: fungible (ERC20/ERC1155) payouts are clamped to the balance actually
+  /// held (TermsLib.transferAssetsClamped). With well-behaved tokens the clamp
+  /// never engages; it only matters when a balance-mutable token shrank the pooled
+  /// escrow in place. Loss allocation across swaps pooled in the same token is
+  /// first-come-first-served: earlier reclaims are paid the declared amounts in
+  /// full and the last is paid the remainder
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

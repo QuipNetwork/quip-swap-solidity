@@ -373,6 +373,12 @@ export interface OmnibusClient {
    * `reclaimRecipient` addresses and emits two `Reclaimed` events. Reclaim
    * is also valid from `Free` (a half-committed same-chain swap).
    *
+   * Shortfall note: fungible payouts are clamped on-chain to the balance the
+   * contract actually holds, so reclaim cannot be permanently blocked by a
+   * balance-mutable (rebasing/slashable) token shrinking the pooled escrow.
+   * With well-behaved tokens the clamp never engages. See the token
+   * compatibility warning in `Omnibus.commit` — such tokens are unsupported.
+   *
    * Preflight: terms valid and paired; `party.chainId` matches the
    * connected chain; current timestamp `>= party.reclaimRelease`; unless
    * disabled, the lock is `Free` or `Committed` and its

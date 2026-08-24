@@ -12,6 +12,13 @@
  * than the declared amount (fee-on-transfer, deflationary), commit reverts
  * with `UnexpectedAmountReceived` EVEN IF the approval plan is fully
  * satisfied. A satisfied plan is necessary, not sufficient.
+ *
+ * Balance-mutable tokens (rebasing, slashable, admin-burnable) and
+ * transfer-blockable tokens (blacklisting, pausable) are UNSUPPORTED even
+ * though they pass commit: a post-commit balance reduction makes `claim`
+ * revert (exact-or-revert protects the secret) and `reclaim` pay a clamped
+ * remainder; positive rebases strand the yield in the contract. Escrow the
+ * non-rebasing wrapper instead (wstETH, not stETH).
  */
 import type {Address, PublicClient, WalletClient} from 'viem'
 import {QuipSwapError, wrapContractError} from './errors.js'
