@@ -17,7 +17,7 @@ contract Omnibus_claim is OmnibusTest {
 
   // ============ Success Cases ============
 
-  function test_claim_sameChainSwap() public {
+  function test_claim_sameChain_settlesBothLegs() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
@@ -85,14 +85,15 @@ contract Omnibus_claim is OmnibusTest {
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), aliceRecipientERC20Before);
   }
 
-  function test_claim_sameChainTakerClaim_settlesBothLegs() public {
-    // the "should never occur" same-chain taker claim (taker somehow holds the secret and
-    // claims first, in the taker window): both legs must still settle to the right recipients
+  function test_claim_sameChain_settlesBothLegs_regardlessOfTermsParameterOrderingInCalldata() public {
+    // argument order carries no meaning same-chain: a claim with the terms role-swapped
+    // (taker's terms as `party`) inside the proposer window must settle both legs to the
+    // right recipients, exactly like the conventional order
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _warpToTakerClaim();
+    _warpToProposerClaim();
 
     uint256 bobRecipientBefore = BOB_RECIPIENT.balance;
     uint256 aliceRecipientBefore = mockERC20.balanceOf(ALICE_RECIPIENT);
@@ -407,6 +408,90 @@ contract Omnibus_claim is OmnibusTest {
     _assertLockState(lock, LockState.Spent);
   }
 
+  // ============ Role-Swapped Same-Chain Window Cases (audit regression) ============
+
+  /// @dev audit finding: same-chain, the claim window is selected from which struct the
+  ///      caller passes as `party` vs `counterparty`. Submitting the identical terms
+  ///      role-swapped used to flip the check into the cross-chain taker window
+  ///      [ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE), extending the secret holder's
+  ///      effective window to the union [BOB_COMMIT_DEADLINE, ALICE_RECLAIM_RELEASE).
+  ///      Roles are now derived from the terms' deadlines, so both argument orders must
+  ///      enforce the one proposer window [BOB_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE).
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_inTakerWindow() public {
+    // the original exploit transaction: role-swapped claim inside what used to be the
+    // reachable taker window must now revert
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    _warpToTakerClaim();
+
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_atProposerClaimUpperBound() public {
+    // upper bound (ALICE_CLAIM_DEADLINE) is exclusive for the swapped order too; this exact
+    // timestamp used to be the start of the extended window
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_CLAIM_DEADLINE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_justBeforeProposerReclaimRelease() public {
+    // the far end of the previously-exploitable range: one second before the proposer could
+    // reclaim, the role-swapped claim must still be closed
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_RECLAIM_RELEASE - 1);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_beforeWindow() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // proposer window opens at BOB_COMMIT_DEADLINE regardless of argument order
+    vm.warp(BOB_COMMIT_DEADLINE - 1);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_succeedsAtProposerClaimLowerBound() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // lower bound (BOB_COMMIT_DEADLINE) is inclusive for the swapped order too
+    vm.warp(BOB_COMMIT_DEADLINE);
+    omnibus.claim(SECRET, bob, alice);
+    _assertLockState(lock, LockState.Spent);
+  }
+
+  function test_claim_sameChainRoleSwapped_succeedsJustBeforeUpperBound() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_CLAIM_DEADLINE - 1);
+    omnibus.claim(SECRET, bob, alice);
+    _assertLockState(lock, LockState.Spent);
+  }
+
   // ============ Fuzz Tests ============
 
   function testFuzz_claim_withValidSecret(bytes32 secret) public {
@@ -421,5 +506,34 @@ contract Omnibus_claim is OmnibusTest {
     _warpToProposerClaim();
     omnibus.claim(secret, alice, bob);
     _assertLockState(_lock, LockState.Spent);
+  }
+
+  function testFuzz_claim_sameChain_windowIsArgumentOrderIndependent(uint256 timestamp) public {
+    // at every timestamp, both argument orders must agree on accept/reject, and both must
+    // accept exactly inside the proposer window [BOB_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE)
+    timestamp = bound(timestamp, 0, BOB_RECLAIM_RELEASE + 1000);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    vm.warp(timestamp);
+
+    uint256 snapshot = vm.snapshotState();
+    bool conventionalOrderSucceeds;
+    try omnibus.claim(SECRET, alice, bob) {
+      conventionalOrderSucceeds = true;
+    } catch {}
+
+    vm.revertToState(snapshot);
+    bool swappedOrderSucceeds;
+    try omnibus.claim(SECRET, bob, alice) {
+      swappedOrderSucceeds = true;
+    } catch {}
+
+    assertEq(conventionalOrderSucceeds, swappedOrderSucceeds);
+
+    bool inProposerWindow = timestamp >= BOB_COMMIT_DEADLINE && timestamp < ALICE_CLAIM_DEADLINE;
+    assertEq(conventionalOrderSucceeds, inProposerWindow);
   }
 }

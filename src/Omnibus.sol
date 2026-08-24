@@ -179,47 +179,52 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // verify terms and state
     _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
 
-    // counterparty terms _MUST_ be on same chainId
-    // so that the party may receive the assets
-    // party terms _MAY_ be on same chainId
+    // counterparty terms _MUST_ be on this chainId so that the party may
+    // receive the assets; party terms _MAY_ be on this chainId
     counterparty.enforceChainId(block.chainid);
 
-    // validate claim is happening in the correct window
-    if (TermsLib.proposedByParty(party, counterparty)) {
-      // party is the proposer which means the counterparty must have committed
-      // commitment check in a cross-chain swap is not on-chain enforceable so
-      // only deadlines are checked
-      // in same-chain swap, the lock checks for commitment of counterparty
-      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp);
+    // terms validated at outset, so roles derive from terms themselves via deadline
+    // ordering
+    bool isPartyProposer = TermsLib.proposedByParty(party, counterparty);
+    Terms calldata proposer = isPartyProposer ? party : counterparty;
+    Terms calldata taker = isPartyProposer ? counterparty : party;
+
+
+    // proposer (secret holder) always claims first
+    // proposer's claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
+    //
+    // same-chain swaps are settled atomically for both parties, therefore 
+    // the only window to consider is the proposers claim window
+    //
+    // cross-chain has a proposer claim leg and taker claim leg
+    // proposer claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
+    // taker claim window is: [proposer.claimDeadline, proposer.reclaimRelease]
+    // 
+    // NB: taker's chainId is the chain on which proposer claims
+    if (taker.chainId == block.chainid) {
+      TermsLib.enforceWithin(taker.commitmentDeadline, proposer.claimDeadline, block.timestamp);
     } else {
-      // counterparty is proposer which means the counterparty has revealed the secret
-      // claim only after the claim deadline of the counterparty
-      // NB: this path is only reachable in the following:
-      // 1. during a cross-chain swap because otherwise the lock state is spent
-      //    since claiming occurs for both parties in this call
-      // 2. during a same-chain swap if the taker has the secret and calls
-      //    claim first - should never occur
-      //
-      // in both cases, the claim settles correctly
-      TermsLib.enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp);
+      TermsLib.enforceWithin(proposer.claimDeadline, proposer.reclaimRelease, block.timestamp);
     }
 
+    // spend lock
     LockState current = lockState[lock];
     _enforceCommittedLock(current);
 
-    // mark as spent
+    // marking as spent before any transfer blocks reentrant claims
     _advanceLockTo(lock, current, LockState.Spent);
 
-    // counterParty's side must have been posted for this lock
+    // counterparty's side must have been posted for this lock
     _enforcePosted(lock, counterparty.digestTerms());
 
     // counterparty's assets to party's recipient
     counterparty.transferAssets(address(this), party.recipient);
 
-    // if counterparty is on chainId, prevent double-spend by executing on counterparty
-    // terms
-    if (party.chainId == block.chainid) {
-      // counterparty's side must have been posted for this lock
+    bool isSameChain = party.chainId == counterparty.chainId;
+
+    // prevent double-spend by atomic claim & spend lock for both sides
+    if (isSameChain) {
+      // party's side must have been posted for this lock
       _enforcePosted(lock, party.digestTerms());
       // party's assets to counterparty's recipient
       party.transferAssets(address(this), counterparty.recipient);
