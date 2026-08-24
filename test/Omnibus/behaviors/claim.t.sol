@@ -78,11 +78,23 @@ contract Omnibus_claim is OmnibusTest {
     uint256 aliceRecipientERC20Before = mockERC20.balanceOf(ALICE_RECIPIENT);
 
     // party = bob (off-chain), counterparty = alice (on-chain); alice's assets -> bob.recipient
+    vm.recordLogs();
     omnibus.claim(SECRET, bob, alice);
 
     assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, DEFAULT_AMOUNT);
     // bob is cross-chain, so no transfer of bob's assets on this chain
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), aliceRecipientERC20Before);
+
+    // exactly ONE Claim leg is emitted cross-chain, naming the single paid recipient
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    uint256 claimCount = 0;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IOmnibus.Claim.selector) {
+        assertEq(address(uint160(uint256(logs[i].topics[2]))), bob.recipient);
+        claimCount++;
+      }
+    }
+    assertEq(claimCount, 1, 'cross-chain claim emits exactly one Claim leg');
   }
 
   function test_claim_sameChain_settlesBothLegs_regardlessOfTermsParameterOrderingInCalldata() public {
@@ -120,19 +132,26 @@ contract Omnibus_claim is OmnibusTest {
     omnibus.claim(SECRET, alice, bob);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
-    bool foundEvent = false;
+    // same-chain claim pays BOTH recipients, so it emits one Claim per leg naming the
+    // terms-pinned recipient (NOT the caller CHARLIE); lock and recipient are indexed
+    uint256 claimCount = 0;
+    bool sawPartyRecipient = false;
+    bool sawCounterpartyRecipient = false;
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IOmnibus.Claim.selector) {
         assertEq(logs[i].topics[1], lock);
-        // recipient (non-indexed) then secret (non-indexed) live in data
-        (address emittedRecipient, bytes32 emittedSecret) = abi.decode(logs[i].data, (address, bytes32));
-        assertEq(emittedRecipient, CHARLIE); // the claimer, not a terms recipient
+        address emittedRecipient = address(uint160(uint256(logs[i].topics[2])));
+        bytes32 emittedSecret = abi.decode(logs[i].data, (bytes32));
         assertEq(emittedSecret, SECRET);
-        foundEvent = true;
-        break;
+        assertTrue(emittedRecipient != CHARLIE, 'recipient must be a terms recipient, not the caller');
+        if (emittedRecipient == alice.recipient) sawPartyRecipient = true;
+        if (emittedRecipient == bob.recipient) sawCounterpartyRecipient = true;
+        claimCount++;
       }
     }
-    assertTrue(foundEvent, 'Claim event not emitted');
+    assertEq(claimCount, 2, 'same-chain claim emits one Claim per leg');
+    assertTrue(sawPartyRecipient, 'party.recipient leg not emitted');
+    assertTrue(sawCounterpartyRecipient, 'counterparty.recipient leg not emitted');
   }
 
   function test_claim_anyoneCanClaim() public {

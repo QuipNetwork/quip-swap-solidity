@@ -111,11 +111,14 @@ interface IOmnibus {
   /// @param sender the address that submitted and FUNDED the commit
   event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
 
-  /// @notice emitted when a swap is executed
-  /// @param recipient address receiving assets of claim
+  /// @notice emitted once for each leg paid out by claim: once for a cross-chain claim
+  ///   (the counterparty's assets to party.recipient), twice for a same-chain claim
+  ///   (additionally the party's assets to counterparty.recipient). The submitting
+  ///   caller is intentionally not a field — it is the transaction sender.
   /// @param lock the hashlock identifier
+  /// @param recipient the terms-pinned address that received this leg's assets
   /// @param secret the preimage that unlocked the swap
-  event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
+  event Claim(bytes32 indexed lock, address indexed recipient, bytes32 secret);
 
   /// @notice emitted when a party reclaims their assets
   /// @param caller address which initiated reclaim

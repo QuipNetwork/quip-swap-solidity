@@ -230,6 +230,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     // counterparty's assets to party's recipient
     counterparty.transferAssets(address(this), party.recipient);
+    emit Claim(lock, party.recipient, secret);
 
     bool isSameChain = party.chainId == counterparty.chainId;
 
@@ -240,9 +241,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       _enforcePosted(swapId, party.digestTerms());
       // party's assets to counterparty's recipient
       party.transferAssets(address(this), counterparty.recipient);
+      emit Claim(lock, counterparty.recipient, secret);
     }
-
-    emit Claim(msg.sender, lock, secret);
   }
 
   /// @inheritdoc IOmnibus
