@@ -11,7 +11,8 @@
  */
 import {describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {concat, keccak256} from 'viem'
+import {digestTerms, digestTermsCanonically, generateLock, swapId, swapIdFromDigest} from '../../src/hashing.js'
 import type {Terms} from '../../src/types.js'
 import {aliceTerms, BOB, bobTerms, CHAIN_A, FOUNDRY_LOCK, FOUNDRY_SECRET, withOverrides} from '../helpers/fixtures.js'
 
@@ -106,5 +107,33 @@ describe('generateLock', () => {
   it('rejects invalid hex', () => {
     expect(() => generateLock(`0x${'zz'.repeat(32)}` as never)).toThrow('32-byte')
     expect(() => generateLock('not hex at all' as never)).toThrow('32-byte')
+  })
+})
+
+describe('swapId', () => {
+  const alice = aliceTerms(CHAIN_A)
+  const bob = bobTerms(CHAIN_A)
+
+  it('is keccak256 of the packed lock + canonical digest (Omnibus._swapId transcription)', () => {
+    const expected = keccak256(concat([FOUNDRY_LOCK, digestTermsCanonically(alice, bob)]))
+    expect(swapId(FOUNDRY_LOCK, alice, bob)).toBe(expected)
+  })
+
+  it('equals swapIdFromDigest over the canonical digest', () => {
+    expect(swapId(FOUNDRY_LOCK, alice, bob)).toBe(swapIdFromDigest(FOUNDRY_LOCK, digestTermsCanonically(alice, bob)))
+  })
+
+  it('is order-independent across sides', () => {
+    expect(swapId(FOUNDRY_LOCK, alice, bob)).toBe(swapId(FOUNDRY_LOCK, bob, alice))
+  })
+
+  it('changes with the lock', () => {
+    const otherLock = generateLock(`0x${'11'.repeat(32)}`)
+    expect(swapId(otherLock, alice, bob)).not.toBe(swapId(FOUNDRY_LOCK, alice, bob))
+  })
+
+  it('changes when either side changes — an unrelated pairing occupies its own slot', () => {
+    const dust = withOverrides(bob, {assets: [nativeAsset(1n)]})
+    expect(swapId(FOUNDRY_LOCK, alice, dust)).not.toBe(swapId(FOUNDRY_LOCK, alice, bob))
   })
 })

@@ -27,7 +27,7 @@ import {QuipSwapError, wrapContractError} from './errors.js'
 import {prepareTx} from './gas.js'
 import type {TxOptions} from './gas.js'
 import {omnibusAbi} from './generated/omnibusAbi.js'
-import {assertHex32, digestTerms, digestTermsCanonically, generateLock} from './hashing.js'
+import {assertHex32, digestTerms, digestTermsCanonically, generateLock, swapId} from './hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
 import {waitForOmnibusReceipt} from './receipts.js'
 import type {OmnibusReceipt, WaitOptions} from './receipts.js'
@@ -89,9 +89,9 @@ export interface ClaimArgs {
   readonly counterparty: Terms
   /**
    * When `true` (default), preflight additionally verifies on-chain state
-   * in one parallel read batch: `lockState(lock)` must be `Committed`
+   * in one parallel read batch: `lockState(swapId)` must be `Committed`
    * (`INVALID_LOCK_STATE` otherwise, with the actual state and likely
-   * cause), `termsHash(lock)` must equal the canonical digest, and the
+   * cause), `termsHash(swapId)` must equal the canonical digest, and the
    * counterparty's side must be `posted` (`TERMS_NOT_ON_CHAIN` otherwise).
    * Costs three extra parallel reads; disable only if you have just
    * verified the state yourself — estimation still catches everything.
@@ -109,9 +109,9 @@ export interface ReclaimArgs {
   readonly counterparty: Terms
   /**
    * When `true` (default), preflight additionally verifies on-chain state
-   * in one parallel read batch: `lockState(lock)` must be `Free` or
+   * in one parallel read batch: `lockState(swapId)` must be `Free` or
    * `Committed` (`INVALID_LOCK_STATE` otherwise — `Unused` was never
-   * committed, `Spent` was already settled), `termsHash(lock)` must equal
+   * committed, `Spent` was already settled), `termsHash(swapId)` must equal
    * the canonical digest, and the party's side must be `posted`
    * (`TERMS_NOT_ON_CHAIN` otherwise).
    */
@@ -202,12 +202,12 @@ export interface OmnibusClient {
   getCommitmentFee(): Promise<bigint>
   /** Reads the withdrawable accrued fees in wei. @see Omnibus.accruedFees */
   getAccruedFees(): Promise<bigint>
-  /** Reads a lock's lifecycle state. @see Omnibus.lockState */
-  getLockState(lock: Hex32): Promise<LockState>
-  /** Reads the canonical terms digest bound to a lock (zero if none). @see Omnibus.termsHash */
-  getTermsHash(lock: Hex32): Promise<Hex32>
-  /** Reads whether a side's terms digest was posted for a lock. @see Omnibus.posted */
-  getPosted(lock: Hex32, termsDigest: Hex32): Promise<boolean>
+  /** Reads a swap's lifecycle state; key with {@link swapId}. @see Omnibus.lockState */
+  getLockState(swapIdKey: Hex32): Promise<LockState>
+  /** Reads the canonical terms digest recorded for a swap (zero if none); key with {@link swapId}. @see Omnibus.termsHash */
+  getTermsHash(swapIdKey: Hex32): Promise<Hex32>
+  /** Reads whether a side's terms digest was posted for a swap; key with {@link swapId}. @see Omnibus.posted */
+  getPosted(swapIdKey: Hex32, termsDigest: Hex32): Promise<boolean>
   /** Reads the current owner. @see Ownable.owner */
   getOwner(): Promise<Address>
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
@@ -530,13 +530,13 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * sequential extra latency.
    */
   async function readLockBatch(
-    lock: Hex32,
+    swapIdKey: Hex32,
     postedDigest: Hex32,
   ): Promise<{state: LockState; onChainTermsHash: Hex32; isPosted: boolean}> {
     const [state, onChainTermsHash, isPosted] = await Promise.all([
-      read<number>('lockState', [lock]),
-      read<Hex32>('termsHash', [lock]),
-      read<boolean>('posted', [lock, postedDigest]),
+      read<number>('lockState', [swapIdKey]),
+      read<Hex32>('termsHash', [swapIdKey]),
+      read<boolean>('posted', [swapIdKey, postedDigest]),
     ])
     return {state: state as LockState, onChainTermsHash, isPosted}
   }
@@ -588,11 +588,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * violated invariant instead of leaving a confusing revert.)
    */
   async function verifyClaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
-    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(counterparty))
+    const swapIdKey = swapId(lock, party, counterparty)
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(swapIdKey, digestTerms(counterparty))
     if (state !== LockState.Committed) {
       const cause =
         state === LockState.Unused
-          ? 'nothing has been committed under this lock on this chain — either the swap was never committed here, or the supplied secret is not the preimage for this swap (a wrong secret derives a different lock)'
+          ? 'nothing has been committed under this swap id on this chain — the swap was never committed here, the supplied secret is not the preimage for this swap (a wrong secret derives a different lock), or the supplied terms differ from the committed pairing (different terms derive a different swap id)'
           : state === LockState.Free
             ? 'the counterparty has not committed yet (same-chain swap is half-committed)'
             : 'the lock was already claimed or reclaimed'
@@ -615,7 +616,8 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * (party) side must be posted.
    */
   async function verifyReclaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
-    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+    const swapIdKey = swapId(lock, party, counterparty)
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(swapIdKey, digestTerms(party))
     if (state !== LockState.Free && state !== LockState.Committed) {
       const cause =
         state === LockState.Unused
@@ -642,9 +644,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * TermsAlreadyPosted()`); `Unused` needs nothing extra.
    */
   async function verifyCommitState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+    const swapIdKey = swapId(lock, party, counterparty)
     // all three reads go out in one parallel batch; the Free-only checks
     // simply ignore the extra values for other states
-    const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+    const {state, onChainTermsHash, isPosted} = await readLockBatch(swapIdKey, digestTerms(party))
     if (state === LockState.Spent || state === LockState.Committed) {
       throw new QuipSwapError({
         code: 'INVALID_LOCK_STATE',
@@ -771,19 +774,19 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     getMaxFee: () => read('MAX_FEE'),
     getCommitmentFee: () => read('commitmentFee'),
     getAccruedFees: () => read('accruedFees'),
-    getLockState: async (lock: Hex32) => {
-      assertHex32(lock, 'lock')
-      const state = await read<number>('lockState', [lock])
+    getLockState: async (swapIdKey: Hex32) => {
+      assertHex32(swapIdKey, 'swapId')
+      const state = await read<number>('lockState', [swapIdKey])
       return state as LockState
     },
-    getTermsHash: (lock: Hex32) => {
-      assertHex32(lock, 'lock')
-      return read('termsHash', [lock])
+    getTermsHash: (swapIdKey: Hex32) => {
+      assertHex32(swapIdKey, 'swapId')
+      return read('termsHash', [swapIdKey])
     },
-    getPosted: (lock: Hex32, termsDigest: Hex32) => {
-      assertHex32(lock, 'lock')
+    getPosted: (swapIdKey: Hex32, termsDigest: Hex32) => {
+      assertHex32(swapIdKey, 'swapId')
       assertHex32(termsDigest, 'termsDigest')
-      return read('posted', [lock, termsDigest])
+      return read('posted', [swapIdKey, termsDigest])
     },
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),

@@ -13,7 +13,7 @@
  * Run via `bun run test:integration` (the runner starts Anvil, builds
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import {createWalletClient, getAddress, http, keccak256, toHex} from 'viem'
+import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex} from 'viem'
 import type {Address, Hash} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -25,7 +25,7 @@ import {COMMIT_DIGEST_TAG, buildKeyedSigner, computeCommitDigest, computeDomainS
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {digestTerms, digestTermsCanonically, generateLock, swapId} from '../../src/hashing.js'
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import type {OmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
@@ -218,7 +218,7 @@ beforeAll(async () => {
 
 describe('read methods', () => {
   it('reads VERSION, MAX_FEE, commitmentFee, accruedFees', async () => {
-    expect(await aliceClient.getVersion()).toBe(0n)
+    expect(await aliceClient.getVersion()).toBe(stringToHex('QUIP:Omnibus:sdk-test', {size: 32}))
     expect(await aliceClient.getMaxFee()).toBe(10n ** 16n) // 0.01 ether
     expect(await aliceClient.getCommitmentFee()).toBe(0n)
     expect(await aliceClient.getAccruedFees()).toBe(0n)
@@ -242,7 +242,8 @@ describe('read methods', () => {
     await expectContractError(charlieClient.admin.setVerifierActivity(verifier, true), 'OwnableUnauthorizedAccount')
   })
 
-  it('reads lockState, termsHash, posted for an unused lock', async () => {
+  it('reads lockState, termsHash, posted for an unused swap id', async () => {
+    // any never-written key reads as empty state; a bare lock is one such key
     const {lock} = nextSecret()
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused)
     expect(await aliceClient.getTermsHash(lock)).toBe(`0x${'00'.repeat(32)}`)
@@ -291,7 +292,7 @@ describe('commit authorization', () => {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('MALFORMED_SIGNER')
     }
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused) // nothing reached the chain
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused) // nothing reached the chain
 
     // the contract enforces the same rule (raw call bypassing preflight)
     await expectContractError(
@@ -357,7 +358,7 @@ describe('commit authorization', () => {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
     }
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused) // nothing reached the chain
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused) // nothing reached the chain
 
     // the contract enforces the same rule (raw call bypassing preflight):
     // membership is checked against the actual sender, regardless of the
@@ -393,7 +394,7 @@ describe('commit authorization', () => {
     const hash = await charlieClient.claim({secret, party: alice, counterparty: bob})
     const result = await confirmReceipt(hash)
     expect(result.claims).toHaveLength(1)
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
   })
 })
 
@@ -416,7 +417,7 @@ describe('native commits and fee handling', () => {
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
 
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Free)
     expect(await aliceClient.getAccruedFees()).toBe(accruedBefore + FEE)
 
     // reset the fee so later tests run with fee 0
@@ -685,15 +686,15 @@ describe('same-chain happy path', () => {
     await ctx.warpTo(s.anchors.proposerCommit)
     const commitA = await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
-    expect(await aliceClient.getTermsHash(lock)).toBe(digestTermsCanonically(alice, bob))
-    expect(await aliceClient.getPosted(lock, digestTerms(alice))).toBe(true)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Free)
+    expect(await aliceClient.getTermsHash(swapId(lock, alice, bob))).toBe(digestTermsCanonically(alice, bob))
+    expect(await aliceClient.getPosted(swapId(lock, alice, bob), digestTerms(alice))).toBe(true)
 
     // taker MUST wait for the proposer's deadline (the window only opens there)
     await ctx.warpTo(s.anchors.takerCommit)
     const commitB = await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
 
     // Commitment events decode back to the EXACT terms that were committed
     const fromA = commitA.commitments[0]
@@ -713,7 +714,7 @@ describe('same-chain happy path', () => {
     const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
     const claim = await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     // bob's tokens -> alice's recipient; alice's native -> bob's recipient
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
     expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
@@ -787,7 +788,7 @@ describe('keyed ERC-7913 commit authorization', () => {
         auth: {signer: keyedSigner, signature: '0x656e76656c6f7065'},
       }),
     )
-    expect(await charlieClient.getLockState(lock)).toBe(LockState.Free)
+    expect(await charlieClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Free)
     expect(commitA.commitments[0]?.signer.toLowerCase()).toBe(keyedSigner.toLowerCase())
     expect(commitA.commitments[0]?.sender.toLowerCase()).toBe(ctx.charlie.address.toLowerCase())
 
@@ -796,14 +797,14 @@ describe('keyed ERC-7913 commit authorization', () => {
     await confirmReceipt(
       await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}),
     )
-    expect(await charlieClient.getLockState(lock)).toBe(LockState.Committed)
+    expect(await charlieClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
 
     // (c) the claim settles both legs — balance deltas prove it
     await ctx.warpTo(s.anchors.proposerClaim)
     const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
     const bobRecipientNativeBefore = await ctx.publicClient.getBalance({address: BOB_RECIPIENT})
     await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}))
-    expect(await charlieClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await charlieClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
     expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
   })
@@ -864,14 +865,14 @@ describe('reclaim flows', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Free)
 
     await ctx.warpTo(s.anchors.proposerReclaim)
     const reclaimBalanceBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
     const result = await confirmReceipt(// reclaim is PERMISSIONLESS: charlie (unregistered) reclaims for alice's leg
       await charlieClient.reclaim({lock, party: alice, counterparty: bob}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     // assets go to the reclaimRecipient, NOT the committer
     expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(reclaimBalanceBefore + NATIVE)
     expect(result.reclaims).toHaveLength(1)
@@ -897,7 +898,7 @@ describe('reclaim flows', () => {
     const bobReclaimBefore = await erc20Balance(fixture.erc20, BOB_RECLAIM)
     const result = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     expect(result.reclaims).toHaveLength(2)
     expect(await erc20Balance(fixture.erc20, BOB_RECLAIM)).toBe(bobReclaimBefore + TOKENS)
     expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
@@ -1008,27 +1009,28 @@ describe('invalid operations', () => {
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'TermsAlreadyPosted')
   })
 
-  it('a second commit with DIFFERENT terms: TERMS_NOT_ON_CHAIN preflight; contract TermsMismatch with the flag off', async () => {
+  it('a second commit with DIFFERENT terms opens an ISOLATED swap; the original is untouched', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
     await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
-    // bob commits against MUTATED alice terms — canonical digest differs
+    // bob commits against MUTATED alice terms — the canonical digest differs, so the
+    // pairing derives a DIFFERENT swap id: it cannot join (or corrupt) alice's swap
+    // and lands in its own isolated one instead of reverting
     const mutatedAlice: Terms = {...alice, recipient: BOB_RECIPIENT}
     await ctx.warpTo(s.anchors.takerCommit)
-    try {
-      await bobClient.commit({lock, party: bob, counterparty: mutatedAlice, auth: keyedAuth(ctx.bob.address)})
-      expect.unreachable()
-    } catch (error) {
-      expect((error as QuipSwapError).code).toBe('TERMS_NOT_ON_CHAIN')
-    }
-    await expectContractError(
-      bobClient.commit({lock, party: bob, counterparty: mutatedAlice, verifyOnChainState: false, auth: keyedAuth(ctx.bob.address)}),
-      'TermsMismatch',
+    await confirmReceipt(
+      await bobClient.commit({lock, party: bob, counterparty: mutatedAlice, auth: keyedAuth(ctx.bob.address)}),
     )
-    await expectContractError(rawCommit(ctx.bob, lock, bob, mutatedAlice, 0n), 'TermsMismatch')
+
+    // alice's swap: still Free, awaiting HER pairing's taker leg
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Free)
+    expect(await aliceClient.getPosted(swapId(lock, alice, bob), digestTerms(bob))).toBe(false)
+    // the mismatched pairing: tracked entirely under its own swap id
+    expect(await aliceClient.getLockState(swapId(lock, bob, mutatedAlice))).toBe(LockState.Free)
+    expect(await aliceClient.getPosted(swapId(lock, bob, mutatedAlice), digestTerms(bob))).toBe(true)
   })
 
   it('reclaim on an Unused lock: INVALID_LOCK_STATE preflight; contract TermsMismatch with the flag off', async () => {
@@ -1255,7 +1257,7 @@ describe('gas and balance preflight', () => {
       expect((error as QuipSwapError).details).toMatchObject({balance: 0n, required: NATIVE})
     }
     // nothing reached the chain
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
   })
 
   it('a gas-unfunded claimer fails at SEND time as BALANCE_TOO_LOW (value-less calls have no preflight)', async () => {
@@ -1290,13 +1292,13 @@ describe('gas and balance preflight', () => {
     } catch (error) {
       expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
     }
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
 
     // a funded (still permissionless, unregistered) claimer settles the swap
     // end-to-end through the same prepare+write flow
     await confirmReceipt(await charlieClient.claim({secret, party: alice, counterparty: bob}),
     )
-    expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
   })
 
   it('explicit TxOptions are honored on a real transaction (gas verbatim, pinned fees)', async () => {

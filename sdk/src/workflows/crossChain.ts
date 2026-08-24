@@ -34,7 +34,7 @@
  */
 import {DEFAULT_CROSS_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
 import {QuipSwapError} from '../errors.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../hashing.js'
+import {digestTerms, digestTermsCanonically, generateLock, swapId} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
 import {LockState} from '../types.js'
 import type {Hex32, Terms} from '../types.js'
@@ -223,10 +223,11 @@ export async function verifyRemoteCommitment(
   proposerTerms: Terms,
   takerTerms: Terms,
 ): Promise<RemoteCommitmentStatus> {
+  const id = swapId(lock, proposerTerms, takerTerms)
   const [state, proposerPosted, onChainTermsHash] = await Promise.all([
-    remoteClient.getLockState(lock),
-    remoteClient.getPosted(lock, digestTerms(proposerTerms)),
-    remoteClient.getTermsHash(lock),
+    remoteClient.getLockState(id),
+    remoteClient.getPosted(id, digestTerms(proposerTerms)),
+    remoteClient.getTermsHash(id),
   ])
   const termsHashMatches =
     onChainTermsHash.toLowerCase() === digestTermsCanonically(proposerTerms, takerTerms).toLowerCase()

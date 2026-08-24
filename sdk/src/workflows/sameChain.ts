@@ -37,7 +37,7 @@
  * on their own terms before acting — it is per-party self-protection.
  */
 import {DEFAULT_SAME_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
-import {digestTerms, digestTermsCanonically} from '../hashing.js'
+import {digestTerms, digestTermsCanonically, swapIdFromDigest} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
 import {LockState} from '../types.js'
 import type {Hex32, Terms} from '../types.js'
@@ -226,10 +226,11 @@ export async function getSameChainSwapStatus(
   lock: Hex32,
   plan: SameChainSwapPlan,
 ): Promise<SameChainSwapStatusReport> {
+  const id = swapIdFromDigest(lock, plan.canonicalDigest)
   const [state, proposerPosted, takerPosted, block] = await Promise.all([
-    client.getLockState(lock),
-    client.getPosted(lock, plan.proposerDigest),
-    client.getPosted(lock, plan.takerDigest),
+    client.getLockState(id),
+    client.getPosted(id, plan.proposerDigest),
+    client.getPosted(id, plan.takerDigest),
     client.publicClient.getBlock(),
   ])
   const timestamp = block.timestamp

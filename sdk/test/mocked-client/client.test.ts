@@ -24,7 +24,7 @@ import {buildKeyedSigner} from '../../src/index.js'
 import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {digestTerms, digestTermsCanonically, generateLock, swapId, swapIdFromDigest} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
 import {getSameChainSwapStatus, planSameChainSwap} from '../../src/workflows/sameChain.js'
 import {claimLog} from '../helpers/logs.js'
@@ -68,6 +68,8 @@ interface CallLog {
   readonly estimations: Record<string, unknown>[]
   /** Captured writeContract requests. */
   readonly writes: Record<string, unknown>[]
+  /** Captured keys of lockState/termsHash/posted reads (the swap-scoped state). */
+  readonly stateReads: {functionName: string; key: unknown}[]
 }
 
 interface MockSetup {
@@ -105,7 +107,7 @@ function setup(
   } = options
   const termsHash = options.termsHash ?? digestTermsCanonically(alice, bob)
 
-  const log: CallLog = {sequence: [], estimations: [], writes: []}
+  const log: CallLog = {sequence: [], estimations: [], writes: [], stateReads: []}
 
   const publicClient = {
     getChainId: async () => Number(chainId),
@@ -117,8 +119,11 @@ function setup(
     // NOTE: no estimateFeesPerGas mock — prepareTx must never need fee data
     // (the balance preflight checks the bare call value only); an attempt to
     // call it fails loudly here
-    readContract: async (args: {address: Address; functionName: string}) => {
+    readContract: async (args: {address: Address; functionName: string; args?: readonly unknown[]}) => {
       log.sequence.push(`read:${args.functionName}`)
+      if (args.functionName === 'lockState' || args.functionName === 'termsHash' || args.functionName === 'posted') {
+        log.stateReads.push({functionName: args.functionName, key: args.args?.[0]})
+      }
       switch (args.functionName) {
         case 'verifierActive':
           return verifierIsActive
@@ -413,6 +418,12 @@ describe('claim orchestration', () => {
     expect(mocks.log.sequence).toContain('read:termsHash')
     expect(mocks.log.sequence).toContain('read:posted')
     expect(generateLock(FOUNDRY_SECRET)).toBe(FOUNDRY_LOCK)
+    // every swap-state read is keyed by the SWAP ID (lock + canonical digest), not the bare lock
+    const expectedKey = swapId(FOUNDRY_LOCK, alice, bob)
+    expect(mocks.log.stateReads).toHaveLength(3)
+    for (const stateRead of mocks.log.stateReads) {
+      expect(stateRead.key).toBe(expectedKey)
+    }
   })
 
   it.each([
@@ -510,6 +521,16 @@ describe('getSameChainSwapStatus (window-derived statuses)', () => {
     const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Committed})
     const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
     expect(report.status).toBe('reclaimable')
+  })
+
+  it('keys every state read by the swap id derived from the plan', async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Committed})
+    await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    const expectedKey = swapIdFromDigest(FOUNDRY_LOCK, plan.canonicalDigest)
+    expect(mocks.log.stateReads.length).toBeGreaterThan(0)
+    for (const stateRead of mocks.log.stateReads) {
+      expect(stateRead.key).toBe(expectedKey)
+    }
   })
 })
 

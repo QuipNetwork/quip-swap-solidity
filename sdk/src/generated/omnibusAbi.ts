@@ -587,7 +587,7 @@ export const omnibusAbi = [
     "name": "lockState",
     "inputs": [
       {
-        "name": "lock",
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -744,7 +744,7 @@ export const omnibusAbi = [
     "name": "posted",
     "inputs": [
       {
-        "name": "lock",
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -963,10 +963,157 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
-    "name": "termsHash",
+    "name": "swapId",
     "inputs": [
       {
         "name": "lock",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "party",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "counterparty",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "termsHash",
+    "inputs": [
+      {
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       }

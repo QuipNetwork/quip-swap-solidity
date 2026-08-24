@@ -46,14 +46,7 @@ export {
 export type {TimeWindow} from './windows.js'
 
 // hashing
-export {
-  digestTerms,
-  digestTermsCanonically,
-  generateLock,
-  assertHex32,
-  assetArrayAbiParameter,
-  termsAbiParameter,
-} from './hashing.js'
+export {assertHex32, assetArrayAbiParameter, digestTerms, digestTermsCanonically, generateLock, swapId, swapIdFromDigest, termsAbiParameter} from './hashing.js'
 
 // secrets
 export {generateSecret, secretToPair} from './secrets.js'
