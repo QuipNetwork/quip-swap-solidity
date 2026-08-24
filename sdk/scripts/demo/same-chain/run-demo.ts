@@ -20,7 +20,7 @@ const output = resolve(process.argv[2] ?? join(repoRoot, 'demo-artifacts', 'same
 console.log('[same-chain demo] Building Solidity artifacts')
 const build = spawnSync(
   'forge',
-  ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'],
+  ['build', '--root', repoRoot],
   {cwd: repoRoot, stdio: 'inherit'},
 )
 if (build.status !== 0) process.exit(build.status ?? 1)

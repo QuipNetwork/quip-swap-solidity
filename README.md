@@ -13,6 +13,7 @@ assets of value.
 Prerequisites: Foundry, Bun, and dependencies under `dependencies/`.
 
 ```sh
+make dependencies
 forge build
 forge test
 forge fmt --check

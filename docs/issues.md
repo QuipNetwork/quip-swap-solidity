@@ -17,28 +17,11 @@ implementation that performed PQ verification. An EOA or arbitrary contract
 named as the wallet principal may fabricate authorization evidence and bypass
 PQ commit authorization.
 
-Required: authenticate wallets through a pinned factory, registry,
+Required: authenticate wallets through a **pinned factory**, registry,
 implementation, or dedicated gateway, and test EOA and malicious-wallet
 masquerading.
 
 ## High
-
-### Timing-policy enforcement is a trusted-client assumption — open
-
-The current Solidity prototype intentionally omits a signed on-chain
-`timingPolicyId` and does not resolve route timing policy inside wrappers.
-Contracts enforce only structural deadline ordering and local-chain predicates;
-chain-pair support and directional final-claim safety margins are validated by
-client software before authorization and submission.
-
-Consequently, the contracts can accept structurally valid terms that a
-conforming client should reject as timing-unsafe. This is an intentional
-prototype simplification for gas efficiency, but it moves part of admissibility
-from the contracts into the trusted client.
-
-Required: document the split explicitly everywhere the prototype is described,
-define a clear client-side timing-safety predicate, and ensure every supported
-signing or submission path applies it before producing commit authorization.
 
 ### Verifier identity is not rechecked on every use — open
 
@@ -174,6 +157,24 @@ Required: impose contract or deployment-policy bounds and reject unsafe terms in
 all clients.
 
 ## Low
+
+### Timing-policy enforcement is a trusted-client assumption — open
+
+The current Solidity prototype intentionally omits a signed on-chain timing-policy
+identifier and does not resolve route timing policy inside wrappers.
+Contracts enforce only structural deadline ordering and local-chain predicates;
+chain-pair support and directional final-claim safety margins are validated by
+client software before authorization and submission.
+
+Consequently, the contracts can accept structurally valid terms that a
+conforming client should reject as timing-unsafe. **This is an intentional
+prototype simplification for gas efficiency, but it moves part of admissibility
+from the contracts into the trusted client.**
+
+Required: document the split explicitly everywhere the prototype is described,
+define a clear client-side timing-safety predicate, and ensure every supported
+signing or submission path applies it before producing commit authorization.
+
 
 ### Settlement validity is cached only implicitly — open proof refinement
 

@@ -312,7 +312,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
         "expiry": "4000000510",
         "status": "accepted",
-        "transactionHash": "0x1482211cff1c1e884782e2821131802d218b864c3adb5cbca3c1c892c09656df",
+        "transactionHash": "0x28cd62970a7129d2310733814fe2a518dddffe9baeda545bc3c00232fbaf397a",
         "errorName": null
       },
       {
@@ -328,7 +328,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
         "expiry": "4000000610",
         "status": "accepted",
-        "transactionHash": "0x11e2fef8b8b7d69cfb5f07ea5eb2916fd485491fc8eee1e07eb790a8c8dcf3a5",
+        "transactionHash": "0xbd1f9e1adc3ac7dc3eb96a7706b23423ca348282ff5065c4f292533eb0dbde4c",
         "errorName": null
       }
     ]
@@ -340,7 +340,7 @@
         "sequence": 1,
         "action": "alice-commit",
         "chainId": 31337,
-        "transactionHash": "0x1482211cff1c1e884782e2821131802d218b864c3adb5cbca3c1c892c09656df",
+        "transactionHash": "0x28cd62970a7129d2310733814fe2a518dddffe9baeda545bc3c00232fbaf397a",
         "blockNumber": "12",
         "progressionGate": "bob-secret-published",
         "before": {
@@ -408,15 +408,15 @@
             "logIndex": 0
           },
           {
-            "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
+            "source": "directAuthorization",
+            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
             "eventName": "AuthorizationNonceConsumed",
             "args": {
               "nonceKey": "0x857970bc865514bb914e8295debde58cc01924e453220b36fde8a691e85b7ac1",
               "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
               "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
             },
-            "logIndex": 2
+            "logIndex": 1
           },
           {
             "source": "crossChainWrapper",
@@ -446,7 +446,7 @@
         "sequence": 2,
         "action": "bob-commit",
         "chainId": 31338,
-        "transactionHash": "0x11e2fef8b8b7d69cfb5f07ea5eb2916fd485491fc8eee1e07eb790a8c8dcf3a5",
+        "transactionHash": "0xbd1f9e1adc3ac7dc3eb96a7706b23423ca348282ff5065c4f292533eb0dbde4c",
         "blockNumber": "12",
         "progressionGate": "bob-secret-accepted",
         "before": {
@@ -514,15 +514,15 @@
             "logIndex": 0
           },
           {
-            "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
+            "source": "directAuthorization",
+            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
             "eventName": "AuthorizationNonceConsumed",
             "args": {
               "nonceKey": "0x5c887e3bb8e0dfbc875a60b19a558354b49558d4edcba18aef415f7ea9fb635f",
               "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
               "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
             },
-            "logIndex": 2
+            "logIndex": 1
           },
           {
             "source": "crossChainWrapper",
@@ -542,7 +542,7 @@
         "sequence": 3,
         "action": "revealing-claim",
         "chainId": 31338,
-        "transactionHash": "0x9603f7c7199e68abe2218f48e833e175e3609d7ed93acbc86ebfe7ad2b09f1bf",
+        "transactionHash": "0x2170e142bc7f7c6c5efa2afe3aecc35fafe6f40a316e299336c36acdf8dd7ee1",
         "blockNumber": "13",
         "progressionGate": "not-applicable",
         "before": {
@@ -615,7 +615,7 @@
         "sequence": 4,
         "action": "final-claim",
         "chainId": 31337,
-        "transactionHash": "0x0eccadea4960bef5ca68b929ef15542436401ceb2ee3733baa5a2d83595ac95f",
+        "transactionHash": "0xfec0b63d651cf80f81ec7645b7b005ffd744ff8057ef0fb7fb76bcfad456961e",
         "blockNumber": "15",
         "progressionGate": "not-applicable",
         "before": {

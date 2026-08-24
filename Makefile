@@ -24,6 +24,10 @@ ANVIL_RPC_URL := http://127.0.0.1:8545
 # Development
 # ==============================================================================
 
+.PHONY: dependencies
+dependencies: ## Install pinned Solidity dependencies when absent
+	./script/install-dependencies.sh
+
 .PHONY: build
 build: ## Build contracts
 	forge build

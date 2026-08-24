@@ -42,16 +42,6 @@ exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 via_ir = true
 out = 'out-via-ir'
 
-[dependencies]
-forge-std = "1.14.0"
-solady = "0.1.26"
-"@openzeppelin-contracts" = "5.6.0-rc.1"
-# Temporary rev pin — hashsigs-solidity with the IERC7913TransientAttestation
-# registry (verifyAndAttest/wasVerified). Re-pin to the release tag once it
-# ships; keep the branch alive (or merge with a merge commit) until then — a
-# squash-merge + branch delete orphans this rev.
-"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "6f0fb103e026e19d056db8d5bf292f4a69e9935b" }
-
 [rpc_endpoints]
 base_sepolia = "${API_URL_BASE_SEPOLIA}"
 op_sepolia = "${API_URL_OP_SEPOLIA}"

@@ -8,7 +8,7 @@ import {runCrossChainRecoveryDemo, serializeCrossChainRecoveryArtifact} from './
 import {repoRoot, sdkRoot} from '../../shared/paths.js'
 const output = resolve(process.argv[2] ?? join(repoRoot, 'demo-artifacts', 'cross-chain-recovery-demo.json'))
 console.log('[recovery-demo] Building Solidity artifacts')
-const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})
+const build = spawnSync('forge', ['build', '--root', repoRoot], {cwd: repoRoot, stdio: 'inherit'})
 if (build.status !== 0) process.exit(build.status ?? 1)
 console.log('[recovery-demo] Starting local chains 31337 and 31338')
 const a = await startAnvil({chainId: 31_337})

@@ -15,7 +15,7 @@ tracker or remediation-status ledger.
 - The normative protocol design binds a timing-policy identifier into signed
   terms and treats route-specific final-claim safety margins as part of
   protocol-valid admission. The current Solidity prototype intentionally drifts
-  from that design for gas efficiency: terms omit `timingPolicyId`, wrappers do
+  from that design for gas efficiency: terms omit a signed timing-policy identifier, wrappers do
   not resolve or enforce route timing policy on-chain, and contracts validate
   only structural deadline ordering and local-chain predicates.
 - As a result, timing-policy compatibility is a trusted-client assumption in

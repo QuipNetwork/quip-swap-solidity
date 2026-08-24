@@ -116,7 +116,7 @@ export async function bootstrapConsoleLocal(args: {readonly profile: string; rea
   }
   const anvil = spawnSync('anvil', ['--version'], {stdio: 'ignore'})
   if (anvil.status !== 0) throw new Error('anvil is unavailable')
-  const build = spawnSync('forge', ['build', '--root', repoRoot, '--config-path', 'config/demo/foundry.toml'], {cwd: repoRoot, stdio: 'inherit'})
+  const build = spawnSync('forge', ['build', '--root', repoRoot], {cwd: repoRoot, stdio: 'inherit'})
   if (build.status !== 0) throw new Error('Solidity artifact build failed')
   const startedPids: number[] = []
   try {

@@ -14,8 +14,9 @@ bun --version
 cd sdk && bun install --frozen-lockfile && cd ..
 ```
 
-If `dependencies/` is absent, run `forge soldeer install` once. Demo builds use
-`config/demo/foundry.toml` to avoid Soldeer update checks.
+If `dependencies/` is absent, run
+`make dependencies` once. Dependency installation
+is explicit; ordinary Forge commands do not invoke Soldeer.
 
 ## Available demos
 
