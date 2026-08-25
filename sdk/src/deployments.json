@@ -4,8 +4,8 @@
     {
       "chainId": 8453,
       "deployed": true,
-      "omnibus": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
-      "version": "QUIP:Omnibus:v1.0.0-alpha.2",
+      "omnibus": "0x79C6c4ad3557BB8a5E472e9Cf81969E073FBdEf9",
+      "version": "QUIP:Omnibus:v1.0.0-beta.1",
       "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
     },
     {
