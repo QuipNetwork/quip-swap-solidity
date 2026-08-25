@@ -64,7 +64,7 @@ library Constants {
   ///      recovery path for a mistaken or unwanted deployment.
   ///
   /// @param versionLabel the deployment's version string, e.g.
-  ///        'QUIP:Omnibus:v1.0.0-beta.1'
+  ///        'QUIP:Omnibus:v1.0.0-beta.2'
   function saltEntropy(string memory versionLabel) internal pure returns (bytes11) {
     return bytes11(keccak256(bytes(versionLabel)));
   }
