@@ -92,6 +92,9 @@ interface IOmnibus {
   /// @notice thrown when a side attempts to reclaim its leg twice
   error AlreadyReclaimed();
 
+  /// @notice thrown by renounceOwnership: Omnibus has no ownerless mode
+  error RenounceDisabled();
+
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
   /// @param newFee the new fee

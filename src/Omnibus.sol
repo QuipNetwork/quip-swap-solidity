@@ -337,6 +337,16 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     emit FeesWithdrawn(to, amount);
   }
 
+  /// @notice renouncing ownership is permanently disabled
+  /// @dev overrides {Ownable-renounceOwnership} to always revert. Omnibus has no
+  /// ownerless mode: an owner of address(0) would permanently brick every
+  /// owner-only function (setCommitmentFee, setVerifierActivity, withdrawFees)
+  /// and strand any fees accrued up to that point, with no path left to move
+  /// them. Ownership can still be TRANSFERRED via the Ownable2Step two-step flow.
+  function renounceOwnership() public pure override {
+    revert RenounceDisabled();
+  }
+
   /// @notice the ONE digest code path — commit and the public commitDigest view both call this
   /// @dev raw tagged keccak (no EIP-712): every honest signer in this stack signs raw
   /// 32-byte digests. Binds the FULL context: which swap instance (lock), which side is
