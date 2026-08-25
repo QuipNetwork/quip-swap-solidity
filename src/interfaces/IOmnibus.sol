@@ -135,7 +135,6 @@ interface IOmnibus {
   /// @param recipient the address that received the reclaim
   event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
 
-
   /// @notice returns the state of a swap
   /// @dev state is keyed by swap id, not by bare lock: swapId =
   /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), where
@@ -334,7 +333,6 @@ interface IOmnibus {
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
-
 
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei

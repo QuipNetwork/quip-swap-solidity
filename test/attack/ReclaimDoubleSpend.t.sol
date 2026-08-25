@@ -288,10 +288,22 @@ contract Omnibus_ReclaimDoubleSpend is OmnibusTest {
     // swap 2: Caro(erc20) <-> Dave(erc20), a distinct lock -> distinct swap id
     bytes32 lock2 = omnibus.exposed_generateLock(keccak256('secret2'));
     Terms memory caro = _makeTerms(
-      block.chainid, CARO, CARO, ALICE_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE, _makeERC20Assets(100 ether)
+      block.chainid,
+      CARO,
+      CARO,
+      ALICE_COMMIT_DEADLINE,
+      ALICE_CLAIM_DEADLINE,
+      ALICE_RECLAIM_RELEASE,
+      _makeERC20Assets(100 ether)
     );
     Terms memory dave = _makeTerms(
-      block.chainid, DAVE, DAVE, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, _makeERC20Assets(100 ether)
+      block.chainid,
+      DAVE,
+      DAVE,
+      BOB_COMMIT_DEADLINE,
+      BOB_CLAIM_DEADLINE,
+      BOB_RECLAIM_RELEASE,
+      _makeERC20Assets(100 ether)
     );
     _commitBothParties(lock2, caro, dave);
 

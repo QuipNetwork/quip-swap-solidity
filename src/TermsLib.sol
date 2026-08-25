@@ -310,8 +310,7 @@ library TermsLib {
       // still slips through: that is the "malicious token is UNSUPPORTED — vet the counter-leg"
       // case documented on commit, not something an on-chain probe can settle.
       if (
-        asset.assetType == AssetType.ERC20
-          && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
+        asset.assetType == AssetType.ERC20 && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
       ) {
         revert AssetTypeMismatch();
       }
