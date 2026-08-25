@@ -94,6 +94,10 @@ library TermsLib {
   /// @notice thrown when a lifecycle deadline is zero
   error ZeroDeadline();
 
+  /// @notice thrown when reclaimRelease is type(uint256).max, which would make the reclaim
+  /// window [reclaimRelease, type(uint256).max) degenerate and revert on every reclaim
+  error InvalidReclaimRelease();
+
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
 
@@ -205,6 +209,9 @@ library TermsLib {
     if (!(terms.commitmentDeadline < terms.claimDeadline && terms.claimDeadline < terms.reclaimRelease)) {
       revert DisordedDeadlines();
     }
+    // reclaim's window is [reclaimRelease, type(uint256).max); a reclaimRelease of max makes it
+    // degenerate otherwise
+    if (terms.reclaimRelease == type(uint256).max) revert InvalidReclaimRelease();
     enforceNonZeroChainId(terms);
     validateAssets(terms);
   }
