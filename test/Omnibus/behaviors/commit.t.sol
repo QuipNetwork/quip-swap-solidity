@@ -314,6 +314,28 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: value}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
   }
 
+  /// @notice a counterparty (taker) leg carrying reclaimRelease == type(uint256).max is the
+  /// realistic finding scenario (the taker's is the last/largest deadline). validateTerms runs
+  /// on BOTH legs at commit, so the proposer's own commit reverts InvalidReclaimRelease and the
+  /// swap can never start — nobody can escrow into a leg whose reclaim would be permanently bricked
+  function test_commit_revertsWhen_counterpartyReclaimReleaseIsMax() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      BOB,
+      BOB_RECIPIENT,
+      BOB_COMMIT_DEADLINE,
+      BOB_CLAIM_DEADLINE,
+      type(uint256).max,
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.InvalidReclaimRelease.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
+  }
+
   function test_commit_revertsWhen_proposerCommitWindowElapsed() public {
     // freshness is enforced by the commit window, not validateTerms: committing at/after the
     // proposer's commitment deadline falls outside [0, commitmentDeadline) and reverts

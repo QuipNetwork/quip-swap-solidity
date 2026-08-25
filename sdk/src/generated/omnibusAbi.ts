@@ -1508,6 +1508,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidReclaimRelease",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "MalformedSigner",
     "inputs": []
   },

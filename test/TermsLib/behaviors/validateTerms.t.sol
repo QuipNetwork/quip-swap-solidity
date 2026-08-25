@@ -216,6 +216,41 @@ contract TermsLib_validateTerms is TermsLibTest {
     harness.exposed_validateTerms(terms);
   }
 
+  /// @notice reclaimRelease == type(uint256).max makes the reclaim window
+  /// [reclaimRelease, type(uint256).max) degenerate (lower == upper), so it is rejected
+  /// at commit — otherwise reclaim would revert InvalidRange forever, stranding the leg
+  function test_validateTerms_revertsWhen_reclaimReleaseIsMax() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      type(uint256).max, // degenerate reclaim window
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.InvalidReclaimRelease.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  /// @notice only the exact max is rejected: a near-max reclaimRelease is well-formed and
+  /// ACCEPTED. Its (un)reachability is an SDK/vetting concern, not the contract's — this
+  /// is the well-formedness vs reasonableness boundary
+  function test_validateTerms_succeedsWhen_reclaimReleaseNearMax() public view {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      type(uint256).max - 1, // well-formed window [max-1, max); accepted
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    harness.exposed_validateTerms(terms); // does not revert
+  }
+
   // ============ Deadline Non-Zero ============
   // validateTerms only sanity-checks deadlines as non-zero; per-action freshness is enforced
   // by the commit/claim/reclaim windows, NOT here (see validateTerms NatSpec)

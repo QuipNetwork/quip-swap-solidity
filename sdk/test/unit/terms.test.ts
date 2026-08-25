@@ -74,6 +74,18 @@ describe('validateTerms', () => {
     ).toBe('DISORDERED_DEADLINES')
   })
 
+  it('rejects reclaimRelease == 2^256-1 (degenerate reclaim window)', () => {
+    expect(codeOf(() => validateTerms(withOverrides(valid, {reclaimRelease: (1n << 256n) - 1n})))).toBe(
+      'INVALID_RECLAIM_RELEASE',
+    )
+  })
+
+  it('accepts a near-max reclaimRelease (only the exact max is rejected)', () => {
+    // well-formed window [2^256-2, 2^256-1); its (un)reachability is a reasonableness
+    // concern, not well-formedness, so validateTerms accepts it — matching the contract
+    expect(() => validateTerms(withOverrides(valid, {reclaimRelease: (1n << 256n) - 2n}))).not.toThrow()
+  })
+
   it('rejects empty assets (contract: EmptyAssets)', () => {
     expect(codeOf(() => validateTerms(withOverrides(valid, {assets: []})))).toBe('EMPTY_ASSETS')
   })

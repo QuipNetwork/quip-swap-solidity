@@ -30,6 +30,8 @@ export type QuipSwapErrorCode =
   | 'ZERO_ADDRESS_RECIPIENT'
   | 'ZERO_DEADLINE'
   | 'DISORDERED_DEADLINES'
+  // reclaimRelease == 2^256-1 makes reclaim's window degenerate (TermsLib.InvalidReclaimRelease)
+  | 'INVALID_RECLAIM_RELEASE'
   | 'ZERO_CHAIN_ID'
   // pairing / window validation (mirrors TermsLib.validateTermPairing / enforceWithin)
   | 'INVALID_RANGE'

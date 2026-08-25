@@ -351,6 +351,28 @@ describe('commit authorization', () => {
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 0n), 'AssetTypeMismatch')
   })
 
+  it('a leg with reclaimRelease == 2^256-1 rejects INVALID_RECLAIM_RELEASE in preflight; the contract agrees (InvalidReclaimRelease)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    // the taker (counterparty) leg carries the degenerate reclaimRelease; validateTerms runs
+    // on both legs, so the proposer's own commit is rejected before the swap can start
+    const bob = {...s.bobTerms([erc20Asset(fixture.erc20, 10n)]), reclaimRelease: (1n << 256n) - 1n}
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('INVALID_RECLAIM_RELEASE')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract rejects it too (raw call bypassing preflight)
+    await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'InvalidReclaimRelease')
+  })
+
   it('a keyed signer whose verifier was never activated reverts on-chain (VerifierNotActive)', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()

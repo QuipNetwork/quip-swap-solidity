@@ -19,6 +19,13 @@ import type {Asset, Terms} from './types.js'
  */
 export const MAX_ASSETS_PER_SIDE = 20
 
+/**
+ * `2^256 - 1` — the forbidden `reclaimRelease`. It is the reclaim window's synthetic upper
+ * bound, so a `reclaimRelease` equal to it degenerates the window. Defined locally (not
+ * imported from windows.ts) to avoid a terms↔windows import cycle.
+ */
+const MAX_UINT256 = (1n << 256n) - 1n
+
 /** Input shape for {@link createTerms}; identical to {@link Terms}. */
 export interface CreateTermsArgs {
   /** Chain id where this side's assets live; must be `> 0n`. */
@@ -151,6 +158,19 @@ export function validateTerms(terms: Terms): void {
         claimDeadline: terms.claimDeadline,
         reclaimRelease: terms.reclaimRelease,
       },
+    })
+  }
+  // reclaim's window is [reclaimRelease, 2^256-1); the max value makes it degenerate and
+  // reclaim would revert forever. Only the exact max is rejected — a near-max reclaimRelease
+  // is well-formed and the SDK's schedule validator is where unreachably-distant values are
+  // caught (reasonableness, not well-formedness).
+  if (terms.reclaimRelease === MAX_UINT256) {
+    throw new QuipSwapError({
+      code: 'INVALID_RECLAIM_RELEASE',
+      message:
+        'reclaimRelease must be strictly below 2^256-1, which would make the reclaim window degenerate ' +
+        '(contract: InvalidReclaimRelease)',
+      details: {reclaimRelease: terms.reclaimRelease},
     })
   }
   if (terms.chainId <= 0n) {
