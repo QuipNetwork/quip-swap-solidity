@@ -44,7 +44,7 @@ library DeployConstants {
   /// @dev Bumping this abandons the current mainnet address and deploys a new
   ///      Omnibus at a new one. There is no migration path for state; treat a
   ///      bump as a new deployment, not an upgrade.
-  string internal constant MAINNET_LABEL = 'QUIP:Omnibus:v1.0.0-alpha.2';
+  string internal constant MAINNET_LABEL = 'QUIP:Omnibus:v1.0.0-beta.1';
 
   /// @notice Salt version label for TESTNET deployments.
   /// @dev Expected to churn far more often than the mainnet label. Bump it,
