@@ -298,6 +298,22 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
   }
 
+  /// @notice a leg declared ERC20 but pointing at a stock ERC721 is rejected at commit.
+  /// ALICE owns token 1 and has approved the omnibus, so absent the guard this commits
+  /// (transferFrom moves the token, the balanceOf delta reads 1 == amount) and then
+  /// freezes every payout — cross-chain, the attacker's bait leg. Blocked at deposit.
+  function test_commit_revertsWhen_erc20LegIsActuallyERC721() public {
+    Asset memory trap = Asset({assetType: AssetType.ERC20, target: address(mockERC721), id: 0, amount: 1});
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, trap.toArray());
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    uint256 value = _totalNativeForCommit(alice) + omnibus.commitmentFee();
+    vm.expectRevert(TermsLib.AssetTypeMismatch.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: value}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
+  }
+
   function test_commit_revertsWhen_proposerCommitWindowElapsed() public {
     // freshness is enforced by the commit window, not validateTerms: committing at/after the
     // proposer's commitment deadline falls outside [0, commitmentDeadline) and reverts

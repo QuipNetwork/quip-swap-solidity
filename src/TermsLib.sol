@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
+import {ERC165Checker} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/ERC165Checker.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -95,6 +96,11 @@ library TermsLib {
 
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
+
+  /// @notice thrown at deposit when an ERC20-declared target also answers as an ERC721
+  /// (ERC165). ERC20 transferFrom/balanceOf share selectors with ERC721, so a stock NFT
+  /// passes the deposit reconciliation but every payout via transfer() reverts forever.
+  error AssetTypeMismatch();
 
   /// @notice thrown when the current timestamp falls outside an action's window
   /// (before its lower bound or at/after its upper bound)
@@ -288,6 +294,19 @@ library TermsLib {
         // a single specific token; no fungible amount to reconcile
         transferAsset(asset, from, to);
         continue;
+      }
+      // an ERC20-declared target that also answers as an ERC721 is a selector-collision
+      // trap: transferFrom/balanceOf collide, so the deposit reconciles as a 1-unit ERC20,
+      // but every payout settles via transfer(address,uint256) — which no ERC721 implements —
+      // and reverts forever (same-chain freeze, cross-chain theft). reject it at deposit,
+      // on the chain where the token actually lives. A custom contract that lies on ERC165
+      // still slips through: that is the "malicious token is UNSUPPORTED — vet the counter-leg"
+      // case documented on commit, not something an on-chain probe can settle.
+      if (
+        asset.assetType == AssetType.ERC20
+          && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
+      ) {
+        revert AssetTypeMismatch();
       }
       // ERC20 / ERC1155: require exactly `amount` to be received
       uint256 balanceBefore = heldBalance(asset, to);
