@@ -328,6 +328,29 @@ describe('commit authorization', () => {
     )
   })
 
+  it('an ERC20-declared leg pointing at an ERC721 rejects ASSET_TYPE_MISMATCH in preflight; the contract agrees (AssetTypeMismatch)', async () => {
+    // the selector-collision trap: declared ERC20 but the target is a real ERC721. The
+    // guard/probe both fire before any token movement, so no mint or approval is needed.
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([erc20Asset(fixture.erc721, 1n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('ASSET_TYPE_MISMATCH')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract rejects it at deposit too (raw call bypassing preflight); msg.value is
+    // exactly totalNative (0) + fee (0 in this suite)
+    await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 0n), 'AssetTypeMismatch')
+  })
+
   it('a keyed signer whose verifier was never activated reverts on-chain (VerifierNotActive)', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()

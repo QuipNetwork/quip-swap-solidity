@@ -1438,6 +1438,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "AssetTypeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },

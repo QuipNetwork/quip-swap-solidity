@@ -39,6 +39,9 @@ export type QuipSwapErrorCode =
   // client preflight
   | 'CHAIN_ID_MISMATCH'
   | 'MALFORMED_SIGNER'
+  // an ERC20-declared asset whose target answers as an ERC721 via ERC165 — the
+  // selector-collision trap the contract rejects at deposit (TermsLib.AssetTypeMismatch)
+  | 'ASSET_TYPE_MISMATCH'
   // wallet-route preflight: empty auth.signature with a sender that is not a
   // factory-deployed quip wallet (mirrors the contract's NotQuipWallet)
   | 'NOT_QUIP_WALLET'

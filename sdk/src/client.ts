@@ -31,7 +31,7 @@ import {assertHex32, digestTerms, digestTermsCanonically, generateLock, swapId} 
 import {proposedBy, validateTermPairing, validateTerms} from './terms.js'
 import {waitForOmnibusReceipt} from './receipts.js'
 import type {OmnibusReceipt, WaitOptions} from './receipts.js'
-import {LockState} from './types.js'
+import {AssetType, LockState} from './types.js'
 import type {Hex32, Terms} from './types.js'
 import {validateClaimWindow, validateCommitWindow, validateReclaimWindow} from './windows.js'
 
@@ -326,7 +326,7 @@ export interface OmnibusClient {
    * @returns The transaction hash (not finality — wait for the receipt).
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
-   *   | `CHAIN_ID_MISMATCH` | `MALFORMED_SIGNER` | `WINDOW_VIOLATED` |
+   *   | `CHAIN_ID_MISMATCH` | `ASSET_TYPE_MISMATCH` | `MALFORMED_SIGNER` | `WINDOW_VIOLATED` |
    *   `INVALID_LOCK_STATE` | `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN` |
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.commit, Omnibus._enforceCommitAuthorized
@@ -481,6 +481,22 @@ const walletFactoryAbi = [
   },
 ] as const
 
+/** Minimal ERC-165 surface for the ERC20-vs-ERC721 asset-type probe. */
+const erc165Abi = [
+  {
+    type: 'function',
+    name: 'supportsInterface',
+    stateMutability: 'view',
+    inputs: [{name: 'interfaceId', type: 'bytes4'}],
+    outputs: [{name: '', type: 'bool'}],
+  },
+] as const
+
+/** ERC-165 interface ids used by the asset-type probe (see {@link answersAsErc721}). */
+const ERC165_INTERFACE_ID = '0x01ffc9a7' as const
+const ERC165_INVALID_INTERFACE_ID = '0xffffffff' as const
+const ERC721_INTERFACE_ID = '0x80ac58cd' as const
+
 export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient {
   const {address, publicClient, walletClient} = args
   const contract = {address, abi: omnibusAbi} as const
@@ -515,6 +531,65 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       return BigInt(vaultId) !== 0n
     } catch (error) {
       throw wrapContractError(error, 'Reading vaultIdOf on the wallet factory')
+    }
+  }
+
+  /** A single ERC-165 query, swallowing any revert / bad return as `false`. */
+  async function safeSupportsInterface(target: Address, interfaceId: string): Promise<boolean> {
+    try {
+      return (await publicClient.readContract({
+        address: target,
+        abi: erc165Abi,
+        functionName: 'supportsInterface',
+        args: [interfaceId as `0x${string}`],
+      })) as boolean
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * True iff `target` answers as an ERC-721 through ERC-165 — a faithful mirror
+   * of OpenZeppelin `ERC165Checker.supportsInterface`, which the contract uses
+   * to reject the ERC20-declared/ERC721-actual selector-collision trap at
+   * deposit (TermsLib.AssetTypeMismatch). Replicating its exact logic — genuine
+   * ERC-165 support (answers the 0x01ffc9a7 id, rejects the 0xffffffff id)
+   * BEFORE querying the ERC-721 id — keeps the SDK verdict from ever diverging
+   * from the contract's, so this preflight neither over- nor under-rejects.
+   */
+  async function answersAsErc721(target: Address): Promise<boolean> {
+    const [supportsErc165, rejectsInvalid] = await Promise.all([
+      safeSupportsInterface(target, ERC165_INTERFACE_ID),
+      safeSupportsInterface(target, ERC165_INVALID_INTERFACE_ID),
+    ])
+    // no genuine ERC-165 (or a contract that claims every id) → not treated as ERC-721
+    if (!supportsErc165 || rejectsInvalid) return false
+    return safeSupportsInterface(target, ERC721_INTERFACE_ID)
+  }
+
+  /**
+   * Reject any ERC20-declared asset in the LOCAL party leg whose target answers
+   * as an ERC721 (mirrors the contract's deposit-path guard, which probes only
+   * the local leg). The counterparty leg may be remote and unprobeable here; it
+   * is validated at its own home-chain commit.
+   */
+  async function assertNoErc20Erc721Collision(party: Terms): Promise<void> {
+    const targets = Array.from(
+      new Set(party.assets.filter(a => a.assetType === AssetType.ERC20).map(a => a.target)),
+    )
+    if (targets.length === 0) return
+    const verdicts = await Promise.all(targets.map(t => answersAsErc721(t)))
+    const offender = targets.find((_t, i) => verdicts[i])
+    if (offender !== undefined) {
+      throw new QuipSwapError({
+        code: 'ASSET_TYPE_MISMATCH',
+        message:
+          `Asset declared ERC20 at ${offender} answers as an ERC721 (ERC-165). ERC20 transferFrom/balanceOf ` +
+          'share selectors with ERC721, so this deposit would reconcile but every payout via transfer() would ' +
+          'revert forever — a freeze same-chain, a theft cross-chain. The contract rejects it at deposit ' +
+          '(AssetTypeMismatch); fix the declared assetType or point at a real ERC20',
+        details: {target: offender},
+      })
     }
   }
 
@@ -882,6 +957,13 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
           details: {partyChainId: party.chainId, connectedChainId},
         })
       }
+
+      // 3b. asset-type probe — reject an ERC20-declared leg whose target is really an
+      // ERC721 (selector-collision trap). Only the LOCAL party leg is probed, matching
+      // the contract's deposit-path guard; the counterparty leg is validated on its own
+      // chain. Runs before estimation so the failure is a clear ASSET_TYPE_MISMATCH
+      // rather than a decoded AssetTypeMismatch revert.
+      await assertNoErc20Erc721Collision(party)
 
       // 4. signer-blob shape preflight — the contract reverts MalformedSigner
       // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
