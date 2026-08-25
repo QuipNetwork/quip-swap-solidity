@@ -180,6 +180,13 @@ export interface OmnibusAdmin {
    * Sets the activity status of an ERC-7913 verifier for the keyed commit
    * route. Owner only; reverts `ZeroVerifier` for the zero address.
    *
+   * WARNING: this takes effect immediately, with no grace window. Deactivating a
+   * verifier that has swaps in flight strands any keyed leg already escrowed under
+   * it: the counterparty can no longer complete the keyed route, so the escrowed
+   * leg is stuck (its commitmentFee forfeited) until that party reaches its own
+   * reclaimRelease. Avoid deactivating a verifier with in-flight keyed swaps, or
+   * warn affected users first. The wallet route never reads this and is unaffected.
+   *
    * @param verifier - The verifier contract address (non-zero).
    * @param active - The new activity status.
    * @param opts - Optional per-transaction gas/fee/nonce options.
