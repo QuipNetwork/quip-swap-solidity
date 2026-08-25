@@ -90,8 +90,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
   }
 
-  /// @notice allows this contract to receive native currency
-  receive() external payable {}
+  /// @notice reject bare native transfers: native is only accepted via `commit`,
+  /// where it is accounted. Stray ETH would otherwise be permanently unrecoverable
+  /// (no sweep exists). Cannot stop a `selfdestruct` force-send, which needs no receive.
+  receive() external payable {
+    revert NativeNotAccepted();
+  }
 
   /// @inheritdoc IOmnibus
   function swapId(bytes32 lock, Terms calldata party, Terms calldata counterparty) external pure returns (bytes32) {

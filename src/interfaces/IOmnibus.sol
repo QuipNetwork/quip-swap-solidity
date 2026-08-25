@@ -95,6 +95,9 @@ interface IOmnibus {
   /// @notice thrown by renounceOwnership: Omnibus has no ownerless mode
   error RenounceDisabled();
 
+  /// @notice thrown by receive: bare native transfers are rejected; native must flow through commit
+  error NativeNotAccepted();
+
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
   /// @param newFee the new fee
