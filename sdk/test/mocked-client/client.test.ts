@@ -40,6 +40,7 @@ import {
   CHAIN_B,
   FOUNDRY_LOCK,
   FOUNDRY_SECRET,
+  withOverrides,
 } from '../helpers/fixtures.js'
 
 const OMNIBUS: Address = '0x9990000000000000000000000000000000000999'
@@ -416,6 +417,49 @@ describe('commit ERC20-vs-ERC721 asset-type probe', () => {
     expect(hash).toBe(TX_HASH)
     // no probe happened at all — the counterparty leg is validated on its own chain
     expect(mocks.log.sequence).not.toContain('read:supportsInterface')
+  })
+})
+
+describe('commit reclaimRelease horizon guard', () => {
+  // mock chain time is AT_PROPOSER_COMMIT (500); the 2-week horizon puts the cutoff far above
+  // the default fixtures' 5000/6000, so a value like 2_000_000 is safely "distant"
+  const DISTANT = 2_000_000n
+
+  it('rejects RECLAIM_RELEASE_TOO_DISTANT when the COUNTERPARTY leg is beyond the horizon', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    // party (alice) within horizon, counterparty (bob) distant — proves both legs are checked
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT})
+    expect(
+      await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: distantBob, auth: AUTH})),
+    ).toBe('RECLAIM_RELEASE_TOO_DISTANT')
+    // rejected before any estimate/write
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('rejects RECLAIM_RELEASE_TOO_DISTANT when the PARTY leg is beyond the horizon', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    // both distant (interleave requires party.reclaim < counterparty.reclaim); party matched first
+    const distantAlice = withOverrides(alice, {reclaimRelease: DISTANT})
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT + 1n})
+    expect(
+      await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: distantAlice, counterparty: distantBob, auth: AUTH})),
+    ).toBe('RECLAIM_RELEASE_TOO_DISTANT')
+  })
+
+  it('allows a distant schedule when allowDistantReclaimRelease is set', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    const distantAlice = withOverrides(alice, {reclaimRelease: DISTANT})
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT + 1n})
+    const hash = await mocks.client.commit({
+      lock: FOUNDRY_LOCK,
+      party: distantAlice,
+      counterparty: distantBob,
+      auth: AUTH,
+      allowDistantReclaimRelease: true,
+    })
+    expect(hash).toBe(TX_HASH)
+    expect(mocks.log.writes).toHaveLength(1)
   })
 })
 

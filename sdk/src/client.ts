@@ -77,6 +77,14 @@ export interface CommitArgs {
    * case as a decoded `CONTRACT_REVERT`.
    */
   readonly verifyOnChainState?: boolean
+  /**
+   * When `true`, skips the reasonableness guard that rejects a `reclaimRelease`
+   * more than {@link MAX_RECLAIM_HORIZON_SECONDS} (two weeks) beyond the chain's
+   * current time. The guard exists because a far-future `reclaimRelease` leaves a
+   * leg unrecoverable until then if the swap fails — but a long window may be
+   * intentional, so this flag is the explicit opt-out. Default `false` (guard on).
+   */
+  readonly allowDistantReclaimRelease?: boolean
 }
 
 /** Arguments for {@link OmnibusClient.claim}. */
@@ -326,7 +334,8 @@ export interface OmnibusClient {
    * @returns The transaction hash (not finality — wait for the receipt).
    * @throws QuipSwapError `MISSING_WALLET_CLIENT` | `MISSING_ACCOUNT` |
    *   structural codes from {@link validateTerms} | `DISORDERED_DEADLINES`
-   *   | `CHAIN_ID_MISMATCH` | `ASSET_TYPE_MISMATCH` | `MALFORMED_SIGNER` | `WINDOW_VIOLATED` |
+   *   | `CHAIN_ID_MISMATCH` | `ASSET_TYPE_MISMATCH` | `RECLAIM_RELEASE_TOO_DISTANT` |
+   *   `MALFORMED_SIGNER` | `WINDOW_VIOLATED` |
    *   `INVALID_LOCK_STATE` | `TERMS_ALREADY_POSTED` | `TERMS_NOT_ON_CHAIN` |
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.commit, Omnibus._enforceCommitAuthorized
@@ -496,6 +505,17 @@ const erc165Abi = [
 const ERC165_INTERFACE_ID = '0x01ffc9a7' as const
 const ERC165_INVALID_INTERFACE_ID = '0xffffffff' as const
 const ERC721_INTERFACE_ID = '0x80ac58cd' as const
+
+/**
+ * Default maximum horizon (seconds) between a commit and either leg's `reclaimRelease` —
+ * two weeks. An SDK-only *reasonableness* guard: the contract only rejects the malformed
+ * `type(uint256).max` (see {@link validateTerms}), but a `reclaimRelease` far in the future is
+ * a well-formed schedule that leaves an unrecoverable-until-then leg if the swap fails.
+ * `commit` rejects a schedule beyond this horizon with `RECLAIM_RELEASE_TOO_DISTANT` unless the
+ * caller passes {@link CommitArgs.allowDistantReclaimRelease}. There is no on-chain equivalent —
+ * a determined caller can bypass it, exactly as with the buffer checks.
+ */
+export const MAX_RECLAIM_HORIZON_SECONDS = 14n * 24n * 60n * 60n
 
 export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient {
   const {address, publicClient, walletClient} = args
@@ -935,7 +955,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
     // @audit-ok
     async commit(
-      {lock, party, counterparty, auth, verifyOnChainState = true}: CommitArgs,
+      {lock, party, counterparty, auth, verifyOnChainState = true, allowDistantReclaimRelease = false}: CommitArgs,
       opts?: TxOptions,
     ): Promise<Hash> {
       assertHex32(lock, 'lock')
@@ -989,6 +1009,26 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
       // 5. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()
+
+      // 5b. reasonableness guard (SDK-only, no contract equivalent): a reclaimRelease far
+      // beyond now leaves an unrecoverable-until-then leg if the swap fails. Check BOTH legs
+      // (pure timestamp arithmetic, so the remote leg is fair game) so a distant value is
+      // caught at the first commit. Opt out per-call with allowDistantReclaimRelease.
+      if (!allowDistantReclaimRelease) {
+        const horizon = timestamp + MAX_RECLAIM_HORIZON_SECONDS
+        const distant = party.reclaimRelease > horizon ? party : counterparty.reclaimRelease > horizon ? counterparty : undefined
+        if (distant !== undefined) {
+          throw new QuipSwapError({
+            code: 'RECLAIM_RELEASE_TOO_DISTANT',
+            message:
+              `reclaimRelease ${distant.reclaimRelease} is more than ${MAX_RECLAIM_HORIZON_SECONDS}s ` +
+              `(~2 weeks) beyond the chain time ${timestamp}; a far-future reclaimRelease strands the leg ` +
+              'until then if the swap fails. Pass allowDistantReclaimRelease: true to commit anyway',
+            details: {reclaimRelease: distant.reclaimRelease, timestamp, horizon},
+          })
+        }
+      }
+
       try {
         validateCommitWindow(party, counterparty, timestamp)
       } catch (error) {

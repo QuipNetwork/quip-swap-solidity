@@ -79,7 +79,7 @@ export {
 export type {TxOptions, FeeOverrides, PrepareTxArgs, PrepareTxContractParams, PreparedTx} from './gas.js'
 
 // client
-export {createOmnibusClient} from './client.js'
+export {createOmnibusClient, MAX_RECLAIM_HORIZON_SECONDS} from './client.js'
 export type {
   CreateOmnibusClientArgs,
   OmnibusClient,
