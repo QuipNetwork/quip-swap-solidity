@@ -24,6 +24,7 @@ import {
 import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {Settlement} from '../../src/protocol/Settlement.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SwapHTLC} from '../../src/protocol/SwapHTLC.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
@@ -46,25 +47,54 @@ contract DeployedWrapperGuardsTest is Test {
   AssetSupportRegistry internal support;
   CrossChainWrapper internal cross;
   SameChainWrapper internal same;
+  SwapHTLC internal htlcImplementation;
 
   function setUp() public {
     vm.chainId(31_337);
     vm.warp(100);
     support = new AssetSupportRegistry(address(this));
-    cross = new CrossChainWrapper(GATEWAY, support);
-    same = new SameChainWrapper(GATEWAY, support);
+    htlcImplementation = new SwapHTLC();
+    cross = new CrossChainWrapper(GATEWAY, support, address(htlcImplementation));
+    same = new SameChainWrapper(GATEWAY, support, address(htlcImplementation));
     vm.deal(GATEWAY, 100 ether);
   }
 
   function test_constructorsRejectEveryZeroDependency() public {
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(address(0), support);
+    new CrossChainWrapper(address(0), support, address(htlcImplementation));
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)));
+    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation));
+    vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
+    new CrossChainWrapper(GATEWAY, support, address(0));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
-    new SameChainWrapper(address(0), support);
+    new SameChainWrapper(address(0), support, address(htlcImplementation));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
-    new SameChainWrapper(GATEWAY, AssetSupportRegistry(address(0)));
+    new SameChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation));
+    vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
+    new SameChainWrapper(GATEWAY, support, address(0));
+  }
+
+  function test_wrappersPinAndPredictIsolatedHTLCAddresses() public view {
+    ProtocolTerms memory crossTerms = _crossTerms();
+    ProtocolTerms memory sameTerms = _sameTerms();
+    bytes32 crossLock = _lock(crossTerms);
+    bytes32 sameLock = _lock(sameTerms);
+
+    assertEq(cross.HTLC_IMPLEMENTATION(), address(htlcImplementation));
+    assertEq(same.HTLC_IMPLEMENTATION(), address(htlcImplementation));
+    assertEq(cross.htlcOf(crossTerms, true, crossLock), address(0));
+    assertEq(same.htlcOf(sameTerms, true, sameLock), address(0));
+
+    address crossParty = cross.predictHTLC(crossTerms, true, crossLock);
+    address crossCounterparty = cross.predictHTLC(crossTerms, false, crossLock);
+    address sameParty = same.predictHTLC(sameTerms, true, sameLock);
+    address sameCounterparty = same.predictHTLC(sameTerms, false, sameLock);
+
+    assertTrue(crossParty != crossCounterparty);
+    assertTrue(sameParty != sameCounterparty);
+    assertTrue(crossParty != sameParty);
+    assertEq(crossParty, cross.predictHTLC(crossTerms, true, crossLock));
+    assertEq(sameCounterparty, same.predictHTLC(sameTerms, false, sameLock));
   }
 
   function test_bothWrappersRejectWrongModeAtomically() public {

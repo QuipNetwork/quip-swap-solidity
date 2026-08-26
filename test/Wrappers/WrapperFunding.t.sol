@@ -27,6 +27,7 @@ import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
 import {Settlement} from '../../src/protocol/Settlement.sol';
 import {CrossChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
+import {SwapHTLC} from '../../src/protocol/SwapHTLC.sol';
 import {RegisteredCommitTargetHarness} from '../harness/RegisteredCommitTargetHarness.sol';
 import {AdversarialERC20Mock} from '../mocks/AdversarialERC20Mock.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
@@ -69,6 +70,7 @@ contract WrapperFundingTest is Test {
   QuipWallet internal bobWallet;
   RegisteredCommitTargetHarness internal registrationTarget;
   ERC20Mock internal token;
+  SwapHTLC internal htlcImplementation;
 
   function setUp() public {
     vm.warp(100);
@@ -88,8 +90,9 @@ contract WrapperFundingTest is Test {
     _register(broker, brokerKey);
     gateway = registry;
     assetSupport = new AssetSupportRegistry(address(this));
-    cross = new CrossChainWrapper(address(gateway), assetSupport);
-    same = new SameChainWrapper(address(gateway), assetSupport);
+    htlcImplementation = new SwapHTLC();
+    cross = new CrossChainWrapper(address(gateway), assetSupport, address(htlcImplementation));
+    same = new SameChainWrapper(address(gateway), assetSupport, address(htlcImplementation));
     wallet = new QuipWallet(address(this), registry, walletKey);
     bobWallet = new QuipWallet(bob, registry, bobWalletKey);
     token = new ERC20Mock('Token', 'TOK', 18);

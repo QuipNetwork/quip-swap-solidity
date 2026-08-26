@@ -14,7 +14,8 @@ library PrototypeDeployment {
     AssetSupportRegistry,
     DirectAuthorization,
     CrossChainWrapper,
-    SameChainWrapper
+    SameChainWrapper,
+    SwapHTLC
   }
 
   function salt(address deployer, Component component) internal pure returns (bytes32) {

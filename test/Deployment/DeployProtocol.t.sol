@@ -8,6 +8,7 @@ import {AssetSupportRegistry} from '../../src/assets/AssetSupportRegistry.sol';
 import {DirectAuthorization} from '../../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../../src/protocol/SameChainWrapper.sol';
+import {SwapHTLC} from '../../src/protocol/SwapHTLC.sol';
 import {CreateXMock} from '../mocks/CreateXMock.sol';
 import {KeyBoundVerifierMock} from '../mocks/KeyBoundVerifierMock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
@@ -30,6 +31,7 @@ contract DeployProtocolTest is Test {
     assertTrue(a.assetSupportRegistry != a.directAuthorization);
     assertTrue(a.directAuthorization != a.crossChainWrapper);
     assertTrue(a.crossChainWrapper != a.sameChainWrapper);
+    assertTrue(a.sameChainWrapper != a.swapHTLC);
     assertEq(
       a.crossChainWrapper,
       PrototypeDeployment.predict(address(factory), address(this), PrototypeDeployment.Component.CrossChainWrapper)
@@ -50,6 +52,7 @@ contract DeployProtocolTest is Test {
     assertEq(a.directAuthorization, 0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA);
     assertEq(a.crossChainWrapper, 0xBefC4530880E8318250592F76C63007A04b04175);
     assertEq(a.sameChainWrapper, 0x5aa0Ef5b07cdc3FA4c7587e220AB4880df066387);
+    assertEq(a.swapHTLC, 0x91D8b67Bf9c657F7215970aafAF036477961757E);
   }
 
   function test_localCreate3DeploymentPinsCompleteGraph() public {
@@ -64,14 +67,19 @@ contract DeployProtocolTest is Test {
       abi.encodePacked(type(DirectAuthorization).creationCode, abi.encode(address(verifier))),
       a.directAuthorization
     );
+    _deploy(PrototypeDeployment.Component.SwapHTLC, type(SwapHTLC).creationCode, a.swapHTLC);
     _deploy(
       PrototypeDeployment.Component.CrossChainWrapper,
-      abi.encodePacked(type(CrossChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry)),
+      abi.encodePacked(
+        type(CrossChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC)
+      ),
       a.crossChainWrapper
     );
     _deploy(
       PrototypeDeployment.Component.SameChainWrapper,
-      abi.encodePacked(type(SameChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry)),
+      abi.encodePacked(
+        type(SameChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC)
+      ),
       a.sameChainWrapper
     );
 
@@ -80,6 +88,8 @@ contract DeployProtocolTest is Test {
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
     assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
     assertEq(SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
+    assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).HTLC_IMPLEMENTATION(), a.swapHTLC);
+    assertEq(SameChainWrapper(payable(a.sameChainWrapper)).HTLC_IMPLEMENTATION(), a.swapHTLC);
   }
 
   function _deploy(PrototypeDeployment.Component component, bytes memory initCode, address expected) internal {

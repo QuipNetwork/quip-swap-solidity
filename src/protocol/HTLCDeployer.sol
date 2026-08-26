@@ -13,6 +13,11 @@ library HTLCDeployer {
 
   error InvalidHTLCImplementation();
 
+  /// @notice Derives the wrapper-local storage key for one committed trade side.
+  function recordKey(bytes32 tradeId, bytes32 lock, SideTag side) internal pure returns (bytes32) {
+    return keccak256(abi.encode(tradeId, lock, side));
+  }
+
   /// @notice Derives the canonical salt for one wrapper-controlled trade side.
   function salt(address wrapper, bytes32 tradeId, bytes32 lock, SideTag side) internal pure returns (bytes32) {
     return keccak256(abi.encode(HTLC_SALT_DOMAIN, wrapper, tradeId, lock, side));

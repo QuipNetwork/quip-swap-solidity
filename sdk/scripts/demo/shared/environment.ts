@@ -68,19 +68,20 @@ export async function bootstrapProtocolChain(
   const createX = await ctx.deploy(load('CreateXMock.sol', 'CreateXMock'))
   const trustedVerifier = await ctx.deploy(load('KeyBoundVerifierMock.sol', 'KeyBoundVerifierMock'))
   const addresses = predictPrototypeAddresses(ctx.deployer.address, createX)
-  const definitions: readonly [string, string, readonly unknown[]][] = [
-    ['AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
-    ['DirectAuthorization.sol', 'DirectAuthorization', [trustedVerifier]],
-    ['CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry]],
-    ['SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry]],
+  const definitions: readonly [(typeof prototypeComponents)[number], string, string, readonly unknown[]][] = [
+    ['assetSupportRegistry', 'AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
+    ['directAuthorization', 'DirectAuthorization.sol', 'DirectAuthorization', [trustedVerifier]],
+    ['swapHTLC', 'SwapHTLC.sol', 'SwapHTLC', []],
+    ['crossChainWrapper', 'CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC]],
+    ['sameChainWrapper', 'SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC]],
   ]
-  for (const [index, [solFile, contract, args]] of definitions.entries()) {
+  for (const [component, solFile, contract, args] of definitions) {
+    const index = prototypeComponents.indexOf(component)
     const artifact = load(solFile, contract)
     const initCode = encodeDeployData({abi: artifact.abi, bytecode: artifact.bytecode, args: args as never})
     const hash = await ctx.deployer.walletClient.writeContract({address: createX, abi: createXAbi, functionName: 'deployCreate3', args: [prototypeDeploymentSalt(ctx.deployer.address, index), initCode], chain: ctx.publicClient.chain ?? null, account: ctx.deployer.account})
     await ctx.publicClient.waitForTransactionReceipt({hash})
-    const component = prototypeComponents[index]
-    if (component === undefined || (await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
+    if ((await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
   return {chainId: ctx.chainId, createX, trustedVerifier, addresses}

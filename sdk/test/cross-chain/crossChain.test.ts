@@ -82,6 +82,7 @@ interface PrototypeDeployment {
   readonly directAuthorization: Address
   readonly crossChainWrapper: Address
   readonly sameChainWrapper: Address
+  readonly swapHTLC: Address
   readonly verifier: Address
 }
 
@@ -91,13 +92,16 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
     ctx.deployer.address,
   ])
   const directAuthorization = await ctx.deploy(loadArtifact('DirectAuthorization.sol', 'DirectAuthorization'), [verifier])
+  const swapHTLC = await ctx.deploy(loadArtifact('SwapHTLC.sol', 'SwapHTLC'))
   const crossChainWrapper = await ctx.deploy(loadArtifact('CrossChainWrapper.sol', 'CrossChainWrapper'), [
     directAuthorization,
     assetSupportRegistry,
+    swapHTLC,
   ])
   const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
     directAuthorization,
     assetSupportRegistry,
+    swapHTLC,
   ])
   return {
     verifier,
@@ -105,6 +109,7 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
     directAuthorization,
     crossChainWrapper,
     sameChainWrapper,
+    swapHTLC,
   }
 }
 

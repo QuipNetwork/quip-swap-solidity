@@ -7,6 +7,7 @@ import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
 import {ProgressionGate} from './CommitValidation.sol';
+import {HTLCDeployer} from './HTLCDeployer.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {
   CrossChainLegState,
@@ -48,17 +49,22 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   address public immutable DIRECT_AUTHORIZATION;
   /// @notice Admission allowlist consulted only when new assets enter custody.
   IAssetSupportRegistry public immutable ASSET_SUPPORT;
+  /// @notice Non-upgradeable implementation cloned once for every committed local leg.
+  address public immutable HTLC_IMPLEMENTATION;
 
   CrossChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
+  mapping(bytes32 recordKey => address htlc) private htlcs;
 
   /// @notice Configures the immutable direct authorization gateway and asset allowlist.
-  constructor(address directAuthorization, IAssetSupportRegistry assetSupport) {
-    if (directAuthorization == address(0) || address(assetSupport) == address(0)) {
+  constructor(address directAuthorization, IAssetSupportRegistry assetSupport, address htlcImplementation) {
+    if (directAuthorization == address(0) || address(assetSupport) == address(0) || htlcImplementation.code.length == 0)
+    {
       revert ZeroConfiguration();
     }
     DIRECT_AUTHORIZATION = directAuthorization;
     ASSET_SUPPORT = assetSupport;
+    HTLC_IMPLEMENTATION = htlcImplementation;
   }
 
   /// @notice Validates authorization evidence, the Bob-commit gate, and funding, then escrows one leg.
@@ -116,6 +122,19 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   /// @notice Returns the state of the selected leg for these exact terms and lock.
   function state(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (CrossChainLegState) {
     return states.state(ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party));
+  }
+
+  /// @notice Returns the deployed custody contract for one exact local leg, or zero before commit.
+  function htlcOf(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (address) {
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    return htlcs[HTLCDeployer.recordKey(trade, lock, ProtocolHashing.sideTag(party))];
+  }
+
+  /// @notice Predicts the deterministic custody address for one exact local leg.
+  function predictHTLC(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (address) {
+    return HTLCDeployer.predict(
+      HTLC_IMPLEMENTATION, address(this), ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party)
+    );
   }
 
   /// @notice Returns aggregate custody reserved for one asset identity.

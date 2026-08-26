@@ -7,6 +7,7 @@ import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
 import {ProgressionGate} from './CommitValidation.sol';
+import {HTLCDeployer} from './HTLCDeployer.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {
   ProtocolTerms,
@@ -47,17 +48,22 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   address public immutable DIRECT_AUTHORIZATION;
   /// @notice Admission allowlist consulted only when new assets enter custody.
   IAssetSupportRegistry public immutable ASSET_SUPPORT;
+  /// @notice Non-upgradeable implementation cloned once for every committed side.
+  address public immutable HTLC_IMPLEMENTATION;
 
   SameChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
+  mapping(bytes32 recordKey => address htlc) private htlcs;
 
   /// @notice Configures the immutable direct authorization gateway and asset allowlist.
-  constructor(address directAuthorization, IAssetSupportRegistry assetSupport) {
-    if (directAuthorization == address(0) || address(assetSupport) == address(0)) {
+  constructor(address directAuthorization, IAssetSupportRegistry assetSupport, address htlcImplementation) {
+    if (directAuthorization == address(0) || address(assetSupport) == address(0) || htlcImplementation.code.length == 0)
+    {
       revert ZeroConfiguration();
     }
     DIRECT_AUTHORIZATION = directAuthorization;
     ASSET_SUPPORT = assetSupport;
+    HTLC_IMPLEMENTATION = htlcImplementation;
   }
 
   /// @notice Validates authorization and funding, then records the next ordered local commit.
@@ -119,6 +125,19 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   /// @notice Returns the joint state for these exact terms and settlement lock.
   function state(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {
     return states.state(ProtocolHashing.tradeId(terms), lock);
+  }
+
+  /// @notice Returns the deployed custody contract for one exact side, or zero before commit.
+  function htlcOf(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (address) {
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    return htlcs[HTLCDeployer.recordKey(trade, lock, ProtocolHashing.sideTag(party))];
+  }
+
+  /// @notice Predicts the deterministic custody address for one exact side.
+  function predictHTLC(ProtocolTerms calldata terms, bool party, bytes32 lock) external view returns (address) {
+    return HTLCDeployer.predict(
+      HTLC_IMPLEMENTATION, address(this), ProtocolHashing.tradeId(terms), lock, ProtocolHashing.sideTag(party)
+    );
   }
 
   /// @notice Returns aggregate custody reserved for one asset identity.

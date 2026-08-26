@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
+import {AssetTransfers} from '../assets/AssetHandling.sol';
 import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {Asset, AssetType, SideTag, SideTerms} from './ProtocolTypes.sol';
-import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {ERC1155Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/utils/ERC1155Holder.sol';
-import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 import {ERC721Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/utils/ERC721Holder.sol';
 import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/ReentrancyGuard.sol';
-import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 /// @title SwapHTLC
 /// @notice Holds one committed side's exact asset bundle until its wrapper selects a signed payout.
@@ -96,48 +94,11 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   }
 
   function _hasAsset(Asset calldata asset) private view returns (bool) {
-    if (asset.assetType == AssetType.Native) return address(this).balance >= asset.amount;
-    if (asset.assetType == AssetType.ERC20) {
-      return SafeTransferLib.balanceOf(asset.target, address(this)) >= asset.amount;
-    }
-    if (asset.assetType == AssetType.ERC1155) {
-      return IERC1155(asset.target).balanceOf(address(this), asset.id) >= asset.amount;
-    }
-    try IERC721(asset.target).ownerOf(asset.id) returns (address owner) {
-      return owner == address(this);
-    } catch {
-      return false;
-    }
+    uint256 expected = asset.assetType == AssetType.ERC721 ? 1 : asset.amount;
+    return AssetTransfers.balanceOf(asset, address(this)) >= expected;
   }
 
   function _transfer(Asset calldata asset, address recipient) private {
-    if (asset.assetType == AssetType.Native) {
-      SafeTransferLib.safeTransferETH(recipient, asset.amount);
-    } else if (asset.assetType == AssetType.ERC20) {
-      uint256 beforeBalance = SafeTransferLib.balanceOf(asset.target, recipient);
-      SafeTransferLib.safeTransfer(asset.target, recipient, asset.amount);
-      uint256 afterBalance = SafeTransferLib.balanceOf(asset.target, recipient);
-      if (afterBalance < beforeBalance || afterBalance - beforeBalance != asset.amount) {
-        revert UnexpectedAmountReceived();
-      }
-    } else if (asset.assetType == AssetType.ERC721) {
-      IERC721(asset.target).safeTransferFrom(address(this), recipient, asset.id);
-      _requireERC721Owner(asset, recipient);
-    } else {
-      uint256 beforeBalance = IERC1155(asset.target).balanceOf(recipient, asset.id);
-      IERC1155(asset.target).safeTransferFrom(address(this), recipient, asset.id, asset.amount, '');
-      uint256 afterBalance = IERC1155(asset.target).balanceOf(recipient, asset.id);
-      if (afterBalance < beforeBalance || afterBalance - beforeBalance != asset.amount) {
-        revert UnexpectedAmountReceived();
-      }
-    }
-  }
-
-  function _requireERC721Owner(Asset calldata asset, address expected) private view {
-    try IERC721(asset.target).ownerOf(asset.id) returns (address actual) {
-      if (actual != expected) revert UnexpectedERC721Owner(expected, actual);
-    } catch {
-      revert UnexpectedERC721Owner(expected, address(0));
-    }
+    AssetTransfers.transferExact(asset, address(this), recipient);
   }
 }

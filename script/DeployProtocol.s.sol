@@ -5,6 +5,7 @@ import {AssetSupportRegistry} from '../src/assets/AssetSupportRegistry.sol';
 import {DirectAuthorization} from '../src/authorization/direct/DirectAuthorization.sol';
 import {CrossChainWrapper} from '../src/protocol/CrossChainWrapper.sol';
 import {SameChainWrapper} from '../src/protocol/SameChainWrapper.sol';
+import {SwapHTLC} from '../src/protocol/SwapHTLC.sol';
 import {ICreateX} from './ICreateX.sol';
 import {PrototypeDeployment} from './PrototypeDeployment.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
@@ -16,6 +17,7 @@ contract DeployProtocol is Script {
     address directAuthorization;
     address crossChainWrapper;
     address sameChainWrapper;
+    address swapHTLC;
   }
 
   event ProtocolDeployment(
@@ -56,9 +58,17 @@ contract DeployProtocol is Script {
     _deploy(
       PrototypeDeployment.CREATEX,
       deployer,
+      PrototypeDeployment.Component.SwapHTLC,
+      type(SwapHTLC).creationCode,
+      addresses.swapHTLC
+    );
+    _deploy(
+      PrototypeDeployment.CREATEX,
+      deployer,
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
-        type(CrossChainWrapper).creationCode, abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry)
+        type(CrossChainWrapper).creationCode,
+        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC)
       ),
       addresses.crossChainWrapper
     );
@@ -67,7 +77,8 @@ contract DeployProtocol is Script {
       deployer,
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(
-        type(SameChainWrapper).creationCode, abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry)
+        type(SameChainWrapper).creationCode,
+        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC)
       ),
       addresses.sameChainWrapper
     );
@@ -87,6 +98,7 @@ contract DeployProtocol is Script {
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.CrossChainWrapper);
     addresses.sameChainWrapper =
       PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.SameChainWrapper);
+    addresses.swapHTLC = PrototypeDeployment.predict(factory, deployer, PrototypeDeployment.Component.SwapHTLC);
   }
 
   function _deploy(
@@ -112,6 +124,8 @@ contract DeployProtocol is Script {
       SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION() == a.directAuthorization,
       'same direct authorization mismatch'
     );
+    require(CrossChainWrapper(payable(a.crossChainWrapper)).HTLC_IMPLEMENTATION() == a.swapHTLC, 'cross HTLC mismatch');
+    require(SameChainWrapper(payable(a.sameChainWrapper)).HTLC_IMPLEMENTATION() == a.swapHTLC, 'same HTLC mismatch');
   }
 
   function _print(Addresses memory a, address deployer, address owner, address verifier) internal view {
@@ -124,5 +138,6 @@ contract DeployProtocol is Script {
     console.log('DirectAuthorization:', a.directAuthorization);
     console.log('CrossChainWrapper:', a.crossChainWrapper);
     console.log('SameChainWrapper:', a.sameChainWrapper);
+    console.log('SwapHTLC:', a.swapHTLC);
   }
 }

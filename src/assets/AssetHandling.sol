@@ -7,6 +7,85 @@ import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC115
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
+/// @title AssetTransfers
+/// @notice Shared exact-transfer primitives for wrapper custody and dedicated HTLC custody.
+library AssetTransfers {
+  error UnexpectedAmountReceived();
+  error UnexpectedERC721Owner(address expected, address actual);
+
+  /// @notice Returns an asset balance or ownership indicator for any account.
+  function balanceOf(Asset memory asset, address account) internal view returns (uint256) {
+    if (asset.assetType == AssetType.Native) return account.balance;
+    if (asset.assetType == AssetType.ERC1155) return IERC1155(asset.target).balanceOf(account, asset.id);
+    if (asset.assetType == AssetType.ERC721) {
+      try IERC721(asset.target).ownerOf(asset.id) returns (address owner) {
+        return owner == account ? 1 : 0;
+      } catch {
+        return 0;
+      }
+    }
+    return SafeTransferLib.balanceOf(asset.target, account);
+  }
+
+  /// @notice Transfers one asset and verifies exact recipient-side delivery.
+  function transferExact(Asset memory asset, address from, address to) internal {
+    if (asset.assetType == AssetType.Native) {
+      SafeTransferLib.safeTransferETH(to, asset.amount);
+    } else if (asset.assetType == AssetType.ERC20) {
+      uint256 beforeBalance = balanceOf(asset, to);
+      if (from == address(this)) SafeTransferLib.safeTransfer(asset.target, to, asset.amount);
+      else SafeTransferLib.safeTransferFrom(asset.target, from, to, asset.amount);
+      uint256 afterBalance = balanceOf(asset, to);
+      if (afterBalance < beforeBalance || afterBalance - beforeBalance != asset.amount) {
+        revert UnexpectedAmountReceived();
+      }
+    } else if (asset.assetType == AssetType.ERC721) {
+      IERC721(asset.target).safeTransferFrom(from, to, asset.id);
+      requireERC721Owner(asset, to);
+    } else {
+      uint256 beforeBalance = balanceOf(asset, to);
+      IERC1155(asset.target).safeTransferFrom(from, to, asset.id, asset.amount, '');
+      uint256 afterBalance = balanceOf(asset, to);
+      if (afterBalance < beforeBalance || afterBalance - beforeBalance != asset.amount) {
+        revert UnexpectedAmountReceived();
+      }
+    }
+  }
+
+  /// @notice Requires the exact ERC-721 owner, including after adversarial no-op transfers.
+  function requireERC721Owner(Asset memory asset, address expected) internal view {
+    try IERC721(asset.target).ownerOf(asset.id) returns (address actual) {
+      if (actual != expected) revert UnexpectedERC721Owner(expected, actual);
+    } catch {
+      revert UnexpectedERC721Owner(expected, address(0));
+    }
+  }
+}
+
+/// @title HTLCFunding
+/// @notice Moves a principal's non-native bundle directly into one dedicated HTLC.
+/// @dev Native value is forwarded by the wrapper through `SwapHTLC.initialize`; separating it
+///      avoids temporarily placing any committed asset in aggregate wrapper custody.
+library HTLCFunding {
+  error InvalidFundingDestination();
+
+  /// @notice Returns the exact native contribution declared by one side.
+  function nativeAmount(SideTerms memory side) internal pure returns (uint256 amount) {
+    for (uint256 i; i < side.assets.length; ++i) {
+      if (side.assets[i].assetType == AssetType.Native) amount += side.assets[i].amount;
+    }
+  }
+
+  /// @notice Pulls every non-native asset from the principal directly into `destination`.
+  function transferNonNative(SideTerms memory side, address destination) internal {
+    if (destination.code.length == 0) revert InvalidFundingDestination();
+    for (uint256 i; i < side.assets.length; ++i) {
+      Asset memory asset = side.assets[i];
+      if (asset.assetType != AssetType.Native) AssetTransfers.transferExact(asset, side.principal, destination);
+    }
+  }
+}
+
 /// @title AssetCustody
 /// @notice Collects, reserves, and releases native, ERC20, ERC721, and ERC1155 swap assets.
 /// @dev Fungible-token transfers must change balances by the exact term amount; fee-on-transfer
@@ -36,14 +115,11 @@ library AssetCustody {
         self.reserved[key] += asset.amount;
       } else if (asset.assetType == AssetType.ERC721) {
         // Ownership, rather than a fungible balance delta, proves exact NFT receipt.
-        _transferAsset(asset, side.principal, address(this));
-        _requireERC721Owner(asset, address(this));
+        AssetTransfers.transferExact(asset, side.principal, address(this));
         self.reserved[key] += 1;
       } else {
         // Reject fee-on-transfer or otherwise non-exact fungible deposits.
-        uint256 beforeBalance = _balance(asset);
-        _transferAsset(asset, side.principal, address(this));
-        if (_balance(asset) - beforeBalance != asset.amount) revert UnexpectedAmountReceived();
+        AssetTransfers.transferExact(asset, side.principal, address(this));
         self.reserved[key] += asset.amount;
       }
     }
@@ -59,26 +135,12 @@ library AssetCustody {
       bytes32 key = assetKey(asset);
       // Ensure this transfer cannot consume funds reserved for unrelated trades.
       uint256 reserved = self.reserved[key];
-      if (reserved < amount || _balance(asset) < reserved) revert InsufficientReservedBalance();
+      if (reserved < amount || AssetTransfers.balanceOf(asset, address(this)) < reserved) {
+        revert InsufficientReservedBalance();
+      }
       // Effects precede the external transfer; a revert restores this accounting.
       self.reserved[key] = reserved - amount;
-      if (asset.assetType == AssetType.ERC20 || asset.assetType == AssetType.ERC1155) {
-        // Verify the recipient receives the exact fungible amount.
-        uint256 beforeBalance = asset.assetType == AssetType.ERC1155
-          ? IERC1155(asset.target).balanceOf(recipient, asset.id)
-          : SafeTransferLib.balanceOf(asset.target, recipient);
-        _transferAsset(asset, address(this), recipient);
-        uint256 afterBalance = asset.assetType == AssetType.ERC1155
-          ? IERC1155(asset.target).balanceOf(recipient, asset.id)
-          : SafeTransferLib.balanceOf(asset.target, recipient);
-        if (afterBalance - beforeBalance != amount) revert UnexpectedAmountReceived();
-      } else if (asset.assetType == AssetType.ERC721) {
-        // Verify the intended recipient becomes the NFT owner.
-        _transferAsset(asset, address(this), recipient);
-        _requireERC721Owner(asset, recipient);
-      } else {
-        _transferAsset(asset, address(this), recipient);
-      }
+      AssetTransfers.transferExact(asset, address(this), recipient);
     }
   }
 
@@ -90,43 +152,6 @@ library AssetCustody {
   /// @notice Derives the reserve key; amount is intentionally excluded from asset identity.
   function assetKey(Asset memory asset) internal pure returns (bytes32) {
     return keccak256(abi.encode(asset.assetType, asset.target, asset.id));
-  }
-
-  function _transferAsset(Asset memory asset, address from, address to) private {
-    if (asset.assetType == AssetType.Native) {
-      SafeTransferLib.safeTransferETH(to, asset.amount);
-    } else if (asset.assetType == AssetType.ERC20) {
-      if (from == address(this)) {
-        SafeTransferLib.safeTransfer(asset.target, to, asset.amount);
-      } else {
-        SafeTransferLib.safeTransferFrom(asset.target, from, to, asset.amount);
-      }
-    } else if (asset.assetType == AssetType.ERC721) {
-      IERC721(asset.target).safeTransferFrom(from, to, asset.id);
-    } else {
-      IERC1155(asset.target).safeTransferFrom(from, to, asset.id, asset.amount, '');
-    }
-  }
-
-  function _requireERC721Owner(Asset memory asset, address expected) private view {
-    try IERC721(asset.target).ownerOf(asset.id) returns (address actual) {
-      if (actual != expected) revert UnexpectedERC721Owner(expected, actual);
-    } catch {
-      revert UnexpectedERC721Owner(expected, address(0));
-    }
-  }
-
-  function _balance(Asset memory asset) private view returns (uint256) {
-    if (asset.assetType == AssetType.Native) return address(this).balance;
-    if (asset.assetType == AssetType.ERC1155) return IERC1155(asset.target).balanceOf(address(this), asset.id);
-    if (asset.assetType == AssetType.ERC721) {
-      try IERC721(asset.target).ownerOf(asset.id) returns (address owner) {
-        return owner == address(this) ? 1 : 0;
-      } catch {
-        return 0;
-      }
-    }
-    return SafeTransferLib.balanceOf(asset.target, address(this));
   }
 }
 

@@ -22,6 +22,7 @@ export const prototypeComponents = [
   'directAuthorization',
   'crossChainWrapper',
   'sameChainWrapper',
+  'swapHTLC',
 ] as const
 
 export type PrototypeComponent = (typeof prototypeComponents)[number]
@@ -74,7 +75,7 @@ export function prototypeDeploymentVectorHash(
         {type: 'address'},
         {type: 'address'},
         {type: 'address'},
-        {type: 'address[4]'},
+        {type: 'address[5]'},
       ],
       [
         PROTOTYPE_DEPLOYMENT_VERSION,
@@ -83,7 +84,13 @@ export function prototypeDeploymentVectorHash(
         deployer,
         owner,
         trustedVerifier,
-        prototypeComponents.map(component => addresses[component]) as unknown as readonly [Address, Address, Address, Address],
+        prototypeComponents.map(component => addresses[component]) as unknown as readonly [
+          Address,
+          Address,
+          Address,
+          Address,
+          Address,
+        ],
       ],
     ),
   )

@@ -24,6 +24,7 @@ describe('prototype deployment vectors', () => {
       directAuthorization: '0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA',
       crossChainWrapper: '0xBefC4530880E8318250592F76C63007A04b04175',
       sameChainWrapper: '0x5aa0Ef5b07cdc3FA4c7587e220AB4880df066387',
+      swapHTLC: '0x91D8b67Bf9c657F7215970aafAF036477961757E',
     })
   })
 
