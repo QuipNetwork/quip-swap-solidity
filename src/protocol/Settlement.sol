@@ -66,6 +66,71 @@ library Settlement {
     ISwapHTLC(htlc).release(side, side.reclaimRecipient);
   }
 
+  /// @notice Atomically claims both same-chain legs from their dedicated HTLCs.
+  function claimSameChainHTLC(
+    SameChainStateMachine.Layout storage self,
+    address partyHTLC,
+    address counterpartyHTLC,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    bytes32 secret,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    trade = ProtocolHashing.tradeId(terms);
+    _requireSecret(trade, lock, secret);
+    uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
+      ? terms.partySide.claimDeadline
+      : terms.counterpartySide.claimDeadline;
+    if (timestamp >= deadline) revert ClaimWindowClosed();
+    _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
+
+    self.claim(trade, lock);
+    ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.recipient);
+    ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.recipient);
+  }
+
+  /// @notice Reclaims the sole party HTLC when no counterparty commit was recorded.
+  function reclaimSameChainPartyHTLC(
+    SameChainStateMachine.Layout storage self,
+    address partyHTLC,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
+    if (partyHTLC == address(0)) revert MissingHTLC();
+
+    trade = ProtocolHashing.tradeId(terms);
+    self.reclaimParty(trade, lock);
+    ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
+  }
+
+  /// @notice Atomically reclaims both committed same-chain HTLCs.
+  function reclaimSameChainBothHTLC(
+    SameChainStateMachine.Layout storage self,
+    address partyHTLC,
+    address counterpartyHTLC,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
+      revert ReclaimWindowClosed();
+    }
+    _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
+
+    trade = ProtocolHashing.tradeId(terms);
+    self.reclaimBoth(trade, lock);
+    ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
+    ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+  }
+
   /// @notice Claims one local cross-chain leg with the trade-bound settlement preimage.
   function claimCrossChain(
     CrossChainStateMachine.Layout storage self,
@@ -192,6 +257,10 @@ library Settlement {
     if (terms.partySide.chainId != block.chainid || terms.counterpartySide.chainId != block.chainid) {
       revert InvalidLocalChain();
     }
+  }
+
+  function _requireTwoHTLCs(address partyHTLC, address counterpartyHTLC) private pure {
+    if (partyHTLC == address(0) || counterpartyHTLC == address(0)) revert MissingHTLC();
   }
 
   function _requireSecret(bytes32 trade, bytes32 lock, bytes32 secret) private pure {

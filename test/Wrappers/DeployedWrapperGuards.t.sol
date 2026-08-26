@@ -362,6 +362,31 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(uint8(cross.state(reclaimTerms, true, reclaimLock)), uint8(CrossChainLegState.Reclaimed));
   }
 
+  function test_sameChainCommitsFundTwoIsolatedHTLCs() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+
+    _commitSame(terms, true, lock, 40, 1);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    assertEq(partyHTLC, same.predictHTLC(terms, true, lock));
+    assertGt(partyHTLC.code.length, 0);
+    assertEq(partyHTLC.balance, 1);
+    assertTrue(SwapHTLC(payable(partyHTLC)).funded());
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
+
+    _commitSame(terms, false, lock, 41, 2);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
+    assertEq(counterpartyHTLC, same.predictHTLC(terms, false, lock));
+    assertTrue(counterpartyHTLC != partyHTLC);
+    assertGt(counterpartyHTLC.code.length, 0);
+    assertEq(counterpartyHTLC.balance, 2);
+    assertTrue(SwapHTLC(payable(counterpartyHTLC)).funded());
+    assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
+    assertEq(address(same).balance, 0);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+  }
+
   function test_sameWrapperEmitsExactCommitClaimAndReclaimEvents() public {
     ProtocolTerms memory claimTerms = _sameTerms();
     bytes32 claimLock = _lock(claimTerms);
@@ -371,11 +396,17 @@ contract DeployedWrapperGuardsTest is Test {
     _commitSame(claimTerms, true, claimLock, 40, 1);
     _expectSameCommitEvents(claimTerms, false, claimLock);
     _commitSame(claimTerms, false, claimLock, 41, 2);
+    address claimPartyHTLC = same.htlcOf(claimTerms, true, claimLock);
+    address claimCounterpartyHTLC = same.htlcOf(claimTerms, false, claimLock);
 
     vm.expectEmit(true, true, false, true, address(same));
     emit Claimed(claimTrade, claimLock);
     same.claim(claimTerms, claimLock, SECRET);
     assertEq(uint8(same.state(claimTerms, claimLock)), uint8(SameChainState.Claimed));
+    assertTrue(SwapHTLC(payable(claimPartyHTLC)).released());
+    assertTrue(SwapHTLC(payable(claimCounterpartyHTLC)).released());
+    assertEq(claimPartyHTLC.balance, 0);
+    assertEq(claimCounterpartyHTLC.balance, 0);
 
     ProtocolTerms memory reclaimTerms = _sameTerms();
     reclaimTerms.partySide.sideNonce = bytes32(uint256(50));
@@ -384,11 +415,32 @@ contract DeployedWrapperGuardsTest is Test {
     bytes32 reclaimTrade = ProtocolHashing.tradeId(reclaimTerms);
     _commitSame(reclaimTerms, true, reclaimLock, 50, 1);
     _commitSame(reclaimTerms, false, reclaimLock, 51, 2);
+    address reclaimPartyHTLC = same.htlcOf(reclaimTerms, true, reclaimLock);
+    address reclaimCounterpartyHTLC = same.htlcOf(reclaimTerms, false, reclaimLock);
     vm.warp(reclaimTerms.counterpartySide.reclaimRelease);
     vm.expectEmit(true, true, false, true, address(same));
     emit Reclaimed(reclaimTrade, reclaimLock);
     same.reclaimBoth(reclaimTerms, reclaimLock);
     assertEq(uint8(same.state(reclaimTerms, reclaimLock)), uint8(SameChainState.Reclaimed));
+    assertTrue(SwapHTLC(payable(reclaimPartyHTLC)).released());
+    assertTrue(SwapHTLC(payable(reclaimCounterpartyHTLC)).released());
+    assertEq(reclaimPartyHTLC.balance, 0);
+    assertEq(reclaimCounterpartyHTLC.balance, 0);
+  }
+
+  function test_sameChainPartyOnlyReclaimReleasesItsHTLC() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 60, 1);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+
+    vm.warp(terms.partySide.reclaimRelease);
+    same.reclaimParty(terms, lock);
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Reclaimed));
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(partyHTLC.balance, 0);
+    assertEq(ALICE.balance, 1);
   }
 
   function _expectSameCommitEvents(ProtocolTerms memory terms, bool party, bytes32 lock) internal {

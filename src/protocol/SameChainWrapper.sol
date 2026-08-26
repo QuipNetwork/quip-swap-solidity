@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from '../assets/AssetHandling.sol';
+import {AssetCustody, HTLCFunding} from '../assets/AssetHandling.sol';
 import {AssetSupport} from '../assets/AssetHandling.sol';
 import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
+import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
 import {ProgressionGate} from './CommitValidation.sol';
 import {HTLCDeployer} from './HTLCDeployer.sol';
@@ -31,6 +32,7 @@ import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Reentran
 ///      provenance is not factory-checked here; the signed principal address is the trust boundary.
 contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   using AssetCustody for AssetCustody.Layout;
+  using HTLCFunding for SideTerms;
   using AssetSupport for SideTerms;
   using SameChainStateMachine for SameChainStateMachine.Layout;
   using Settlement for SameChainStateMachine.Layout;
@@ -39,8 +41,10 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   error InvalidWrapperMode();
   error InvalidLocalChain();
   error CommitWindowClosed();
+  error HTLCAlreadyExists();
 
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
+  event HTLCCreated(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address htlc);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
 
@@ -93,32 +97,50 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
     // Treat the commitment deadline as an exclusive upper bound.
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
-    // Enforce party-first ordering through the joint state machine.
+    // Enforce party-first ordering through the joint state machine before external calls.
     if (party) states.commitParty(trade, lock);
     else states.commitCounterparty(trade, lock);
-    // Pull the exact signed assets after the state transition.
-    custody.collect(side, msg.value);
+    SideTag tag = ProtocolHashing.sideTag(party);
+    bytes32 htlcKey = HTLCDeployer.recordKey(trade, lock, tag);
+    if (htlcs[htlcKey] != address(0)) revert HTLCAlreadyExists();
+
+    // Deploy and initialize one deterministic custody clone, forwarding native value directly.
+    address htlc = HTLCDeployer.deploy(HTLC_IMPLEMENTATION, trade, lock, tag);
+    ISwapHTLC(htlc).initialize{value: msg.value}(trade, lock, tag, side);
+    // The wrapper remains the allowance spender but tokens move principal -> HTLC without pooling.
+    side.transferNonNative(htlc);
+    ISwapHTLC(htlc).confirmFunding(side);
+    htlcs[htlcKey] = htlc;
+
     emit Committed(trade, lock, ProtocolHashing.sideTag(party), side.principal);
+    emit HTLCCreated(trade, lock, tag, htlc);
   }
 
   /// @notice Permissionlessly claims both escrows atomically to their fixed recipients.
   function claim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external nonReentrant {
-    // One state transition and call release both local escrows atomically.
-    bytes32 trade = states.claimSameChain(custody, terms, lock, secret, block.timestamp);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    // One state transition and transaction release both dedicated local HTLCs atomically.
+    trade = states.claimSameChainHTLC(
+      _htlc(trade, lock, SideTag.Party), _htlc(trade, lock, SideTag.Counterparty), terms, lock, secret, block.timestamp
+    );
     emit Claimed(trade, lock);
   }
 
   /// @notice Reclaims the party escrow if the counterparty never committed.
   function reclaimParty(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    // This path is reachable only while the joint state is PartyCommitted.
-    bytes32 trade = states.reclaimSameChainParty(custody, terms, lock, block.timestamp);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    // This path releases only the party HTLC and is reachable only from PartyCommitted.
+    trade = states.reclaimSameChainPartyHTLC(_htlc(trade, lock, SideTag.Party), terms, lock, block.timestamp);
     emit Reclaimed(trade, lock);
   }
 
   /// @notice Reclaims both committed escrows atomically after both reclaim releases.
   function reclaimBoth(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    // This path requires BothCommitted and both reclaim releases to have opened.
-    bytes32 trade = states.reclaimSameChainBoth(custody, terms, lock, block.timestamp);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    // This path requires BothCommitted and releases both dedicated HTLCs atomically.
+    trade = states.reclaimSameChainBothHTLC(
+      _htlc(trade, lock, SideTag.Party), _htlc(trade, lock, SideTag.Counterparty), terms, lock, block.timestamp
+    );
     emit Reclaimed(trade, lock);
   }
 
@@ -143,6 +165,10 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   /// @notice Returns aggregate custody reserved for one asset identity.
   function reserved(Asset calldata asset) external view returns (uint256) {
     return custody.reservedAmount(asset);
+  }
+
+  function _htlc(bytes32 trade, bytes32 lock, SideTag tag) private view returns (address) {
+    return htlcs[HTLCDeployer.recordKey(trade, lock, tag)];
   }
 
   function _validate(ProtocolTerms memory terms) private pure {
