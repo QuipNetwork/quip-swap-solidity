@@ -23,6 +23,7 @@ library ProtocolHashing {
   string internal constant BOB_COMMIT_GATE_DOMAIN = 'InterlockBobCommitGate-v1.1';
   string internal constant SETTLEMENT_LOCK_DOMAIN = 'InterlockSettlementLock-v1.1';
   string internal constant ASSETS_DOMAIN = 'InterlockAssets-v1.1';
+  string internal constant SIDE_TERMS_DOMAIN = 'InterlockSideTerms-v1.1';
   string internal constant COMMIT_DOMAIN = 'InterlockCommit-v1.1';
 
   error InvalidTerms();
@@ -78,6 +79,11 @@ library ProtocolHashing {
   /// @notice Hashes the assets escrowed by one side on its named chain.
   function assetHash(SideTerms memory side) internal pure returns (bytes32) {
     return keccak256(abi.encode(ASSETS_DOMAIN, side.chainId, side.assets));
+  }
+
+  /// @notice Hashes one complete signed side for binding to its dedicated custody contract.
+  function sideTermsHash(SideTerms memory side) internal pure returns (bytes32) {
+    return keccak256(abi.encode(SIDE_TERMS_DOMAIN, side));
   }
 
   /// @notice Returns the state a commit authorization must expect at execution.
