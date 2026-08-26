@@ -333,11 +333,21 @@ contract DeployedWrapperGuardsTest is Test {
     vm.expectEmit(true, false, false, true, address(cross));
     emit BobCommitSecretPublished(claimTrade, BOB_COMMIT_SECRET);
     _commitCross(claimTerms, true, claimLock, 30, 1);
+    address claimHTLC = cross.htlcOf(claimTerms, true, claimLock);
+    assertEq(claimHTLC, cross.predictHTLC(claimTerms, true, claimLock));
+    assertGt(claimHTLC.code.length, 0);
+    assertEq(claimHTLC.balance, 1);
+    assertEq(SwapHTLC(payable(claimHTLC)).controller(), address(cross));
+    assertTrue(SwapHTLC(payable(claimHTLC)).funded());
+    assertFalse(SwapHTLC(payable(claimHTLC)).released());
+    assertEq(address(cross).balance, 0);
 
     vm.expectEmit(true, true, true, true, address(cross));
     emit Claimed(claimTrade, claimLock, SideTag.Party);
     cross.claim(claimTerms, true, claimLock, SECRET);
     assertEq(uint8(cross.state(claimTerms, true, claimLock)), uint8(CrossChainLegState.Claimed));
+    assertTrue(SwapHTLC(payable(claimHTLC)).released());
+    assertEq(claimHTLC.balance, 0);
 
     ProtocolTerms memory reclaimTerms = _crossTerms();
     reclaimTerms.partySide.sideNonce = bytes32(uint256(31));

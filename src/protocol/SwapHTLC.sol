@@ -52,6 +52,9 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
       if (sideTerms_.assets[i].assetType == AssetType.Native) expectedNative += sideTerms_.assets[i].amount;
     }
     if (msg.value != expectedNative) revert IncorrectNativeAmount();
+    if (sideTerms_.recipient == address(this) || sideTerms_.reclaimRecipient == address(this)) {
+      revert InvalidRecipient();
+    }
 
     controller = msg.sender;
     tradeId = tradeId_;

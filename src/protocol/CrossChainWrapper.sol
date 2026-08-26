@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetCustody} from '../assets/AssetHandling.sol';
+import {AssetCustody, HTLCFunding} from '../assets/AssetHandling.sol';
 import {AssetSupport} from '../assets/AssetHandling.sol';
 import {IAssetSupportRegistry} from '../interfaces/IAssetSupportRegistry.sol';
 import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationReceiver.sol';
+import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
 import {ProgressionGate} from './CommitValidation.sol';
 import {HTLCDeployer} from './HTLCDeployer.sol';
@@ -31,6 +32,7 @@ import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Reentran
 ///      provenance is not factory-checked here; the signed principal address is the trust boundary.
 contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   using AssetCustody for AssetCustody.Layout;
+  using HTLCFunding for SideTerms;
   using AssetSupport for SideTerms;
   using CrossChainStateMachine for CrossChainStateMachine.Layout;
   using Settlement for CrossChainStateMachine.Layout;
@@ -39,9 +41,11 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
   error InvalidWrapperMode();
   error InvalidLocalChain();
   error CommitWindowClosed();
+  error HTLCAlreadyExists();
 
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
   event BobCommitSecretPublished(bytes32 indexed tradeId, bytes32 bobCommitSecret);
+  event HTLCCreated(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address htlc);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
 
@@ -95,27 +99,45 @@ contract CrossChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC115
     // Treat the commitment deadline as an exclusive upper bound.
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
 
-    // Advance state before interacting with any asset contract.
+    // Advance state before interacting with the clone or any asset contract.
     SideTag tag = ProtocolHashing.sideTag(party);
     states.commit(trade, lock, tag);
-    // Pull the exact signed assets and account for the forwarded native value.
-    custody.collect(side, msg.value);
+    bytes32 htlcKey = HTLCDeployer.recordKey(trade, lock, tag);
+    if (htlcs[htlcKey] != address(0)) revert HTLCAlreadyExists();
+
+    // Deploy and initialize one deterministic custody clone, forwarding native value directly.
+    address htlc = HTLCDeployer.deploy(HTLC_IMPLEMENTATION, trade, lock, tag);
+    ISwapHTLC(htlc).initialize{value: msg.value}(trade, lock, tag, side);
+    // The wrapper remains the allowance spender but tokens move principal -> HTLC without pooling.
+    side.transferNonNative(htlc);
+    ISwapHTLC(htlc).confirmFunding(side);
+    htlcs[htlcKey] = htlc;
+
     emit Committed(trade, lock, tag, side.principal);
+    emit HTLCCreated(trade, lock, tag, htlc);
     // Alice party commit is the on-chain publication point for Bob commit secret.
     if (party) emit BobCommitSecretPublished(trade, bobCommitSecret);
   }
 
   /// @notice Permissionlessly claims the selected local leg to its fixed recipient.
   function claim(ProtocolTerms calldata terms, bool party, bytes32 lock, bytes32 secret) external nonReentrant {
-    // Settlement validates the preimage and window, advances state, then releases custody.
-    bytes32 trade = states.claimCrossChain(custody, terms, party, lock, secret, block.timestamp);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    SideTag tag = ProtocolHashing.sideTag(party);
+    // Settlement validates the preimage and window, advances state, then releases this leg's HTLC.
+    trade = states.claimCrossChainHTLC(
+      htlcs[HTLCDeployer.recordKey(trade, lock, tag)], terms, party, lock, secret, block.timestamp
+    );
     emit Claimed(trade, lock, ProtocolHashing.sideTag(party));
   }
 
   /// @notice Permissionlessly reclaims the selected local leg to its fixed reclaim recipient.
   function reclaim(ProtocolTerms calldata terms, bool party, bytes32 lock) external nonReentrant {
-    // Reclaim validates the release time, advances state, then returns custody.
-    bytes32 trade = states.reclaimCrossChain(custody, terms, party, lock, block.timestamp);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    SideTag tag = ProtocolHashing.sideTag(party);
+    // Reclaim validates the release time, advances state, then returns this leg's HTLC.
+    trade = states.reclaimCrossChainHTLC(
+      htlcs[HTLCDeployer.recordKey(trade, lock, tag)], terms, party, lock, block.timestamp
+    );
     emit Reclaimed(trade, lock, ProtocolHashing.sideTag(party));
   }
 

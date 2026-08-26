@@ -114,9 +114,19 @@ contract WrapperFundingTest is Test {
     vm.prank(broker);
     gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
 
-    assertEq(token.balanceOf(address(cross)), 10 ether);
+    address htlc = cross.htlcOf(terms, true, lock);
+    assertEq(htlc, cross.predictHTLC(terms, true, lock));
+    assertGt(htlc.code.length, 0);
+    assertEq(token.balanceOf(htlc), 10 ether);
+    assertEq(token.balanceOf(address(cross)), 0);
     assertEq(token.balanceOf(broker), 0);
+    assertTrue(SwapHTLC(payable(htlc)).funded());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(token.balanceOf(RECIPIENT), 10 ether);
+    assertEq(token.balanceOf(htlc), 0);
+    assertTrue(SwapHTLC(payable(htlc)).released());
   }
 
   function test_allDemoInvalidActionsRevertAtomicallyInOneSession() public {

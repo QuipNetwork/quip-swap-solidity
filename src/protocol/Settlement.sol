@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {AssetCustody} from '../assets/AssetHandling.sol';
+import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {ProtocolTerms, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';
@@ -21,6 +22,49 @@ library Settlement {
   error InvalidSettlementSecret();
   error ClaimWindowClosed();
   error ReclaimWindowClosed();
+  error MissingHTLC();
+
+  /// @notice Claims one local cross-chain leg held by its dedicated HTLC.
+  function claimCrossChainHTLC(
+    CrossChainStateMachine.Layout storage self,
+    address htlc,
+    ProtocolTerms memory terms,
+    bool party,
+    bytes32 lock,
+    bytes32 secret,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.CrossChain);
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    _requireLocal(side);
+    trade = ProtocolHashing.tradeId(terms);
+    _requireSecret(trade, lock, secret);
+    if (timestamp >= side.claimDeadline) revert ClaimWindowClosed();
+    if (htlc == address(0)) revert MissingHTLC();
+
+    self.claim(trade, lock, ProtocolHashing.sideTag(party));
+    ISwapHTLC(htlc).release(side, side.recipient);
+  }
+
+  /// @notice Reclaims one local cross-chain leg held by its dedicated HTLC.
+  function reclaimCrossChainHTLC(
+    CrossChainStateMachine.Layout storage self,
+    address htlc,
+    ProtocolTerms memory terms,
+    bool party,
+    bytes32 lock,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.CrossChain);
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    _requireLocal(side);
+    if (timestamp < side.reclaimRelease) revert ReclaimWindowClosed();
+    if (htlc == address(0)) revert MissingHTLC();
+
+    trade = ProtocolHashing.tradeId(terms);
+    self.reclaim(trade, lock, ProtocolHashing.sideTag(party));
+    ISwapHTLC(htlc).release(side, side.reclaimRecipient);
+  }
 
   /// @notice Claims one local cross-chain leg with the trade-bound settlement preimage.
   function claimCrossChain(
