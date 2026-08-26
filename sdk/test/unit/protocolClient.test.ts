@@ -3,11 +3,14 @@ import {encodeAbiParameters, encodeEventTopics} from 'viem'
 import type {Address, Log, PublicClient, WalletClient} from 'viem'
 import {
   AssetType,
+  SideTag,
   assetSupportRegistryAbi,
   createProtocolClient,
+  crossChainWrapperAbi,
   decodeProtocolEvents,
+  swapHTLCAbi,
 } from '../../src/index.js'
-import type {ProtocolAddresses} from '../../src/index.js'
+import type {Hex32, ProtocolAddresses, ProtocolTerms} from '../../src/index.js'
 
 const address = (suffix: string): Address => `0x${suffix.padStart(40, '0')}` as Address
 const addresses: ProtocolAddresses = {
@@ -16,6 +19,7 @@ const addresses: ProtocolAddresses = {
   crossChainWrapper: address('5'),
   sameChainWrapper: address('6'),
 }
+const hash = (byte: string): Hex32 => `0x${byte.repeat(64)}` as Hex32
 
 describe('current protocol SDK surface', () => {
   it('submits asset policy writes through the configured registry', async () => {
@@ -57,6 +61,45 @@ describe('current protocol SDK surface', () => {
     })
   })
 
+  it('discovers wrapper HTLCs and reads their bound lifecycle state', async () => {
+    const reads: Array<Record<string, unknown>> = []
+    const htlc = address('7')
+    const values: Readonly<Record<string, unknown>> = {
+      htlcOf: htlc,
+      predictHTLC: htlc,
+      controller: addresses.crossChainWrapper,
+      tradeId: hash('1'),
+      lock: hash('2'),
+      sideTermsHash: hash('3'),
+      side: SideTag.Party,
+      funded: true,
+      released: false,
+    }
+    const publicClient = {
+      readContract: async (request: Record<string, unknown>) => {
+        reads.push(request)
+        return values[request['functionName'] as string]
+      },
+    } as unknown as PublicClient
+    const client = createProtocolClient({addresses, publicClient})
+    const terms = {} as ProtocolTerms
+
+    await expect(client.getCrossChainHTLC(terms, true, hash('2'))).resolves.toBe(htlc)
+    await expect(client.predictCrossChainHTLC(terms, true, hash('2'))).resolves.toBe(htlc)
+    await expect(client.getSameChainHTLC(terms, false, hash('2'))).resolves.toBe(htlc)
+    await expect(client.predictSameChainHTLC(terms, false, hash('2'))).resolves.toBe(htlc)
+    await expect(client.getHTLCState(htlc)).resolves.toEqual({
+      controller: addresses.crossChainWrapper,
+      tradeId: hash('1'),
+      lock: hash('2'),
+      sideTermsHash: hash('3'),
+      side: SideTag.Party,
+      funded: true,
+      released: false,
+    })
+    expect(reads.filter(read => read['address'] === htlc)).toHaveLength(7)
+  })
+
   it('decodes only address-scoped current protocol events', () => {
     const token = address('d')
     const topics = encodeEventTopics({
@@ -86,5 +129,43 @@ describe('current protocol SDK surface', () => {
       eventName: 'AssetSupportUpdated',
       args: {assetType: AssetType.ERC20, target: token, supported: true},
     })
+  })
+
+  it('decodes wrapper HTLC creation and only explicitly scoped clone events', () => {
+    const htlc = address('7')
+    const tradeId = hash('1')
+    const lock = hash('2')
+    const wrapperLog = {
+      address: addresses.crossChainWrapper,
+      topics: encodeEventTopics({
+        abi: crossChainWrapperAbi,
+        eventName: 'HTLCCreated',
+        args: {tradeId, lock, side: SideTag.Party},
+      }),
+      data: encodeAbiParameters([{type: 'address'}], [htlc]),
+      blockNumber: 1n,
+      transactionHash: hash('4'),
+      logIndex: 0,
+      blockHash: hash('5'),
+      transactionIndex: 0,
+      removed: false,
+    } as Log
+    const fundedLog = {
+      ...wrapperLog,
+      address: htlc,
+      topics: encodeEventTopics({
+        abi: swapHTLCAbi,
+        eventName: 'Funded',
+        args: {tradeId, lock, side: SideTag.Party},
+      }),
+      data: '0x',
+      logIndex: 1,
+    } as Log
+
+    expect(decodeProtocolEvents([wrapperLog, fundedLog], addresses)).toHaveLength(1)
+    expect(decodeProtocolEvents([wrapperLog, fundedLog], addresses, [], [htlc])).toMatchObject([
+      {source: 'crossChainWrapper', eventName: 'HTLCCreated', args: {tradeId, lock, side: SideTag.Party, htlc}},
+      {source: 'swapHTLC', eventName: 'Funded', args: {tradeId, lock, side: SideTag.Party}},
+    ])
   })
 })

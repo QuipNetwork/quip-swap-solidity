@@ -4,6 +4,7 @@ import {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
 import {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
+import {swapHTLCAbi} from './generated/swapHTLCAbi.js'
 import type {
   CommitAuthorizationRequest,
   InitialRegistration,
@@ -13,6 +14,7 @@ import type {
   RegistryOperation,
 } from './protocol.js'
 import type {CrossChainLegState, SameChainState} from './protocol.js'
+import type {SideTag} from './protocol.js'
 import type {AssetType} from './types.js'
 import type {Hex32} from './types.js'
 
@@ -31,6 +33,16 @@ export interface CreateProtocolClientArgs {
 
 export interface WriteOptions {
   readonly value?: bigint
+}
+
+export interface HTLCState {
+  readonly controller: Address
+  readonly tradeId: Hex32
+  readonly lock: Hex32
+  readonly sideTermsHash: Hex32
+  readonly side: SideTag
+  readonly funded: boolean
+  readonly released: boolean
 }
 
 export interface ProtocolClient {
@@ -61,6 +73,11 @@ export interface ProtocolClient {
   getIdentity(eoa: Address): Promise<PQIdentity>
   getCrossChainState(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<CrossChainLegState>
   getSameChainState(terms: ProtocolTerms, lock: Hex32): Promise<SameChainState>
+  getCrossChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
+  predictCrossChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
+  getSameChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
+  predictSameChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
+  getHTLCState(htlc: Address): Promise<HTLCState>
 }
 
 export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolClient {
@@ -124,5 +141,25 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       read(addresses.crossChainWrapper, crossChainWrapperAbi, 'state', [terms, party, lock]),
     getSameChainState: (terms, lock) =>
       read(addresses.sameChainWrapper, sameChainWrapperAbi, 'state', [terms, lock]),
+    getCrossChainHTLC: (terms, party, lock) =>
+      read(addresses.crossChainWrapper, crossChainWrapperAbi, 'htlcOf', [terms, party, lock]),
+    predictCrossChainHTLC: (terms, party, lock) =>
+      read(addresses.crossChainWrapper, crossChainWrapperAbi, 'predictHTLC', [terms, party, lock]),
+    getSameChainHTLC: (terms, party, lock) =>
+      read(addresses.sameChainWrapper, sameChainWrapperAbi, 'htlcOf', [terms, party, lock]),
+    predictSameChainHTLC: (terms, party, lock) =>
+      read(addresses.sameChainWrapper, sameChainWrapperAbi, 'predictHTLC', [terms, party, lock]),
+    getHTLCState: async htlc => {
+      const [controller, tradeId, lock, sideTermsHash, side, funded, released] = await Promise.all([
+        read<Address>(htlc, swapHTLCAbi, 'controller', []),
+        read<Hex32>(htlc, swapHTLCAbi, 'tradeId', []),
+        read<Hex32>(htlc, swapHTLCAbi, 'lock', []),
+        read<Hex32>(htlc, swapHTLCAbi, 'sideTermsHash', []),
+        read<SideTag>(htlc, swapHTLCAbi, 'side', []),
+        read<boolean>(htlc, swapHTLCAbi, 'funded', []),
+        read<boolean>(htlc, swapHTLCAbi, 'released', []),
+      ])
+      return {controller, tradeId, lock, sideTermsHash, side, funded, released}
+    },
   }
 }

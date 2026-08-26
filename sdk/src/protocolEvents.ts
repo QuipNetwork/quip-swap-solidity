@@ -5,6 +5,7 @@ import {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
 import {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 import {quipWalletAbi} from './generated/quipWalletAbi.js'
 import {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
+import {swapHTLCAbi} from './generated/swapHTLCAbi.js'
 import type {ProtocolAddresses} from './protocolClient.js'
 
 export type ProtocolEventSource =
@@ -13,6 +14,7 @@ export type ProtocolEventSource =
   | 'quipWallet'
   | 'crossChainWrapper'
   | 'sameChainWrapper'
+  | 'swapHTLC'
 
 export interface ProtocolEvent {
   readonly source: ProtocolEventSource
@@ -30,12 +32,14 @@ const abiBySource: Readonly<Record<ProtocolEventSource, Abi>> = {
   quipWallet: quipWalletAbi as Abi,
   crossChainWrapper: crossChainWrapperAbi as Abi,
   sameChainWrapper: sameChainWrapperAbi as Abi,
+  swapHTLC: swapHTLCAbi as Abi,
 }
 
 export function decodeProtocolEvents(
   logs: readonly Log[],
   addresses: ProtocolAddresses,
   quipWallets: readonly Address[] = [],
+  swapHTLCs: readonly Address[] = [],
 ): ProtocolEvent[] {
   const sourceByAddress = new Map<string, ProtocolEventSource>([
     [addresses.assetSupportRegistry.toLowerCase(), 'assetSupportRegistry'],
@@ -44,6 +48,7 @@ export function decodeProtocolEvents(
     [addresses.sameChainWrapper.toLowerCase(), 'sameChainWrapper'],
   ])
   for (const wallet of quipWallets) sourceByAddress.set(wallet.toLowerCase(), 'quipWallet')
+  for (const htlc of swapHTLCs) sourceByAddress.set(htlc.toLowerCase(), 'swapHTLC')
   const events: ProtocolEvent[] = []
   for (const log of logs) {
     const source = sourceByAddress.get(log.address.toLowerCase())
@@ -73,11 +78,12 @@ export async function waitForProtocolReceipt(
   addresses: ProtocolAddresses,
   confirmations?: number,
   quipWallets: readonly Address[] = [],
+  swapHTLCs: readonly Address[] = [],
 ): Promise<{readonly receipt: TransactionReceipt; readonly events: readonly ProtocolEvent[]}> {
   const receipt = await publicClient.waitForTransactionReceipt({
     hash,
     ...(confirmations === undefined ? {} : {confirmations}),
   })
   if (receipt.status !== 'success') throw new Error(`Protocol transaction reverted: ${hash}`)
-  return {receipt, events: decodeProtocolEvents(receipt.logs, addresses, quipWallets)}
+  return {receipt, events: decodeProtocolEvents(receipt.logs, addresses, quipWallets, swapHTLCs)}
 }

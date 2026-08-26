@@ -68,6 +68,7 @@ export type {
   CreateProtocolClientArgs,
   ProtocolClient,
   WriteOptions,
+  HTLCState,
 } from './protocolClient.js'
 export {decodeProtocolEvents, waitForProtocolReceipt} from './protocolEvents.js'
 export type {ProtocolEventSource, ProtocolEvent} from './protocolEvents.js'
@@ -250,4 +251,5 @@ export {assetSupportRegistryAbi} from './generated/assetSupportRegistryAbi.js'
 export {directAuthorizationAbi} from './generated/directAuthorizationAbi.js'
 export {crossChainWrapperAbi} from './generated/crossChainWrapperAbi.js'
 export {sameChainWrapperAbi} from './generated/sameChainWrapperAbi.js'
+export {swapHTLCAbi} from './generated/swapHTLCAbi.js'
 export {quipWalletAbi} from './generated/quipWalletAbi.js'

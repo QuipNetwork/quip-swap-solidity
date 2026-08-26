@@ -12,6 +12,11 @@ export const sameChainWrapperAbi = [
         "name": "assetSupport",
         "type": "address",
         "internalType": "contract IAssetSupportRegistry"
+      },
+      {
+        "name": "htlcImplementation",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -32,6 +37,19 @@ export const sameChainWrapperAbi = [
   {
     "type": "function",
     "name": "DIRECT_AUTHORIZATION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "HTLC_IMPLEMENTATION",
     "inputs": [],
     "outputs": [
       {
@@ -277,6 +295,245 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "function",
+    "name": "htlcOf",
+    "inputs": [
+      {
+        "name": "terms",
+        "type": "tuple",
+        "internalType": "struct ProtocolTerms",
+        "components": [
+          {
+            "name": "partySide",
+            "type": "tuple",
+            "internalType": "struct SideTerms",
+            "components": [
+              {
+                "name": "chainId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "assets",
+                "type": "tuple[]",
+                "internalType": "struct Asset[]",
+                "components": [
+                  {
+                    "name": "assetType",
+                    "type": "uint8",
+                    "internalType": "enum AssetType"
+                  },
+                  {
+                    "name": "target",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "id",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "amount",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "principal",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "authorizationMode",
+                "type": "uint8",
+                "internalType": "enum AuthorizationMode"
+              },
+              {
+                "name": "principalKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRecipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "recipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "commitmentDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "claimDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRelease",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "commitLock",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "delegationPolicy",
+                "type": "uint8",
+                "internalType": "enum DelegationPolicy"
+              },
+              {
+                "name": "delegate",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "delegateKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "sideNonce",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "counterpartySide",
+            "type": "tuple",
+            "internalType": "struct SideTerms",
+            "components": [
+              {
+                "name": "chainId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "assets",
+                "type": "tuple[]",
+                "internalType": "struct Asset[]",
+                "components": [
+                  {
+                    "name": "assetType",
+                    "type": "uint8",
+                    "internalType": "enum AssetType"
+                  },
+                  {
+                    "name": "target",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "id",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "amount",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "principal",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "authorizationMode",
+                "type": "uint8",
+                "internalType": "enum AuthorizationMode"
+              },
+              {
+                "name": "principalKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRecipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "recipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "commitmentDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "claimDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRelease",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "commitLock",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "delegationPolicy",
+                "type": "uint8",
+                "internalType": "enum DelegationPolicy"
+              },
+              {
+                "name": "delegate",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "delegateKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "sideNonce",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "party",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "lock",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "onERC1155BatchReceived",
     "inputs": [
       {
@@ -386,6 +643,245 @@ export const sameChainWrapperAbi = [
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "predictHTLC",
+    "inputs": [
+      {
+        "name": "terms",
+        "type": "tuple",
+        "internalType": "struct ProtocolTerms",
+        "components": [
+          {
+            "name": "partySide",
+            "type": "tuple",
+            "internalType": "struct SideTerms",
+            "components": [
+              {
+                "name": "chainId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "assets",
+                "type": "tuple[]",
+                "internalType": "struct Asset[]",
+                "components": [
+                  {
+                    "name": "assetType",
+                    "type": "uint8",
+                    "internalType": "enum AssetType"
+                  },
+                  {
+                    "name": "target",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "id",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "amount",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "principal",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "authorizationMode",
+                "type": "uint8",
+                "internalType": "enum AuthorizationMode"
+              },
+              {
+                "name": "principalKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRecipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "recipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "commitmentDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "claimDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRelease",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "commitLock",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "delegationPolicy",
+                "type": "uint8",
+                "internalType": "enum DelegationPolicy"
+              },
+              {
+                "name": "delegate",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "delegateKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "sideNonce",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "counterpartySide",
+            "type": "tuple",
+            "internalType": "struct SideTerms",
+            "components": [
+              {
+                "name": "chainId",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "assets",
+                "type": "tuple[]",
+                "internalType": "struct Asset[]",
+                "components": [
+                  {
+                    "name": "assetType",
+                    "type": "uint8",
+                    "internalType": "enum AssetType"
+                  },
+                  {
+                    "name": "target",
+                    "type": "address",
+                    "internalType": "address"
+                  },
+                  {
+                    "name": "id",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  },
+                  {
+                    "name": "amount",
+                    "type": "uint256",
+                    "internalType": "uint256"
+                  }
+                ]
+              },
+              {
+                "name": "principal",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "authorizationMode",
+                "type": "uint8",
+                "internalType": "enum AuthorizationMode"
+              },
+              {
+                "name": "principalKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRecipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "recipient",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "commitmentDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "claimDeadline",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "reclaimRelease",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "commitLock",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              },
+              {
+                "name": "delegationPolicy",
+                "type": "uint8",
+                "internalType": "enum DelegationPolicy"
+              },
+              {
+                "name": "delegate",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "delegateKeyVersion",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "sideNonce",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "party",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "lock",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1474,6 +1970,37 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "event",
+    "name": "HTLCCreated",
+    "inputs": [
+      {
+        "name": "tradeId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "lock",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "side",
+        "type": "uint8",
+        "indexed": true,
+        "internalType": "enum SideTag"
+      },
+      {
+        "name": "htlc",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Reclaimed",
     "inputs": [
       {
@@ -1508,12 +2035,7 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "error",
-    "name": "IncorrectNativeAmount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientReservedBalance",
+    "name": "HTLCAlreadyExists",
     "inputs": []
   },
   {
@@ -1544,6 +2066,16 @@ export const sameChainWrapperAbi = [
   {
     "type": "error",
     "name": "InvalidExpectedSourceState",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidFundingDestination",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidHTLCImplementation",
     "inputs": []
   },
   {
@@ -1595,6 +2127,11 @@ export const sameChainWrapperAbi = [
   {
     "type": "error",
     "name": "MissingBobCommitSecret",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MissingHTLC",
     "inputs": []
   },
   {

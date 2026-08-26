@@ -9,6 +9,7 @@ const contracts = [
   ['DirectAuthorization', 'directAuthorizationAbi'],
   ['CrossChainWrapper', 'crossChainWrapperAbi'],
   ['SameChainWrapper', 'sameChainWrapperAbi'],
+  ['SwapHTLC', 'swapHTLCAbi'],
   ['QuipWallet', 'quipWalletAbi'],
   ['Omnibus', 'omnibusAbi'],
 ] as const
