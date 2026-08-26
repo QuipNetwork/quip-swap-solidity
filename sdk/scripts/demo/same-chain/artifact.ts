@@ -166,23 +166,25 @@ function initialPosition(
     principal: participant.principal,
     recipient: participant.recipient,
     token: participant.asset,
+    htlc: participant.htlc,
+    htlcDeployed: false,
+    htlcFunded: false,
+    htlcReleased: false,
     principalBalance: participant.balance,
     recipientBalance: '0',
-    wrapperBalance: '0',
+    htlcBalance: '0',
     allowance: participant.allowance,
-    reserved: '0',
   }
 }
 
 function assetDelta(before: SameChainAssetPosition, after: SameChainAssetPosition): Record<string, string> {
-  if (before.role !== after.role || before.token !== after.token) throw new Error('custody order changed')
+  if (before.role !== after.role || before.token !== after.token || before.htlc !== after.htlc) throw new Error('custody order changed')
   return {
     role: after.role,
     principalBalance: delta(before.principalBalance, after.principalBalance),
     recipientBalance: delta(before.recipientBalance, after.recipientBalance),
-    wrapperBalance: delta(before.wrapperBalance, after.wrapperBalance),
+    htlcBalance: delta(before.htlcBalance, after.htlcBalance),
     allowance: delta(before.allowance, after.allowance),
-    reserved: delta(before.reserved, after.reserved),
   }
 }
 
@@ -219,6 +221,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   const initial = array(root.initialCustody, 'initialCustody')
   if (initial.length !== 2) fail('initialCustody.length')
   validateCustody(initial, 'initialCustody')
+  validateLifecycle(initial, [[false, false, false], [false, false, false]], 'initialCustody')
   const decisions = array(root.authorizationDecisions, 'authorizationDecisions')
   if (decisions.length !== 2) fail('authorizationDecisions.length')
   decisions.forEach((item, index) => {
@@ -247,10 +250,25 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     const events = array(receipt.events, 'transition events ' + index)
     const requiredEvent = index < 2 ? 'sameChainWrapper.Committed' : 'sameChainWrapper.Claimed'
     if (!events.includes(requiredEvent)) fail('transition event ' + index)
+    if (index < 2 && (!events.includes('sameChainWrapper.HTLCCreated') || !events.includes('swapHTLC.Funded'))) {
+      fail('HTLC funding events ' + index)
+    }
+    if (index === 2 && events.filter(event => event === 'swapHTLC.Released').length !== 2) {
+      fail('HTLC release events')
+    }
     const custody = array(transition.custodyAfter, `transitions[${index}].custodyAfter`)
     const deltas = array(transition.balanceDeltas, `transitions[${index}].balanceDeltas`)
     if (custody.length !== 2 || deltas.length !== 2) fail(`transitions[${index}].custody`)
     validateCustodyDeltas(previousCustody, custody, deltas, 'transitions[' + index + ']')
+    validateLifecycle(
+      custody,
+      index === 0
+        ? [[true, true, false], [false, false, false]]
+        : index === 1
+          ? [[true, true, false], [true, true, false]]
+          : [[true, true, true], [true, true, true]],
+      `transitions[${index}].custodyAfter`,
+    )
     previousCustody = custody
   })
   equal(record(decisions[0], 'alice decision').transactionHash, record(record(transitions[0], 'transition 0').receipt, 'receipt 0').transactionHash, 'alice transaction')
@@ -274,13 +292,23 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     const item = record(recovery, `recoveries[${index}]`)
     equal(item.stateAfter, 'Reclaimed', `recoveries[${index}].stateAfter`)
     equal(item.fixedReclaimRecipients, true, `recoveries[${index}].fixedReclaimRecipients`)
+    const custody = array(item.custodyAfter, `recoveries[${index}].custodyAfter`)
+    validateCustody(custody, `recoveries[${index}].custodyAfter`)
+    validateLifecycle(
+      custody,
+      index === 0
+        ? [[true, true, true], [false, false, false]]
+        : [[true, true, true], [true, true, true]],
+      `recoveries[${index}].custodyAfter`,
+    )
   }
 
   const rollback = record(root.atomicRollback, 'atomicRollback')
   equal(rollback.stateBefore, 'BothCommitted', 'atomicRollback.stateBefore')
   equal(rollback.stateAfter, 'BothCommitted', 'atomicRollback.stateAfter')
   equal(rollback.firstPayoutRolledBack, true, 'atomicRollback.firstPayoutRolledBack')
-  equal(rollback.reservesAndBalancesUnchanged, true, 'atomicRollback.reservesAndBalancesUnchanged')
+  equal(rollback.trigger, 'counterparty-htlc-deficit', 'atomicRollback.trigger')
+  equal(rollback.htlcBalancesUnchanged, true, 'atomicRollback.htlcBalancesUnchanged')
 
   const terminal = record(root.terminalOutcome, 'terminalOutcome')
   equal(terminal.state, 'Claimed', 'terminalOutcome.state')
@@ -295,8 +323,10 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     equal(asset.recipient, side.recipient, 'terminal recipient ' + index)
     equal(asset.token, side.assets[0]?.target, 'terminal token ' + index)
     equal(asset.recipientBalance, side.assets[0]?.amount.toString(), 'terminal payout ' + index)
-    equal(asset.wrapperBalance, '0', `terminalOutcome.custody[${index}].wrapperBalance`)
-    equal(asset.reserved, '0', `terminalOutcome.custody[${index}].reserved`)
+    equal(asset.htlcBalance, '0', `terminalOutcome.custody[${index}].htlcBalance`)
+    equal(asset.htlcDeployed, true, `terminalOutcome.custody[${index}].htlcDeployed`)
+    equal(asset.htlcFunded, true, `terminalOutcome.custody[${index}].htlcFunded`)
+    equal(asset.htlcReleased, true, `terminalOutcome.custody[${index}].htlcReleased`)
   })
   rejectSensitiveFields(root)
 }
@@ -412,9 +442,28 @@ function validateCustody(items: unknown[], path: string): void {
     address(asset.principal, path + '[' + index + '].principal')
     address(asset.recipient, path + '[' + index + '].recipient')
     address(asset.token, path + '[' + index + '].token')
-    for (const field of ['principalBalance', 'recipientBalance', 'wrapperBalance', 'allowance', 'reserved'] as const) {
+    address(asset.htlc, path + '[' + index + '].htlc')
+    for (const field of ['htlcDeployed', 'htlcFunded', 'htlcReleased'] as const) {
+      if (typeof asset[field] !== 'boolean') fail(path + '[' + index + '].' + field)
+    }
+    for (const field of ['principalBalance', 'recipientBalance', 'htlcBalance', 'allowance'] as const) {
       if (!/^[0-9]+$/.test(String(asset[field]))) fail(path + '[' + index + '].' + field)
     }
+  })
+}
+
+function validateLifecycle(
+  items: unknown[],
+  expected: readonly (readonly [boolean, boolean, boolean])[],
+  path: string,
+): void {
+  items.forEach((item, index) => {
+    const asset = record(item, `${path}[${index}]`)
+    const lifecycle = expected[index]
+    if (lifecycle === undefined) fail(`${path}[${index}]`)
+    equal(asset.htlcDeployed, lifecycle[0], `${path}[${index}].htlcDeployed`)
+    equal(asset.htlcFunded, lifecycle[1], `${path}[${index}].htlcFunded`)
+    equal(asset.htlcReleased, lifecycle[2], `${path}[${index}].htlcReleased`)
   })
 }
 
@@ -432,7 +481,8 @@ function validateCustodyDeltas(
     equal(change.role, current.role, path + '.balanceDeltas[' + index + '].role')
     equal(current.role, previous.role, path + '.custodyAfter[' + index + '].role')
     equal(current.token, previous.token, path + '.custodyAfter[' + index + '].token')
-    for (const field of ['principalBalance', 'recipientBalance', 'wrapperBalance', 'allowance', 'reserved'] as const) {
+    equal(current.htlc, previous.htlc, path + '.custodyAfter[' + index + '].htlc')
+    for (const field of ['principalBalance', 'recipientBalance', 'htlcBalance', 'allowance'] as const) {
       const expected = (BigInt(String(current[field])) - BigInt(String(previous[field]))).toString()
       equal(change[field], expected, path + '.balanceDeltas[' + index + '].' + field)
     }

@@ -5,6 +5,7 @@ import {
   AuthorizationMode,
   DelegationPolicy,
   WrapperMode,
+  createProtocolClient,
   settlementLock,
   tradeId,
   validateProtocolTerms,
@@ -46,6 +47,7 @@ export interface SameChainParticipantSetup {
   readonly recipient: Address
   readonly reclaimRecipient: Address
   readonly asset: Address
+  readonly htlc: Address
   readonly amount: string
   readonly balance: string
   readonly allowance: string
@@ -238,15 +240,20 @@ async function readSameChainSetup(
   terms: ProtocolTerms,
   lock: Hex32,
 ): Promise<SameChainSetup> {
+  const protocol = createProtocolClient({
+    addresses: deployment.addresses,
+    publicClient: chain.publicClient,
+  })
   const participant = async (
     role: 'alice' | 'bob',
     side: ProtocolTerms['partySide'],
+    party: boolean,
     activeSeed: Hex32,
     recoverySeed: Hex32,
   ): Promise<SameChainParticipantSetup> => {
     const asset = side.assets[0]
     if (asset === undefined) throw new Error(`${role} has no demo asset`)
-    const [balance, allowance, supported, identity] = await Promise.all([
+    const [balance, allowance, supported, identity, htlc] = await Promise.all([
       chain.publicClient.readContract({
         address: asset.target,
         abi: erc20MockAbi,
@@ -271,6 +278,7 @@ async function readSameChainSetup(
         functionName: 'identityOf',
         args: [side.principal],
       }),
+      protocol.predictSameChainHTLC(terms, party, lock),
     ])
     if (balance !== asset.amount || allowance !== asset.amount || supported !== true) {
       throw new Error(`${role} asset bootstrap mismatch`)
@@ -284,6 +292,7 @@ async function readSameChainSetup(
       recipient: side.recipient,
       reclaimRecipient: side.reclaimRecipient,
       asset: asset.target,
+      htlc,
       amount: asset.amount.toString(),
       balance: balance.toString(),
       allowance: allowance.toString(),
@@ -308,7 +317,7 @@ async function readSameChainSetup(
   return {
     wrapper: deployment.addresses.sameChainWrapper,
     state: 'Unused',
-    alice: await participant('alice', terms.partySide, fixed(101), fixed(102)),
-    bob: await participant('bob', terms.counterpartySide, fixed(103), fixed(104)),
+    alice: await participant('alice', terms.partySide, true, fixed(101), fixed(102)),
+    bob: await participant('bob', terms.counterpartySide, false, fixed(103), fixed(104)),
   }
 }

@@ -4,6 +4,7 @@ import {
   encodeFunctionData,
   keccak256,
   sliceHex,
+  zeroAddress,
 } from 'viem'
 import type {Address, Hash, Hex, TransactionReceipt} from 'viem'
 import {
@@ -39,11 +40,14 @@ export interface SameChainAssetPosition {
   readonly principal: Address
   readonly recipient: Address
   readonly token: Address
+  readonly htlc: Address
+  readonly htlcDeployed: boolean
+  readonly htlcFunded: boolean
+  readonly htlcReleased: boolean
   readonly principalBalance: string
   readonly recipientBalance: string
-  readonly wrapperBalance: string
+  readonly htlcBalance: string
   readonly allowance: string
-  readonly reserved: string
 }
 
 export interface SameChainSnapshot {
@@ -149,7 +153,10 @@ export async function runSameChainSuccess(
   })
   const claimHash = await claimant.claimSameChain(terms, lock, SAME_CHAIN_SETTLEMENT_SECRET)
   const claimReceipt = await successfulReceipt(chain, claimHash)
-  const claimEvents = decodeProtocolEvents(claimReceipt.logs, addresses)
+  const claimEvents = decodeProtocolEvents(claimReceipt.logs, addresses, [], [
+    await claimant.getSameChainHTLC(terms, true, lock),
+    await claimant.getSameChainHTLC(terms, false, lock),
+  ])
   const finalSnapshot = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
   assertFinalPayouts(finalSnapshot, terms)
   const claimTrace = trace(
@@ -260,6 +267,7 @@ export async function submitSameChainLazyCommit(input: {
     publicClient: chain.publicClient,
     walletClient: actor.walletClient,
   })
+  const htlc = await client.predictSameChainHTLC(terms, party, lock)
   const hash = await client.registerAndCommit(
     registration,
     '0x',
@@ -268,7 +276,7 @@ export async function submitSameChainLazyCommit(input: {
     sliceHex(call, 4),
   )
   const receipt = await successfulReceipt(chain, hash)
-  const events = decodeProtocolEvents(receipt.logs, addresses)
+  const events = decodeProtocolEvents(receipt.logs, addresses, [], [htlc])
   const nonceKey = keccak256(encodeAuthorizationNonceKey(
     BigInt(chain.chainId),
     addresses.directAuthorization,
@@ -299,13 +307,29 @@ export async function readSameChainSnapshot(
   terms: ProtocolTerms,
   lock: Hex32,
 ): Promise<SameChainSnapshot> {
+  const client = createProtocolClient({
+    addresses: {
+      assetSupportRegistry: zeroAddress,
+      directAuthorization: zeroAddress,
+      crossChainWrapper: zeroAddress,
+      sameChainWrapper: wrapper,
+    },
+    publicClient: chain.publicClient,
+  })
   const position = async (
     role: SameChainAssetPosition['role'],
     side: ProtocolTerms['partySide'],
+    party: boolean,
   ): Promise<SameChainAssetPosition> => {
     const asset = side.assets[0]
     if (asset === undefined) throw new Error(`${role} has no asset`)
-    const [principalBalance, recipientBalance, wrapperBalance, allowance, reserved] = await Promise.all([
+    const deployedHTLC = await client.getSameChainHTLC(terms, party, lock)
+    const htlcDeployed = deployedHTLC !== zeroAddress
+    const htlc = htlcDeployed
+      ? deployedHTLC
+      : await client.predictSameChainHTLC(terms, party, lock)
+    const htlcState = htlcDeployed ? await client.getHTLCState(htlc) : undefined
+    const [principalBalance, recipientBalance, htlcBalance, allowance] = await Promise.all([
       chain.publicClient.readContract({
         address: asset.target,
         abi: erc20MockAbi,
@@ -322,7 +346,7 @@ export async function readSameChainSnapshot(
         address: asset.target,
         abi: erc20MockAbi,
         functionName: 'balanceOf',
-        args: [wrapper],
+        args: [htlc],
       }),
       chain.publicClient.readContract({
         address: asset.target,
@@ -330,23 +354,20 @@ export async function readSameChainSnapshot(
         functionName: 'allowance',
         args: [side.principal, wrapper],
       }),
-      chain.publicClient.readContract({
-        address: wrapper,
-        abi: sameChainWrapperAbi,
-        functionName: 'reserved',
-        args: [asset],
-      }),
     ])
     return {
       role,
       principal: side.principal,
       recipient: side.recipient,
       token: asset.target,
+      htlc,
+      htlcDeployed,
+      htlcFunded: htlcState?.funded ?? false,
+      htlcReleased: htlcState?.released ?? false,
       principalBalance: principalBalance.toString(),
       recipientBalance: recipientBalance.toString(),
-      wrapperBalance: wrapperBalance.toString(),
+      htlcBalance: htlcBalance.toString(),
       allowance: allowance.toString(),
-      reserved: reserved.toString(),
     }
   }
   const state = await chain.publicClient.readContract({
@@ -365,13 +386,15 @@ export async function readSameChainSnapshot(
   ) {
     throw new Error(`unknown same-chain state: ${state}`)
   }
-  return {
+  const snapshot: SameChainSnapshot = {
     state: stateName,
     assets: await Promise.all([
-      position('alice-asset', terms.partySide),
-      position('bob-asset', terms.counterpartySide),
+      position('alice-asset', terms.partySide, true),
+      position('bob-asset', terms.counterpartySide, false),
     ]),
   }
+  validateHTLCLifecycle(snapshot)
+  return snapshot
 }
 
 function assertCommit(
@@ -399,8 +422,46 @@ function assertCommit(
     event.source === 'sameChainWrapper'
     && event.eventName === 'Committed'
   )
-  if (nonce === undefined || registered === undefined || committed === undefined) {
-    throw new Error('commit receipt lacks registration, nonce-consumption, or commit evidence')
+  const created = result.events.find(event =>
+    event.source === 'sameChainWrapper'
+    && event.eventName === 'HTLCCreated'
+  )
+  const funded = result.events.find(event =>
+    event.source === 'swapHTLC'
+    && event.eventName === 'Funded'
+  )
+  if (nonce === undefined || registered === undefined || committed === undefined || created === undefined || funded === undefined) {
+    throw new Error('commit receipt lacks registration, nonce-consumption, or HTLC funding evidence')
+  }
+}
+
+function validateHTLCLifecycle(snapshot: SameChainSnapshot): void {
+  const [party, counterparty] = snapshot.assets
+  if (snapshot.state === 'Reclaimed') {
+    const assets = [party, counterparty]
+    if (
+      !assets.some(asset => asset.htlcDeployed)
+      || assets.some(asset =>
+        asset.htlcDeployed !== asset.htlcFunded
+        || asset.htlcDeployed !== asset.htlcReleased
+      )
+    ) {
+      throw new Error('HTLC lifecycle disagrees with Reclaimed')
+    }
+    return
+  }
+  const expected = snapshot.state === 'Unused'
+    ? [[false, false, false], [false, false, false]]
+    : snapshot.state === 'PartyCommitted'
+      ? [[true, true, false], [false, false, false]]
+      : snapshot.state === 'BothCommitted'
+        ? [[true, true, false], [true, true, false]]
+        : [[true, true, true], [true, true, true]]
+  for (const [index, asset] of [party, counterparty].entries()) {
+    const [deployed, funded, released] = expected[index]!
+    if (asset.htlcDeployed !== deployed || asset.htlcFunded !== funded || asset.htlcReleased !== released) {
+      throw new Error(`${asset.role} HTLC lifecycle disagrees with ${snapshot.state}`)
+    }
   }
 }
 
@@ -411,10 +472,12 @@ function assertFinalPayouts(snapshotValue: SameChainSnapshot, terms: ProtocolTer
     if (
       asset.principalBalance !== '0'
       || asset.recipientBalance !== expected[index]!.toString()
-      || asset.wrapperBalance !== '0'
-      || asset.reserved !== '0'
+      || asset.htlcBalance !== '0'
+      || !asset.htlcDeployed
+      || !asset.htlcFunded
+      || !asset.htlcReleased
     ) {
-      throw new Error(`${asset.role} final payout or reserve mismatch`)
+      throw new Error(`${asset.role} final payout or HTLC lifecycle mismatch`)
     }
   })
 }
@@ -495,9 +558,10 @@ export async function submitSameChainDirectCommit(input: {
     publicClient: chain.publicClient,
     walletClient: actor.walletClient,
   })
+  const htlc = await client.predictSameChainHTLC(terms, party, lock)
   const hash = await client.authorizeDirectCommit(request, signature)
   const receipt = await successfulReceipt(chain, hash)
-  const events = decodeProtocolEvents(receipt.logs, addresses)
+  const events = decodeProtocolEvents(receipt.logs, addresses, [], [htlc])
   const nonceKey = keccak256(encodeAuthorizationNonceKey(
     BigInt(chain.chainId),
     addresses.directAuthorization,

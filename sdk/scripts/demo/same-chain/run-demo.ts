@@ -58,7 +58,6 @@ try {
     terminalOutcome: artifact.terminalOutcome,
     secretsPersisted: false,
     artifact: output,
-    nextTask: 'add full two-chain failure and recovery executions',
   }, null, 2))
 } finally {
   anvil.stop()

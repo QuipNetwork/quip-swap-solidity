@@ -6,10 +6,11 @@
     "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
     "addresses": {
-      "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
-      "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
-      "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-      "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+      "assetSupportRegistry": "0xbC147D89A87bA9A923A5D9042ACe0B6242288bA4",
+      "directAuthorization": "0x3B790425D7C08020cC39fD776cDa350535E50A1c",
+      "crossChainWrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+      "sameChainWrapper": "0x082517ff1c73C74E04613e74c994A7F093877e85",
+      "swapHTLC": "0x8b1CbE30f715499A0BD39A58A1570f9DC4D81Da0"
     }
   },
   "terms": {
@@ -18,7 +19,7 @@
       "assets": [
         {
           "assetType": 1,
-          "target": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "target": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "id": "0",
           "amount": "10000000000000000000"
         }
@@ -42,7 +43,7 @@
       "assets": [
         {
           "assetType": 1,
-          "target": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "target": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
           "id": "0",
           "amount": "20000000000000000000"
         }
@@ -62,30 +63,36 @@
       "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000003"
     }
   },
-  "tradeId": "0xe32eab134e84afd1f08d7ec9f466ea9b61ca4d691755071d70a5aba868da3eab",
-  "lock": "0xf7e9654699095c900d302e98ac709d3c59aeb8c1f5b796fc1e5a5ce83996fadc",
+  "tradeId": "0xb242c185b93999c4f56e0f67e01a802f9a5daec43738f2fd0c86eae047295dc0",
+  "lock": "0x48ce8a57c86f5643e1576976f0c32e85c52c9e6a8843673fb171a5833f0942f8",
   "initialCustody": [
     {
       "role": "alice-asset",
       "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-      "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+      "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+      "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+      "htlcDeployed": false,
+      "htlcFunded": false,
+      "htlcReleased": false,
       "principalBalance": "10000000000000000000",
       "recipientBalance": "0",
-      "wrapperBalance": "0",
-      "allowance": "10000000000000000000",
-      "reserved": "0"
+      "htlcBalance": "0",
+      "allowance": "10000000000000000000"
     },
     {
       "role": "bob-asset",
       "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-      "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+      "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+      "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+      "htlcDeployed": false,
+      "htlcFunded": false,
+      "htlcReleased": false,
       "principalBalance": "20000000000000000000",
       "recipientBalance": "0",
-      "wrapperBalance": "0",
-      "allowance": "20000000000000000000",
-      "reserved": "0"
+      "htlcBalance": "0",
+      "allowance": "20000000000000000000"
     }
   ],
   "authorizationDecisions": [
@@ -95,9 +102,9 @@
       "status": "accepted",
       "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "keyVersion": "1",
-      "authorizationNonceKey": "0x857970bc865514bb914e8295debde58cc01924e453220b36fde8a691e85b7ac1",
+      "authorizationNonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0x0ad0afca1ace221a903158ee5b357aa69e155258f12e1de6b2436ab245bf155d"
+      "transactionHash": "0x5f58fd24261f0001cd0d6f9616d6de9e5b729d8073e2a90b0a23128b966f117e"
     },
     {
       "role": "bob",
@@ -105,9 +112,9 @@
       "status": "accepted",
       "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "keyVersion": "1",
-      "authorizationNonceKey": "0x2f3ecfc9b9c3771494cd9683ffa3e094a465fffcecc3e188a4e2cf471fc41cf4",
+      "authorizationNonceKey": "0xaac15285dcec24ee94f592cb5d5f49c47da4433dca2165f66f3641cbbaef63d7",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0xd3ea0ff866011614872e1d459639d9cc467e38b142f17b414c32e203927fef8e"
+      "transactionHash": "0xdd9eda568a0280bad883e6170498bdee99efc0c034c04dd54a8b33183a10390f"
     }
   ],
   "transitions": [
@@ -116,12 +123,15 @@
       "action": "alice-commit",
       "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "receipt": {
-        "transactionHash": "0x0ad0afca1ace221a903158ee5b357aa69e155258f12e1de6b2436ab245bf155d",
-        "blockNumber": "16",
+        "transactionHash": "0x5f58fd24261f0001cd0d6f9616d6de9e5b729d8073e2a90b0a23128b966f117e",
+        "blockNumber": "17",
         "events": [
           "directAuthorization.IdentityRegistered",
           "directAuthorization.AuthorizationNonceConsumed",
-          "sameChainWrapper.Committed"
+          "swapHTLC.Initialized",
+          "swapHTLC.Funded",
+          "sameChainWrapper.Committed",
+          "sameChainWrapper.HTLCCreated"
         ]
       },
       "stateBefore": "Unused",
@@ -132,23 +142,29 @@
           "role": "alice-asset",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "principalBalance": "0",
           "recipientBalance": "0",
-          "wrapperBalance": "10000000000000000000",
-          "allowance": "0",
-          "reserved": "10000000000000000000"
+          "htlcBalance": "10000000000000000000",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": false,
+          "htlcFunded": false,
+          "htlcReleased": false,
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "20000000000000000000",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "20000000000000000000"
         }
       ],
       "balanceDeltas": [
@@ -156,17 +172,15 @@
           "role": "alice-asset",
           "principalBalance": "-10000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "10000000000000000000",
-          "allowance": "-10000000000000000000",
-          "reserved": "10000000000000000000"
+          "htlcBalance": "10000000000000000000",
+          "allowance": "-10000000000000000000"
         },
         {
           "role": "bob-asset",
           "principalBalance": "0",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         }
       ]
     },
@@ -175,12 +189,15 @@
       "action": "bob-commit",
       "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "receipt": {
-        "transactionHash": "0xd3ea0ff866011614872e1d459639d9cc467e38b142f17b414c32e203927fef8e",
-        "blockNumber": "17",
+        "transactionHash": "0xdd9eda568a0280bad883e6170498bdee99efc0c034c04dd54a8b33183a10390f",
+        "blockNumber": "18",
         "events": [
           "directAuthorization.IdentityRegistered",
           "directAuthorization.AuthorizationNonceConsumed",
-          "sameChainWrapper.Committed"
+          "swapHTLC.Initialized",
+          "swapHTLC.Funded",
+          "sameChainWrapper.Committed",
+          "sameChainWrapper.HTLCCreated"
         ]
       },
       "stateBefore": "PartyCommitted",
@@ -191,23 +208,29 @@
           "role": "alice-asset",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "principalBalance": "0",
           "recipientBalance": "0",
-          "wrapperBalance": "10000000000000000000",
-          "allowance": "0",
-          "reserved": "10000000000000000000"
+          "htlcBalance": "10000000000000000000",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "principalBalance": "0",
           "recipientBalance": "0",
-          "wrapperBalance": "20000000000000000000",
-          "allowance": "0",
-          "reserved": "20000000000000000000"
+          "htlcBalance": "20000000000000000000",
+          "allowance": "0"
         }
       ],
       "balanceDeltas": [
@@ -215,17 +238,15 @@
           "role": "alice-asset",
           "principalBalance": "0",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principalBalance": "-20000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "20000000000000000000",
-          "allowance": "-20000000000000000000",
-          "reserved": "20000000000000000000"
+          "htlcBalance": "20000000000000000000",
+          "allowance": "-20000000000000000000"
         }
       ]
     },
@@ -234,9 +255,11 @@
       "action": "permissionless-claim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0xa949f2ad9f085bcc5499a7a12871e51d2afdcbfdf1768571e003b06d2759ad5c",
-        "blockNumber": "18",
+        "transactionHash": "0x21ea531c42f0ce2926f886f1479e2fa330fdc600ad5b253adaf9f4695d3dacbf",
+        "blockNumber": "19",
         "events": [
+          "swapHTLC.Released",
+          "swapHTLC.Released",
           "sameChainWrapper.Claimed"
         ]
       },
@@ -248,23 +271,29 @@
           "role": "alice-asset",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "principalBalance": "0",
           "recipientBalance": "10000000000000000000",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "principalBalance": "0",
           "recipientBalance": "20000000000000000000",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         }
       ],
       "balanceDeltas": [
@@ -272,17 +301,15 @@
           "role": "alice-asset",
           "principalBalance": "0",
           "recipientBalance": "10000000000000000000",
-          "wrapperBalance": "-10000000000000000000",
-          "allowance": "0",
-          "reserved": "-10000000000000000000"
+          "htlcBalance": "-10000000000000000000",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principalBalance": "0",
           "recipientBalance": "20000000000000000000",
-          "wrapperBalance": "-20000000000000000000",
-          "allowance": "0",
-          "reserved": "-20000000000000000000"
+          "htlcBalance": "-20000000000000000000",
+          "allowance": "0"
         }
       ]
     }
@@ -354,7 +381,7 @@
     },
     {
       "scenario": "claim-from-party-committed",
-      "errorName": "InvalidSameChainState",
+      "errorName": "MissingHTLC",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -405,7 +432,7 @@
     {
       "outcome": "party-only-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0xd132df406afbdde861a677cf8783e03cbd266eb2a37e32efc681604d24a469d0",
+      "transactionHash": "0xec5b11ce4c59cfe9885d381dea33ddaaad0cedfa8820befdb0066f74d799ccf4",
       "releaseTime": "4000001400",
       "stateBefore": "PartyCommitted",
       "stateAfter": "Reclaimed",
@@ -414,23 +441,29 @@
           "role": "alice-asset",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "principalBalance": "10000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": false,
+          "htlcFunded": false,
+          "htlcReleased": false,
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "20000000000000000000",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "20000000000000000000"
         }
       ],
       "fixedReclaimRecipients": true
@@ -438,7 +471,7 @@
     {
       "outcome": "both-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0x4dd42ba0d36ac4eb19e4bb0671af942eea2a59b1852f4099669742ab3b9171f4",
+      "transactionHash": "0xab0df3b6bfb4b1a9d21e86b56b1134dcf9ada907a912ccae061591b9a566dffc",
       "releaseTime": "4000001400",
       "stateBefore": "BothCommitted",
       "stateAfter": "Reclaimed",
@@ -447,35 +480,41 @@
           "role": "alice-asset",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "principalBalance": "10000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         },
         {
           "role": "bob-asset",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
-          "wrapperBalance": "0",
-          "allowance": "0",
-          "reserved": "0"
+          "htlcBalance": "0",
+          "allowance": "0"
         }
       ],
       "fixedReclaimRecipients": true
     }
   ],
   "atomicRollback": {
-    "trigger": "counterparty-reserve-deficit",
-    "errorName": "InsufficientReservedBalance",
+    "trigger": "counterparty-htlc-deficit",
+    "errorName": "0x90b8ec18",
     "stateBefore": "BothCommitted",
     "stateAfter": "BothCommitted",
     "firstPayoutRolledBack": true,
-    "reservesAndBalancesUnchanged": true
+    "htlcBalancesUnchanged": true
   },
   "terminalOutcome": {
     "state": "Claimed",
@@ -484,23 +523,29 @@
         "role": "alice-asset",
         "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
         "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-        "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+        "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+        "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+        "htlcDeployed": true,
+        "htlcFunded": true,
+        "htlcReleased": true,
         "principalBalance": "0",
         "recipientBalance": "10000000000000000000",
-        "wrapperBalance": "0",
-        "allowance": "0",
-        "reserved": "0"
+        "htlcBalance": "0",
+        "allowance": "0"
       },
       {
         "role": "bob-asset",
         "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-        "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+        "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+        "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+        "htlcDeployed": true,
+        "htlcFunded": true,
+        "htlcReleased": true,
         "principalBalance": "0",
         "recipientBalance": "20000000000000000000",
-        "wrapperBalance": "0",
-        "allowance": "0",
-        "reserved": "0"
+        "htlcBalance": "0",
+        "allowance": "0"
       }
     ],
     "payoutsFixedByTerms": true

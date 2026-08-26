@@ -64,12 +64,12 @@ export interface SameChainRecoveryTrace {
 }
 
 export interface SameChainAtomicRollbackTrace {
-  readonly trigger: 'counterparty-reserve-deficit'
+  readonly trigger: 'counterparty-htlc-deficit'
   readonly errorName: string
   readonly stateBefore: 'BothCommitted'
   readonly stateAfter: 'BothCommitted'
   readonly firstPayoutRolledBack: true
-  readonly reservesAndBalancesUnchanged: true
+  readonly htlcBalancesUnchanged: true
 }
 
 export interface SameChainAdversarialTrace {
@@ -315,8 +315,8 @@ async function runPartyRecovery(
       before.state !== 'PartyCommitted'
       || after.state !== 'Reclaimed'
       || party.principalBalance !== terms.partySide.assets[0]!.amount.toString()
-      || party.wrapperBalance !== '0'
-      || party.reserved !== '0'
+      || party.htlcBalance !== '0'
+      || !party.htlcReleased
     ) {
       throw new Error('party-only reclaim did not restore the signed party asset')
     }
@@ -371,11 +371,13 @@ async function runBothRecovery(
     await chain.warpTo(release)
 
     const bobAsset = terms.counterpartySide.assets[0]!
+    const funded = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+    const bobHTLC = funded.assets[1].htlc
     let hash = await chain.deployer.walletClient.writeContract({
       address: bobAsset.target,
       abi: burnAbi,
       functionName: 'burn',
-      args: [deployment.addresses.sameChainWrapper, 1n],
+      args: [bobHTLC, 1n],
       chain: chain.publicClient.chain ?? null,
       account: chain.deployer.account,
     })
@@ -388,25 +390,25 @@ async function runBothRecovery(
     } catch (error) {
       failure = error
     }
-    if (failure === undefined) throw new Error('reserve-deficit reclaim unexpectedly succeeded')
+    if (failure === undefined) throw new Error('HTLC-deficit reclaim unexpectedly succeeded')
     const afterFailure = await boundarySnapshot(chain, deployment, terms, lock)
     if (stable(beforeFailure) !== stable(afterFailure) || afterFailure.protocol.state !== 'BothCommitted') {
       throw new Error('failed dual reclaim did not roll back atomically')
     }
     const rollback: SameChainAtomicRollbackTrace = {
-      trigger: 'counterparty-reserve-deficit',
+      trigger: 'counterparty-htlc-deficit',
       errorName: errorLabel(failure),
       stateBefore: 'BothCommitted',
       stateAfter: 'BothCommitted',
       firstPayoutRolledBack: true,
-      reservesAndBalancesUnchanged: true,
+      htlcBalancesUnchanged: true,
     }
 
     hash = await chain.deployer.walletClient.writeContract({
       address: bobAsset.target,
       abi: erc20MockAbi,
       functionName: 'mint',
-      args: [deployment.addresses.sameChainWrapper, 1n],
+      args: [bobHTLC, 1n],
       chain: chain.publicClient.chain ?? null,
       account: chain.deployer.account,
     })
@@ -419,7 +421,7 @@ async function runBothRecovery(
       || after.state !== 'Reclaimed'
       || after.assets[0].principalBalance !== terms.partySide.assets[0]!.amount.toString()
       || after.assets[1].principalBalance !== terms.counterpartySide.assets[0]!.amount.toString()
-      || after.assets.some(asset => asset.wrapperBalance !== '0' || asset.reserved !== '0')
+      || after.assets.some(asset => asset.htlcBalance !== '0' || !asset.htlcReleased)
     ) {
       throw new Error('two-sided reclaim did not restore both signed assets')
     }
