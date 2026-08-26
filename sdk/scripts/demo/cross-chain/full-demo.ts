@@ -103,8 +103,12 @@ export async function runFullDemo(
   const aliceRecovery = pqKey(deployment.chains[0].trustedVerifier, fixed(102))
   const bobKey = pqKey(deployment.chains[1].trustedVerifier, fixed(103))
   const bobRecovery = pqKey(deployment.chains[1].trustedVerifier, fixed(104))
-  const holdingsA = tracked(deployment.chains[0].funding.token, chainA.alice.address, chainB.bob.address, addressesA.crossChainWrapper)
-  const holdingsB = tracked(deployment.chains[1].funding.token, chainB.bob.address, chainA.alice.address, addressesB.crossChainWrapper)
+  const [htlcA, htlcB] = await Promise.all([
+    clientA.predictCrossChainHTLC(terms, true, lock),
+    clientB.predictCrossChainHTLC(terms, false, lock),
+  ])
+  const holdingsA = tracked(deployment.chains[0].funding.token, chainA.alice.address, chainB.bob.address, htlcA)
+  const holdingsB = tracked(deployment.chains[1].funding.token, chainB.bob.address, chainA.alice.address, htlcB)
   const snapshotA = () => readCrossChainSettlementSnapshot({publicClient: chainA.publicClient, chainId: 31_337, wrapper: addressesA.crossChainWrapper, terms, party: true, lock, holdings: holdingsA})
   const snapshotB = () => readCrossChainSettlementSnapshot({publicClient: chainB.publicClient, chainId: 31_338, wrapper: addressesB.crossChainWrapper, terms, party: false, lock, holdings: holdingsB})
 

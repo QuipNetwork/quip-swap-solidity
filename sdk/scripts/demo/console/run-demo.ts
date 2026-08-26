@@ -97,10 +97,10 @@ try {
   for (const status of [alice, bob]) {
     if (!status.complete || status.outcome !== 'success' || status.legs.map((leg: any) => leg.state).join('|') !== 'Claimed|Claimed') throw new Error('console status is not terminal Claimed/Claimed')
     for (const leg of status.legs) {
-      const wrapper = leg.balances.find((balance: any) => balance.role === 'wrapper')
+      const htlc = leg.balances.find((balance: any) => balance.role === 'htlc')
       const recipient = leg.balances.find((balance: any) => balance.role === 'recipient')
       const expected = leg.chainId === 31337 ? '10000000000000000000' : '20000000000000000000'
-      if (wrapper?.amount !== '0' || recipient?.amount !== expected) throw new Error(`chain ${leg.chainId} terminal custody mismatch`)
+      if (htlc?.amount !== '0' || recipient?.amount !== expected) throw new Error(`chain ${leg.chainId} terminal custody mismatch`)
     }
   }
   const journals = [join(aliceRoot, 'journal'), join(bobRoot, 'journal')].flatMap(directory => readdirSync(directory).sort().map(file => read(join(directory, file))))

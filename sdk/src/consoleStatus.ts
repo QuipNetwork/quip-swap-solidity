@@ -1,4 +1,4 @@
-import {createPublicClient, defineChain, http} from 'viem'
+import {createPublicClient, defineChain, http, zeroAddress} from 'viem'
 import type {Address, PublicClient} from 'viem'
 import {erc20Abi} from 'viem'
 import {restoreProtocolTerms} from './clientState.js'
@@ -20,15 +20,16 @@ export type ConsoleLegState = (typeof stateName)[number]
 export interface ConsoleBalance {
   readonly token: Address
   readonly account: Address
-  readonly role: 'principal' | 'wrapper' | 'recipient' | 'reclaim-recipient'
+  readonly role: 'principal' | 'htlc' | 'recipient' | 'reclaim-recipient'
   readonly amount: string
 }
 
 export interface ConsoleLegStatus {
   readonly chainId: number
   readonly wrapper: Address
+  readonly htlc: Address
   readonly state: ConsoleLegState
-  readonly custody: 'principal' | 'wrapper' | 'recipient' | 'reclaim-recipient'
+  readonly custody: 'principal' | 'htlc' | 'recipient' | 'reclaim-recipient'
   readonly payoutVerified: boolean
   readonly timestamp: string
   readonly claimDeadline: string
@@ -64,7 +65,7 @@ function risk(side: SideTerms, state: CrossChainLegState, now: bigint): ConsoleL
 }
 
 function custody(state: CrossChainLegState): ConsoleLegStatus['custody'] {
-  if (state === CrossChainLegState.Committed) return 'wrapper'
+  if (state === CrossChainLegState.Committed) return 'htlc'
   if (state === CrossChainLegState.Claimed) return 'recipient'
   if (state === CrossChainLegState.Reclaimed) return 'reclaim-recipient'
   return 'principal'
@@ -81,14 +82,21 @@ export function createLocalConsoleStatusBoundary(config: ConsoleRuntimeConfig): 
     const inspect = async (index: 0 | 1, party: boolean) => {
       const {route, publicClient, protocol} = clients[index]!
       const side = party ? terms.partySide : terms.counterpartySide
-      const [state, block] = await Promise.all([protocol.getCrossChainState(terms, party, lock as never), publicClient.getBlock()])
-      const accounts = [['principal', side.principal], ['wrapper', route.wrapper], ['recipient', side.recipient], ['reclaim-recipient', side.reclaimRecipient]] as const
+      const [state, block, deployedHTLC] = await Promise.all([
+        protocol.getCrossChainState(terms, party, lock as never),
+        publicClient.getBlock(),
+        protocol.getCrossChainHTLC(terms, party, lock),
+      ])
+      const htlc = deployedHTLC === zeroAddress
+        ? await protocol.predictCrossChainHTLC(terms, party, lock)
+        : deployedHTLC
+      const accounts = [['principal', side.principal], ['htlc', htlc], ['recipient', side.recipient], ['reclaim-recipient', side.reclaimRecipient]] as const
       const balances: ConsoleBalance[] = []
       for (const asset of side.assets) {
         if (asset.assetType !== AssetType.ERC20) throw new Error('prototype status currently supports ERC-20 trade assets only')
         for (const [role, account] of accounts) balances.push({token: asset.target, account, role, amount: (await publicClient.readContract({address: asset.target, abi: erc20Abi, functionName: 'balanceOf', args: [account]})).toString()})
       }
-      return {chainId: route.chainId, wrapper: route.wrapper, state: stateName[state], custody: custody(state), payoutVerified: state === CrossChainLegState.Claimed || state === CrossChainLegState.Reclaimed, timestamp: block.timestamp.toString(), claimDeadline: side.claimDeadline.toString(), reclaimRelease: side.reclaimRelease.toString(), deadlineRisk: risk(side, state, block.timestamp), balances} satisfies ConsoleLegStatus
+      return {chainId: route.chainId, wrapper: route.wrapper, htlc, state: stateName[state], custody: custody(state), payoutVerified: state === CrossChainLegState.Claimed || state === CrossChainLegState.Reclaimed, timestamp: block.timestamp.toString(), claimDeadline: side.claimDeadline.toString(), reclaimRelease: side.reclaimRelease.toString(), deadlineRisk: risk(side, state, block.timestamp), balances} satisfies ConsoleLegStatus
     }
     return [await inspect(0, true), await inspect(1, false)]
   }}

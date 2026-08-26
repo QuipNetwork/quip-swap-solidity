@@ -21,9 +21,10 @@ const ANVIL_ALICE_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f46
 export interface AliceCommitPreview {
   readonly chainId: 31337
   readonly wrapper: Address
+  readonly htlc: Address
   readonly principal: Address
   readonly recipient: Address
-  readonly assets: readonly {readonly token: Address; readonly amount: string; readonly principalChange: string; readonly wrapperChange: string}[]
+  readonly assets: readonly {readonly token: Address; readonly amount: string; readonly principalChange: string; readonly htlcChange: string}[]
   readonly commitmentDeadline: string
   readonly claimDeadline: string
   readonly reclaimRelease: string
@@ -33,6 +34,7 @@ export interface AliceCommitPreview {
 
 export interface AliceCommitBoundary {
   state(terms: ProtocolTerms, lock: Hex32): Promise<CrossChainLegState>
+  predictHTLC(terms: ProtocolTerms, lock: Hex32): Promise<Address>
   transaction(hash: Hash): Promise<'pending' | 'success' | 'reverted' | 'missing'>
   currentTimestamp?(): Promise<bigint>
   submit(args: {readonly terms: ProtocolTerms; readonly lock: Hex32; readonly actionNonce: Hex32; readonly expiry: bigint; readonly payloadHash: Hex32; readonly bobCommitSecret: Hex32}): Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
@@ -71,9 +73,9 @@ function parseInput(serialized: string): AliceCommitInput {
   return value as unknown as AliceCommitInput
 }
 
-function preview(config: ConsoleRuntimeConfig, terms: ProtocolTerms, expiry: string): AliceCommitPreview {
+function preview(config: ConsoleRuntimeConfig, terms: ProtocolTerms, expiry: string, htlc: Address): AliceCommitPreview {
   const side = terms.partySide
-  return {chainId: 31337, wrapper: config.chains[0].wrapper, principal: side.principal, recipient: side.recipient, assets: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString(), principalChange: `-${asset.amount}`, wrapperChange: `+${asset.amount}`})), commitmentDeadline: side.commitmentDeadline.toString(), claimDeadline: side.claimDeadline.toString(), reclaimRelease: side.reclaimRelease.toString(), authorizationExpiry: expiry, authorizationMode: 'RegisteredDirect'}
+  return {chainId: 31337, wrapper: config.chains[0].wrapper, htlc, principal: side.principal, recipient: side.recipient, assets: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString(), principalChange: `-${asset.amount}`, htlcChange: `+${asset.amount}`})), commitmentDeadline: side.commitmentDeadline.toString(), claimDeadline: side.claimDeadline.toString(), reclaimRelease: side.reclaimRelease.toString(), authorizationExpiry: expiry, authorizationMode: 'RegisteredDirect'}
 }
 
 function pqKey(verifier: Address, label: string): Hex { return concatHex([verifier, keccak256(stringToHex(label))]) }
@@ -90,6 +92,7 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
   const client = createProtocolClient({addresses, publicClient, walletClient})
   return {
     state: (terms, lock) => client.getCrossChainState(terms, true, lock),
+    predictHTLC: (terms, lock) => client.predictCrossChainHTLC(terms, true, lock),
     currentTimestamp: async () => (await publicClient.getBlock()).timestamp,
     transaction: async hash => {
       try {
@@ -146,9 +149,9 @@ export async function submitAliceCommit(args: {readonly workspace: string; reado
     if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice') throw new Error('Alice commit requires Alice state')
     const offer = parseConsoleOffer(await readFile(join(resolve(args.workspace), 'public', 'offer.json'), 'utf8'))
     if (offer.tradeId !== restored.publicState.tradeId) throw new Error('workspace offer TradeID mismatch')
-    const view = preview(config, restored.terms, offer.authorizationEvidence.partyExpiry)
-    args.onPreview?.(view)
     const boundary = args.boundary ?? createLocalAliceCommitBoundary(config)
+    const view = preview(config, restored.terms, offer.authorizationEvidence.partyExpiry, await boundary.predictHTLC(restored.terms, restored.publicState.derived.settlementLock))
+    args.onPreview?.(view)
     const existing = await readJournal(args.workspace)
     if (existing !== undefined) {
       if (existing.networkId !== config.identity.networkId || existing.tradeId !== restored.publicState.tradeId || existing.wrapper.toLowerCase() !== config.chains[0].wrapper.toLowerCase()) throw new Error('Alice commit journal binding mismatch')

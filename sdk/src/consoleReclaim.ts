@@ -19,9 +19,10 @@ const BOB_KEY = '0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab3
 
 export type ReclaimTransactionLifecycle = 'pending' | 'success' | 'dropped' | 'replaced' | 'reverted'
 export interface ReclaimTransactionStatus {readonly lifecycle: ReclaimTransactionLifecycle; readonly replacementHash?: Hash}
-export interface ReclaimPreview {readonly chainId: number; readonly wrapper: Address; readonly submitter: Address; readonly reclaimRecipient: Address; readonly reclaimRelease: string; readonly payouts: readonly {readonly token: Address; readonly amount: string}[]; readonly authorization: 'permissionless'}
+export interface ReclaimPreview {readonly chainId: number; readonly wrapper: Address; readonly htlc: Address; readonly submitter: Address; readonly reclaimRecipient: Address; readonly reclaimRelease: string; readonly payouts: readonly {readonly token: Address; readonly amount: string}[]; readonly authorization: 'permissionless'}
 export interface ReclaimBoundary {
   readonly state: (terms: ProtocolTerms, party: boolean, lock: Hex32) => Promise<CrossChainLegState>
+  readonly htlc: (terms: ProtocolTerms, party: boolean, lock: Hex32) => Promise<Address>
   readonly timestamp: () => Promise<bigint>
   readonly transaction: (hash: Hash, metadata: {readonly sender: Address; readonly nonce: number; readonly submittedAtBlock: bigint}) => Promise<ReclaimTransactionStatus>
   readonly submit: (args: {readonly terms: ProtocolTerms; readonly party: boolean; readonly lock: Hex32}) => Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
@@ -40,6 +41,7 @@ function local(config: ConsoleRuntimeConfig): {readonly submitter: Address; read
   const client = createProtocolClient({addresses: route.addresses as never, publicClient, walletClient})
   return {submitter, boundary: {
     state: (terms, selectedParty, lock) => client.getCrossChainState(terms, selectedParty, lock),
+    htlc: (terms, selectedParty, lock) => client.getCrossChainHTLC(terms, selectedParty, lock),
     timestamp: async () => (await publicClient.getBlock()).timestamp,
     transaction: async (hash, metadata) => {
       try {return {lifecycle: (await publicClient.getTransactionReceipt({hash})).status === 'success' ? 'success' : 'reverted'}} catch {}
@@ -73,7 +75,7 @@ export async function submitReclaim(args: {readonly workspace: string; readonly 
     const restored = await restoreWorkspaceWorkflowState(args.workspace, expected)
     const side = party ? restored.terms.partySide : restored.terms.counterpartySide
     const route = config.chains[party ? 0 : 1]
-    const preview: ReclaimPreview = {chainId: route.chainId, wrapper: route.wrapper, submitter, reclaimRecipient: side.reclaimRecipient, reclaimRelease: side.reclaimRelease.toString(), payouts: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString()})), authorization: 'permissionless'}
+    const preview: ReclaimPreview = {chainId: route.chainId, wrapper: route.wrapper, htlc: await boundary.htlc(restored.terms, party, restored.publicState.derived.settlementLock), submitter, reclaimRecipient: side.reclaimRecipient, reclaimRelease: side.reclaimRelease.toString(), payouts: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString()})), authorization: 'permissionless'}
     args.onPreview?.(preview)
     const journalPath = join(resolve(args.workspace), 'journal', `reclaim-${route.chainId}.json`)
     try {

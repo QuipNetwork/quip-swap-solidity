@@ -3,7 +3,7 @@
   "publicTestSecrets": true,
   "deployment": {
     "schema": "quip-swap-demo-deployment.v1",
-    "deploymentVersion": "v1.1.0-alpha.3",
+    "deploymentVersion": "v1.1.0-alpha.4",
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "identityRegistration": "lazy-on-first-commit",
     "chains": [
@@ -12,17 +12,18 @@
         "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
         "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         "addresses": {
-          "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
-          "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
-          "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-          "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+          "assetSupportRegistry": "0xbC147D89A87bA9A923A5D9042ACe0B6242288bA4",
+          "directAuthorization": "0x3B790425D7C08020cC39fD776cDa350535E50A1c",
+          "crossChainWrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "sameChainWrapper": "0x082517ff1c73C74E04613e74c994A7F093877e85",
+          "swapHTLC": "0x8b1CbE30f715499A0BD39A58A1570f9DC4D81Da0"
         },
         "funding": {
           "assetType": "ERC20",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "owner": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
           "amount": "10000000000000000000",
           "balance": "10000000000000000000",
           "allowance": "10000000000000000000"
@@ -33,17 +34,18 @@
         "createX": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
         "trustedVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         "addresses": {
-          "assetSupportRegistry": "0x0643858dF9DbA9B124fBC4d5640107A9f8cFddF2",
-          "directAuthorization": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
-          "crossChainWrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-          "sameChainWrapper": "0x87CfF7b5EaBd38EDDd054217ebbB7028F36Ed975"
+          "assetSupportRegistry": "0xbC147D89A87bA9A923A5D9042ACe0B6242288bA4",
+          "directAuthorization": "0x3B790425D7C08020cC39fD776cDa350535E50A1c",
+          "crossChainWrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "sameChainWrapper": "0x082517ff1c73C74E04613e74c994A7F093877e85",
+          "swapHTLC": "0x8b1CbE30f715499A0BD39A58A1570f9DC4D81Da0"
         },
         "funding": {
           "assetType": "ERC20",
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "owner": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
           "amount": "20000000000000000000",
           "balance": "20000000000000000000",
           "allowance": "20000000000000000000"
@@ -51,14 +53,14 @@
       }
     ]
   },
-  "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+  "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
   "terms": {
     "partySide": {
       "chainId": "31337",
       "assets": [
         {
           "assetType": 1,
-          "target": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "target": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "id": "0",
           "amount": "10000000000000000000"
         }
@@ -82,7 +84,7 @@
       "assets": [
         {
           "assetType": 1,
-          "target": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "target": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "id": "0",
           "amount": "20000000000000000000"
         }
@@ -95,14 +97,14 @@
       "commitmentDeadline": "4000000210",
       "claimDeadline": "4000001110",
       "reclaimRelease": "4000001310",
-      "commitLock": "0x6c01d985b08364ca850ffc8c0921ffc85581894038ce547cc9a60c1691453743",
+      "commitLock": "0x7ccdfa29404998d642268f0840011b07eaa8658168c5988a13f4e03100b2f004",
       "delegationPolicy": 0,
       "delegate": "0x0000000000000000000000000000000000000000",
       "delegateKeyVersion": "0",
       "sideNonce": "0x0000000000000000000000000000000000000000000000000000000000000004"
     }
   },
-  "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
+  "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
   "deterministicSecrets": {
     "settlementSecret": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "bobCommitSecret": "0x0000000000000000000000000000000000000000000000000000000000000002"
@@ -306,13 +308,13 @@
         "authorizationMode": "registered-direct",
         "signatureVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         "wallet": null,
-        "gateway": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
-        "commitPayloadHash": "0x11c276aa2f1db67cef0626f2c1e2239ed532bf7e4296a7b331224131bb4353c6",
+        "gateway": "0x3B790425D7C08020cC39fD776cDa350535E50A1c",
+        "commitPayloadHash": "0x896db99d0ec4280ae0c1514d91397f4fbacce198ec9bbb703f96743f2c1bd0c1",
         "authenticatedSubmitter": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
         "expiry": "4000000510",
         "status": "accepted",
-        "transactionHash": "0x28cd62970a7129d2310733814fe2a518dddffe9baeda545bc3c00232fbaf397a",
+        "transactionHash": "0x0a5ad75b37ae7d7e7fea5f9d9d35b083a42656af6383039760196342195e880d",
         "errorName": null
       },
       {
@@ -322,13 +324,13 @@
         "authorizationMode": "registered-direct",
         "signatureVerifier": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
         "wallet": null,
-        "gateway": "0x5A60c1864a32b2e230cD327e14b71d649F383239",
-        "commitPayloadHash": "0xfd2e6b9c9f1ab34f71b1cc0d7bd3e7486818eeb3cc236256fb90d231844090b7",
+        "gateway": "0x3B790425D7C08020cC39fD776cDa350535E50A1c",
+        "commitPayloadHash": "0x7182c92d5492a0ec2487441c019c4ddcffda6b94c361a0942020e60e511bd766",
         "authenticatedSubmitter": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
         "expiry": "4000000610",
         "status": "accepted",
-        "transactionHash": "0xbd1f9e1adc3ac7dc3eb96a7706b23423ca348282ff5065c4f292533eb0dbde4c",
+        "transactionHash": "0x74e94e9c1a77b01fe2fa88aa257dadf4785c8459216c05e9407c0cc1d0b6f5f5",
         "errorName": null
       }
     ]
@@ -340,57 +342,65 @@
         "sequence": 1,
         "action": "alice-commit",
         "chainId": 31337,
-        "transactionHash": "0x28cd62970a7129d2310733814fe2a518dddffe9baeda545bc3c00232fbaf397a",
-        "blockNumber": "12",
+        "transactionHash": "0x0a5ad75b37ae7d7e7fea5f9d9d35b083a42656af6383039760196342195e880d",
+        "blockNumber": "13",
         "progressionGate": "bob-secret-published",
         "before": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": false,
+          "htlcFunded": false,
+          "htlcReleased": false,
           "state": "Unused",
           "stateCode": 0,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "10000000000000000000"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "0"
             }
           ]
         },
         "after": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "10000000000000000000"
             }
           ]
@@ -398,7 +408,7 @@
         "events": [
           {
             "source": "directAuthorization",
-            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
+            "address": "0x3b790425d7c08020cc39fd776cda350535e50a1c",
             "eventName": "IdentityRegistered",
             "args": {
               "eoa": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -409,36 +419,72 @@
           },
           {
             "source": "directAuthorization",
-            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
+            "address": "0x3b790425d7c08020cc39fd776cda350535e50a1c",
             "eventName": "AuthorizationNonceConsumed",
             "args": {
-              "nonceKey": "0x857970bc865514bb914e8295debde58cc01924e453220b36fde8a691e85b7ac1",
+              "nonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
               "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
               "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
             },
             "logIndex": 1
           },
           {
-            "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
-            "eventName": "Committed",
+            "source": "swapHTLC",
+            "address": "0x42da51f39b266b4f4adfc124578379900994e6d6",
+            "eventName": "Initialized",
             "args": {
-              "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
-              "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
+              "controller": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
               "side": 0,
-              "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+              "sideTermsHash": "0x6663650a828fb731eed649585733fdb6ea7b0b815f236b11dc186fb8256bde71"
             },
-            "logIndex": 3
+            "logIndex": 2
+          },
+          {
+            "source": "swapHTLC",
+            "address": "0x42da51f39b266b4f4adfc124578379900994e6d6",
+            "eventName": "Funded",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 0
+            },
+            "logIndex": 4
           },
           {
             "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
+            "eventName": "Committed",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 0,
+              "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+            },
+            "logIndex": 5
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
+            "eventName": "HTLCCreated",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 0,
+              "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6"
+            },
+            "logIndex": 6
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
             "eventName": "BobCommitSecretPublished",
             "args": {
-              "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
               "bobCommitSecret": "0x0000000000000000000000000000000000000000000000000000000000000002"
             },
-            "logIndex": 4
+            "logIndex": 7
           }
         ]
       },
@@ -446,57 +492,65 @@
         "sequence": 2,
         "action": "bob-commit",
         "chainId": 31338,
-        "transactionHash": "0xbd1f9e1adc3ac7dc3eb96a7706b23423ca348282ff5065c4f292533eb0dbde4c",
-        "blockNumber": "12",
+        "transactionHash": "0x74e94e9c1a77b01fe2fa88aa257dadf4785c8459216c05e9407c0cc1d0b6f5f5",
+        "blockNumber": "13",
         "progressionGate": "bob-secret-accepted",
         "before": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": false,
+          "htlcFunded": false,
+          "htlcReleased": false,
           "state": "Unused",
           "stateCode": 0,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "20000000000000000000"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "0"
             }
           ]
         },
         "after": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
@@ -504,7 +558,7 @@
         "events": [
           {
             "source": "directAuthorization",
-            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
+            "address": "0x3b790425d7c08020cc39fd776cda350535e50a1c",
             "eventName": "IdentityRegistered",
             "args": {
               "eoa": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -515,26 +569,62 @@
           },
           {
             "source": "directAuthorization",
-            "address": "0x5a60c1864a32b2e230cd327e14b71d649f383239",
+            "address": "0x3b790425d7c08020cc39fd776cda350535e50a1c",
             "eventName": "AuthorizationNonceConsumed",
             "args": {
-              "nonceKey": "0x5c887e3bb8e0dfbc875a60b19a558354b49558d4edcba18aef415f7ea9fb635f",
+              "nonceKey": "0x4a896be4807996ae09d2bcd8028a4ce278b068ea32c8865231b82a7b103ca2a6",
               "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
               "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
             },
             "logIndex": 1
           },
           {
+            "source": "swapHTLC",
+            "address": "0x1cb421aa77a8ab76931f4fb2a7c1fac28316481c",
+            "eventName": "Initialized",
+            "args": {
+              "controller": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 1,
+              "sideTermsHash": "0x5e1c92b3f3cd0142bd15b82a2923f0903e8cdf5d3fe749c18ce730c26f1da26e"
+            },
+            "logIndex": 2
+          },
+          {
+            "source": "swapHTLC",
+            "address": "0x1cb421aa77a8ab76931f4fb2a7c1fac28316481c",
+            "eventName": "Funded",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 1
+            },
+            "logIndex": 4
+          },
+          {
             "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
             "eventName": "Committed",
             "args": {
-              "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
-              "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
               "side": 1,
               "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
             },
-            "logIndex": 3
+            "logIndex": 5
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
+            "eventName": "HTLCCreated",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 1,
+              "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C"
+            },
+            "logIndex": 6
           }
         ]
       },
@@ -542,72 +632,92 @@
         "sequence": 3,
         "action": "revealing-claim",
         "chainId": 31338,
-        "transactionHash": "0x2170e142bc7f7c6c5efa2afe3aecc35fafe6f40a316e299336c36acdf8dd7ee1",
-        "blockNumber": "13",
+        "transactionHash": "0x00aae52dbb1e8a7222c0c9eb60eda22c54f4f0d84bea5511ca6ee4754a096bbe",
+        "blockNumber": "14",
         "progressionGate": "not-applicable",
         "before": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "state": "Claimed",
           "stateCode": 2,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "20000000000000000000"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "0"
             }
           ]
         },
         "events": [
           {
-            "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
-            "eventName": "Claimed",
+            "source": "swapHTLC",
+            "address": "0x1cb421aa77a8ab76931f4fb2a7c1fac28316481c",
+            "eventName": "Released",
             "args": {
-              "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
-              "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
-              "side": 1
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 1,
+              "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
             },
             "logIndex": 1
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
+            "eventName": "Claimed",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 1
+            },
+            "logIndex": 2
           }
         ]
       },
@@ -615,72 +725,92 @@
         "sequence": 4,
         "action": "final-claim",
         "chainId": 31337,
-        "transactionHash": "0xfec0b63d651cf80f81ec7645b7b005ffd744ff8057ef0fb7fb76bcfad456961e",
-        "blockNumber": "15",
+        "transactionHash": "0x3563330742520e2be00da06247f58e61a571cc823e675493d0cd646d343a8fc0",
+        "blockNumber": "16",
         "progressionGate": "not-applicable",
         "before": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "10000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
           "state": "Claimed",
           "stateCode": 2,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "10000000000000000000"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "0"
             }
           ]
         },
         "events": [
           {
-            "source": "crossChainWrapper",
-            "address": "0xfde10cbfc2453f58240320b67c15bce1136c1f52",
-            "eventName": "Claimed",
+            "source": "swapHTLC",
+            "address": "0x42da51f39b266b4f4adfc124578379900994e6d6",
+            "eventName": "Released",
             "args": {
-              "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
-              "lock": "0x24d107d3ecaddf896a44ec778535e69ad93e8f839c7dd8adbef8d5019632fed1",
-              "side": 0
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 0,
+              "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
             },
             "logIndex": 1
+          },
+          {
+            "source": "crossChainWrapper",
+            "address": "0x1513fdf7a0ccab166c7d641504b687c7152ef3d6",
+            "eventName": "Claimed",
+            "args": {
+              "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
+              "lock": "0xce56f540bf150a92494f64ee734cbc2c4177d46dc23d2cecc9876dded37a9bf2",
+              "side": 0
+            },
+            "logIndex": 2
           }
         ]
       }
@@ -688,52 +818,60 @@
     "finalSnapshots": [
       {
         "chainId": 31337,
-        "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+        "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+        "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+        "htlcDeployed": true,
+        "htlcFunded": true,
+        "htlcReleased": true,
         "state": "Claimed",
         "stateCode": 2,
         "holdings": [
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
             "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             "balance": "0"
           },
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
             "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             "balance": "10000000000000000000"
           },
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-            "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+            "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
             "balance": "0"
           }
         ]
       },
       {
         "chainId": 31338,
-        "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+        "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+        "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+        "htlcDeployed": true,
+        "htlcFunded": true,
+        "htlcReleased": true,
         "state": "Claimed",
         "stateCode": 2,
         "holdings": [
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
             "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             "balance": "0"
           },
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
             "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             "balance": "20000000000000000000"
           },
           {
             "assetType": "erc20",
-            "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-            "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+            "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+            "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
             "balance": "0"
           }
         ]
@@ -751,52 +889,60 @@
         "stateUnchanged": true,
         "before": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
@@ -810,52 +956,60 @@
         "stateUnchanged": true,
         "before": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
@@ -869,52 +1023,60 @@
         "stateUnchanged": true,
         "before": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31338,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
               "balance": "20000000000000000000"
             }
           ]
@@ -928,52 +1090,60 @@
         "stateUnchanged": true,
         "before": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "10000000000000000000"
             }
           ]
         },
         "after": {
           "chainId": 31337,
-          "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+          "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+          "htlc": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
           "state": "Committed",
           "stateCode": 1,
           "holdings": [
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
               "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
               "balance": "0"
             },
             {
               "assetType": "erc20",
-              "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-              "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
+              "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+              "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
               "balance": "10000000000000000000"
             }
           ]

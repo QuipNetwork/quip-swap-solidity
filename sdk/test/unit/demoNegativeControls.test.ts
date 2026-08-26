@@ -15,6 +15,10 @@ const PRINCIPAL = `0x${'33'.repeat(20)}` as Address
 const snapshot = (stateCode = CrossChainLegState.Committed, balance = '10'): CrossChainSettlementSnapshot => ({
   chainId: 31337,
   wrapper: WRAPPER,
+  htlc: `0x${'44'.repeat(20)}` as Address,
+  htlcDeployed: true,
+  htlcFunded: true,
+  htlcReleased: stateCode !== CrossChainLegState.Committed,
   state: stateCode === CrossChainLegState.Committed ? 'Committed' : 'Claimed',
   stateCode,
   holdings: [{assetType: 'erc20', token: TOKEN, account: PRINCIPAL, balance}],

@@ -1,5 +1,6 @@
+import {zeroAddress} from 'viem'
 import type {Address, Hash, Log, PublicClient, TransactionReceipt} from 'viem'
-import {CrossChainLegState, crossChainWrapperAbi, decodeProtocolEvents} from '../../../src/index.js'
+import {CrossChainLegState, createProtocolClient, decodeProtocolEvents} from '../../../src/index.js'
 import type {Hex32, ProtocolAddresses, ProtocolEvent, ProtocolTerms} from '../../../src/index.js'
 
 export const SETTLEMENT_TRACE_SCHEMA = 'quip-swap-settlement-trace.v1' as const
@@ -22,6 +23,10 @@ export type HoldingSnapshot =
 export interface CrossChainSettlementSnapshot {
   readonly chainId: number
   readonly wrapper: Address
+  readonly htlc: Address
+  readonly htlcDeployed: boolean
+  readonly htlcFunded: boolean
+  readonly htlcReleased: boolean
   readonly state: keyof typeof CrossChainLegState
   readonly stateCode: CrossChainLegState
   readonly holdings: readonly HoldingSnapshot[]
@@ -69,11 +74,18 @@ export class SettlementTraceRecorder {
     readonly quipWallets?: readonly Address[]
   }): SettlementTransactionRecord {
     if (input.receipt.status !== 'success') throw new Error('settlement trace requires a successful receipt')
-    if (input.before.chainId !== input.after.chainId || input.before.wrapper !== input.after.wrapper) {
+    if (input.before.chainId !== input.after.chainId || input.before.wrapper !== input.after.wrapper || input.before.htlc !== input.after.htlc) {
       throw new Error('settlement trace snapshot boundary mismatch')
     }
+    validateHTLCLifecycle(input.before)
+    validateHTLCLifecycle(input.after)
     validateTransition(input.action, input.before.stateCode, input.after.stateCode, input.progressionGate)
-    const events = decodeProtocolEvents(input.receipt.logs as readonly Log[], input.addresses, input.quipWallets)
+    const events = decodeProtocolEvents(
+      input.receipt.logs as readonly Log[],
+      input.addresses,
+      input.quipWallets,
+      [input.after.htlc],
+    )
       .sort((left, right) => (left.logIndex ?? 0) - (right.logIndex ?? 0))
       .map(event => ({source: event.source, address: event.address, eventName: event.eventName, args: jsonValue(event.args), logIndex: event.logIndex}))
     const record: SettlementTransactionRecord = {
@@ -110,9 +122,36 @@ export async function readCrossChainSettlementSnapshot(args: {
   readonly lock: Hex32
   readonly holdings: readonly TrackedHolding[]
 }): Promise<CrossChainSettlementSnapshot> {
-  const stateCode = await args.publicClient.readContract({address: args.wrapper, abi: crossChainWrapperAbi, functionName: 'state', args: [args.terms, args.party, args.lock]})
+  const client = createProtocolClient({
+    addresses: {
+      assetSupportRegistry: zeroAddress,
+      directAuthorization: zeroAddress,
+      crossChainWrapper: args.wrapper,
+      sameChainWrapper: zeroAddress,
+    },
+    publicClient: args.publicClient,
+  })
+  const [stateCode, deployedHTLC] = await Promise.all([
+    client.getCrossChainState(args.terms, args.party, args.lock),
+    client.getCrossChainHTLC(args.terms, args.party, args.lock),
+  ])
+  const htlcDeployed = deployedHTLC !== zeroAddress
+  const htlc = htlcDeployed
+    ? deployedHTLC
+    : await client.predictCrossChainHTLC(args.terms, args.party, args.lock)
+  const htlcState = htlcDeployed ? await client.getHTLCState(htlc) : undefined
   const holdings = await Promise.all(args.holdings.map(holding => readHolding(args.publicClient, holding)))
-  return {chainId: args.chainId, wrapper: args.wrapper, state: crossChainStateName(stateCode), stateCode, holdings}
+  return {
+    chainId: args.chainId,
+    wrapper: args.wrapper,
+    htlc,
+    htlcDeployed,
+    htlcFunded: htlcState?.funded ?? false,
+    htlcReleased: htlcState?.released ?? false,
+    state: crossChainStateName(stateCode),
+    stateCode,
+    holdings,
+  }
 }
 
 const balanceAbi = [
@@ -148,6 +187,14 @@ function validateTransition(action: SettlementAction, before: CrossChainLegState
         ? [CrossChainLegState.Committed, CrossChainLegState.Reclaimed, 'not-applicable'] as const
         : [CrossChainLegState.Committed, CrossChainLegState.Claimed, 'not-applicable'] as const
   if (before !== expected[0] || after !== expected[1] || gate !== expected[2]) throw new Error('invalid settlement trace transition')
+}
+
+function validateHTLCLifecycle(snapshot: CrossChainSettlementSnapshot): void {
+  const unused = snapshot.stateCode === CrossChainLegState.Unused
+  const terminal = snapshot.stateCode === CrossChainLegState.Claimed || snapshot.stateCode === CrossChainLegState.Reclaimed
+  if (snapshot.htlcDeployed !== !unused || snapshot.htlcFunded !== !unused || snapshot.htlcReleased !== terminal) {
+    throw new Error('wrapper state and HTLC lifecycle disagree')
+  }
 }
 
 function crossChainStateName(state: CrossChainLegState): keyof typeof CrossChainLegState {

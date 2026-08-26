@@ -25,7 +25,17 @@ const addresses = (wrapper: Address): ProtocolAddresses => ({
 
 function snapshot(chainId: number, wrapper: Address, stateCode: CrossChainLegState, balance: bigint): CrossChainSettlementSnapshot {
   const names = ['Unused', 'Committed', 'Claimed', 'Reclaimed'] as const
-  return {chainId, wrapper, state: names[stateCode], stateCode, holdings: [{assetType: 'erc20', token: TOKEN, account: PRINCIPAL, balance: balance.toString()}]}
+  return {
+    chainId,
+    wrapper,
+    htlc: address('7'),
+    htlcDeployed: stateCode !== CrossChainLegState.Unused,
+    htlcFunded: stateCode !== CrossChainLegState.Unused,
+    htlcReleased: stateCode === CrossChainLegState.Claimed || stateCode === CrossChainLegState.Reclaimed,
+    state: names[stateCode],
+    stateCode,
+    holdings: [{assetType: 'erc20', token: TOKEN, account: PRINCIPAL, balance: balance.toString()}],
+  }
 }
 
 function eventLog(wrapper: Address, eventName: 'Committed' | 'Claimed', transactionHash: Hash, logIndex: number): Log {

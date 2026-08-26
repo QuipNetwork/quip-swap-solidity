@@ -32,18 +32,18 @@ function transactionFields(result: JsonRecord | undefined): JsonRecord {
 function amountProjection(result: JsonRecord | undefined, partyAddress?: Address): readonly JsonRecord[] | undefined {
   const preview = record(result?.['preview'])
   if (preview !== undefined) {
-    const wrapper = string(preview['wrapper'])
+    const htlc = string(preview['htlc'])
     const recipient = string(preview['recipient']) ?? string(preview['reclaimRecipient'])
     const sender = string(preview['principal']) ?? string(preview['submitter']) ?? partyAddress
     const assets = Array.isArray(preview['assets']) ? preview['assets'] : Array.isArray(preview['payouts']) ? preview['payouts'] : undefined
-    if (assets !== undefined && wrapper !== undefined) return assets.map(value => {
+    if (assets !== undefined && htlc !== undefined) return assets.map(value => {
       const asset = record(value) ?? {}
       const amount = string(asset['amount']) ?? '0'
       return {
         token: asset['token'],
         tradeAmount: amount,
         sender: {address: sender, change: string(asset['principalChange']) ?? '0'},
-        htlc: {address: wrapper, change: string(asset['wrapperChange']) ?? '0'},
+        htlc: {address: htlc, change: string(asset['htlcChange']) ?? '0'},
         recipient: {address: recipient, change: string(asset['recipientChange']) ?? '0'},
       }
     })

@@ -30,14 +30,16 @@ interface RevealReference {
 export interface RevealingClaimPreview {
   readonly chainId: 31338
   readonly wrapper: Address
+  readonly htlc: Address
   readonly recipient: Address
-  readonly payouts: readonly {readonly token: Address; readonly amount: string; readonly wrapperChange: string; readonly recipientChange: string}[]
+  readonly payouts: readonly {readonly token: Address; readonly amount: string; readonly htlcChange: string; readonly recipientChange: string}[]
   readonly claimDeadline: string
   readonly disclosure: 'settlement preimage becomes public in transaction calldata'
 }
 
 export interface RevealingClaimBoundary {
   state(terms: ProtocolTerms, lock: Hex32): Promise<CrossChainLegState>
+  htlc(terms: ProtocolTerms, lock: Hex32): Promise<Address>
   transaction(hash: Hash): Promise<'pending' | 'success' | 'reverted' | 'missing'>
   submit(args: {readonly terms: ProtocolTerms; readonly lock: Hex32; readonly secret: Hex32}): Promise<{readonly hash: Hash; readonly nonce: number; readonly submittedAtBlock: bigint}>
 }
@@ -53,9 +55,9 @@ function confirmation(serialized: string): void {
   if (value['schema'] !== REVEALING_CLAIM_INPUT_SCHEMA || value['confirmed'] !== true) throw new Error('revealing claim requires explicit confirmed=true input')
 }
 
-function preview(config: ConsoleRuntimeConfig, terms: ProtocolTerms): RevealingClaimPreview {
+function preview(config: ConsoleRuntimeConfig, terms: ProtocolTerms, htlc: Address): RevealingClaimPreview {
   const side = terms.counterpartySide
-  return {chainId: 31338, wrapper: config.chains[1].wrapper, recipient: side.recipient, payouts: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString(), wrapperChange: `-${asset.amount}`, recipientChange: `+${asset.amount}`})), claimDeadline: side.claimDeadline.toString(), disclosure: 'settlement preimage becomes public in transaction calldata'}
+  return {chainId: 31338, wrapper: config.chains[1].wrapper, htlc, recipient: side.recipient, payouts: side.assets.map(asset => ({token: asset.target, amount: asset.amount.toString(), htlcChange: `-${asset.amount}`, recipientChange: `+${asset.amount}`})), claimDeadline: side.claimDeadline.toString(), disclosure: 'settlement preimage becomes public in transaction calldata'}
 }
 
 function parseReference(serialized: string): RevealReference {
@@ -87,6 +89,7 @@ export function createLocalRevealingClaimBoundary(config: ConsoleRuntimeConfig):
   const client = createProtocolClient({addresses: route.addresses as unknown as Parameters<typeof createProtocolClient>[0]['addresses'], publicClient, walletClient})
   return {
     state: (terms, lock) => client.getCrossChainState(terms, false, lock),
+    htlc: (terms, lock) => client.getCrossChainHTLC(terms, false, lock),
     transaction: async hash => {try {const receipt = await publicClient.getTransactionReceipt({hash}); return receipt.status === 'success' ? 'success' : 'reverted'} catch {try {await publicClient.getTransaction({hash}); return 'pending'} catch {return 'missing'}}},
     submit: async ({terms, lock, secret}) => {const hash = await client.claimCrossChain(terms, false, lock, secret); const [transaction, submittedAtBlock] = await Promise.all([publicClient.getTransaction({hash}), publicClient.getBlockNumber()]); return {hash, nonce: transaction.nonce, submittedAtBlock}},
   }
@@ -108,9 +111,9 @@ export async function submitRevealingClaim(args: {readonly workspace: string; re
     if (restored.publicState.party !== 'alice' || restored.secretState.party !== 'alice' || restored.publicState.stage !== 'bob-committed' || !restored.publicState.progression.published) throw new Error('revealing claim requires Alice to verify Bob committed')
     const observation = object(JSON.parse(await readFile(join(resolve(args.workspace), 'public', 'bob-commit-observation.json'), 'utf8')), 'Bob commit observation')
     if (observation['lifecycle'] !== 'committed' || observation['tradeId'] !== restored.publicState.tradeId || observation['aliceClaimEnabled'] !== true) throw new Error('Bob commit observation does not enable Alice claim')
-    const view = preview(config, restored.terms)
-    args.onPreview?.(view)
     const boundary = args.boundary ?? createLocalRevealingClaimBoundary(config)
+    const view = preview(config, restored.terms, await boundary.htlc(restored.terms, restored.publicState.derived.settlementLock))
+    args.onPreview?.(view)
     const existing = await journal(args.workspace)
     if (existing !== undefined) {
       if (existing.networkId !== config.identity.networkId || existing.tradeId !== restored.publicState.tradeId || existing.wrapper.toLowerCase() !== config.chains[1].wrapper.toLowerCase() || existing.sender.toLowerCase() !== config.actors.alice.toLowerCase()) throw new Error('revealing-claim journal binding mismatch')

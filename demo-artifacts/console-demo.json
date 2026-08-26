@@ -1,6 +1,6 @@
 {
   "schema": "quip-swap-console-demo.v1",
-  "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+  "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
   "transitions": [
     "bootstrap-local",
     "init",
@@ -42,25 +42,25 @@
       "chainId": 31337,
       "balances": [
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "role": "principal",
           "amount": "0"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-          "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-          "role": "wrapper",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "account": "0x42dA51F39B266B4f4AdFC124578379900994e6d6",
+          "role": "htlc",
           "amount": "0"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "role": "recipient",
           "amount": "10000000000000000000"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "role": "reclaim-recipient",
           "amount": "0"
@@ -71,25 +71,25 @@
       "chainId": 31338,
       "balances": [
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "role": "principal",
           "amount": "0"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
-          "account": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-          "role": "wrapper",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "account": "0x1CB421aA77A8ab76931F4FB2a7C1fac28316481C",
+          "role": "htlc",
           "amount": "0"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "role": "recipient",
           "amount": "20000000000000000000"
         },
         {
-          "token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
           "account": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "role": "reclaim-recipient",
           "amount": "0"
@@ -102,41 +102,41 @@
       "schema": "quip-swap-transaction-journal.v1",
       "action": "alice-commit",
       "networkId": "quip-swap-local-31337-31338",
-      "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+      "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
       "chainId": 31337,
-      "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-      "transactionHash": "0x1ae2d541f0ac3ce7a3699b5bca332994e102a3ceae06c6249350718236c6fcf5",
+      "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+      "transactionHash": "0x5c1fd34f264be00586e2b764dcf3868afd45f4f021929a9f2ecc5cd8ae74742c",
       "sender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "nonce": 2,
-      "submittedAtBlock": "11"
+      "submittedAtBlock": "12"
     },
     {
       "schema": "quip-swap-transaction-journal.v1",
       "action": "revealing-claim",
       "networkId": "quip-swap-local-31337-31338",
-      "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+      "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
       "chainId": 31338,
-      "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-      "transactionHash": "0x7e672453a6b6d03141dad09995b9d01b6ae253943a00f70feb7c040dd9e0cf6d",
+      "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+      "transactionHash": "0x2a8ad613ef3ee808c45c6717f2bec4f5b51d5f0a625f8af1c89400eabe6b6897",
       "sender": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "nonce": 0,
-      "submittedAtBlock": "12"
+      "submittedAtBlock": "13"
     },
     {
       "schema": "quip-swap-trade-acceptance.v1",
       "networkId": "quip-swap-local-31337-31338",
-      "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+      "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
       "bob": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
     },
     {
       "networkId": "quip-swap-local-31337-31338",
-      "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+      "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
       "chainId": 31338,
-      "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-      "transactionHash": "0x7f2b65859860695a6f9724eb6cb03886cf3a64caaf6b39bfba4b23b409dc1273",
+      "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+      "transactionHash": "0xee9f381b5bb5e4518e332a3f58266a342e1568cc5ed07916224b9b0333deeb94",
       "sender": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "nonce": 2,
-      "submittedAtBlock": "11",
+      "submittedAtBlock": "12",
       "schema": "quip-swap-transaction-journal.v1",
       "action": "bob-commit"
     },
@@ -144,15 +144,15 @@
       "schema": "quip-swap-transaction-journal.v1",
       "action": "final-claim",
       "networkId": "quip-swap-local-31337-31338",
-      "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+      "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
       "chainId": 31337,
-      "wrapper": "0xFdE10Cbfc2453F58240320B67c15bCe1136C1F52",
-      "transactionHash": "0x107cade38971b66643f418f960a9d0963cd3c9714e0e336adda559af3f1f6fa0",
+      "wrapper": "0x1513fdf7a0Ccab166c7D641504B687c7152ef3d6",
+      "transactionHash": "0xcdafe8bc6ef4c9c25d8032a7f6419947a027240a99065110261a23a1d43626cb",
       "executor": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
     }
   ],
   "fullDemoComparison": {
-    "tradeId": "0x97e9db26816529d30e96c1c7fa6ef8d1fb828860973e96d0e82cbd1f4bd3f014",
+    "tradeId": "0xab0795cf2cce7ccce6f3c06cc30f6775d1edddbea08585a3a6d3788fd6208e80",
     "settlementActions": [
       "alice-commit",
       "bob-commit",

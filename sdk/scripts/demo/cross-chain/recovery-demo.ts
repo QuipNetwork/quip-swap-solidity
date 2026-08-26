@@ -132,8 +132,12 @@ async function prepareFixture(chainA: ChainContext, chainB: ChainContext, load: 
   } as const
   const prepared = prepareTrustedCrossChainWorkflow(workflowArgs)
   const terms = prepared.workflow.terms
-  const holdingsA = tracked(deployment.chains[0].funding.token, chainA.alice.address, chainB.bob.address, deployment.chains[0].addresses.crossChainWrapper)
-  const holdingsB = tracked(deployment.chains[1].funding.token, chainB.bob.address, chainA.alice.address, deployment.chains[1].addresses.crossChainWrapper)
+  const [htlcA, htlcB] = await Promise.all([
+    createProtocolClient({addresses: deployment.chains[0].addresses, publicClient: chainA.publicClient}).predictCrossChainHTLC(terms, true, prepared.workflow.lock),
+    createProtocolClient({addresses: deployment.chains[1].addresses, publicClient: chainB.publicClient}).predictCrossChainHTLC(terms, false, prepared.workflow.lock),
+  ])
+  const holdingsA = tracked(deployment.chains[0].funding.token, chainA.alice.address, chainB.bob.address, htlcA)
+  const holdingsB = tracked(deployment.chains[1].funding.token, chainB.bob.address, chainA.alice.address, htlcB)
   return {
     deployment,
     terms,

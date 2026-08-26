@@ -107,14 +107,15 @@ describe('console status', () => {
   const leg = (chainId: 31337 | 31338, state: ConsoleLegStatus['state'], deadlineRisk: ConsoleLegStatus['deadlineRisk'] = 'none'): ConsoleLegStatus => ({
     chainId,
     wrapper: W,
+    htlc: E,
     state,
-    custody: state === 'Committed' ? 'wrapper' : state === 'Claimed' ? 'recipient' : state === 'Reclaimed' ? 'reclaim-recipient' : 'principal',
+    custody: state === 'Committed' ? 'htlc' : state === 'Claimed' ? 'recipient' : state === 'Reclaimed' ? 'reclaim-recipient' : 'principal',
     payoutVerified: state === 'Claimed' || state === 'Reclaimed',
     timestamp: '900',
     claimDeadline: '1000',
     reclaimRelease: '1400',
     deadlineRisk,
-    balances: [{token: chainId === 31337 ? T1 : T2, account: W, role: 'wrapper', amount: state === 'Committed' ? '10' : '0'}],
+    balances: [{token: chainId === 31337 ? T1 : T2, account: E, role: 'htlc', amount: state === 'Committed' ? '10' : '0'}],
   })
 
   it('reports asymmetric progress and an exact next command without mutating state', async () => {
@@ -127,7 +128,7 @@ describe('console status', () => {
       expect(status).toMatchObject({outcome: 'in-progress', complete: false, responsibleParty: 'alice'})
       expect(status.warnings).toContain('Asymmetric on-chain states: Committed/Unused.')
       expect(status.nextCommand).toContain('observe-alice-commit --party alice')
-      expect(status.legs[0]).toMatchObject({custody: 'wrapper', balances: [{amount: '10'}]})
+      expect(status.legs[0]).toMatchObject({custody: 'htlc', htlc: E, balances: [{role: 'htlc', amount: '10'}]})
       expect(await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')).toBe(before)
     } finally { await rm(value.root, {recursive: true, force: true}) }
   })
@@ -153,6 +154,7 @@ describe('console Alice commit', () => {
       let submissions = 0
       const boundary: AliceCommitBoundary = {
         state: async () => CrossChainLegState.Unused,
+        predictHTLC: async () => E,
         transaction: async () => 'missing',
         currentTimestamp: async () => 501n,
         submit: async () => { submissions += 1; return {hash: H(799), nonce: 1, submittedAtBlock: 1n} },
@@ -170,7 +172,7 @@ describe('console Alice commit', () => {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       const action = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true})
       const before = await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')
-      const rejected = (reason: string): AliceCommitBoundary => ({state: async () => CrossChainLegState.Unused, transaction: async () => 'missing', submit: async () => {throw new Error(reason)}})
+      const rejected = (reason: string): AliceCommitBoundary => ({state: async () => CrossChainLegState.Unused, predictHTLC: async () => E, transaction: async () => 'missing', submit: async () => {throw new Error(reason)}})
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: action, boundary: rejected('ExpiredAuthorization')})).rejects.toThrow('ExpiredAuthorization')
       expect(await readFile(join(value.aliceRoot, 'workspace.json'), 'utf8')).toBe(before)
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: action, boundary: rejected('TransactionRejected')})).rejects.toThrow('TransactionRejected')
@@ -186,6 +188,7 @@ describe('console Alice commit', () => {
       let submissions = 0
       const boundary: AliceCommitBoundary = {
         state: async () => CrossChainLegState.Unused,
+        predictHTLC: async () => E,
         transaction: async hash => hash === transactionHash ? 'pending' : 'missing',
         submit: async args => { submissions += 1; expect(args.payloadHash).toBe(offer.bobState.derived.partyCommitPayloadHash); return {hash: transactionHash, nonce: 7, submittedAtBlock: 10n} },
       }
@@ -193,7 +196,7 @@ describe('console Alice commit', () => {
       const first = await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary})
       expect(first).toMatchObject({transactionHash, lifecycle: 'pending', reused: false})
       const summary = await summarizeConsoleOutput({workspace: value.aliceRoot, configPath: value.aliceConfig, output: {command: 'submit-alice-commit', party: 'alice', tradeId: offer.tradeId, ok: true, result: first, warnings: []}})
-      expect(summary).toMatchObject({schema: CONSOLE_SUMMARY_SCHEMA, ok: true, action: 'submit-alice-commit', locks: {settlementLock: offer.bobState.derived.settlementLock, bobCommitLock: offer.bobState.terms.counterpartySide.commitLock}, amounts: [{tradeAmount: '10', sender: {address: A, change: '-10'}, htlc: {address: W, change: '+10'}, recipient: {address: B, change: '0'}}], publishedSecrets: {bobCommitSecret: expect.any(String)}})
+      expect(summary).toMatchObject({schema: CONSOLE_SUMMARY_SCHEMA, ok: true, action: 'submit-alice-commit', locks: {settlementLock: offer.bobState.derived.settlementLock, bobCommitLock: offer.bobState.terms.counterpartySide.commitLock}, amounts: [{tradeAmount: '10', sender: {address: A, change: '-10'}, htlc: {address: E, change: '+10'}, recipient: {address: B, change: '0'}}], publishedSecrets: {bobCommitSecret: expect.any(String)}})
       expect(JSON.stringify(summary)).not.toContain('settlementSecret')
       expect(submissions).toBe(1)
       expect(JSON.parse(await readFile(join(value.aliceRoot, 'journal', 'alice-commit.json'), 'utf8'))).toMatchObject({tradeId: offer.tradeId, transactionHash})
@@ -210,7 +213,7 @@ describe('console Alice commit', () => {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
       const transactionHash = H(802)
-      const commitBoundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 9, submittedAtBlock: 10n})}
+      const commitBoundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Unused, predictHTLC: async () => E, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 9, submittedAtBlock: 10n})}
       const commitInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true})
       await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: commitInput, boundary: commitBoundary})
       const inclusion = {transactionHash, blockNumber: '10', blockHash: H(803)}
@@ -242,7 +245,7 @@ describe('console Alice commit', () => {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
       const transactionHash = H(810)
-      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 10, submittedAtBlock: 20n})}})
+      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true}), boundary: {state: async () => CrossChainLegState.Unused, predictHTLC: async () => E, transaction: async () => 'pending', submit: async () => ({hash: transactionHash, nonce: 10, submittedAtBlock: 20n})}})
       const inclusion = {transactionHash, blockNumber: '20', blockHash: H(811)}
       const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
       if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
@@ -268,7 +271,7 @@ describe('console Alice commit', () => {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       await importConsoleOffer({workspace: value.bobRoot, configPath: value.bobConfig, input: JSON.stringify(offer)})
       const aliceHash = H(820)
-      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true}), boundary: {state: async () => CrossChainLegState.Unused, transaction: async () => 'pending', submit: async () => ({hash: aliceHash, nonce: 11, submittedAtBlock: 30n})}})
+      await submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true}), boundary: {state: async () => CrossChainLegState.Unused, predictHTLC: async () => E, transaction: async () => 'pending', submit: async () => ({hash: aliceHash, nonce: 11, submittedAtBlock: 30n})}})
       const aliceInclusion = {transactionHash: aliceHash, blockNumber: '30', blockHash: H(821)}
       const aliceSecrets = (await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).secretState
       if (aliceSecrets.party !== 'alice') throw new Error('test requires Alice secrets')
@@ -277,7 +280,7 @@ describe('console Alice commit', () => {
       await observeAliceCommit({workspace: value.bobRoot, configPath: value.bobConfig, boundary: aliceFinal})
       const bobHash = H(822)
       let submissions = 0
-      const bobBoundary: BobCommitBoundary = {state: async () => CrossChainLegState.Unused, transaction: async hash => hash === bobHash ? 'pending' : 'missing', submit: async args => {submissions += 1; expect(args.bobCommitSecret).not.toBe(H(0)); return {hash: bobHash, nonce: 12, submittedAtBlock: 40n}}}
+      const bobBoundary: BobCommitBoundary = {state: async () => CrossChainLegState.Unused, predictHTLC: async () => E, transaction: async hash => hash === bobHash ? 'pending' : 'missing', submit: async args => {submissions += 1; expect(args.bobCommitSecret).not.toBe(H(0)); return {hash: bobHash, nonce: 12, submittedAtBlock: 40n}}}
       const bobInput = JSON.stringify({schema: BOB_COMMIT_INPUT_SCHEMA, confirmed: true})
       await expect(submitBobCommit({workspace: value.bobRoot, configPath: value.bobConfig, input: bobInput, boundary: bobBoundary})).rejects.toThrow()
       await acceptConsoleTrade({workspace: value.bobRoot, configPath: value.bobConfig})
@@ -293,7 +296,7 @@ describe('console Alice commit', () => {
       expect((await restoreWorkspaceWorkflowState(value.aliceRoot, {party: 'alice', networkId: 'trade-test', configDigest: value.aliceIdentity.digest})).publicState.stage).toBe('bob-committed')
       const revealHash = H(824)
       let claims = 0
-      const revealBoundary: RevealingClaimBoundary = {state: async () => CrossChainLegState.Committed, transaction: async hash => hash === revealHash ? 'pending' : 'missing', submit: async args => {claims += 1; expect(args.secret).not.toBe(H(0)); return {hash: revealHash, nonce: 13, submittedAtBlock: 41n}}}
+      const revealBoundary: RevealingClaimBoundary = {state: async () => CrossChainLegState.Committed, htlc: async () => E, transaction: async hash => hash === revealHash ? 'pending' : 'missing', submit: async args => {claims += 1; expect(args.secret).not.toBe(H(0)); return {hash: revealHash, nonce: 13, submittedAtBlock: 41n}}}
       const revealInput = JSON.stringify({schema: REVEALING_CLAIM_INPUT_SCHEMA, confirmed: true})
       const reveal = await submitRevealingClaim({workspace: value.aliceRoot, configPath: value.aliceConfig, input: revealInput, boundary: revealBoundary})
       expect(reveal).toMatchObject({transactionHash: revealHash, lifecycle: 'pending', reused: false, preview: {recipient: A}})
@@ -311,7 +314,7 @@ describe('console Alice commit', () => {
       expect(JSON.stringify(observedReveal)).not.toMatch(/settlementSecret|bobCommitSecret/i)
       const finalHash = H(826)
       let finalClaims = 0
-      const finalBoundary: FinalClaimBoundary = {state: async () => CrossChainLegState.Committed, transaction: async hash => hash === finalHash ? 'pending' : 'missing', submit: async args => {finalClaims += 1; expect(args.secret).toBe(aliceSecrets.settlementSecret); return finalHash}}
+      const finalBoundary: FinalClaimBoundary = {state: async () => CrossChainLegState.Committed, htlc: async () => E, transaction: async hash => hash === finalHash ? 'pending' : 'missing', submit: async args => {finalClaims += 1; expect(args.secret).toBe(aliceSecrets.settlementSecret); return finalHash}}
       const finalClaim = await submitFinalClaim({workspace: value.bobRoot, configPath: value.bobConfig, boundary: finalBoundary, executor: B})
       expect(finalClaim).toMatchObject({transactionHash: finalHash, lifecycle: 'pending', reused: false, preview: {recipient: B, successPathDelay: 'none'}})
       expect(JSON.stringify(finalClaim)).not.toMatch(/settlementSecret|bobCommitSecret/i)
@@ -325,7 +328,7 @@ describe('console Alice commit', () => {
     try {
       const offer = await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       let submissions = 0
-      const boundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Committed, transaction: async () => 'missing', submit: async () => { submissions += 1; return {hash: H(801), nonce: 8, submittedAtBlock: 10n} }}
+      const boundary: AliceCommitBoundary = {state: async () => CrossChainLegState.Committed, predictHTLC: async () => E, transaction: async () => 'missing', submit: async () => { submissions += 1; return {hash: H(801), nonce: 8, submittedAtBlock: 10n} }}
       const invalidInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true, acceptance: {schema: TRADE_ACCEPTANCE_SCHEMA, networkId: 'trade-test', tradeId: offer.tradeId, bob: B}})
       const validInput = JSON.stringify({schema: ALICE_COMMIT_INPUT_SCHEMA, confirmed: true})
       await expect(submitAliceCommit({workspace: value.aliceRoot, configPath: value.aliceConfig, input: invalidInput, boundary})).rejects.toThrow('Bob acceptance is not part of Alice commit')
@@ -346,6 +349,7 @@ describe('console reclaim and recovery', () => {
       let submissions = 0
       const boundary: ReclaimBoundary = {
         state: async () => state,
+        htlc: async () => E,
         timestamp: async () => 1400n,
         transaction: async () => ({lifecycle, ...(lifecycle === 'replaced' ? {replacementHash: H(902)} : {})}),
         submit: async args => {submissions += 1; expect(args.party).toBe(true); expect(args.terms.partySide.reclaimRecipient).toBe(A); return {hash, nonce: 4, submittedAtBlock: 30n}},
@@ -371,7 +375,7 @@ describe('console reclaim and recovery', () => {
       await prepareConsoleTrade({workspace: value.aliceRoot, configPath: value.aliceConfig, input})
       let state = CrossChainLegState.Unused
       let submissions = 0
-      const boundary: ReclaimBoundary = {state: async () => state, timestamp: async () => 1399n, transaction: async () => ({lifecycle: 'dropped'}), submit: async () => {submissions += 1; return {hash: H(901), nonce: 1, submittedAtBlock: 1n}}}
+      const boundary: ReclaimBoundary = {state: async () => state, htlc: async () => E, timestamp: async () => 1399n, transaction: async () => ({lifecycle: 'dropped'}), submit: async () => {submissions += 1; return {hash: H(901), nonce: 1, submittedAtBlock: 1n}}}
       await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).rejects.toThrow('exact Committed')
       state = CrossChainLegState.Committed
       await expect(submitReclaim({workspace: value.aliceRoot, configPath: value.aliceConfig, boundary, submitter: E})).rejects.toThrow('not enabled')

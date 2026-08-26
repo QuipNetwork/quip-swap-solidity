@@ -252,7 +252,8 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
         `Wrapper: ${view.wrapper}`,
         `Principal: ${view.principal}`,
         `Recipient: ${view.recipient}`,
-        `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`,
+        `HTLC: ${view.htlc}`,
+        `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.htlcChange} HTLC)`).join(', ')}`,
         `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`,
         `Authorization: ${view.authorizationMode}; expires ${view.authorizationExpiry}`,
         '',
@@ -292,7 +293,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       if (io.stdin === undefined && !yes) throw new Error('submit-bob-commit requires confirmation JSON on standard input')
       const receivedInput = yes ? '' : io.stdin === undefined ? '' : await io.stdin()
       const actionInput = receivedInput.trim() === '' && yes ? JSON.stringify({schema: 'quip-swap-bob-commit.v1', confirmed: true}) : receivedInput
-      const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!machine ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.wrapperChange} escrow)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
+      const result = await submitBobCommit({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!machine ? {onPreview: view => io.stdout([`Bob funding preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `HTLC: ${view.htlc}`, `Principal: ${view.principal}`, `Recipient: ${view.recipient}`, `Assets: ${view.assets.map(asset => `${asset.amount} ${asset.token} (${asset.principalChange} principal, ${asset.htlcChange} HTLC)`).join(', ')}`, `Deadlines: commit ${view.commitmentDeadline}; claim ${view.claimDeadline}; reclaim ${view.reclaimRelease}`, `Authorization: ${view.authorizationMode}; progression gate: ${view.progressionGate}; expires ${view.authorizationExpiry}`, ''].join('\n'))} : {})})
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: ['LOCAL PROTOTYPE ONLY: mock PQ authorization and publicly known Anvil Bob key are active.']}
       if (await emitMachine(output)) {}
       else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} Bob commit ${result.transactionHash} (${result.lifecycle}).\n`)
@@ -325,7 +326,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
       if (io.stdin === undefined && !yes) throw new Error('submit-revealing-claim requires confirmation JSON on standard input')
       const receivedInput = yes ? '' : io.stdin === undefined ? '' : await io.stdin()
       const actionInput = receivedInput.trim() === '' && yes ? JSON.stringify({schema: 'quip-swap-revealing-claim.v1', confirmed: true}) : receivedInput
-      const result = await submitRevealingClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!machine ? {onPreview: view => io.stdout([`Revealing claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Claim deadline: ${view.claimDeadline}`, `DISCLOSURE: ${view.disclosure}`, ''].join('\n'))} : {})})
+      const result = await submitRevealingClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, input: yes ? forceConfirmed(actionInput) : actionInput, ...(!machine ? {onPreview: view => io.stdout([`Revealing claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `HTLC: ${view.htlc}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.htlcChange} HTLC, ${asset.recipientChange} recipient)`).join(', ')}`, `Claim deadline: ${view.claimDeadline}`, `DISCLOSURE: ${view.disclosure}`, ''].join('\n'))} : {})})
       const warnings = ['The settlement preimage becomes public when this transaction is submitted. Disclosure is irreversible.']
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
       if (await emitMachine(output)) {}
@@ -357,7 +358,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && command === 'submit-final-claim') {
     try {
       await requireConfirmation('submit-final-claim', yes, io.stdin)
-      const result = await submitFinalClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!machine ? {onPreview: view => io.stdout([`Final claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.wrapperChange} escrow, ${asset.recipientChange} recipient)`).join(', ')}`, `Success-path delay: ${view.successPathDelay}`, ''].join('\n'))} : {})})
+      const result = await submitFinalClaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!machine ? {onPreview: view => io.stdout([`Final claim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `HTLC: ${view.htlc}`, `Permissionless submitter: ${view.submitter}`, `Fixed recipient: ${view.recipient}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token} (${asset.htlcChange} HTLC, ${asset.recipientChange} recipient)`).join(', ')}`, `Success-path delay: ${view.successPathDelay}`, ''].join('\n'))} : {})})
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings: []}
       if (await emitMachine(output)) {}
       else io.stdout(`${result.reused ? 'Reconciled' : 'Submitted'} permissionless final claim ${result.transactionHash} (${result.lifecycle}).\n`)
@@ -391,7 +392,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
           `Outcome: ${result.outcome}${result.complete ? ' (complete)' : ''}`,
           `Persisted stage: ${result.persistedStage}`,
           `Completed: ${result.completedActions.join(', ') || 'none'}`,
-          ...result.legs.map(leg => `Chain ${leg.chainId}: ${leg.state}; custody ${leg.custody}; deadline ${leg.deadlineRisk}; balances ${leg.balances.map(balance => `${balance.role}=${balance.amount}`).join(', ')}`),
+          ...result.legs.map(leg => `Chain ${leg.chainId}: ${leg.state}; HTLC ${leg.htlc}; custody ${leg.custody}; deadline ${leg.deadlineRisk}; balances ${leg.balances.map(balance => `${balance.role}=${balance.amount}`).join(', ')}`),
           `Enabled actions: ${result.enabledActions.join(', ') || 'none'}`,
           `Responsible party: ${result.responsibleParty}`,
           `Next command: ${result.nextCommand ?? 'none'}`,
@@ -411,7 +412,7 @@ export async function runConsole(args: readonly string[], io: ConsoleIo, depende
   if (!wrongParty && command === 'reclaim') {
     try {
       await requireConfirmation('reclaim', yes, io.stdin)
-      const result = await submitReclaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!machine ? {onPreview: view => io.stdout([`Reclaim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `Permissionless submitter: ${view.submitter}`, `Fixed reclaim recipient: ${view.reclaimRecipient}`, `Reclaim release: ${view.reclaimRelease}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token}`).join(', ')}`, ''].join('\n'))} : {})})
+      const result = await submitReclaim({workspace: parsed.options.stateRoot, configPath: parsed.options.config, ...(!machine ? {onPreview: view => io.stdout([`Reclaim preview for chain ${view.chainId}`, `Wrapper: ${view.wrapper}`, `HTLC: ${view.htlc}`, `Permissionless submitter: ${view.submitter}`, `Fixed reclaim recipient: ${view.reclaimRecipient}`, `Reclaim release: ${view.reclaimRelease}`, `Payouts: ${view.payouts.map(asset => `${asset.amount} ${asset.token}`).join(', ')}`, ''].join('\n'))} : {})})
       const warnings = result.lifecycle === 'dropped' || result.lifecycle === 'replaced' || result.lifecycle === 'reverted' ? [`Recorded reclaim is ${result.lifecycle}; it was not resubmitted. Inspect the chain and recover explicitly.`] : []
       const output = {schema: CLI_SCHEMA_VERSION, command, party, mutatesState: true, sequence: 0, tradeId: result.tradeId, ok: true as const, result, warnings}
       if (await emitMachine(output)) {}
