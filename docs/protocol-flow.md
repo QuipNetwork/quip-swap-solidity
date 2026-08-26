@@ -22,16 +22,18 @@ secret is part of the signed terms.
 ## Cross-chain success
 
 1. Both parties independently validate the same terms and timing margins.
-2. Alice PQ-authorizes and funds her local commit.
+2. Alice PQ-authorizes her local commit. The wrapper creates her deterministic
+   side HTLC and funds it directly from her principal.
 3. Alice's transaction verifies and publishes `BobCommitSecret` atomically with
    escrow. The preimage is public as soon as the transaction is visible.
 4. Bob's trusted client authenticates Alice's transaction and waits for its
    configured finality threshold.
-5. Bob PQ-authorizes and funds his commit using the published preimage.
+5. Bob PQ-authorizes his commit using the published preimage. His wrapper
+   creates and funds Bob's distinct side HTLC.
 6. Alice observes Bob's local `Committed` state and claims Bob's leg with the
    settlement secret. The secret becomes public in calldata.
 7. Bob or another funded executor waits for the configured reveal finality and
-   submits the same secret to claim Alice's leg.
+   submits the same secret to release Alice's HTLC to its signed recipient.
 
 There is no permanent success-path delay in the contracts. Finality waiting is
 an off-chain risk policy. Bob's commit and the revealing claim occur on the
@@ -71,12 +73,12 @@ settlement secrets, or an executor missing the remaining claim window.
 Both sides use one `SameChainWrapper`, one settlement lock, and canonical zero
 progression locks.
 
-1. Alice's authorized commit moves `Unused -> PartyCommitted` and escrows her
-   assets.
+1. Alice's authorized commit moves `Unused -> PartyCommitted`, creates her
+   deterministic side HTLC, and funds it from her principal.
 2. Bob's authorized commit requires that exact source state and moves
-   `PartyCommitted -> BothCommitted`.
+   `PartyCommitted -> BothCommitted`, creating and funding his separate HTLC.
 3. Any caller with the settlement secret submits one atomic claim.
-4. Both signed recipients are paid and state becomes `Claimed`.
+4. Both HTLCs release to their signed recipients and state becomes `Claimed`.
 
 ## Same-chain recovery
 

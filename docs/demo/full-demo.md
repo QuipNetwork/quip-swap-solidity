@@ -20,7 +20,7 @@ Success reports:
 - schema `quip-swap-full-demo.v1`;
 - both chain states `Claimed`;
 - four rejected invalid actions;
-- empty wrapper custody;
+- one funded HTLC per committed leg and empty HTLC custody after settlement;
 - 10 chain-A demo tokens paid to Bob and 20 chain-B tokens paid to Alice.
 
 The invalid controls reject a disallowed submitter, a missing or wrong

@@ -17,10 +17,10 @@ reflection, balance-mutating hooks, dishonest balance/ownership reporting, and
 unreviewed proxy upgrades. A target must not be approved under an incompatible
 asset type.
 
-The wrappers check exact native value, fungible balance deltas, and ERC-721
-ownership. A failure rolls back protocol state, reserves, prior atomic payouts,
-and authorization nonce consumption. Reentrancy guards cover commit, claim,
-and reclaim entry points.
+The wrappers and dedicated HTLCs check exact native value, fungible balance
+deltas, and ERC-721 ownership. A failure rolls back protocol state, HTLC
+creation/funding or release, prior atomic payouts, and authorization nonce
+consumption. Reentrancy guards cover commit, claim, and reclaim entry points.
 
 ## Governance and operations
 
@@ -34,9 +34,9 @@ and reclaim entry points.
 - Establish a conservative maximum asset count even though the contracts do
   not currently enforce one.
 
-Delisting blocks new commits but does not block claim or reclaim of escrow
-already held by that wrapper. It does not guarantee that a changed token will
-remain transferable.
+Delisting blocks new commits but does not block claim or reclaim of assets
+already held by a dedicated HTLC. It does not guarantee that a changed token
+will remain transferable.
 
 ## Destinations
 

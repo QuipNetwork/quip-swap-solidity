@@ -16,7 +16,8 @@ Success reports:
 - transitions `Unused -> PartyCommitted -> BothCommitted -> Claimed`;
 - 14 rejected invalid actions;
 - both recovery branches and atomic rollback evidence;
-- fixed recipient payouts and empty wrapper custody;
+- one funded HTLC per side, fixed recipient payouts, and empty HTLC custody
+  after settlement;
 - no persisted secret preimages.
 
 This demo uses the prototype verifier mock; it is not evidence of production PQ

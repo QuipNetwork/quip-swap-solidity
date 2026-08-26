@@ -1,8 +1,8 @@
 # Quip Swap Solidity
 
 This branch contains the v1.1 protocol prototype: same-chain and cross-chain
-escrow wrappers, PQ commit authorization, asset admission and custody, a
-TypeScript SDK, and deterministic local demos.
+coordination wrappers, one dedicated HTLC per committed swap side, PQ commit
+authorization, asset admission, a TypeScript SDK, and deterministic local demos.
 
 It is a prototype, not a production release. Read
 [security assumptions](docs/security-assumptions.md) before using it with
@@ -39,9 +39,10 @@ manual console operation, and artifact validation.
 
 ## Current integration surface
 
-- `src/protocol/`: terms, hashing, state machines, settlement, and wrappers.
+- `src/protocol/`: terms, hashing, state machines, settlement, wrappers, and
+  the cloneable `SwapHTLC` custody implementation.
 - `src/authorization/`: registered-direct and QuipWallet authorization.
-- `src/assets/`: asset allowlisting and escrow accounting.
+- `src/assets/`: asset allowlisting and exact-transfer primitives.
 - `sdk/`: current API and prototype trusted-client CLI.
 - `script/DeployProtocol.s.sol`: deterministic prototype deployment.
 

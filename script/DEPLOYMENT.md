@@ -88,6 +88,6 @@ Do not add addresses to a public SDK registry until:
 - the full source revision and dependency lock are fixed;
 - every bytecode and immutable check passes on every chain;
 - real-verifier integration and gas tests pass;
-- asset and timing policies are approved; and
+- asset policy and client-side timing policies are approved; and
 - broadcast artifacts, manifests, and independent verification results are
   archived.

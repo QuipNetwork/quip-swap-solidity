@@ -221,8 +221,9 @@ bun run src/bin/quip-swap.ts status --party bob \
   --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
 ```
 
-Both views must report complete with `Claimed` on both chains, fixed recipient
-balances of 10 and 20 demo tokens, and zero wrapper balances.
+Both views must report complete with `Claimed` on both chains, each leg's
+dedicated HTLC address, fixed recipient balances of 10 and 20 demo tokens, and
+zero terminal HTLC balances.
 
 ## Stop this runtime
 

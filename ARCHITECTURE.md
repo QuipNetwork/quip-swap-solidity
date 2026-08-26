@@ -37,8 +37,9 @@ integration or deployment surface. Its deployment tools are isolated under
               |                                |
        SameChainStateMachine           CrossChainStateMachine
               +------------ Settlement --------+
-                              |
-                   AssetCustody + allowlist
+              |                                |
+       per-side SwapHTLC clone          per-side SwapHTLC clone
+              +------- AssetHandling + allowlist
 ```
 
 - `src/protocol/ProtocolTypes.sol`: terms, authorization requests, evidence,
@@ -49,9 +50,12 @@ integration or deployment surface. Its deployment tools are isolated under
   checks.
 - `src/protocol/StateMachines.sol`: same-chain and cross-chain transitions.
 - `src/protocol/Settlement.sol`: claim/reclaim guards and payouts.
-- `src/protocol/*Wrapper.sol`: escrow entry points and state ownership.
+- `src/protocol/*Wrapper.sol`: commit and settlement entry points, state
+  ownership, and deterministic HTLC registries.
+- `src/protocol/SwapHTLC.sol`: cloneable custody boundary for exactly one
+  trade side; only its wrapper controller can release it.
 - `src/authorization/`: PQ and submitter/delegation boundaries.
-- `src/assets/`: token admission, custody checks, and reserves.
+- `src/assets/`: token admission and exact collection/release checks.
 
 ## Terms and hashes
 
@@ -75,10 +79,12 @@ registry.
 
 ## Authorization
 
-Both modes deliver `VerifiedCommitAuthorization` to a wrapper. The wrapper
-reconstructs the payload, checks the authorization caller and submitter policy,
-enforces exclusive expiry, and consumes a wrapper-local authorization nonce
-only after the complete commit succeeds.
+Both modes deliver `VerifiedCommitAuthorization` to a wrapper. The applicable
+authorization boundary verifies the signature and submitter policy, then
+consumes its own nonce before calling the wrapper. The wrapper reconstructs the
+payload, checks the trusted authorization caller and evidence, and enforces
+exclusive expiry. A failed commit reverts nonce consumption with the complete
+transaction.
 
 ### Registered-direct mode
 
@@ -146,22 +152,29 @@ Unused -> PartyCommitted -> BothCommitted -> Claimed
              +-> Reclaimed      +-> Reclaimed
 ```
 
-The first same-chain commit binds both sides. Claim and dual reclaim release
-both legs atomically; a payout failure rolls back the action.
+The first same-chain commit binds both sides. Each commit creates and funds its
+own deterministic HTLC. Claim and dual reclaim release both HTLCs atomically;
+a payout failure rolls back the action.
 
 ## Asset custody
 
 Token commits require the exact `(assetType, target)` pair in
 `AssetSupportRegistry`. Collection and release check exact native value,
-balance deltas, or ERC-721 ownership. Per-asset reserves isolate concurrent
-escrow.
+balance deltas, or ERC-721 ownership. The wrapper deterministically clones one
+`SwapHTLC` for the committed side and sends assets directly from the principal
+to that clone. It never pools committed funds. The clone binds its controller,
+`TradeID`, settlement lock, side tag, and side-terms hash; release is one-shot
+and pays only the destination selected by the wrapper from signed terms.
+
+`reserved(Asset)` remains as a compatibility view and always returns zero. It
+is not custody accounting.
 
 Allowlisting is an assertion of continued token behavior, not proof of safety.
 See [asset compatibility](docs/asset-support.md).
 
 ## Deployment and SDK
 
-`script/DeployProtocol.s.sol` deploys four components with versioned,
+`script/DeployProtocol.s.sol` deploys five components with versioned,
 sender-permissioned CREATE3 salts. See
 [prototype deployment](script/DEPLOYMENT.md) for current verification gaps.
 

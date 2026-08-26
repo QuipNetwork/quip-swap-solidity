@@ -117,9 +117,9 @@ recovery.
 
 ### Wrapper addresses are valid payout destinations — open
 
-Terms reject only zero destinations. Native and fungible self-payouts can
-revert; an ERC-721 payout to the executing wrapper can reach terminal state
-while leaving the NFT stranded and its reserve removed.
+Terms reject only zero destinations. Native and fungible payouts to the
+executing wrapper can revert; an ERC-721 payout can reach terminal state while
+leaving the NFT stranded in that wrapper.
 
 Required: reject the executing wrapper as a local recipient or reclaim
 recipient and mirror the rule in the SDK.
@@ -138,7 +138,7 @@ allowlist epoch or adapter version bound to the trade.
 
 The allowlist and balance checks cannot make malicious, upgradeable, rebasing,
 callback-abusive, dishonest, or misclassified tokens safe. A negative rebase or
-blocked transfer can make reserved escrow unpayable.
+blocked transfer can make a dedicated HTLC unpayable.
 
 Required: narrowly govern exact `(assetType, target)` entries, monitor upgrades,
 and use audited adapters where necessary.
