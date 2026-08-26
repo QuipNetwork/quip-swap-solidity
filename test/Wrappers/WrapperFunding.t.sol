@@ -138,8 +138,9 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     token.approve(address(cross), 10 ether);
     _directCommit(terms, true, lock, 91, alice, aliceKey, bytes32(0));
+    address partyHTLC = cross.htlcOf(terms, true, lock);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
-    assertEq(token.balanceOf(address(cross)), 10 ether);
+    assertEq(token.balanceOf(partyHTLC), 10 ether);
 
     vm.chainId(terms.counterpartySide.chainId);
     vm.deal(bob, 1);
@@ -170,13 +171,14 @@ contract WrapperFundingTest is Test {
     vm.prank(bob);
     gateway.authorizeCommit{value: 1}(bobRequest, bobSignature);
     assertEq(uint8(cross.state(terms, false, lock)), uint8(CrossChainLegState.Committed));
-    assertEq(address(cross).balance, 1);
+    assertEq(cross.htlcOf(terms, false, lock).balance, 1);
+    assertEq(address(cross).balance, 0);
 
     vm.chainId(partyChainId);
     vm.expectRevert(Settlement.InvalidSettlementSecret.selector);
     cross.claim(terms, true, lock, keccak256('wrong-final-claim-secret'));
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
-    assertEq(token.balanceOf(address(cross)), 10 ether);
+    assertEq(token.balanceOf(partyHTLC), 10 ether);
     assertEq(token.balanceOf(RECIPIENT), 0);
   }
 
@@ -253,7 +255,7 @@ contract WrapperFundingTest is Test {
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
     assertEq(token.balanceOf(newcomer), 10 ether);
     assertEq(token.balanceOf(address(cross)), 0);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(cross.predictHTLC(terms, true, lock).code.length, 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
     vm.prank(newcomer);
@@ -262,8 +264,8 @@ contract WrapperFundingTest is Test {
     registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
     assertEq(token.balanceOf(newcomer), 0);
-    assertEq(token.balanceOf(address(cross)), 10 ether);
-    assertEq(cross.reserved(assets[0]), 10 ether);
+    assertEq(token.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
+    assertEq(token.balanceOf(address(cross)), 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
   }
 
@@ -282,7 +284,8 @@ contract WrapperFundingTest is Test {
     vm.prank(RELAYER);
     wallet.authorizeCommit(request, signature);
 
-    assertEq(token.balanceOf(address(cross)), 10 ether);
+    assertEq(token.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
+    assertEq(token.balanceOf(address(cross)), 0);
     assertEq(token.balanceOf(RELAYER), 0);
   }
 
@@ -302,7 +305,8 @@ contract WrapperFundingTest is Test {
     vm.prank(RELAYER);
     gateway.authorizeCommit{value: 1 ether}(request, signature);
 
-    assertEq(address(cross).balance, 1 ether);
+    assertEq(cross.htlcOf(terms, true, lock).balance, 1 ether);
+    assertEq(address(cross).balance, 0);
     assertEq(RELAYER.balance, 1 ether);
   }
 
@@ -324,8 +328,9 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
 
-    assertEq(nft.ownerOf(7), address(cross));
-    assertEq(multi.balanceOf(address(cross), 9), 3);
+    address htlc = cross.htlcOf(terms, true, lock);
+    assertEq(nft.ownerOf(7), htlc);
+    assertEq(multi.balanceOf(htlc, 9), 3);
   }
 
   function test_feeOnTransferAssetIsRejectedAtomically() public {
@@ -361,13 +366,14 @@ contract WrapperFundingTest is Test {
     gateway.authorizeCommit(request, signature);
     assertEq(unsupported.balanceOf(alice), 10 ether);
     assertEq(unsupported.balanceOf(address(cross)), 0);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(cross.predictHTLC(terms, true, lock).code.length, 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
     assetSupport.setAssetSupport(AssetType.ERC20, address(unsupported), true);
     vm.prank(alice);
     gateway.authorizeCommit(request, signature);
-    assertEq(unsupported.balanceOf(address(cross)), 10 ether);
+    assertEq(unsupported.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
+    assertEq(unsupported.balanceOf(address(cross)), 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
   }
 
@@ -394,7 +400,7 @@ contract WrapperFundingTest is Test {
     cross.claim(terms, true, lock, SECRET);
 
     assertEq(nft.ownerOf(12), RECIPIENT);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(cross.htlcOf(terms, true, lock))).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
@@ -417,19 +423,19 @@ contract WrapperFundingTest is Test {
       gateway.authorizeCommit(request, signature);
       assertEq(malicious.balanceOf(alice), 11 ether);
       assertEq(malicious.balanceOf(address(cross)), 0);
-      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(cross.predictHTLC(terms, true, lock).code.length, 0);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
       malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
       vm.prank(alice);
       gateway.authorizeCommit(request, signature);
-      assertEq(malicious.balanceOf(address(cross)), 10 ether);
-      assertEq(cross.reserved(assets[0]), 10 ether);
+      assertEq(malicious.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
+      assertEq(malicious.balanceOf(address(cross)), 0);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
     }
   }
 
-  function test_maliciousNoOpPayoutRollsBackClaimStateAndReserve() public {
+  function test_maliciousNoOpPayoutRollsBackClaimAndHTLCState() public {
     MaliciousERC20Mock malicious = new MaliciousERC20Mock();
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10 ether);
     (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 70);
@@ -437,19 +443,20 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     malicious.approve(address(cross), 10 ether);
     _directCommit(terms, true, lock, 70, alice, aliceKey, bytes32(0));
+    address htlc = cross.htlcOf(terms, true, lock);
     malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
 
     vm.expectRevert(AssetCustody.UnexpectedAmountReceived.selector);
     cross.claim(terms, true, lock, SECRET);
     assertEq(malicious.balanceOf(RECIPIENT), 0);
-    assertEq(malicious.balanceOf(address(cross)), 10 ether);
-    assertEq(cross.reserved(assets[0]), 10 ether);
+    assertEq(malicious.balanceOf(htlc), 10 ether);
+    assertFalse(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
 
     malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
     cross.claim(terms, true, lock, SECRET);
     assertEq(malicious.balanceOf(RECIPIENT), 10 ether);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
@@ -463,23 +470,23 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     malicious.approve(address(cross), 7);
     malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
+    address predicted = cross.predictHTLC(terms, true, lock);
 
-    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, address(cross), alice));
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, predicted, alice));
     vm.prank(alice);
     gateway.authorizeCommit(request, signature);
     assertEq(malicious.ownerOf(7), alice);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(predicted.code.length, 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
     malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
     vm.prank(alice);
     gateway.authorizeCommit(request, signature);
-    assertEq(malicious.ownerOf(7), address(cross));
-    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(malicious.ownerOf(7), predicted);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
   }
 
-  function test_duplicateERC721ReferencesCannotCreateMultipleReserves() public {
+  function test_duplicateERC721ReferencesCannotCreateMultipleEscrows() public {
     ERC721Mock nft = new ERC721Mock('NFT', 'NFT');
     Asset[] memory assets = new Asset[](2);
     assets[0] = Asset({assetType: AssetType.ERC721, target: address(nft), id: 11, amount: 1});
@@ -494,7 +501,7 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
     assertEq(nft.ownerOf(11), alice);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertEq(cross.predictHTLC(terms, true, lock).code.length, 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
   }
 
@@ -506,18 +513,19 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     malicious.approve(address(cross), 8);
     _directCommit(terms, true, lock, 72, alice, aliceKey, bytes32(0));
+    address htlc = cross.htlcOf(terms, true, lock);
     malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
 
-    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, address(cross)));
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, htlc));
     cross.claim(terms, true, lock, SECRET);
-    assertEq(malicious.ownerOf(8), address(cross));
-    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(malicious.ownerOf(8), htlc);
+    assertFalse(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
 
     malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
     cross.claim(terms, true, lock, SECRET);
     assertEq(malicious.ownerOf(8), RECIPIENT);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
@@ -529,19 +537,20 @@ contract WrapperFundingTest is Test {
     vm.prank(alice);
     malicious.approve(address(cross), 9);
     _directCommit(terms, true, lock, 73, alice, aliceKey, bytes32(0));
+    address htlc = cross.htlcOf(terms, true, lock);
     vm.warp(terms.partySide.reclaimRelease);
     malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
 
-    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECLAIMER, address(cross)));
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECLAIMER, htlc));
     cross.reclaim(terms, true, lock);
-    assertEq(malicious.ownerOf(9), address(cross));
-    assertEq(cross.reserved(assets[0]), 1);
+    assertEq(malicious.ownerOf(9), htlc);
+    assertFalse(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
 
     malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
     cross.reclaim(terms, true, lock);
     assertEq(malicious.ownerOf(9), RECLAIMER);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(htlc)).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Reclaimed));
   }
 
@@ -561,23 +570,25 @@ contract WrapperFundingTest is Test {
     malicious.approve(address(same), 10);
     _directCommitTo(address(same), terms, true, lock, 74, alice, aliceKey, bytes32(0));
     _directCommitTo(address(same), terms, false, lock, 75, bob, bobKey, bytes32(0));
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
     malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
 
-    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, address(same)));
+    vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, counterpartyHTLC));
     same.claim(terms, lock, SECRET);
     assertEq(token.balanceOf(RECIPIENT), 0);
-    assertEq(token.balanceOf(address(same)), 10 ether);
-    assertEq(malicious.ownerOf(10), address(same));
-    assertEq(same.reserved(partyAssets[0]), 10 ether);
-    assertEq(same.reserved(counterpartyAssets[0]), 1);
+    assertEq(token.balanceOf(partyHTLC), 10 ether);
+    assertEq(malicious.ownerOf(10), counterpartyHTLC);
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
 
     malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
     same.claim(terms, lock, SECRET);
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
     assertEq(malicious.ownerOf(10), RECIPIENT);
-    assertEq(same.reserved(partyAssets[0]), 0);
-    assertEq(same.reserved(counterpartyAssets[0]), 0);
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
+    assertTrue(SwapHTLC(payable(counterpartyHTLC)).released());
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
   }
 
@@ -599,20 +610,20 @@ contract WrapperFundingTest is Test {
       vm.prank(alice);
       malicious.approve(address(cross), tokenId);
       malicious.setBehavior(MaliciousERC721Mock.Behavior(raw));
+      address predicted = cross.predictHTLC(terms, true, lock);
 
       address reported = raw == uint8(MaliciousERC721Mock.Behavior.OwnerQueryReverts) ? address(0) : address(0xBAD);
-      vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, address(cross), reported));
+      vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, predicted, reported));
       vm.prank(alice);
       gateway.authorizeCommit(request, signature);
       assertEq(malicious.actualOwnerOf(tokenId), alice);
-      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(predicted.code.length, 0);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
       malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
       vm.prank(alice);
       gateway.authorizeCommit(request, signature);
-      assertEq(malicious.actualOwnerOf(tokenId), address(cross));
-      assertEq(cross.reserved(assets[0]), 1);
+      assertEq(malicious.actualOwnerOf(tokenId), predicted);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
     }
   }
@@ -633,20 +644,21 @@ contract WrapperFundingTest is Test {
       vm.prank(alice);
       malicious.approve(address(cross), tokenId);
       _directCommit(terms, true, lock, nonce, alice, aliceKey, bytes32(0));
+      address htlc = cross.htlcOf(terms, true, lock);
       malicious.setBehavior(MaliciousERC721Mock.Behavior(raw));
 
       address reported =
         raw == uint8(MaliciousERC721Mock.Behavior.TransferThenOwnerQueryReverts) ? address(0) : address(0xBAD);
       vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, reported));
       cross.claim(terms, true, lock, SECRET);
-      assertEq(malicious.actualOwnerOf(tokenId), address(cross));
-      assertEq(cross.reserved(assets[0]), 1);
+      assertEq(malicious.actualOwnerOf(tokenId), htlc);
+      assertFalse(SwapHTLC(payable(htlc)).released());
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
 
       malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
       cross.claim(terms, true, lock, SECRET);
       assertEq(malicious.actualOwnerOf(tokenId), RECIPIENT);
-      assertEq(cross.reserved(assets[0]), 0);
+      assertTrue(SwapHTLC(payable(htlc)).released());
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
     }
   }
@@ -664,8 +676,7 @@ contract WrapperFundingTest is Test {
 
     assertTrue(malicious.reentered());
     assertFalse(malicious.innerSucceeded());
-    assertEq(malicious.balanceOf(address(cross), 7), 3);
-    assertEq(cross.reserved(assets[0]), 3);
+    assertEq(malicious.balanceOf(cross.htlcOf(terms, true, lock), 7), 3);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
   }
 
@@ -688,7 +699,7 @@ contract WrapperFundingTest is Test {
     assertTrue(attacker.reentered());
     assertFalse(attacker.innerSucceeded());
     assertEq(token1155.balanceOf(address(attacker), 8), 4);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(cross.htlcOf(terms, true, lock))).released());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Claimed));
   }
 
@@ -708,26 +719,26 @@ contract WrapperFundingTest is Test {
       malicious.mint(alice, 10 ether);
       vm.prank(alice);
       malicious.approve(address(cross), 10 ether);
-      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), address(cross));
+      address predicted = cross.predictHTLC(terms, true, lock);
+      malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), predicted);
 
       vm.expectRevert();
       vm.prank(alice);
       gateway.authorizeCommit(request, signature);
       assertEq(malicious.rawBalanceOf(alice), 10 ether);
       assertEq(malicious.rawBalanceOf(address(cross)), 0);
-      assertEq(cross.reserved(assets[0]), 0);
+      assertEq(predicted.code.length, 0);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
 
       malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior.Exact, address(0));
       vm.prank(alice);
       gateway.authorizeCommit(request, signature);
-      assertEq(malicious.rawBalanceOf(address(cross)), 10 ether);
-      assertEq(cross.reserved(assets[0]), 10 ether);
+      assertEq(malicious.rawBalanceOf(predicted), 10 ether);
       assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
     }
   }
 
-  function test_sameChainBalanceQueryFailuresRollbackPriorPayoutStateAndReserves() public {
+  function test_sameChainBalanceQueryFailuresRollbackBothHTLCsAndState() public {
     for (
       uint8 raw = uint8(AdversarialERC20Mock.BalanceBehavior.RevertQuery);
       raw <= uint8(AdversarialERC20Mock.BalanceBehavior.MalformedQuery);
@@ -749,29 +760,31 @@ contract WrapperFundingTest is Test {
       malicious.approve(address(same), 20 ether);
       _directCommitTo(address(same), terms, true, lock, 240 + raw, alice, aliceKey, bytes32(0));
       _directCommitTo(address(same), terms, false, lock, 250 + raw, bob, bobKey, bytes32(0));
+      address partyHTLC = same.htlcOf(terms, true, lock);
+      address counterpartyHTLC = same.htlcOf(terms, false, lock);
       malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), RECIPIENT);
 
       vm.expectRevert();
       same.claim(terms, lock, SECRET);
       assertEq(partyToken.balanceOf(RECIPIENT), 0);
-      assertEq(partyToken.balanceOf(address(same)), 10 ether);
+      assertEq(partyToken.balanceOf(partyHTLC), 10 ether);
       assertEq(malicious.rawBalanceOf(RECIPIENT), 0);
-      assertEq(malicious.rawBalanceOf(address(same)), 20 ether);
-      assertEq(same.reserved(partyAssets[0]), 10 ether);
-      assertEq(same.reserved(counterpartyAssets[0]), 20 ether);
+      assertEq(malicious.rawBalanceOf(counterpartyHTLC), 20 ether);
+      assertFalse(SwapHTLC(payable(partyHTLC)).released());
+      assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
       assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
 
       malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior.Exact, address(0));
       same.claim(terms, lock, SECRET);
       assertEq(partyToken.balanceOf(RECIPIENT), 10 ether);
       assertEq(malicious.rawBalanceOf(RECIPIENT), 20 ether);
-      assertEq(same.reserved(partyAssets[0]), 0);
-      assertEq(same.reserved(counterpartyAssets[0]), 0);
+      assertTrue(SwapHTLC(payable(partyHTLC)).released());
+      assertTrue(SwapHTLC(payable(counterpartyHTLC)).released());
       assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
     }
   }
 
-  function test_reserveDeficitCannotDrainAnotherTrade() public {
+  function test_oneHTLCDeficitCannotDrainAnotherTrade() public {
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory first, bytes32 firstLock) =
       _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 7);
@@ -782,12 +795,18 @@ contract WrapperFundingTest is Test {
     token.approve(address(cross), 20 ether);
     _directCommit(first, true, firstLock, 7, alice, aliceKey, bytes32(0));
     _directCommit(second, true, secondLock, 8, alice, aliceKey, bytes32(0));
-    token.burn(address(cross), 10 ether);
+    address firstHTLC = cross.htlcOf(first, true, firstLock);
+    address secondHTLC = cross.htlcOf(second, true, secondLock);
+    token.burn(firstHTLC, 10 ether);
 
-    vm.expectRevert(AssetCustody.InsufficientReservedBalance.selector);
+    vm.expectRevert();
     cross.claim(first, true, firstLock, SECRET);
     assertEq(uint8(cross.state(first, true, firstLock)), uint8(CrossChainLegState.Committed));
     assertEq(uint8(cross.state(second, true, secondLock)), uint8(CrossChainLegState.Committed));
+    assertEq(token.balanceOf(firstHTLC), 0);
+    assertEq(token.balanceOf(secondHTLC), 10 ether);
+    assertFalse(SwapHTLC(payable(firstHTLC)).released());
+    assertFalse(SwapHTLC(payable(secondHTLC)).released());
   }
 
   function test_nativeRecipientCannotReenterProductionWrapper() public {
@@ -884,7 +903,7 @@ contract WrapperFundingTest is Test {
     );
     cross.reclaim(claimedTerms, true, claimedLock);
     assertEq(RECIPIENT.balance, paidAfterClaim);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(cross.htlcOf(claimedTerms, true, claimedLock))).released());
 
     vm.warp(100);
     (ProtocolTerms memory reclaimedTerms, bytes32 reclaimedLock) =
@@ -907,7 +926,7 @@ contract WrapperFundingTest is Test {
     );
     cross.claim(reclaimedTerms, true, reclaimedLock, SECRET);
     assertEq(RECLAIMER.balance, refundedAfterReclaim);
-    assertEq(cross.reserved(assets[0]), 0);
+    assertTrue(SwapHTLC(payable(cross.htlcOf(reclaimedTerms, true, reclaimedLock))).released());
   }
 
   function test_sameChainClaimReclaimWinnerMakesStateAndBothPayoutsTerminal() public {
@@ -924,7 +943,8 @@ contract WrapperFundingTest is Test {
     );
     same.reclaimBoth(claimedTerms, claimedLock);
     assertEq(RECIPIENT.balance, paidAfterClaim);
-    assertEq(same.reserved(claimedTerms.partySide.assets[0]), 0);
+    assertTrue(SwapHTLC(payable(same.htlcOf(claimedTerms, true, claimedLock))).released());
+    assertTrue(SwapHTLC(payable(same.htlcOf(claimedTerms, false, claimedLock))).released());
 
     vm.warp(100);
     (ProtocolTerms memory reclaimedTerms, bytes32 reclaimedLock) =
@@ -944,7 +964,8 @@ contract WrapperFundingTest is Test {
     );
     same.claim(reclaimedTerms, reclaimedLock, SECRET);
     assertEq(RECLAIMER.balance, refundedAfterReclaim);
-    assertEq(same.reserved(reclaimedTerms.partySide.assets[0]), 0);
+    assertTrue(SwapHTLC(payable(same.htlcOf(reclaimedTerms, true, reclaimedLock))).released());
+    assertTrue(SwapHTLC(payable(same.htlcOf(reclaimedTerms, false, reclaimedLock))).released());
   }
 
   function test_authorizationMatrixCompletesDirectDirectWalletWalletAndMixedSwaps() public {
@@ -985,7 +1006,7 @@ contract WrapperFundingTest is Test {
     _matrixCommit(brokerTerms, true, brokerLock, 1401, broker, aliceKey);
     assertEq(brokerToken.balanceOf(alice), 0);
     assertEq(brokerToken.balanceOf(broker), 0);
-    assertEq(brokerToken.balanceOf(address(same)), 10 ether);
+    assertEq(brokerToken.balanceOf(same.htlcOf(brokerTerms, true, brokerLock)), 10 ether);
     _matrixCommit(brokerTerms, false, brokerLock, 1402, bob, bobKey);
     vm.prank(RELAYER);
     same.claim(brokerTerms, brokerLock, SECRET);
@@ -1004,8 +1025,8 @@ contract WrapperFundingTest is Test {
     _matrixCommit(terms, false, lock, 1502, RELAYER, bobKey);
     assertEq(aliceToken.balanceOf(RELAYER), 0);
     assertEq(bobToken.balanceOf(RELAYER), 0);
-    assertEq(aliceToken.balanceOf(address(same)), 10 ether);
-    assertEq(bobToken.balanceOf(address(same)), 20 ether);
+    assertEq(aliceToken.balanceOf(same.htlcOf(terms, true, lock)), 10 ether);
+    assertEq(bobToken.balanceOf(same.htlcOf(terms, false, lock)), 20 ether);
 
     vm.prank(RELAYER);
     same.claim(terms, lock, SECRET);
@@ -1026,6 +1047,7 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Unused));
     assertEq(aliceToken.balanceOf(alice), 10 ether);
     assertEq(aliceToken.balanceOf(address(same)), 0);
+    assertEq(same.predictHTLC(terms, true, lock).code.length, 0);
 
     // The exact same authorization nonce succeeds for the principal, proving
     // the rejected transport consumed neither wrapper nor nonce state.
@@ -1039,6 +1061,7 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
     assertEq(bobToken.balanceOf(address(bobWallet)), 20 ether);
     assertEq(bobToken.balanceOf(address(same)), 0);
+    assertEq(same.predictHTLC(terms, false, lock).code.length, 0);
 
     _matrixCommit(terms, false, lock, 1602, address(bobWallet), bobWalletKey);
     vm.prank(RELAYER);
@@ -1200,8 +1223,12 @@ contract WrapperFundingTest is Test {
     assertEq(counterpartyToken.balanceOf(terms.counterpartySide.recipient), 20 ether);
     assertEq(partyToken.balanceOf(address(same)), 0);
     assertEq(counterpartyToken.balanceOf(address(same)), 0);
-    assertEq(same.reserved(terms.partySide.assets[0]), 0);
-    assertEq(same.reserved(terms.counterpartySide.assets[0]), 0);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
+    assertEq(partyToken.balanceOf(partyHTLC), 0);
+    assertEq(counterpartyToken.balanceOf(counterpartyHTLC), 0);
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
+    assertTrue(SwapHTLC(payable(counterpartyHTLC)).released());
   }
 
   function _sameChainNativeTerms(

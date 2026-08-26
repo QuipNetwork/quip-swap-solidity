@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {AssetSupport} from '../../src/assets/AssetHandling.sol';
+import {AssetSupport, AssetTransfers} from '../../src/assets/AssetHandling.sol';
 import {AssetSupportRegistry} from '../../src/assets/AssetSupportRegistry.sol';
 import {CommitAuthorization} from '../../src/protocol/CommitValidation.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
@@ -26,6 +26,7 @@ import {Settlement} from '../../src/protocol/Settlement.sol';
 import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SwapHTLC} from '../../src/protocol/SwapHTLC.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
+import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract DeployedWrapperGuardsTest is Test {
@@ -95,6 +96,118 @@ contract DeployedWrapperGuardsTest is Test {
     assertTrue(crossParty != sameParty);
     assertEq(crossParty, cross.predictHTLC(crossTerms, true, crossLock));
     assertEq(sameCounterparty, same.predictHTLC(sameTerms, false, sameLock));
+    assertTrue(crossParty != cross.predictHTLC(crossTerms, true, bytes32(uint256(crossLock) + 1)));
+
+    crossTerms.partySide.sideNonce = bytes32(uint256(99));
+    _bindCross(crossTerms);
+    assertTrue(crossParty != cross.predictHTLC(crossTerms, true, _lock(crossTerms)));
+  }
+
+  function test_failedCrossFundingRollsBackCloneStateAndAssetsThenPermitsRetry() public {
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    support.setAssetSupport(AssetType.ERC20, address(malicious), true);
+    ProtocolTerms memory terms = _crossTerms();
+    terms.partySide.assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 10);
+    _bindCross(terms);
+    bytes32 lock = _lock(terms);
+    address predicted = cross.predictHTLC(terms, true, lock);
+    malicious.mint(ALICE, 10);
+    vm.prank(ALICE);
+    malicious.approve(address(cross), 10);
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
+
+    vm.expectRevert(AssetTransfers.UnexpectedAmountReceived.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit(
+      terms, true, lock, BOB_COMMIT_SECRET, _evidence(terms, true, address(cross), lock, 70, 190), ''
+    );
+
+    _assertCrossUnused(terms, true, lock);
+    assertEq(cross.htlcOf(terms, true, lock), address(0));
+    assertEq(predicted.code.length, 0);
+    assertEq(malicious.balanceOf(ALICE), 10);
+    assertEq(malicious.balanceOf(predicted), 0);
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit(
+      terms, true, lock, BOB_COMMIT_SECRET, _evidence(terms, true, address(cross), lock, 70, 190), ''
+    );
+    assertEq(cross.htlcOf(terms, true, lock), predicted);
+    assertEq(malicious.balanceOf(predicted), 10);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+  }
+
+  function test_failedSecondSameChainFundingLeavesFirstHTLCIsolatedAndPermitsRetry() public {
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    support.setAssetSupport(AssetType.ERC20, address(malicious), true);
+    ProtocolTerms memory terms = _sameTerms();
+    terms.counterpartySide.assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 20);
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 80, 1);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.predictHTLC(terms, false, lock);
+    malicious.mint(BOB, 20);
+    vm.prank(BOB);
+    malicious.approve(address(same), 20);
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
+
+    vm.expectRevert(AssetTransfers.UnexpectedAmountReceived.selector);
+    vm.prank(GATEWAY);
+    same.receiveAuthorizedCommit(
+      terms, false, lock, bytes32(0), _evidence(terms, false, address(same), lock, 81, 190), ''
+    );
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
+    assertEq(partyHTLC.balance, 1);
+    assertTrue(SwapHTLC(payable(partyHTLC)).funded());
+    assertEq(same.htlcOf(terms, false, lock), address(0));
+    assertEq(counterpartyHTLC.code.length, 0);
+    assertEq(malicious.balanceOf(BOB), 20);
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+    vm.prank(GATEWAY);
+    same.receiveAuthorizedCommit(
+      terms, false, lock, bytes32(0), _evidence(terms, false, address(same), lock, 81, 190), ''
+    );
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+    assertEq(same.htlcOf(terms, false, lock), counterpartyHTLC);
+    assertEq(malicious.balanceOf(counterpartyHTLC), 20);
+  }
+
+  function test_failedSecondSameChainPayoutRollsBackBothHTLCsAndState() public {
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    support.setAssetSupport(AssetType.ERC20, address(malicious), true);
+    ProtocolTerms memory terms = _sameTerms();
+    terms.counterpartySide.assets = _oneAsset(AssetType.ERC20, address(malicious), 0, 20);
+    bytes32 lock = _lock(terms);
+    malicious.mint(BOB, 20);
+    vm.prank(BOB);
+    malicious.approve(address(same), 20);
+    _commitSame(terms, true, lock, 90, 1);
+    _commitSame(terms, false, lock, 91, 0);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
+
+    vm.expectRevert(AssetTransfers.UnexpectedAmountReceived.selector);
+    same.claim(terms, lock, SECRET);
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
+    assertEq(partyHTLC.balance, 1);
+    assertEq(malicious.balanceOf(counterpartyHTLC), 20);
+    assertEq(BOB_RECIPIENT.balance, 0);
+    assertEq(malicious.balanceOf(ALICE_RECIPIENT), 0);
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+    same.claim(terms, lock, SECRET);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
+    assertTrue(SwapHTLC(payable(counterpartyHTLC)).released());
+    assertEq(BOB_RECIPIENT.balance, 1);
+    assertEq(malicious.balanceOf(ALICE_RECIPIENT), 20);
   }
 
   function test_bothWrappersRejectWrongModeAtomically() public {
