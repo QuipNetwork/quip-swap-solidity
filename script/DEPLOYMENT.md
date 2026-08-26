@@ -1,8 +1,8 @@
 # v1.1 prototype deployment
 
-This procedure deploys the four-contract prototype through canonical CreateX
+This procedure deploys the five-contract prototype through canonical CreateX
 with component-specific, sender-permissioned CREATE3 salts under
-`v1.1.0-alpha.3`.
+`v1.1.0-alpha.4`.
 
 It is not yet a production deployment procedure. Read
 [`../docs/security-assumptions.md`](../docs/security-assumptions.md).
@@ -34,10 +34,11 @@ Deployment order is:
 
 1. `AssetSupportRegistry`
 2. `DirectAuthorization`
-3. `CrossChainWrapper`
-4. `SameChainWrapper`
+3. `SwapHTLC` implementation
+4. `CrossChainWrapper`
+5. `SameChainWrapper`
 
-The same deployer and versioned salts predict the same four addresses across
+The same deployer and versioned salts predict the same five addresses across
 chains. Constructor configuration can still differ by chain and must be
 verified independently.
 
@@ -51,7 +52,7 @@ Before publishing an address, record and verify on every chain:
 - direct authorization's verifier address, runtime code hash, version, and
   profile;
 - both wrappers' `DIRECT_AUTHORIZATION`; and
-- both wrappers' `ASSET_SUPPORT`.
+- both wrappers' `ASSET_SUPPORT` and `HTLC_IMPLEMENTATION`.
 
 Generate the SDK configuration vector with `buildPrototypeDeploymentManifest`
 and preserve it with Foundry broadcast artifacts and independent RPC results.
@@ -61,10 +62,10 @@ script log, not a durable on-chain registry entry.
 ## Current rerun limitation
 
 The script skips a predicted address when it already contains code. Its current
-post-check does not verify every runtime bytecode identity or either wrapper's
-`ASSET_SUPPORT` immutable. Treat reruns and partial deployments as unsafe until
-those checks and wrong-dependency tests are added. Address equality alone is
-not release verification.
+post-check verifies the dependency graph but not every runtime bytecode
+identity. Treat reruns and partial deployments as unsafe until bytecode checks
+and wrong-code tests are added. Address equality alone is not release
+verification.
 
 ## Verifier requirement
 

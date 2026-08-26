@@ -7,7 +7,7 @@ import {CREATE3} from 'solady-0.1.26/utils/CREATE3.sol';
 /// @dev Addresses depend on the CreateX factory, broadcasting EOA and component
 ///      identifier, but not constructor arguments. Bump VERSION for a new set.
 library PrototypeDeployment {
-  string internal constant VERSION = 'v1.1.0-alpha.3';
+  string internal constant VERSION = 'v1.1.0-alpha.4';
   address internal constant CREATEX = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
 
   enum Component {

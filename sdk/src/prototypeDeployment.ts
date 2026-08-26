@@ -12,7 +12,7 @@ import {
 import type {Address, Hex} from 'viem'
 import type {Hex32} from './types.js'
 
-export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.3'
+export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.4'
 export const CANONICAL_CREATEX: Address = getAddress('0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed')
 const CREATE3_PROXY_INITCODE_HASH: Hex32 =
   '0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f'

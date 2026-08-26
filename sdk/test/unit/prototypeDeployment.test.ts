@@ -20,11 +20,11 @@ describe('prototype deployment vectors', () => {
     expect(second).toEqual(first)
     expect(new Set(prototypeComponents.map(component => first[component])).size).toBe(prototypeComponents.length)
     expect(first).toEqual({
-      assetSupportRegistry: '0x504BA325b5e51a95b0D2225ea7feBE87120c049D',
-      directAuthorization: '0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA',
-      crossChainWrapper: '0xBefC4530880E8318250592F76C63007A04b04175',
-      sameChainWrapper: '0x5aa0Ef5b07cdc3FA4c7587e220AB4880df066387',
-      swapHTLC: '0x91D8b67Bf9c657F7215970aafAF036477961757E',
+      assetSupportRegistry: '0x9Ba57720D36d83954e5ba03185e92A918D028EDF',
+      directAuthorization: '0xe5c123bbB955e82208d76114aBe4170C0E0b2F95',
+      crossChainWrapper: '0x795C93561Bd9F9E30FF62aCDe821B38148229E30',
+      sameChainWrapper: '0xE740Bf2De5123F801AdCf534414F039ca2e83c44',
+      swapHTLC: '0x1268B3FF8C710ca5629Bb0385d84D130A8e139f9',
     })
   })
 

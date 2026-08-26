@@ -47,12 +47,11 @@ contract DeployProtocolTest is Test {
 
   function test_predictionMatchesPublishedSdkVector() public view {
     DeployProtocol.Addresses memory a = script.predicted(CANONICAL_CREATEX, VECTOR_DEPLOYER);
-    assertEq(a.assetSupportRegistry, 0x504BA325b5e51a95b0D2225ea7feBE87120c049D);
-    assertEq(a.directAuthorization, 0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA);
-    assertEq(a.directAuthorization, 0x502d3c6e1790D8cEf8344b9964ea03D08dEB27dA);
-    assertEq(a.crossChainWrapper, 0xBefC4530880E8318250592F76C63007A04b04175);
-    assertEq(a.sameChainWrapper, 0x5aa0Ef5b07cdc3FA4c7587e220AB4880df066387);
-    assertEq(a.swapHTLC, 0x91D8b67Bf9c657F7215970aafAF036477961757E);
+    assertEq(a.assetSupportRegistry, 0x9Ba57720D36d83954e5ba03185e92A918D028EDF);
+    assertEq(a.directAuthorization, 0xe5c123bbB955e82208d76114aBe4170C0E0b2F95);
+    assertEq(a.crossChainWrapper, 0x795C93561Bd9F9E30FF62aCDe821B38148229E30);
+    assertEq(a.sameChainWrapper, 0xE740Bf2De5123F801AdCf534414F039ca2e83c44);
+    assertEq(a.swapHTLC, 0x1268B3FF8C710ca5629Bb0385d84D130A8e139f9);
   }
 
   function test_localCreate3DeploymentPinsCompleteGraph() public {
@@ -88,6 +87,7 @@ contract DeployProtocolTest is Test {
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
     assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
     assertEq(SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
+    assertEq(address(SameChainWrapper(payable(a.sameChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).HTLC_IMPLEMENTATION(), a.swapHTLC);
     assertEq(SameChainWrapper(payable(a.sameChainWrapper)).HTLC_IMPLEMENTATION(), a.swapHTLC);
   }

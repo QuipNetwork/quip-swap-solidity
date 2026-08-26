@@ -114,6 +114,7 @@ contract DeployProtocol is Script {
   }
 
   function _verify(Addresses memory a, address owner, address verifier) internal view {
+    require(a.swapHTLC.code.length != 0, 'HTLC implementation missing');
     require(AssetSupportRegistry(a.assetSupportRegistry).owner() == owner, 'asset owner mismatch');
     require(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER() == verifier, 'verifier mismatch');
     require(
@@ -123,6 +124,14 @@ contract DeployProtocol is Script {
     require(
       SameChainWrapper(payable(a.sameChainWrapper)).DIRECT_AUTHORIZATION() == a.directAuthorization,
       'same direct authorization mismatch'
+    );
+    require(
+      address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()) == a.assetSupportRegistry,
+      'cross asset support mismatch'
+    );
+    require(
+      address(SameChainWrapper(payable(a.sameChainWrapper)).ASSET_SUPPORT()) == a.assetSupportRegistry,
+      'same asset support mismatch'
     );
     require(CrossChainWrapper(payable(a.crossChainWrapper)).HTLC_IMPLEMENTATION() == a.swapHTLC, 'cross HTLC mismatch');
     require(SameChainWrapper(payable(a.sameChainWrapper)).HTLC_IMPLEMENTATION() == a.swapHTLC, 'same HTLC mismatch');
