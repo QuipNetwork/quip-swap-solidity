@@ -21,24 +21,33 @@ pragma solidity ^0.8.33;
  *      `Constants.DEPLOYER` safe.
  *
  *      TWO LABEL FAMILIES. All mainnets share MAINNET_LABEL, all testnets share
- *      TESTNET_LABEL — so each family has ONE address across its chains. That
+ *      TESTNET_LABEL — so each family has ONE address across its chains. The
+ *      wallet factory is likewise per family (see MAINNET_/TESTNET_WALLET_FACTORY). That
  *      only stays true if a family is redeployed as a batch: bumping
  *      TESTNET_LABEL moves the address on every testnet, and deploying only
  *      some of them leaves the family split across two addresses. The registry
  *      consistency test is what makes a half-finished migration visible.
  */
 library DeployConstants {
-  /// @notice The quip WalletFactory proxy the Omnibus wallet route trusts.
+  /// @notice The quip WalletFactory proxy the MAINNET Omnibus wallet route trusts.
   ///
-  /// @dev ONE constant for both families: this proxy is deployed at the same
-  ///      address, over the same implementation, with the same owner, on Base
-  ///      mainnet, Base Sepolia and OP Sepolia. Splitting it per family would
-  ///      be two things that can drift, and drift here is exactly what broke
-  ///      the wallet route — 0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5 is a
-  ///      real, working factory proxy that passes every liveness check and is
-  ///      simply the WRONG one. The only defence is that this value is stated
-  ///      once, compiled in, and asserted against the deployed immutable.
-  address internal constant WALLET_FACTORY = 0xdCD90563B912f82D2f23d5c7988B3Fec2da63471;
+  /// @dev ONE constant per family, and the two are allowed to differ: the
+  ///      factory is a proxy that can be (re)deployed on the testnets ahead of
+  ///      mainnet, and the mainnet Omnibus has the old one baked into its
+  ///      immutable until it is itself redeployed. Splitting per family is what
+  ///      lets the testnet family move without the registry test declaring the
+  ///      live mainnet row wrong. Drift here is still the failure to fear —
+  ///      0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5 is a real, working factory
+  ///      proxy that passes every liveness check and is simply the WRONG one —
+  ///      so each value is stated once, compiled in, and asserted against the
+  ///      deployed immutable.
+  address internal constant MAINNET_WALLET_FACTORY = 0xdCD90563B912f82D2f23d5c7988B3Fec2da63471;
+
+  /// @notice The quip WalletFactory proxy the TESTNET Omnibus wallet route trusts.
+  /// @dev Deployed at this address on Base Sepolia and OP Sepolia. Changing it
+  ///      requires a TESTNET_LABEL bump: the factory is an immutable, so the
+  ///      only way to point the testnet Omnibus at a new one is a redeploy.
+  address internal constant TESTNET_WALLET_FACTORY = 0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8;
 
   /// @notice Salt version label for MAINNET deployments.
   /// @dev Bumping this abandons the current mainnet address and deploys a new
@@ -49,7 +58,7 @@ library DeployConstants {
   /// @notice Salt version label for TESTNET deployments.
   /// @dev Expected to churn far more often than the mainnet label. Bump it,
   ///      then redeploy every chain in TESTNET_CHAINS in one batch.
-  string internal constant TESTNET_LABEL = 'QUIP:Omnibus:v1.0.0-beta.2';
+  string internal constant TESTNET_LABEL = 'QUIP:Omnibus:v1.0.0-beta.3';
 
   /// @notice Chains the MAINNET label deploys to.
   /// @dev Doubles as the deploy script's allowlist: a mainnet deploy pointed at
@@ -84,6 +93,15 @@ library DeployConstants {
   function labelFor(uint256 chainId) internal pure returns (string memory) {
     if (isMainnet(chainId)) return MAINNET_LABEL;
     if (isTestnet(chainId)) return TESTNET_LABEL;
+    revert('DeployConstants: chain id is in neither the mainnet nor the testnet set');
+  }
+
+  /// @notice The WalletFactory proxy a given chain's Omnibus is built against.
+  /// @dev Same shape as `labelFor`: reverts for an unlisted chain rather than
+  ///      defaulting to either family.
+  function walletFactoryFor(uint256 chainId) internal pure returns (address) {
+    if (isMainnet(chainId)) return MAINNET_WALLET_FACTORY;
+    if (isTestnet(chainId)) return TESTNET_WALLET_FACTORY;
     revert('DeployConstants: chain id is in neither the mainnet nor the testnet set');
   }
 

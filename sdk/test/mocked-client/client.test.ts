@@ -144,7 +144,7 @@ function setup(
           return verifierIsActive
         case 'WALLET_FACTORY':
           return FACTORY
-        case 'vaultIdOf':
+        case 'commitmentOf':
           // the wallet-route membership read, dispatched to FACTORY
           return senderIsQuipWallet ? `0x${'11'.repeat(32)}` : `0x${'00'.repeat(32)}`
         case 'commitDigest':
@@ -271,7 +271,7 @@ describe('commit orchestration', () => {
   it('keyed commits never consult the wallet factory', async () => {
     await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     expect(mocks.log.sequence).not.toContain('read:WALLET_FACTORY')
-    expect(mocks.log.sequence).not.toContain('read:vaultIdOf')
+    expect(mocks.log.sequence).not.toContain('read:commitmentOf')
   })
 
   it('wallet route: an empty signature from a non-wallet sender rejects NOT_QUIP_WALLET before estimation', async () => {
@@ -280,7 +280,7 @@ describe('commit orchestration', () => {
     ).toBe('NOT_QUIP_WALLET')
     // membership WAS read; nothing was estimated or written
     expect(mocks.log.sequence).toContain('read:WALLET_FACTORY')
-    expect(mocks.log.sequence).toContain('read:vaultIdOf')
+    expect(mocks.log.sequence).toContain('read:commitmentOf')
     expect(mocks.log.sequence).not.toContain('estimate:commit')
     expect(mocks.log.writes).toHaveLength(0)
   })
@@ -293,7 +293,7 @@ describe('commit orchestration', () => {
     expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
   })
 
-  it('getWalletFactory returns the baked factory and isQuipWallet reflects vaultIdOf', async () => {
+  it('getWalletFactory returns the baked factory and isQuipWallet reflects commitmentOf', async () => {
     expect(await mocks.client.getWalletFactory()).toBe(FACTORY)
     expect(await mocks.client.isQuipWallet(SENDER)).toBe(false)
     expect(await setup({senderIsQuipWallet: true}).client.isQuipWallet(SENDER)).toBe(true)

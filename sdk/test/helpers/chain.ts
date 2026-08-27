@@ -161,8 +161,8 @@ export interface Fixture {
   readonly verifier: Address
   /**
    * WalletFactoryMock backing the wallet commit route on omnibus AND
-   * omnibusHarness: a settable registry — `setWallet(account, vaultId)`
-   * makes `account` pass the `vaultIdOf(msg.sender) != 0` membership check.
+   * omnibusHarness: a settable registry — `setWallet(account, commitment)`
+   * makes `account` pass the `commitmentOf(msg.sender) != 0` membership check.
    */
   readonly walletFactory: Address
   readonly erc20: Address

@@ -256,12 +256,12 @@ export interface OmnibusClient {
    * Reads whether `account` is a wallet deployed by the contract's
    * WalletFactory — the wallet commit route's membership check. An
    * empty-signature commit succeeds only when the SENDER passes this check
-   * (`vaultIdOf(account) != 0`; the contract reverts `NotQuipWallet`
+   * (`commitmentOf(account) != 0`; the contract reverts `NotQuipWallet`
    * otherwise).
    *
    * @param account - The address to test for factory membership.
    * @returns `true` iff `account` was deployed by the wallet factory.
-   * @see IWalletFactory.vaultIdOf
+   * @see IWalletFactory.commitmentOf
    */
   isQuipWallet(account: Address): Promise<boolean>
   /**
@@ -490,10 +490,10 @@ function lockStateName(state: LockState): string {
 const walletFactoryAbi = [
   {
     type: 'function',
-    name: 'vaultIdOf',
+    name: 'commitmentOf',
     stateMutability: 'view',
     inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
+    outputs: [{name: 'commitment', type: 'bytes32'}],
   },
 ] as const
 
@@ -542,22 +542,22 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   }
 
   /**
-   * The wallet commit route's membership check: `vaultIdOf(account) != 0` on
+   * The wallet commit route's membership check: `commitmentOf(account) != 0` on
    * the contract's baked WalletFactory (write-once registry, non-zero iff
    * factory-deployed).
    */
   async function isQuipWallet(account: Address): Promise<boolean> {
     const factory = await read<Address>('WALLET_FACTORY')
     try {
-      const vaultId = await publicClient.readContract({
+      const commitment = await publicClient.readContract({
         address: factory,
         abi: walletFactoryAbi,
-        functionName: 'vaultIdOf',
+        functionName: 'commitmentOf',
         args: [account],
       })
-      return BigInt(vaultId) !== 0n
+      return BigInt(commitment) !== 0n
     } catch (error) {
-      throw wrapContractError(error, 'Reading vaultIdOf on the wallet factory')
+      throw wrapContractError(error, 'Reading commitmentOf on the wallet factory')
     }
   }
 

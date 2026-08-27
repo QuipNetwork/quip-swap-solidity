@@ -39,7 +39,7 @@ import type {Hex32, Terms} from './types.js'
  *   by the declared verifier.
  * - empty: WALLET route — the transaction sender must be a wallet deployed
  *   by the quip WalletFactory (the contract checks
- *   `WALLET_FACTORY.vaultIdOf(msg.sender) != 0`, reverting `NotQuipWallet`
+ *   `WALLET_FACTORY.commitmentOf(msg.sender) != 0`, reverting `NotQuipWallet`
  *   otherwise). No signature is verified on this route; the declared
  *   identity is ATTRIBUTION ONLY — it is not cryptographically proven to
  *   have endorsed the payload.

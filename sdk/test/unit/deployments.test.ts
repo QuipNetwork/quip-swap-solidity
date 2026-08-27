@@ -36,7 +36,12 @@ const BASE_SEPOLIA = 84_532n
 const OP_SEPOLIA = 11_155_420n
 
 /** The canonical quip WalletFactory proxy — the same address on every chain. */
-const CANONICAL_WALLET_FACTORY: Address = '0xdCD90563B912f82D2f23d5c7988B3Fec2da63471'
+/** Per family, mirroring DeployConstants.MAINNET_WALLET_FACTORY / TESTNET_WALLET_FACTORY. */
+const CANONICAL_WALLET_FACTORY: Record<string, Address> = {
+  [BASE_MAINNET.toString()]: '0xdCD90563B912f82D2f23d5c7988B3Fec2da63471',
+  [BASE_SEPOLIA.toString()]: '0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8',
+  [OP_SEPOLIA.toString()]: '0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8',
+}
 
 describe('resolveDeployment — shipped state', () => {
   it('exposes every registry row, live or not', () => {
@@ -119,14 +124,15 @@ describe('registry drift — version label governs the address', () => {
    * 84532 and 11155420 originally shipped wired to a testnet-only WalletFactory
    * duplicate (breaking the wallet commit route with `NotQuipWallet`) and were
    * recorded not-live; both were redeployed under a bumped version label. Every
-   * registry row must now be live under the canonical factory — if a future
-   * `make sync-registry` demotes a chain, this failure is the alarm.
+   * registry row must now be live under its family's canonical factory — if a
+   * future `make sync-registry` demotes a chain, this failure is the alarm.
+   * (It is also red, by design, between a label bump and the redeploy.)
    */
   it('records every chain as live under the canonical wallet factory', () => {
     for (const chainId of [BASE_MAINNET, BASE_SEPOLIA, OP_SEPOLIA]) {
       const row = registryRows.find(r => r.chainId === chainId)
       expect(row?.deployed, `chain ${chainId} is not live`).toBe(true)
-      expect(resolveDeployment(chainId).walletFactory).toBe(CANONICAL_WALLET_FACTORY)
+      expect(resolveDeployment(chainId).walletFactory).toBe(CANONICAL_WALLET_FACTORY[chainId.toString()])
     }
   })
 })
