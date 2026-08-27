@@ -25,7 +25,7 @@ enum LockState {
 /// - non-empty: KEYED route — `signature` is verified over commitDigest by the
 ///   declared verifier
 /// - empty: WALLET route — msg.sender must be a wallet deployed by the quip
-///   WalletFactory (vaultIdOf(msg.sender) != 0). No signature is verified on
+///   WalletFactory (commitmentOf(msg.sender) != 0). No signature is verified on
 ///   this route: a vetted wallet implementation only reaches commit from its
 ///   PQ-authenticated execute flow, so factory membership stands in for the
 ///   endorsement. The declared identity is ATTRIBUTION ONLY here — it is NOT

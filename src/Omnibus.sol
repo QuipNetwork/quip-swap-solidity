@@ -382,7 +382,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// - non-empty signature (KEYED): the declared verifier must be
   ///   owner-activated and verify(key, digest, sig) must return its selector
   /// - empty signature (WALLET): msg.sender must be a wallet deployed by the
-  ///   quip WalletFactory (vaultIdOf is write-once, non-zero iff
+  ///   quip WalletFactory (commitmentOf is write-once, non-zero iff
   ///   factory-deployed). The digest is not re-verified here: a vetted wallet
   ///   only reaches commit from its PQ-authenticated execute flow. The signer
   ///   blob is shape-checked attribution only on this route — its verifier
@@ -396,7 +396,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     if (signer.length <= 20) revert MalformedSigner();
 
     if (auth.signature.length == 0) {
-      if (WALLET_FACTORY.vaultIdOf(msg.sender) == bytes32(0)) revert NotQuipWallet();
+      if (WALLET_FACTORY.commitmentOf(msg.sender) == bytes32(0)) revert NotQuipWallet();
       return;
     }
 

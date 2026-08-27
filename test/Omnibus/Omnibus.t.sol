@@ -73,7 +73,7 @@ contract OmnibusTest is TestBase {
   // ============ Test Data ============
 
   bytes32 public constant SECRET = keccak256('secret');
-  bytes32 public constant VAULT_ID = keccak256('some vault id');
+  bytes32 public constant COMMITMENT = keccak256('some commitment');
   bytes32 public lock;
 
   // ============ Setup ============
@@ -130,10 +130,10 @@ contract OmnibusTest is TestBase {
 
   // ============ Mock Helpers (verifierA / walletFactory doubles) ============
 
-  /// @notice registers `account` as a factory-deployed wallet under VAULT_ID —
+  /// @notice registers `account` as a factory-deployed wallet under COMMITMENT —
   /// the wallet route's whole authorization
   function _registerWallet(address account) internal {
-    walletFactory.setWallet(account, VAULT_ID);
+    walletFactory.setWallet(account, COMMITMENT);
   }
 
   /// @dev verifierA returns `result` for ANY verify call (selector-prefix mock)
@@ -169,11 +169,11 @@ contract OmnibusTest is TestBase {
     );
   }
 
-  /// @dev the factory reverts on ANY vaultIdOf call with Error(`reason`)
+  /// @dev the factory reverts on ANY commitmentOf call with Error(`reason`)
   function _mockFactoryReverts(string memory reason) internal {
     vm.mockCallRevert(
       address(walletFactory),
-      abi.encodeWithSelector(IWalletFactory.vaultIdOf.selector),
+      abi.encodeWithSelector(IWalletFactory.commitmentOf.selector),
       abi.encodeWithSignature('Error(string)', reason)
     );
   }

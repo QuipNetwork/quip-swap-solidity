@@ -153,7 +153,7 @@ contract Omnibus__enforceCommitAuth is OmnibusTest {
   function test_enforceCommitAuth_keyed_neverCallsFactory() public {
     // route exclusivity the other way: a non-empty signature must NEVER
     // consult the factory registry
-    _mockFactoryReverts('vaultIdOf must not be called');
+    _mockFactoryReverts('commitmentOf must not be called');
     omnibus.exposed_enforceCommitAuthorized(AuthHelper.auth(aliceSigner), DIGEST);
   }
 }
