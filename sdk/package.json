@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/quip-swap-sdk",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.9",
   "description": "TypeScript SDK for the Quip Swap Omnibus protocol (hashlocked same-chain and cross-chain swaps)",
   "type": "module",
   "license": "AGPL-3.0-or-later",
