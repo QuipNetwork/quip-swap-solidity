@@ -38,7 +38,7 @@ const OP_SEPOLIA = 11_155_420n
 /** The canonical quip WalletFactory proxy — the same address on every chain. */
 /** Per family, mirroring DeployConstants.MAINNET_WALLET_FACTORY / TESTNET_WALLET_FACTORY. */
 const CANONICAL_WALLET_FACTORY: Record<string, Address> = {
-  [BASE_MAINNET.toString()]: '0xdCD90563B912f82D2f23d5c7988B3Fec2da63471',
+  [BASE_MAINNET.toString()]: '0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8',
   [BASE_SEPOLIA.toString()]: '0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8',
   [OP_SEPOLIA.toString()]: '0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8',
 }

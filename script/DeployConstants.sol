@@ -41,7 +41,7 @@ library DeployConstants {
   ///      proxy that passes every liveness check and is simply the WRONG one —
   ///      so each value is stated once, compiled in, and asserted against the
   ///      deployed immutable.
-  address internal constant MAINNET_WALLET_FACTORY = 0xdCD90563B912f82D2f23d5c7988B3Fec2da63471;
+  address internal constant MAINNET_WALLET_FACTORY = 0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8;
 
   /// @notice The quip WalletFactory proxy the TESTNET Omnibus wallet route trusts.
   /// @dev Deployed at this address on Base Sepolia and OP Sepolia. Changing it
@@ -53,7 +53,7 @@ library DeployConstants {
   /// @dev Bumping this abandons the current mainnet address and deploys a new
   ///      Omnibus at a new one. There is no migration path for state; treat a
   ///      bump as a new deployment, not an upgrade.
-  string internal constant MAINNET_LABEL = 'QUIP:Omnibus:v1.0.0-beta.2';
+  string internal constant MAINNET_LABEL = 'QUIP:Omnibus:v1.0.0-beta.3';
 
   /// @notice Salt version label for TESTNET deployments.
   /// @dev Expected to churn far more often than the mainnet label. Bump it,
