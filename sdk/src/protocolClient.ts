@@ -13,10 +13,11 @@ import type {
   RegistryAuthorization,
   RegistryOperation,
 } from './protocol.js'
-import type {CrossChainLegState, SameChainState} from './protocol.js'
-import type {SideTag} from './protocol.js'
+import {SameChainState, SideTag} from './protocol.js'
+import type {CrossChainLegState} from './protocol.js'
 import type {AssetType} from './types.js'
 import type {Hex32} from './types.js'
+import {QuipSwapError, wrapContractError} from './errors.js'
 
 export interface ProtocolAddresses {
   readonly assetSupportRegistry: Address
@@ -43,6 +44,25 @@ export interface HTLCState {
   readonly side: SideTag
   readonly funded: boolean
   readonly released: boolean
+  readonly nextAssetIndex: bigint
+  readonly payoutRecipient: Address
+}
+
+export interface SameChainSettlementProgress {
+  readonly expectedSides: number
+  readonly completedSides: number
+}
+
+export interface SameChainSettlementPreview extends SameChainSettlementProgress {
+  readonly state: SameChainState
+  readonly side: SideTag
+  readonly htlc: Address
+  readonly recipient: Address
+  readonly nextAssetIndex: bigint
+  readonly assetCount: bigint
+  readonly maxAssets: bigint
+  readonly completesSide: boolean
+  readonly completesTrade: boolean
 }
 
 export interface ProtocolClient {
@@ -66,13 +86,25 @@ export interface ProtocolClient {
   setAssetSupport(assetType: AssetType, target: Address, supported: boolean): Promise<Hash>
   claimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32, secret: Hex32): Promise<Hash>
   reclaimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Hash>
-  claimSameChain(terms: ProtocolTerms, lock: Hex32, secret: Hex32): Promise<Hash>
-  reclaimSameChainParty(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
-  reclaimSameChainBoth(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
+  selectSameChainClaim(terms: ProtocolTerms, lock: Hex32, secret: Hex32): Promise<Hash>
+  selectSameChainReclaim(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
+  executeSameChainSettlement(
+    terms: ProtocolTerms,
+    lock: Hex32,
+    party: boolean,
+    maxAssets: bigint,
+  ): Promise<Hash>
   isAssetSupported(assetType: AssetType, target: Address): Promise<boolean>
   getIdentity(eoa: Address): Promise<PQIdentity>
   getCrossChainState(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<CrossChainLegState>
   getSameChainState(terms: ProtocolTerms, lock: Hex32): Promise<SameChainState>
+  getSameChainSettlementProgress(terms: ProtocolTerms, lock: Hex32): Promise<SameChainSettlementProgress>
+  previewSameChainSettlement(
+    terms: ProtocolTerms,
+    lock: Hex32,
+    party: boolean,
+    maxAssets: bigint,
+  ): Promise<SameChainSettlementPreview>
   getCrossChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
   predictCrossChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
   getSameChainHTLC(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Address>
@@ -90,16 +122,26 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
     fnArgs: readonly unknown[],
     value?: bigint,
   ): Promise<Hash> {
-    if (walletClient?.account === undefined) throw new Error('A wallet client with an account is required')
-    return walletClient.writeContract({
-      address,
-      abi,
-      functionName,
-      args: fnArgs,
-      account: walletClient.account,
-      chain: walletClient.chain,
-      ...(value === undefined ? {} : {value}),
-    } as never)
+    if (walletClient?.account === undefined) {
+      throw new QuipSwapError({
+        code: 'MISSING_WALLET_CLIENT',
+        message: 'A wallet client with an account is required',
+      })
+    }
+    try {
+      return await walletClient.writeContract({
+        address,
+        abi,
+        functionName,
+        args: fnArgs,
+        account: walletClient.account,
+        chain: walletClient.chain,
+        ...(value === undefined ? {} : {value}),
+      } as never)
+    } catch (error) {
+      if (error instanceof QuipSwapError) throw error
+      throw wrapContractError(error, `${functionName} on ${address}`)
+    }
   }
 
   async function read<T>(
@@ -128,12 +170,21 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       write(addresses.crossChainWrapper, crossChainWrapperAbi, 'claim', [terms, party, lock, secret]),
     reclaimCrossChain: (terms, party, lock) =>
       write(addresses.crossChainWrapper, crossChainWrapperAbi, 'reclaim', [terms, party, lock]),
-    claimSameChain: (terms, lock, secret) =>
-      write(addresses.sameChainWrapper, sameChainWrapperAbi, 'claim', [terms, lock, secret]),
-    reclaimSameChainParty: (terms, lock) =>
-      write(addresses.sameChainWrapper, sameChainWrapperAbi, 'reclaimParty', [terms, lock]),
-    reclaimSameChainBoth: (terms, lock) =>
-      write(addresses.sameChainWrapper, sameChainWrapperAbi, 'reclaimBoth', [terms, lock]),
+    selectSameChainClaim: (terms, lock, secret) =>
+      write(addresses.sameChainWrapper, sameChainWrapperAbi, 'selectClaim', [terms, lock, secret]),
+    selectSameChainReclaim: (terms, lock) =>
+      write(addresses.sameChainWrapper, sameChainWrapperAbi, 'selectReclaim', [terms, lock]),
+    executeSameChainSettlement: async (terms, lock, party, maxAssets) => {
+      if (maxAssets <= 0n) {
+        throw new QuipSwapError({code: 'INVALID_BATCH_SIZE', message: 'Same-chain settlement batch size must be positive'})
+      }
+      return await write(
+        addresses.sameChainWrapper,
+        sameChainWrapperAbi,
+        'executeSettlement',
+        [terms, lock, party, maxAssets],
+      )
+    },
     isAssetSupported: (assetType, target) =>
       read(addresses.assetSupportRegistry, assetSupportRegistryAbi, 'isSupported', [assetType, target]),
     getIdentity: eoa => read(addresses.directAuthorization, directAuthorizationAbi, 'identityOf', [eoa]),
@@ -141,6 +192,68 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
       read(addresses.crossChainWrapper, crossChainWrapperAbi, 'state', [terms, party, lock]),
     getSameChainState: (terms, lock) =>
       read(addresses.sameChainWrapper, sameChainWrapperAbi, 'state', [terms, lock]),
+    getSameChainSettlementProgress: async (terms, lock) => {
+      const [expectedSides, completedSides] = await read<readonly [number, number]>(
+        addresses.sameChainWrapper,
+        sameChainWrapperAbi,
+        'settlementProgress',
+        [terms, lock],
+      )
+      return {expectedSides, completedSides}
+    },
+    previewSameChainSettlement: async (terms, lock, party, maxAssets) => {
+      if (maxAssets <= 0n) {
+        throw new QuipSwapError({code: 'INVALID_BATCH_SIZE', message: 'Same-chain settlement batch size must be positive'})
+      }
+      const side = party ? SideTag.Party : SideTag.Counterparty
+      const bit = party ? 1 : 2
+      const [state, progress, htlc] = await Promise.all([
+        read<SameChainState>(addresses.sameChainWrapper, sameChainWrapperAbi, 'state', [terms, lock]),
+        read<readonly [number, number]>(
+          addresses.sameChainWrapper,
+          sameChainWrapperAbi,
+          'settlementProgress',
+          [terms, lock],
+        ),
+        read<Address>(addresses.sameChainWrapper, sameChainWrapperAbi, 'htlcOf', [terms, party, lock]),
+      ])
+      const [expectedSides, completedSides] = progress
+      if (state !== SameChainState.ClaimPending && state !== SameChainState.ReclaimPending) {
+        throw new QuipSwapError({
+          code: 'SETTLEMENT_NOT_PENDING',
+          message: `Same-chain settlement is not pending (state ${SameChainState[state] ?? state})`,
+        })
+      }
+      if ((expectedSides & bit) === 0) {
+        throw new QuipSwapError({
+          code: 'UNEXPECTED_SETTLEMENT_SIDE',
+          message: `The ${party ? 'party' : 'counterparty'} side is not required by the selected outcome`,
+        })
+      }
+      if ((completedSides & bit) !== 0) {
+        throw new QuipSwapError({
+          code: 'SETTLEMENT_SIDE_ALREADY_COMPLETE',
+          message: `The ${party ? 'party' : 'counterparty'} side is already complete`,
+        })
+      }
+      const nextAssetIndex = await read<bigint>(htlc, swapHTLCAbi, 'nextAssetIndex', [])
+      const selectedSide = party ? terms.partySide : terms.counterpartySide
+      const assetCount = BigInt(selectedSide.assets.length)
+      const completesSide = nextAssetIndex + maxAssets >= assetCount
+      return {
+        state,
+        expectedSides,
+        completedSides,
+        side,
+        htlc,
+        recipient: state === SameChainState.ClaimPending ? selectedSide.recipient : selectedSide.reclaimRecipient,
+        nextAssetIndex,
+        assetCount,
+        maxAssets,
+        completesSide,
+        completesTrade: completesSide && (completedSides | bit) === expectedSides,
+      }
+    },
     getCrossChainHTLC: (terms, party, lock) =>
       read(addresses.crossChainWrapper, crossChainWrapperAbi, 'htlcOf', [terms, party, lock]),
     predictCrossChainHTLC: (terms, party, lock) =>
@@ -150,7 +263,7 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
     predictSameChainHTLC: (terms, party, lock) =>
       read(addresses.sameChainWrapper, sameChainWrapperAbi, 'predictHTLC', [terms, party, lock]),
     getHTLCState: async htlc => {
-      const [controller, tradeId, lock, sideTermsHash, side, funded, released] = await Promise.all([
+      const [controller, tradeId, lock, sideTermsHash, side, funded, released, nextAssetIndex, payoutRecipient] = await Promise.all([
         read<Address>(htlc, swapHTLCAbi, 'controller', []),
         read<Hex32>(htlc, swapHTLCAbi, 'tradeId', []),
         read<Hex32>(htlc, swapHTLCAbi, 'lock', []),
@@ -158,8 +271,10 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
         read<SideTag>(htlc, swapHTLCAbi, 'side', []),
         read<boolean>(htlc, swapHTLCAbi, 'funded', []),
         read<boolean>(htlc, swapHTLCAbi, 'released', []),
+        read<bigint>(htlc, swapHTLCAbi, 'nextAssetIndex', []),
+        read<Address>(htlc, swapHTLCAbi, 'payoutRecipient', []),
       ])
-      return {controller, tradeId, lock, sideTermsHash, side, funded, released}
+      return {controller, tradeId, lock, sideTermsHash, side, funded, released, nextAssetIndex, payoutRecipient}
     },
   }
 }

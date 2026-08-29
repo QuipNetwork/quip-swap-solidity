@@ -44,6 +44,10 @@ export type QuipSwapErrorCode =
   | 'MISSING_WALLET_CLIENT'
   | 'MISSING_ACCOUNT'
   | 'TERMS_NOT_ON_CHAIN'
+  | 'INVALID_BATCH_SIZE'
+  | 'SETTLEMENT_NOT_PENDING'
+  | 'UNEXPECTED_SETTLEMENT_SIDE'
+  | 'SETTLEMENT_SIDE_ALREADY_COMPLETE'
   // lock-state preflight (preflight equivalents of the contract's
   // InvalidLockState / InvalidLockAdvancement / TermsAlreadyPosted)
   | 'INVALID_LOCK_STATE'

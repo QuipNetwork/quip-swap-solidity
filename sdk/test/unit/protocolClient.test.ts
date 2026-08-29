@@ -8,7 +8,9 @@ import {
   createProtocolClient,
   crossChainWrapperAbi,
   decodeProtocolEvents,
+  sameChainWrapperAbi,
   swapHTLCAbi,
+  SameChainState,
 } from '../../src/index.js'
 import type {Hex32, ProtocolAddresses, ProtocolTerms} from '../../src/index.js'
 
@@ -61,6 +63,69 @@ describe('current protocol SDK surface', () => {
     })
   })
 
+  it('submits only the selected-and-batched same-chain settlement path', async () => {
+    const calls: Array<Record<string, unknown>> = []
+    const walletClient = {
+      account: {address: address('a')},
+      chain: undefined,
+      writeContract: async (request: Record<string, unknown>) => {
+        calls.push(request)
+        return hash('1')
+      },
+    } as unknown as WalletClient
+    const client = createProtocolClient({addresses, publicClient: {} as PublicClient, walletClient})
+    const terms = {} as ProtocolTerms
+    const lock = hash('2')
+
+    await client.selectSameChainClaim(terms, lock, hash('3'))
+    await client.selectSameChainReclaim(terms, lock)
+    await client.executeSameChainSettlement(terms, lock, false, 4n)
+
+    expect(calls.map(call => [call['functionName'], call['args']])).toEqual([
+      ['selectClaim', [terms, lock, hash('3')]],
+      ['selectReclaim', [terms, lock]],
+      ['executeSettlement', [terms, lock, false, 4n]],
+    ])
+  })
+
+  it('previews pending batch progress and rejects invalid local execution', async () => {
+    const htlc = address('7')
+    const values: Readonly<Record<string, unknown>> = {
+      state: SameChainState.ClaimPending,
+      settlementProgress: [3, 1],
+      htlcOf: htlc,
+      nextAssetIndex: 1n,
+    }
+    const publicClient = {
+      readContract: async (request: Record<string, unknown>) => values[request['functionName'] as string],
+    } as unknown as PublicClient
+    const client = createProtocolClient({addresses, publicClient})
+    const terms = {
+      partySide: {assets: [{}, {}], recipient: address('a'), reclaimRecipient: address('b')},
+      counterpartySide: {assets: [{}, {}, {}], recipient: address('c'), reclaimRecipient: address('d')},
+    } as unknown as ProtocolTerms
+
+    await expect(client.getSameChainSettlementProgress(terms, hash('2'))).resolves.toEqual({
+      expectedSides: 3,
+      completedSides: 1,
+    })
+    await expect(client.previewSameChainSettlement(terms, hash('2'), false, 2n)).resolves.toMatchObject({
+      state: SameChainState.ClaimPending,
+      expectedSides: 3,
+      completedSides: 1,
+      side: SideTag.Counterparty,
+      htlc,
+      recipient: address('c'),
+      nextAssetIndex: 1n,
+      assetCount: 3n,
+      completesSide: true,
+      completesTrade: true,
+    })
+    await expect(client.executeSameChainSettlement(terms, hash('2'), true, 0n)).rejects.toMatchObject({
+      code: 'INVALID_BATCH_SIZE',
+    })
+  })
+
   it('discovers wrapper HTLCs and reads their bound lifecycle state', async () => {
     const reads: Array<Record<string, unknown>> = []
     const htlc = address('7')
@@ -74,6 +139,8 @@ describe('current protocol SDK surface', () => {
       side: SideTag.Party,
       funded: true,
       released: false,
+      nextAssetIndex: 1n,
+      payoutRecipient: address('8'),
     }
     const publicClient = {
       readContract: async (request: Record<string, unknown>) => {
@@ -96,8 +163,10 @@ describe('current protocol SDK surface', () => {
       side: SideTag.Party,
       funded: true,
       released: false,
+      nextAssetIndex: 1n,
+      payoutRecipient: address('8'),
     })
-    expect(reads.filter(read => read['address'] === htlc)).toHaveLength(7)
+    expect(reads.filter(read => read['address'] === htlc)).toHaveLength(9)
   })
 
   it('decodes only address-scoped current protocol events', () => {
@@ -166,6 +235,41 @@ describe('current protocol SDK surface', () => {
     expect(decodeProtocolEvents([wrapperLog, fundedLog], addresses, [], [htlc])).toMatchObject([
       {source: 'crossChainWrapper', eventName: 'HTLCCreated', args: {tradeId, lock, side: SideTag.Party, htlc}},
       {source: 'swapHTLC', eventName: 'Funded', args: {tradeId, lock, side: SideTag.Party}},
+    ])
+  })
+
+  it('decodes same-chain selection and batch progress events', () => {
+    const tradeId = hash('1')
+    const lock = hash('2')
+    const selection = {
+      address: addresses.sameChainWrapper,
+      topics: encodeEventTopics({abi: sameChainWrapperAbi, eventName: 'ClaimSelected', args: {tradeId, lock}}),
+      data: '0x',
+      blockNumber: 1n,
+      transactionHash: hash('4'),
+      logIndex: 0,
+      blockHash: hash('5'),
+      transactionIndex: 0,
+      removed: false,
+    } as Log
+    const batch = {
+      ...selection,
+      topics: encodeEventTopics({
+        abi: sameChainWrapperAbi,
+        eventName: 'SettlementBatchExecuted',
+        args: {tradeId, lock, side: SideTag.Party},
+      }),
+      data: encodeAbiParameters([{type: 'uint256'}, {type: 'bool'}], [2n, false]),
+      logIndex: 1,
+    } as Log
+
+    expect(decodeProtocolEvents([selection, batch], addresses)).toMatchObject([
+      {source: 'sameChainWrapper', eventName: 'ClaimSelected', args: {tradeId, lock}},
+      {
+        source: 'sameChainWrapper',
+        eventName: 'SettlementBatchExecuted',
+        args: {tradeId, lock, side: SideTag.Party, nextAssetIndex: 2n, complete: false},
+      },
     ])
   })
 })

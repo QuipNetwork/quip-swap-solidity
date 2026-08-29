@@ -13,7 +13,39 @@ export enum RegistryActionTag { RotateActive, RecoverActive, RotateRecovery, Rev
 export enum KeyRole { Active, Recovery }
 export enum ExpectedSourceState { Unused, PartyCommitted }
 export enum CrossChainLegState { Unused, Committed, Claimed, Reclaimed }
-export enum SameChainState { Unused, PartyCommitted, BothCommitted, Claimed, Reclaimed }
+export enum SameChainState {
+  Unused,
+  PartyCommitted,
+  BothCommitted,
+  ClaimPending,
+  ReclaimPending,
+  Claimed,
+  Reclaimed,
+}
+
+export type SameChainWorkflowStage =
+  | 'unused'
+  | 'party-committed'
+  | 'both-committed'
+  | 'claim-selected'
+  | 'claim-executing'
+  | 'reclaim-selected'
+  | 'reclaim-executing'
+  | 'claimed'
+  | 'reclaimed'
+
+/** Converts contract state plus its completion bitmap into an application workflow stage. */
+export function sameChainWorkflowStage(state: SameChainState, completedSides: number): SameChainWorkflowStage {
+  switch (state) {
+    case SameChainState.Unused: return 'unused'
+    case SameChainState.PartyCommitted: return 'party-committed'
+    case SameChainState.BothCommitted: return 'both-committed'
+    case SameChainState.ClaimPending: return completedSides === 0 ? 'claim-selected' : 'claim-executing'
+    case SameChainState.ReclaimPending: return completedSides === 0 ? 'reclaim-selected' : 'reclaim-executing'
+    case SameChainState.Claimed: return 'claimed'
+    case SameChainState.Reclaimed: return 'reclaimed'
+  }
+}
 
 export interface SideTerms {
   readonly chainId: bigint

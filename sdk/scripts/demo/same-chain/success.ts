@@ -151,7 +151,17 @@ export async function runSameChainSuccess(
     publicClient: chain.publicClient,
     walletClient: chain.charlie.walletClient,
   })
-  const claimHash = await claimant.claimSameChain(terms, lock, SAME_CHAIN_SETTLEMENT_SECRET)
+  await successfulReceipt(chain, await claimant.selectSameChainClaim(terms, lock, SAME_CHAIN_SETTLEMENT_SECRET))
+  await successfulReceipt(
+    chain,
+    await claimant.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
+  )
+  const claimHash = await claimant.executeSameChainSettlement(
+    terms,
+    lock,
+    false,
+    BigInt(terms.counterpartySide.assets.length),
+  )
   const claimReceipt = await successfulReceipt(chain, claimHash)
   const claimEvents = decodeProtocolEvents(claimReceipt.logs, addresses, [], [
     await claimant.getSameChainHTLC(terms, true, lock),

@@ -307,7 +307,13 @@ async function runPartyRecovery(
       publicClient: chain.publicClient,
       walletClient: chain.charlie.walletClient,
     })
-    const hash = await claimant.reclaimSameChainParty(terms, lock)
+    await requireSuccess(chain, await claimant.selectSameChainReclaim(terms, lock))
+    const hash = await claimant.executeSameChainSettlement(
+      terms,
+      lock,
+      true,
+      BigInt(terms.partySide.assets.length),
+    )
     await requireSuccess(chain, hash)
     const after = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
     const party = after.assets[0]
@@ -555,7 +561,7 @@ async function submitClaim(
     publicClient: chain.publicClient,
     walletClient: chain.charlie.walletClient,
   })
-  await requireSuccess(chain, await client.claimSameChain(terms, lock, secret))
+  await requireSuccess(chain, await client.selectSameChainClaim(terms, lock, secret))
 }
 
 async function submitReclaimBoth(
@@ -569,7 +575,17 @@ async function submitReclaimBoth(
     publicClient: chain.publicClient,
     walletClient: chain.charlie.walletClient,
   })
-  const hash = await client.reclaimSameChainBoth(terms, lock)
+  await requireSuccess(chain, await client.selectSameChainReclaim(terms, lock))
+  await requireSuccess(
+    chain,
+    await client.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
+  )
+  const hash = await client.executeSameChainSettlement(
+    terms,
+    lock,
+    false,
+    BigInt(terms.counterpartySide.assets.length),
+  )
   await requireSuccess(chain, hash)
   return hash
 }

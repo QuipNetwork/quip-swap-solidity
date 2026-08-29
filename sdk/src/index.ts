@@ -13,6 +13,7 @@ export {
   ExpectedSourceState,
   CrossChainLegState,
   SameChainState,
+  sameChainWorkflowStage,
   wrapperMode,
   expectedSourceState,
   gateTerms,
@@ -35,6 +36,7 @@ export {
 export type {
   SideTerms,
   ProtocolTerms,
+  SameChainWorkflowStage,
   TimingPolicy,
   CommitPayloadArgs,
   VerifiedCommitAuthorization,
@@ -69,6 +71,8 @@ export type {
   ProtocolClient,
   WriteOptions,
   HTLCState,
+  SameChainSettlementProgress,
+  SameChainSettlementPreview,
 } from './protocolClient.js'
 export {decodeProtocolEvents, waitForProtocolReceipt} from './protocolEvents.js'
 export type {ProtocolEventSource, ProtocolEvent} from './protocolEvents.js'
