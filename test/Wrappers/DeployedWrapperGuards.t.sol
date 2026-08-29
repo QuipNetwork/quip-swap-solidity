@@ -561,6 +561,108 @@ contract DeployedWrapperGuardsTest is Test {
     assertFalse(SwapHTLC(payable(bothCounterpartyHTLC)).released());
   }
 
+  function test_sameChainClaimSelectionIsIrreversibleAcrossEveryEntryPoint() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 47, 1);
+    _commitSame(terms, false, lock, 48, 2);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
+    same.selectClaim(terms, lock, SECRET);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
+      )
+    );
+    same.selectClaim(terms, lock, SECRET);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
+      )
+    );
+    same.claim(terms, lock, SECRET);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.Unused, SameChainState.ClaimPending
+      )
+    );
+    _commitSame(terms, true, lock, 49, 1);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.PartyCommitted, SameChainState.ClaimPending
+      )
+    );
+    _commitSame(terms, false, lock, 50, 2);
+
+    vm.warp(terms.counterpartySide.reclaimRelease);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
+      )
+    );
+    same.selectReclaim(terms, lock);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
+      )
+    );
+    same.reclaimBoth(terms, lock);
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
+    assertEq(partyHTLC.balance, 1);
+    assertEq(counterpartyHTLC.balance, 2);
+  }
+
+  function test_sameChainReclaimSelectionIsIrreversibleAcrossEveryEntryPoint() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 51, 1);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    vm.warp(terms.partySide.reclaimRelease);
+    same.selectReclaim(terms, lock);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector,
+        SameChainState.PartyCommitted,
+        SameChainState.ReclaimPending
+      )
+    );
+    same.reclaimParty(terms, lock);
+    vm.expectRevert(Settlement.ClaimWindowClosed.selector);
+    same.selectClaim(terms, lock, SECRET);
+    vm.expectRevert(SameChainWrapper.CommitWindowClosed.selector);
+    vm.prank(GATEWAY);
+    same.receiveAuthorizedCommit{value: 1}(
+      terms, true, lock, bytes32(0), _evidence(terms, true, address(same), lock, 52, 600), ''
+    );
+
+    vm.warp(terms.counterpartySide.reclaimRelease);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector,
+        SameChainState.BothCommitted,
+        SameChainState.ReclaimPending
+      )
+    );
+    same.selectReclaim(terms, lock);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector,
+        SameChainState.BothCommitted,
+        SameChainState.ReclaimPending
+      )
+    );
+    same.reclaimBoth(terms, lock);
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ReclaimPending));
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(partyHTLC.balance, 1);
+  }
+
   function test_sameWrapperEmitsExactCommitClaimAndReclaimEvents() public {
     ProtocolTerms memory claimTerms = _sameTerms();
     bytes32 claimLock = _lock(claimTerms);
