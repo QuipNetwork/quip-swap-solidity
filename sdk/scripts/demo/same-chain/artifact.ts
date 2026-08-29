@@ -3,7 +3,7 @@ import type {Hex32, ProtocolTerms} from '../../../src/index.js'
 import type {SameChainDemoFoundation, SameChainParticipantSetup} from './demo.js'
 import type {SameChainAssetPosition} from './success.js'
 
-export const SAME_CHAIN_ARTIFACT_SCHEMA = 'quip-swap-same-chain-demo.v2' as const
+export const SAME_CHAIN_ARTIFACT_SCHEMA = 'quip-swap-same-chain-demo.v3' as const
 
 const actionOrder = [
   'alice-commit',
@@ -93,6 +93,7 @@ export interface RedactedSameChainArtifact {
   readonly negativeControls: SameChainDemoFoundation['adversarial']['negativeControls']
   readonly recoveries: SameChainDemoFoundation['adversarial']['recoveries']
   readonly resumableFailure: SameChainDemoFoundation['adversarial']['resumableFailure']
+  readonly permanentAssetFailure: SameChainDemoFoundation['adversarial']['permanentAssetFailure']
   readonly terminalOutcome: {
     readonly state: 'Claimed'
     readonly expectedSides: 3
@@ -150,6 +151,7 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
     negativeControls: execution.adversarial.negativeControls,
     recoveries: execution.adversarial.recoveries,
     resumableFailure: execution.adversarial.resumableFailure,
+    permanentAssetFailure: execution.adversarial.permanentAssetFailure,
     terminalOutcome: {
       state: 'Claimed',
       expectedSides: 3,
@@ -350,6 +352,8 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     const item = record(recovery, `recoveries[${index}]`)
     equal(item.stateAfter, 'Reclaimed', `recoveries[${index}].stateAfter`)
     equal(item.fixedReclaimRecipients, true, `recoveries[${index}].fixedReclaimRecipients`)
+    equal(item.expectedSides, index === 0 ? 1 : 3, `recoveries[${index}].expectedSides`)
+    equal(item.completedSides, index === 0 ? 1 : 3, `recoveries[${index}].completedSides`)
     const custody = array(item.custodyAfter, `recoveries[${index}].custodyAfter`)
     validateCustody(custody, `recoveries[${index}].custodyAfter`)
     validateLifecycle(
@@ -359,6 +363,29 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
         : [[true, true, true], [true, true, true]],
       `recoveries[${index}].custodyAfter`,
     )
+    custody.forEach((assetValue, sideIndex) => {
+      const asset = record(assetValue, `recoveries[${index}].custodyAfter[${sideIndex}]`)
+      const side = sideIndex === 0 ? terms.partySide : terms.counterpartySide
+      const required = index === 1 || sideIndex === 0
+      equal(
+        asset.nextAssetIndex,
+        required ? side.assets.length.toString() : '0',
+        `recoveries[${index}].custodyAfter[${sideIndex}].nextAssetIndex`,
+      )
+      equal(
+        asset.payoutRecipient,
+        required ? side.reclaimRecipient : '0x0000000000000000000000000000000000000000',
+        `recoveries[${index}].custodyAfter[${sideIndex}].payoutRecipient`,
+      )
+      if (required) {
+        equal(
+          asset.principalBalance,
+          side.assets[0]!.amount.toString(),
+          `recoveries[${index}].custodyAfter[${sideIndex}].principalBalance`,
+        )
+        equal(asset.htlcBalance, '0', `recoveries[${index}].custodyAfter[${sideIndex}].htlcBalance`)
+      }
+    })
   }
 
   const failure = record(root.resumableFailure, 'resumableFailure')
@@ -369,6 +396,39 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   equal(failure.completedPartyPayoutPreserved, true, 'resumableFailure.completedPartyPayoutPreserved')
   equal(failure.failedSideCursorUnchanged, true, 'resumableFailure.failedSideCursorUnchanged')
   equal(failure.trigger, 'counterparty-htlc-deficit', 'resumableFailure.trigger')
+
+  const permanent = record(root.permanentAssetFailure, 'permanentAssetFailure')
+  equal(permanent.failureMode, 'token-reverts', 'permanentAssetFailure.failureMode')
+  equal(permanent.failingSide, 'counterparty', 'permanentAssetFailure.failingSide')
+  equal(permanent.attempts, 2, 'permanentAssetFailure.attempts')
+  equal(permanent.state, 'ReclaimPending', 'permanentAssetFailure.state')
+  equal(permanent.expectedSides, 3, 'permanentAssetFailure.expectedSides')
+  equal(permanent.completedSides, 1, 'permanentAssetFailure.completedSides')
+  equal(permanent.selectedOutcomePreserved, true, 'permanentAssetFailure.selectedOutcomePreserved')
+  equal(permanent.otherSideReleased, true, 'permanentAssetFailure.otherSideReleased')
+  equal(permanent.otherSideRecipient, terms.partySide.reclaimRecipient, 'permanentAssetFailure.otherSideRecipient')
+  equal(
+    permanent.failingReclaimRecipient,
+    terms.counterpartySide.reclaimRecipient,
+    'permanentAssetFailure.failingReclaimRecipient',
+  )
+  address(permanent.failingHTLC, 'permanentAssetFailure.failingHTLC')
+  equal(permanent.failingCursor, '0', 'permanentAssetFailure.failingCursor')
+  equal(
+    permanent.failingPayoutRecipient,
+    '0x0000000000000000000000000000000000000000',
+    'permanentAssetFailure.failingPayoutRecipient',
+  )
+  equal(
+    permanent.failingBalance,
+    terms.counterpartySide.assets[0]!.amount.toString(),
+    'permanentAssetFailure.failingBalance',
+  )
+  const failureHashes = array(permanent.transactionHashes, 'permanentAssetFailure.transactionHashes')
+  if (failureHashes.length !== 2 || failureHashes[0] === failureHashes[1]) {
+    fail('permanentAssetFailure.transactionHashes')
+  }
+  failureHashes.forEach((value, index) => hash(value, `permanentAssetFailure.transactionHashes[${index}]`))
 
   const terminal = record(root.terminalOutcome, 'terminalOutcome')
   equal(terminal.state, 'Claimed', 'terminalOutcome.state')
@@ -403,6 +463,7 @@ export function assertSameChainArtifactValidator(artifact: RedactedSameChainArti
     value => { (value.transitions as unknown[]).reverse() },
     value => { value.tradeId = `0x${'11'.repeat(32)}` },
     value => { (value.terminalOutcome as Record<string, unknown>).state = 'BothCommitted' },
+    value => { (value.permanentAssetFailure as Record<string, unknown>).completedSides = 3 },
   ]
   for (const mutate of corruptions) {
     const copy = JSON.parse(JSON.stringify(artifact)) as Record<string, unknown>

@@ -1,14 +1,18 @@
 import type {Address, Hash} from 'viem'
 import {
+  AssetType,
   ExpectedSourceState,
   commitPayloadHash,
   createProtocolClient,
+  settlementLock,
+  tradeId,
 } from '../../../src/index.js'
 import type {Hex32, ProtocolTerms, VerifiedCommitAuthorization} from '../../../src/index.js'
 import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
+import {assetSupportRegistryAbi} from '../../../src/generated/assetSupportRegistryAbi.js'
 import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
 import {extractContractErrorName} from '../../../src/errors.js'
-import type {ChainContext} from '../../../test/helpers/chain.js'
+import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js'
 import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
 import type {DemoChainDeployment} from '../shared/environment.js'
 import {
@@ -26,6 +30,13 @@ const burnAbi = [{
   name: 'burn',
   stateMutability: 'nonpayable',
   inputs: [{name: 'from', type: 'address'}, {name: 'amount', type: 'uint256'}],
+  outputs: [],
+}] as const
+const maliciousERC20Abi = [{
+  type: 'function',
+  name: 'setBehavior',
+  stateMutability: 'nonpayable',
+  inputs: [{name: 'value', type: 'uint8'}],
   outputs: [],
 }] as const
 
@@ -61,6 +72,8 @@ export interface SameChainRecoveryTrace {
   readonly stateAfter: 'Reclaimed'
   readonly custodyAfter: SameChainSnapshot['assets']
   readonly fixedReclaimRecipients: true
+  readonly expectedSides: 1 | 3
+  readonly completedSides: 1 | 3
 }
 
 export interface SameChainResumableFailureTrace {
@@ -78,6 +91,25 @@ export interface SameChainAdversarialTrace {
   readonly negativeControls: readonly SameChainNegativeRecord[]
   readonly recoveries: readonly [SameChainRecoveryTrace, SameChainRecoveryTrace]
   readonly resumableFailure: SameChainResumableFailureTrace
+  readonly permanentAssetFailure: SameChainPermanentAssetFailureTrace
+}
+
+export interface SameChainPermanentAssetFailureTrace {
+  readonly failureMode: 'token-reverts'
+  readonly failingSide: 'counterparty'
+  readonly attempts: 2
+  readonly transactionHashes: readonly [Hash, Hash]
+  readonly state: 'ReclaimPending'
+  readonly expectedSides: 3
+  readonly completedSides: 1
+  readonly selectedOutcomePreserved: true
+  readonly otherSideReleased: true
+  readonly otherSideRecipient: Address
+  readonly failingReclaimRecipient: Address
+  readonly failingHTLC: Address
+  readonly failingCursor: '0'
+  readonly failingPayoutRecipient: Address
+  readonly failingBalance: string
 }
 
 interface BoundarySnapshot {
@@ -91,6 +123,7 @@ export async function runSameChainAdversarial(
   deployment: Omit<DemoChainDeployment, 'funding'>,
   terms: ProtocolTerms,
   lock: Hex32,
+  load: (solFile: string, contract: string) => FoundryArtifact,
   onProgress?: (message: string) => void,
 ): Promise<SameChainAdversarialTrace> {
   onProgress?.('Running isolated same-chain invalid-action controls')
@@ -102,11 +135,19 @@ export async function runSameChainAdversarial(
   onProgress?.('Demonstrating resumable two-sided reclaim after one side fails')
   const {recovery: bothRecovery, failure} = await runBothRecovery(chain, deployment, terms, lock)
 
+  onProgress?.('Demonstrating isolation of a permanently reverting counterparty asset')
+  const permanentAssetFailure = await runPermanentAssetFailure(chain, deployment, terms, load)
+
   const final = await boundarySnapshot(chain, deployment, terms, lock)
   if (final.protocol.state !== 'Unused' || final.aliceIdentity.active || final.bobIdentity.active) {
     throw new Error('isolated adversarial branches changed the primary demo state')
   }
-  return {negativeControls, recoveries: [partyRecovery, bothRecovery], resumableFailure: failure}
+  return {
+    negativeControls,
+    recoveries: [partyRecovery, bothRecovery],
+    resumableFailure: failure,
+    permanentAssetFailure,
+  }
 }
 
 async function runNegativeControls(
@@ -322,9 +363,13 @@ async function runPartyRecovery(
     if (
       before.state !== 'PartyCommitted'
       || after.state !== 'Reclaimed'
+      || after.expectedSides !== 1
+      || after.completedSides !== 1
       || party.principalBalance !== terms.partySide.assets[0]!.amount.toString()
       || party.htlcBalance !== '0'
       || !party.htlcReleased
+      || party.nextAssetIndex !== terms.partySide.assets.length.toString()
+      || party.payoutRecipient !== terms.partySide.reclaimRecipient
     ) {
       throw new Error('party-only reclaim did not restore the signed party asset')
     }
@@ -337,6 +382,8 @@ async function runPartyRecovery(
       stateAfter: 'Reclaimed',
       custodyAfter: after.assets,
       fixedReclaimRecipients: true,
+      expectedSides: 1,
+      completedSides: 1,
     }
   } finally {
     await chain.testClient.revert({id: root})
@@ -436,9 +483,15 @@ async function runBothRecovery(
     if (
       before.state !== 'ReclaimPending'
       || after.state !== 'Reclaimed'
+      || after.expectedSides !== 3
+      || after.completedSides !== 3
       || after.assets[0].principalBalance !== terms.partySide.assets[0]!.amount.toString()
       || after.assets[1].principalBalance !== terms.counterpartySide.assets[0]!.amount.toString()
       || after.assets.some(asset => asset.htlcBalance !== '0' || !asset.htlcReleased)
+      || after.assets[0].payoutRecipient !== terms.partySide.reclaimRecipient
+      || after.assets[1].payoutRecipient !== terms.counterpartySide.reclaimRecipient
+      || after.assets[0].nextAssetIndex !== terms.partySide.assets.length.toString()
+      || after.assets[1].nextAssetIndex !== terms.counterpartySide.assets.length.toString()
     ) {
       throw new Error('two-sided reclaim did not restore both signed assets')
     }
@@ -453,6 +506,8 @@ async function runBothRecovery(
         stateAfter: 'Reclaimed',
         custodyAfter: after.assets,
         fixedReclaimRecipients: true,
+        expectedSides: 3,
+        completedSides: 3,
       },
     }
   } finally {
@@ -478,6 +533,171 @@ async function executeCounterpartySettlement(
     BigInt(terms.counterpartySide.assets.length),
   )
   await requireSuccess(chain, hash)
+  return hash
+}
+
+async function runPermanentAssetFailure(
+  chain: ChainContext,
+  deployment: Omit<DemoChainDeployment, 'funding'>,
+  baseTerms: ProtocolTerms,
+  load: (solFile: string, contract: string) => FoundryArtifact,
+): Promise<SameChainPermanentAssetFailureTrace> {
+  const root = await chain.testClient.snapshot()
+  try {
+    const malicious = await chain.deploy(load('MaliciousERC20Mock.sol', 'MaliciousERC20Mock'))
+    const now = await chain.now()
+    const terms: ProtocolTerms = {
+      partySide: {
+        ...baseTerms.partySide,
+        commitmentDeadline: now + 100n,
+        claimDeadline: now + 1_000n,
+        reclaimRelease: now + 1_400n,
+        sideNonce: fixed(80),
+      },
+      counterpartySide: {
+        ...baseTerms.counterpartySide,
+        assets: [{...baseTerms.counterpartySide.assets[0]!, target: malicious}],
+        commitmentDeadline: now + 200n,
+        claimDeadline: now + 1_100n,
+        reclaimRelease: now + 1_300n,
+        sideNonce: fixed(81),
+      },
+    }
+    const lock = settlementLock(tradeId(terms), SAME_CHAIN_SETTLEMENT_SECRET)
+    let hash = await chain.deployer.walletClient.writeContract({
+      address: deployment.addresses.assetSupportRegistry,
+      abi: assetSupportRegistryAbi,
+      functionName: 'setAssetSupport',
+      args: [AssetType.ERC20, malicious, true],
+      account: chain.deployer.account,
+      chain: chain.publicClient.chain ?? null,
+    })
+    await requireSuccess(chain, hash)
+    hash = await chain.deployer.walletClient.writeContract({
+      address: malicious,
+      abi: erc20MockAbi,
+      functionName: 'mint',
+      args: [terms.counterpartySide.principal, terms.counterpartySide.assets[0]!.amount],
+      account: chain.deployer.account,
+      chain: chain.publicClient.chain ?? null,
+    })
+    await requireSuccess(chain, hash)
+    hash = await chain.bob.walletClient.writeContract({
+      address: malicious,
+      abi: erc20MockAbi,
+      functionName: 'approve',
+      args: [deployment.addresses.sameChainWrapper, terms.counterpartySide.assets[0]!.amount],
+      account: chain.bob.account,
+      chain: chain.publicClient.chain ?? null,
+    })
+    await requireSuccess(chain, hash)
+
+    await submitSameChainLazyCommit({
+      chain,
+      deployment,
+      terms,
+      lock,
+      party: true,
+      actionNonce: fixed(82),
+      operationNonce: fixed(282),
+      activeSeed: fixed(111),
+      recoverySeed: fixed(112),
+    })
+    await submitSameChainLazyCommit({
+      chain,
+      deployment,
+      terms,
+      lock,
+      party: false,
+      actionNonce: fixed(83),
+      operationNonce: fixed(283),
+      activeSeed: fixed(113),
+      recoverySeed: fixed(114),
+    })
+    await chain.warpTo(terms.partySide.reclaimRelease)
+    const client = createProtocolClient({
+      addresses: deployment.addresses,
+      publicClient: chain.publicClient,
+      walletClient: chain.charlie.walletClient,
+    })
+    await requireSuccess(chain, await client.selectSameChainReclaim(terms, lock))
+    await requireSuccess(
+      chain,
+      await client.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
+    )
+    hash = await chain.deployer.walletClient.writeContract({
+      address: malicious,
+      abi: maliciousERC20Abi,
+      functionName: 'setBehavior',
+      args: [4],
+      account: chain.deployer.account,
+      chain: chain.publicClient.chain ?? null,
+    })
+    await requireSuccess(chain, hash)
+
+    const beforeFailures = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+    const first = await submitRevertingCounterpartyExecution(chain, deployment, terms, lock)
+    const afterFirst = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+    const second = await submitRevertingCounterpartyExecution(chain, deployment, terms, lock)
+    const afterSecond = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+    if (stable(beforeFailures) !== stable(afterFirst) || stable(beforeFailures) !== stable(afterSecond)) {
+      throw new Error('permanently reverting asset changed settlement progress or custody')
+    }
+    const party = afterSecond.assets[0]
+    const counterparty = afterSecond.assets[1]
+    if (
+      afterSecond.state !== 'ReclaimPending'
+      || afterSecond.expectedSides !== 3
+      || afterSecond.completedSides !== 1
+      || !party.htlcReleased
+      || party.payoutRecipient !== terms.partySide.reclaimRecipient
+      || party.principalBalance !== terms.partySide.assets[0]!.amount.toString()
+      || counterparty.htlcReleased
+      || counterparty.nextAssetIndex !== '0'
+      || counterparty.payoutRecipient !== '0x0000000000000000000000000000000000000000'
+      || counterparty.htlcBalance !== terms.counterpartySide.assets[0]!.amount.toString()
+    ) {
+      throw new Error('permanent asset failure escaped its HTLC or changed the selected reclaim')
+    }
+    return {
+      failureMode: 'token-reverts',
+      failingSide: 'counterparty',
+      attempts: 2,
+      transactionHashes: [first, second],
+      state: 'ReclaimPending',
+      expectedSides: 3,
+      completedSides: 1,
+      selectedOutcomePreserved: true,
+      otherSideReleased: true,
+      otherSideRecipient: party.payoutRecipient,
+      failingReclaimRecipient: terms.counterpartySide.reclaimRecipient,
+      failingHTLC: counterparty.htlc,
+      failingCursor: '0',
+      failingPayoutRecipient: counterparty.payoutRecipient,
+      failingBalance: counterparty.htlcBalance,
+    }
+  } finally {
+    await chain.testClient.revert({id: root})
+  }
+}
+
+async function submitRevertingCounterpartyExecution(
+  chain: ChainContext,
+  deployment: Omit<DemoChainDeployment, 'funding'>,
+  terms: ProtocolTerms,
+  lock: Hex32,
+): Promise<Hash> {
+  const hash = await chain.charlie.walletClient.writeContract({
+    address: deployment.addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'executeSettlement',
+    args: [terms, lock, false, BigInt(terms.counterpartySide.assets.length)],
+    account: chain.charlie.account,
+    chain: chain.publicClient.chain ?? null,
+    gas: 1_000_000n,
+  })
+  const receipt = await chain.publicClient.waitForTransactionReceipt({hash})
+  if (receipt.status !== 'reverted') throw new Error('permanently reverting asset execution unexpectedly succeeded')
   return hash
 }
 

@@ -55,6 +55,7 @@ try {
     negativeControls: artifact.negativeControls.length,
     recoveries: artifact.recoveries.map(recovery => recovery.outcome),
     resumableFailure: artifact.resumableFailure,
+    permanentAssetFailure: artifact.permanentAssetFailure,
     terminalOutcome: artifact.terminalOutcome,
     secretsPersisted: false,
     artifact: output,

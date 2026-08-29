@@ -1,5 +1,5 @@
 {
-  "schema": "quip-swap-same-chain-demo.v2",
+  "schema": "quip-swap-same-chain-demo.v3",
   "mockVerifier": true,
   "deployment": {
     "chainId": 31337,
@@ -108,7 +108,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0x1597a7d586501496eca554fa05193af41fde7d2d4f92a84f275fa9fd9ac989c9"
+      "transactionHash": "0xc26aa72e01cd5820b8ee73279f618925b6177df6a8a40b69740e56079eea5a78"
     },
     {
       "role": "bob",
@@ -118,7 +118,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0xaac15285dcec24ee94f592cb5d5f49c47da4433dca2165f66f3641cbbaef63d7",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0x3d55de1d910fb7c4516f8ae0cffcdeb627f213cd1ad0b6ae728409592d874f37"
+      "transactionHash": "0xfb9fcfd0329d71b63a12ec7fcb06ef49a938be599162aa3d7febc1d3973a99c6"
     }
   ],
   "transitions": [
@@ -127,7 +127,7 @@
       "action": "alice-commit",
       "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "receipt": {
-        "transactionHash": "0x1597a7d586501496eca554fa05193af41fde7d2d4f92a84f275fa9fd9ac989c9",
+        "transactionHash": "0xc26aa72e01cd5820b8ee73279f618925b6177df6a8a40b69740e56079eea5a78",
         "blockNumber": "17",
         "status": "success",
         "events": [
@@ -201,7 +201,7 @@
       "action": "bob-commit",
       "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "receipt": {
-        "transactionHash": "0x3d55de1d910fb7c4516f8ae0cffcdeb627f213cd1ad0b6ae728409592d874f37",
+        "transactionHash": "0xfb9fcfd0329d71b63a12ec7fcb06ef49a938be599162aa3d7febc1d3973a99c6",
         "blockNumber": "18",
         "status": "success",
         "events": [
@@ -275,7 +275,7 @@
       "action": "claim-selection",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0xbcb9249a8ed360cce41bb02b8b2ce9c291c80f2741ec1224eebd792360a62e27",
+        "transactionHash": "0x48a7ccc100e2065086dabe0bdaede31d64911edbaa18ec6e7231ae3ecf58b5cf",
         "blockNumber": "19",
         "status": "success",
         "events": [
@@ -344,7 +344,7 @@
       "action": "party-release",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x83c28ad64924f6f1e9b36dd6fe038c6e5302e72914ed7b4091817becc9048b0a",
+        "transactionHash": "0x671311eaa7e8bb1716272a6125fb0a5d15b245d111c2eff947a3e7d4e891d6f4",
         "blockNumber": "20",
         "status": "success",
         "events": [
@@ -415,7 +415,7 @@
       "action": "counterparty-release-failed",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x19f368b2118bfbda920c62d2c4460242740d9cf4e642d40fa0dbcf5a2b49a79b",
+        "transactionHash": "0x4264ac61d380704edf3d847b11dd3a3e18fef16ba93f96728ece36280faca6a9",
         "blockNumber": "21",
         "status": "reverted",
         "events": []
@@ -482,7 +482,7 @@
       "action": "counterparty-release-retry",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x030714937324601052601113e3034f1879a58ecc545e2168867e1512e67b5726",
+        "transactionHash": "0x80f32515f6ed03ab31c734302d7f31d4fe9e676bf3f046544e7c05eeaf870635",
         "blockNumber": "22",
         "status": "success",
         "events": [
@@ -706,7 +706,9 @@
           "allowance": "20000000000000000000"
         }
       ],
-      "fixedReclaimRecipients": true
+      "fixedReclaimRecipients": true,
+      "expectedSides": 1,
+      "completedSides": 1
     },
     {
       "outcome": "both-reclaim",
@@ -749,7 +751,9 @@
           "allowance": "0"
         }
       ],
-      "fixedReclaimRecipients": true
+      "fixedReclaimRecipients": true,
+      "expectedSides": 3,
+      "completedSides": 3
     }
   ],
   "resumableFailure": {
@@ -761,6 +765,26 @@
     "completedSides": 1,
     "completedPartyPayoutPreserved": true,
     "failedSideCursorUnchanged": true
+  },
+  "permanentAssetFailure": {
+    "failureMode": "token-reverts",
+    "failingSide": "counterparty",
+    "attempts": 2,
+    "transactionHashes": [
+      "0xe6ca4887c6995d502a409ff34c697ac62d98e59b1e02723090944db177a8796f",
+      "0xb5bf84e2c0357b581dc45212c64c77f5864c2d77236c2c5a3dc8f788ac3c8656"
+    ],
+    "state": "ReclaimPending",
+    "expectedSides": 3,
+    "completedSides": 1,
+    "selectedOutcomePreserved": true,
+    "otherSideReleased": true,
+    "otherSideRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "failingReclaimRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "failingHTLC": "0xcaF07b7B2e6f4c6e31B54DefB2EB3fb0eaB2DD8F",
+    "failingCursor": "0",
+    "failingPayoutRecipient": "0x0000000000000000000000000000000000000000",
+    "failingBalance": "20000000000000000000"
   },
   "terminalOutcome": {
     "state": "Claimed",

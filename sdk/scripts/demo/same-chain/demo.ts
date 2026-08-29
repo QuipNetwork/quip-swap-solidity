@@ -23,7 +23,7 @@ import {runSameChainAdversarial} from './adversarial.js'
 import type {SameChainSuccessTrace} from './success.js'
 import type {SameChainAdversarialTrace} from './adversarial.js'
 
-export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v2' as const
+export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v3' as const
 export const SAME_CHAIN_DEMO_CHAIN_ID = 31_337
 export const SAME_CHAIN_DEMO_MOCK_VERIFIER = true as const
 
@@ -172,7 +172,7 @@ export async function runSameChainDemoFoundation(
   )
   onProgress?.('Preparing both lazy direct-authorization identities')
   const setup = await readSameChainSetup(chain, deployment, terms, lock)
-  const adversarial = await runSameChainAdversarial(chain, deployment, terms, lock, onProgress)
+  const adversarial = await runSameChainAdversarial(chain, deployment, terms, lock, load, onProgress)
   const success = await runSameChainSuccess(chain, deployment, terms, lock, onProgress)
   return {
     schema: SAME_CHAIN_DEMO_SCHEMA,

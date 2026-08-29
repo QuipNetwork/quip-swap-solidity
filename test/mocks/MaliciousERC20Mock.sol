@@ -8,7 +8,8 @@ contract MaliciousERC20Mock is ERC20 {
     Exact,
     NoOp,
     OverCredit,
-    ReturnFalse
+    ReturnFalse,
+    RevertTransfer
   }
 
   Behavior public behavior;
@@ -24,6 +25,7 @@ contract MaliciousERC20Mock is ERC20 {
   }
 
   function transfer(address to, uint256 amount) public override returns (bool) {
+    if (behavior == Behavior.RevertTransfer) revert('TRANSFER_REVERTED');
     if (behavior == Behavior.NoOp) return true;
     if (behavior == Behavior.ReturnFalse) return false;
     bool success = super.transfer(to, amount);
@@ -32,6 +34,7 @@ contract MaliciousERC20Mock is ERC20 {
   }
 
   function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+    if (behavior == Behavior.RevertTransfer) revert('TRANSFER_REVERTED');
     if (behavior == Behavior.NoOp) return true;
     if (behavior == Behavior.ReturnFalse) return false;
     bool success = super.transferFrom(from, to, amount);
