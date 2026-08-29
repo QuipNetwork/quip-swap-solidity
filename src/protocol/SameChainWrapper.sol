@@ -45,6 +45,8 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
 
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
   event HTLCCreated(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address htlc);
+  event ClaimSelected(bytes32 indexed tradeId, bytes32 indexed lock);
+  event ReclaimSelected(bytes32 indexed tradeId, bytes32 indexed lock, uint8 expectedSides);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
 
@@ -114,6 +116,27 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
 
     emit Committed(trade, lock, ProtocolHashing.sideTag(party), side.principal);
     emit HTLCCreated(trade, lock, tag, htlc);
+  }
+
+  /// @notice Permissionlessly and irreversibly selects claim without executing a payout.
+  function selectClaim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external {
+    bytes32 trade = states.selectSameChainClaim(terms, lock, secret, block.timestamp);
+    emit ClaimSelected(trade, lock);
+  }
+
+  /// @notice Permissionlessly and irreversibly selects the applicable reclaim without a payout.
+  function selectReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    SameChainState current = states.state(trade, lock);
+    uint8 expectedSides;
+    if (current == SameChainState.PartyCommitted) {
+      trade = states.selectSameChainPartyReclaim(terms, lock, block.timestamp);
+      expectedSides = 1;
+    } else {
+      trade = states.selectSameChainBothReclaim(terms, lock, block.timestamp);
+      expectedSides = 3;
+    }
+    emit ReclaimSelected(trade, lock, expectedSides);
   }
 
   /// @notice Permissionlessly claims both escrows atomically to their fixed recipients.

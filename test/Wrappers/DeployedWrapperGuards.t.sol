@@ -32,6 +32,8 @@ import {Test} from 'forge-std-1.14.0/Test.sol';
 contract DeployedWrapperGuardsTest is Test {
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
   event BobCommitSecretPublished(bytes32 indexed tradeId, bytes32 bobCommitSecret);
+  event ClaimSelected(bytes32 indexed tradeId, bytes32 indexed lock);
+  event ReclaimSelected(bytes32 indexed tradeId, bytes32 indexed lock, uint8 expectedSides);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
@@ -498,6 +500,65 @@ contract DeployedWrapperGuardsTest is Test {
     assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
     assertEq(address(same).balance, 0);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+  }
+
+  function test_sameChainClaimSelectionDoesNotCallOrReleaseEitherHTLC() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    _commitSame(terms, true, lock, 42, 1);
+    _commitSame(terms, false, lock, 43, 2);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    address counterpartyHTLC = same.htlcOf(terms, false, lock);
+    vm.deal(partyHTLC, 0);
+    vm.deal(counterpartyHTLC, 0);
+
+    vm.expectEmit(true, true, false, true, address(same));
+    emit ClaimSelected(trade, lock);
+    same.selectClaim(terms, lock, SECRET);
+
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
+    assertEq(BOB_RECIPIENT.balance, 0);
+    assertEq(ALICE_RECIPIENT.balance, 0);
+  }
+
+  function test_sameChainReclaimSelectionDoesNotCallTheApplicableHTLCs() public {
+    ProtocolTerms memory partyTerms = _sameTerms();
+    bytes32 partyLock = _lock(partyTerms);
+    bytes32 partyTrade = ProtocolHashing.tradeId(partyTerms);
+    _commitSame(partyTerms, true, partyLock, 44, 1);
+    address partyHTLC = same.htlcOf(partyTerms, true, partyLock);
+    vm.deal(partyHTLC, 0);
+    vm.warp(partyTerms.partySide.reclaimRelease);
+
+    vm.expectEmit(true, true, false, true, address(same));
+    emit ReclaimSelected(partyTrade, partyLock, 1);
+    same.selectReclaim(partyTerms, partyLock);
+    assertEq(uint8(same.state(partyTerms, partyLock)), uint8(SameChainState.ReclaimPending));
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+
+    vm.warp(100);
+    ProtocolTerms memory bothTerms = _sameTerms();
+    bothTerms.partySide.sideNonce = bytes32(uint256(45));
+    bothTerms.counterpartySide.sideNonce = bytes32(uint256(46));
+    bytes32 bothLock = _lock(bothTerms);
+    bytes32 bothTrade = ProtocolHashing.tradeId(bothTerms);
+    _commitSame(bothTerms, true, bothLock, 45, 1);
+    _commitSame(bothTerms, false, bothLock, 46, 2);
+    address bothPartyHTLC = same.htlcOf(bothTerms, true, bothLock);
+    address bothCounterpartyHTLC = same.htlcOf(bothTerms, false, bothLock);
+    vm.deal(bothPartyHTLC, 0);
+    vm.deal(bothCounterpartyHTLC, 0);
+    vm.warp(bothTerms.counterpartySide.reclaimRelease);
+
+    vm.expectEmit(true, true, false, true, address(same));
+    emit ReclaimSelected(bothTrade, bothLock, 3);
+    same.selectReclaim(bothTerms, bothLock);
+    assertEq(uint8(same.state(bothTerms, bothLock)), uint8(SameChainState.ReclaimPending));
+    assertFalse(SwapHTLC(payable(bothPartyHTLC)).released());
+    assertFalse(SwapHTLC(payable(bothCounterpartyHTLC)).released());
   }
 
   function test_sameWrapperEmitsExactCommitClaimAndReclaimEvents() public {
