@@ -681,6 +681,82 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(ALICE_RECIPIENT.balance, 2);
   }
 
+  function test_sameChainGasLimitedBatchRollsBackAndCanBeRetried() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 107, 1);
+    _commitSame(terms, false, lock, 108, 2);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    same.selectClaim(terms, lock, SECRET);
+
+    (bool gasLimitedSuccess,) =
+      address(same).call{gas: 30_000}(abi.encodeCall(same.executeSettlement, (terms, lock, true, 1)));
+    assertFalse(gasLimitedSuccess);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    (, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 0);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 0);
+    assertEq(SwapHTLC(payable(partyHTLC)).payoutRecipient(), address(0));
+    assertEq(partyHTLC.balance, 1);
+    assertEq(BOB_RECIPIENT.balance, 0);
+
+    same.executeSettlement(terms, lock, true, 1);
+    same.executeSettlement(terms, lock, false, 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+
+    vm.expectRevert(abi.encodeWithSelector(SameChainStateMachine.SettlementNotPending.selector, SameChainState.Claimed));
+    same.executeSettlement(terms, lock, true, 1);
+  }
+
+  function test_sameChainFailedPartialAssetCannotMixOutcomeAndCanRetry() public {
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    support.setAssetSupport(AssetType.ERC20, address(malicious), true);
+    malicious.mint(ALICE, 10);
+    vm.prank(ALICE);
+    malicious.approve(address(same), 10);
+
+    ProtocolTerms memory terms = _sameTerms();
+    terms.partySide.assets = new Asset[](2);
+    terms.partySide.assets[0] = Asset(AssetType.Native, address(0), 0, 1);
+    terms.partySide.assets[1] = Asset(AssetType.ERC20, address(malicious), 0, 10);
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 109, 1);
+    _commitSame(terms, false, lock, 110, 2);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).payoutRecipient(), BOB_RECIPIENT);
+
+    vm.warp(terms.counterpartySide.reclaimRelease);
+    vm.expectRevert(
+      abi.encodeWithSelector(
+        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
+      )
+    );
+    same.selectReclaim(terms, lock);
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.ReturnFalse);
+    vm.expectRevert();
+    same.executeSettlement(terms, lock, true, 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).payoutRecipient(), BOB_RECIPIENT);
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    (, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 0);
+    assertEq(malicious.balanceOf(partyHTLC), 10);
+    assertEq(malicious.balanceOf(BOB_RECIPIENT), 0);
+    assertEq(ALICE.balance, 0);
+
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
+    same.executeSettlement(terms, lock, false, 1);
+    same.executeSettlement(terms, lock, true, 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+    assertEq(malicious.balanceOf(BOB_RECIPIENT), 10);
+    assertEq(ALICE.balance, 0);
+  }
+
   function test_sameChainExecutionRejectsAbsentUnexpectedAndMismatchedHTLCs() public {
     ProtocolTerms memory oneSidedTerms = _sameTerms();
     bytes32 oneSidedLock = _lock(oneSidedTerms);
