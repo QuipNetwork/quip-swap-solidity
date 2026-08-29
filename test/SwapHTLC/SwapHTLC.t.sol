@@ -48,6 +48,8 @@ contract SwapHTLCTest is Test {
     htlc.confirmFunding(sideTerms);
     vm.expectRevert(ISwapHTLC.NotInitialized.selector);
     htlc.release(sideTerms, RECIPIENT);
+    vm.expectRevert(ISwapHTLC.NotInitialized.selector);
+    htlc.releaseBatch(sideTerms, RECIPIENT, 1);
   }
 
   function test_initializeBindsControllerIdentityAndExactNativeValue() public {
@@ -142,6 +144,56 @@ contract SwapHTLCTest is Test {
     htlc.release(sideTerms, RECLAIMER);
     assertEq(RECLAIMER.balance, 1 ether);
     assertTrue(htlc.released());
+  }
+
+  function test_releaseBatchAdvancesBoundedProgressAndCompletesOnlyAtEnd() public {
+    SwapHTLC htlc = _clone();
+    SideTerms memory sideTerms = _mixedTerms();
+    htlc.initialize{value: 1 ether}(TRADE, LOCK, SideTag.Party, sideTerms);
+    token.mint(address(htlc), 10 ether);
+    nft.mint(address(htlc), 7);
+    multiToken.mint(address(htlc), 9, 3, '');
+    htlc.confirmFunding(sideTerms);
+
+    (uint256 nextIndex, bool complete) = htlc.releaseBatch(sideTerms, RECIPIENT, 2);
+    assertEq(nextIndex, 2);
+    assertEq(htlc.nextAssetIndex(), 2);
+    assertFalse(complete);
+    assertFalse(htlc.released());
+    assertEq(RECIPIENT.balance, 1 ether);
+    assertEq(token.balanceOf(RECIPIENT), 10 ether);
+    assertEq(nft.ownerOf(7), address(htlc));
+    assertEq(multiToken.balanceOf(RECIPIENT, 9), 0);
+
+    (nextIndex, complete) = htlc.releaseBatch(sideTerms, RECIPIENT, 1);
+    assertEq(nextIndex, 3);
+    assertFalse(complete);
+    assertEq(nft.ownerOf(7), RECIPIENT);
+
+    (nextIndex, complete) = htlc.releaseBatch(sideTerms, RECIPIENT, 10);
+    assertEq(nextIndex, 4);
+    assertTrue(complete);
+    assertTrue(htlc.released());
+    assertEq(multiToken.balanceOf(RECIPIENT, 9), 3);
+
+    vm.expectRevert(ISwapHTLC.AlreadyReleased.selector);
+    htlc.releaseBatch(sideTerms, RECIPIENT, 1);
+  }
+
+  function test_releaseBatchRejectsZeroWithoutChangingProgress() public {
+    SwapHTLC htlc = _clone();
+    SideTerms memory sideTerms = _mixedTerms();
+    htlc.initialize{value: 1 ether}(TRADE, LOCK, SideTag.Party, sideTerms);
+    token.mint(address(htlc), 10 ether);
+    nft.mint(address(htlc), 7);
+    multiToken.mint(address(htlc), 9, 3, '');
+    htlc.confirmFunding(sideTerms);
+
+    vm.expectRevert(ISwapHTLC.InvalidBatchSize.selector);
+    htlc.releaseBatch(sideTerms, RECIPIENT, 0);
+    assertEq(htlc.nextAssetIndex(), 0);
+    assertFalse(htlc.released());
+    assertEq(address(htlc).balance, 1 ether);
   }
 
   function test_releaseBeforeFundingAndWithChangedTermsRevertsWithoutEffects() public {

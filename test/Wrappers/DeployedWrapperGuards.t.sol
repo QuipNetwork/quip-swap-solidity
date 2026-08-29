@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {AssetSupport, AssetTransfers} from '../../src/assets/AssetHandling.sol';
 import {AssetSupportRegistry} from '../../src/assets/AssetSupportRegistry.sol';
+import {ISwapHTLC} from '../../src/interfaces/ISwapHTLC.sol';
 import {CommitAuthorization} from '../../src/protocol/CommitValidation.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
 import {CrossChainWrapper} from '../../src/protocol/CrossChainWrapper.sol';
@@ -600,6 +601,79 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(ALICE.balance, 1);
     assertEq(BOB.balance, 2);
     assertEq(EXECUTOR_B.balance, 0);
+  }
+
+  function test_sameChainExecutionRejectsAbsentUnexpectedAndMismatchedHTLCs() public {
+    ProtocolTerms memory oneSidedTerms = _sameTerms();
+    bytes32 oneSidedLock = _lock(oneSidedTerms);
+    _commitSame(oneSidedTerms, true, oneSidedLock, 98, 1);
+    vm.warp(oneSidedTerms.partySide.reclaimRelease);
+    same.selectReclaim(oneSidedTerms, oneSidedLock);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(SameChainStateMachine.UnexpectedSettlementSide.selector, SideTag.Counterparty)
+    );
+    same.executeSettlement(oneSidedTerms, oneSidedLock, false, 1);
+    (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(oneSidedTerms, oneSidedLock);
+    assertEq(expectedSides, 1);
+    assertEq(completedSides, 0);
+
+    vm.warp(100);
+    ProtocolTerms memory absentTerms = _sameTerms();
+    absentTerms.partySide.sideNonce = bytes32(uint256(99));
+    absentTerms.counterpartySide.sideNonce = bytes32(uint256(100));
+    bytes32 absentLock = _lock(absentTerms);
+    _commitSame(absentTerms, true, absentLock, 99, 1);
+    _commitSame(absentTerms, false, absentLock, 100, 2);
+    same.selectClaim(absentTerms, absentLock, SECRET);
+    address absentHTLC = same.htlcOf(absentTerms, true, absentLock);
+    vm.etch(absentHTLC, hex'');
+
+    vm.expectRevert(Settlement.MissingHTLC.selector);
+    same.executeSettlement(absentTerms, absentLock, true, 1);
+    (expectedSides, completedSides) = same.settlementProgress(absentTerms, absentLock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 0);
+
+    ProtocolTerms memory mismatchedTerms = _sameTerms();
+    mismatchedTerms.partySide.sideNonce = bytes32(uint256(101));
+    mismatchedTerms.counterpartySide.sideNonce = bytes32(uint256(102));
+    bytes32 mismatchedLock = _lock(mismatchedTerms);
+    _commitSame(mismatchedTerms, true, mismatchedLock, 101, 1);
+    _commitSame(mismatchedTerms, false, mismatchedLock, 102, 2);
+    same.selectClaim(mismatchedTerms, mismatchedLock, SECRET);
+    address mismatchedHTLC = same.htlcOf(mismatchedTerms, true, mismatchedLock);
+    vm.mockCall(
+      mismatchedHTLC,
+      abi.encodeWithSelector(ISwapHTLC.sideTermsHash.selector),
+      abi.encode(keccak256('wrong-side-terms'))
+    );
+
+    vm.expectRevert(Settlement.InvalidHTLCBinding.selector);
+    same.executeSettlement(mismatchedTerms, mismatchedLock, true, 1);
+    (expectedSides, completedSides) = same.settlementProgress(mismatchedTerms, mismatchedLock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 0);
+  }
+
+  function test_sameChainExecutionRejectsModifiedTermsWithoutRedirectingPayout() public {
+    ProtocolTerms memory terms = _sameTerms();
+    terms.partySide.sideNonce = bytes32(uint256(103));
+    terms.counterpartySide.sideNonce = bytes32(uint256(104));
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 103, 1);
+    _commitSame(terms, false, lock, 104, 2);
+    same.selectClaim(terms, lock, SECRET);
+
+    ProtocolTerms memory modified = abi.decode(abi.encode(terms), (ProtocolTerms));
+    modified.partySide.recipient = EXECUTOR_A;
+    vm.expectRevert(abi.encodeWithSelector(SameChainStateMachine.SettlementNotPending.selector, SameChainState.Unused));
+    same.executeSettlement(modified, lock, true, 1);
+
+    (, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 0);
+    assertEq(EXECUTOR_A.balance, 0);
+    assertEq(same.htlcOf(terms, true, lock).balance, 1);
   }
 
   function test_sameChainReclaimSelectionDoesNotCallTheApplicableHTLCs() public {

@@ -22,6 +22,8 @@ interface ISwapHTLC {
   error InvalidFundingState();
   /// @notice Thrown when release is attempted more than once.
   error AlreadyReleased();
+  /// @notice Thrown when a release batch is asked to process no assets.
+  error InvalidBatchSize();
   /// @notice Thrown when the selected payout is not one of the two terms-fixed recipients.
   error InvalidRecipient();
   /// @notice Thrown when initialization receives a native amount different from the signed bundle.
@@ -58,6 +60,15 @@ interface ISwapHTLC {
   ///      making the corresponding protocol state transition.
   function release(SideTerms calldata sideTerms, address recipient) external;
 
+  /// @notice Releases at most `maxAssets` entries from the next unfinished bundle position.
+  /// @dev Progress advances atomically with transfers and `released` becomes true only after the
+  ///      complete signed asset list has been transferred.
+  function releaseBatch(
+    SideTerms calldata sideTerms,
+    address recipient,
+    uint256 maxAssets
+  ) external returns (uint256 nextIndex, bool complete);
+
   /// @notice Wrapper that deployed this HTLC and controls its settlement.
   function controller() external view returns (address);
 
@@ -78,4 +89,7 @@ interface ISwapHTLC {
 
   /// @notice Whether this HTLC has completed its only protocol payout.
   function released() external view returns (bool);
+
+  /// @notice Index of the next signed asset entry awaiting payout.
+  function nextAssetIndex() external view returns (uint256);
 }

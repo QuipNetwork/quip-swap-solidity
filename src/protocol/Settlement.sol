@@ -4,7 +4,7 @@ pragma solidity 0.8.33;
 import {AssetCustody} from '../assets/AssetHandling.sol';
 import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
-import {ProtocolTerms, SameChainState, SideTerms, WrapperMode} from './ProtocolTypes.sol';
+import {ProtocolTerms, SameChainState, SideTag, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';
 import {SameChainStateMachine} from './StateMachines.sol';
 
@@ -23,6 +23,7 @@ library Settlement {
   error ClaimWindowClosed();
   error ReclaimWindowClosed();
   error MissingHTLC();
+  error InvalidHTLCBinding();
   error InvalidBatchSize();
   error BatchLimitTooSmall(uint256 requiredAssets, uint256 maxAssets);
 
@@ -107,21 +108,25 @@ library Settlement {
   ) internal returns (bytes32 trade, SameChainState outcome, bool terminal) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
-    if (htlc == address(0)) revert MissingHTLC();
     if (maxAssets == 0) revert InvalidBatchSize();
 
-    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
-    if (maxAssets < side.assets.length) revert BatchLimitTooSmall(side.assets.length, maxAssets);
     trade = ProtocolHashing.tradeId(terms);
     outcome = self.state(trade, lock);
     if (outcome != SameChainState.ClaimPending && outcome != SameChainState.ReclaimPending) {
       revert SameChainStateMachine.SettlementNotPending(outcome);
     }
 
-    // Mark before the external call; a failed payout rolls this write back atomically.
-    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(party));
-    address recipient = outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
-    ISwapHTLC(htlc).release(side, recipient);
+    SideTag tag = ProtocolHashing.sideTag(party);
+    {
+      SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+      if (maxAssets < side.assets.length) revert BatchLimitTooSmall(side.assets.length, maxAssets);
+
+      // Validate the required side before consulting or paying its exact committed HTLC.
+      self.markSideComplete(trade, lock, tag);
+      _requireHTLCBinding(htlc, trade, lock, tag, side);
+      address recipient = outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
+      ISwapHTLC(htlc).release(side, recipient);
+    }
 
     (uint8 expectedSides, uint8 completedSides) = self.settlementProgress(trade, lock);
     terminal = completedSides == expectedSides;
@@ -341,6 +346,21 @@ library Settlement {
 
   function _requireTwoHTLCs(address partyHTLC, address counterpartyHTLC) private pure {
     if (partyHTLC == address(0) || counterpartyHTLC == address(0)) revert MissingHTLC();
+  }
+
+  function _requireHTLCBinding(
+    address htlc,
+    bytes32 trade,
+    bytes32 lock,
+    SideTag side,
+    SideTerms memory sideTerms
+  ) private view {
+    if (htlc == address(0) || htlc.code.length == 0) revert MissingHTLC();
+    if (
+      ISwapHTLC(htlc).controller() != address(this) || ISwapHTLC(htlc).tradeId() != trade
+        || ISwapHTLC(htlc).lock() != lock || ISwapHTLC(htlc).side() != side
+        || ISwapHTLC(htlc).sideTermsHash() != ProtocolHashing.sideTermsHash(sideTerms)
+    ) revert InvalidHTLCBinding();
   }
 
   function _requireSecret(bytes32 trade, bytes32 lock, bytes32 secret) private pure {

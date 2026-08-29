@@ -285,6 +285,19 @@ export const swapHTLCAbi = [
   },
   {
     "type": "function",
+    "name": "nextAssetIndex",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "onERC1155BatchReceived",
     "inputs": [
       {
@@ -514,6 +527,139 @@ export const swapHTLCAbi = [
   },
   {
     "type": "function",
+    "name": "releaseBatch",
+    "inputs": [
+      {
+        "name": "sideTerms_",
+        "type": "tuple",
+        "internalType": "struct SideTerms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "principal",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "authorizationMode",
+            "type": "uint8",
+            "internalType": "enum AuthorizationMode"
+          },
+          {
+            "name": "principalKeyVersion",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "commitLock",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "delegationPolicy",
+            "type": "uint8",
+            "internalType": "enum DelegationPolicy"
+          },
+          {
+            "name": "delegate",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "delegateKeyVersion",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "sideNonce",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          }
+        ]
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "maxAssets",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nextIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "complete",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "released",
     "inputs": [],
     "outputs": [
@@ -694,6 +840,11 @@ export const swapHTLCAbi = [
   {
     "type": "error",
     "name": "InsufficientAssetBalance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidBatchSize",
     "inputs": []
   },
   {

@@ -23,6 +23,7 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   SideTag public override side;
   bool public override funded;
   bool public override released;
+  uint256 public override nextAssetIndex;
 
   bool private initialized;
 
@@ -78,18 +79,39 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
 
   /// @inheritdoc ISwapHTLC
   function release(SideTerms calldata sideTerms_, address recipient) external override onlyController nonReentrant {
+    _releaseBatch(sideTerms_, recipient, sideTerms_.assets.length);
+  }
+
+  /// @inheritdoc ISwapHTLC
+  function releaseBatch(
+    SideTerms calldata sideTerms_,
+    address recipient,
+    uint256 maxAssets
+  ) external override onlyController nonReentrant returns (uint256 nextIndex, bool complete) {
+    _releaseBatch(sideTerms_, recipient, maxAssets);
+    return (nextAssetIndex, released);
+  }
+
+  function _releaseBatch(SideTerms calldata sideTerms_, address recipient, uint256 maxAssets) private {
     if (!funded) revert InvalidFundingState();
     if (released) revert AlreadyReleased();
+    if (maxAssets == 0) revert InvalidBatchSize();
     _requireBoundTerms(sideTerms_);
     if (recipient != sideTerms_.recipient && recipient != sideTerms_.reclaimRecipient) revert InvalidRecipient();
     if (recipient == address(this)) revert InvalidRecipient();
 
-    // Record the one-time effect before interacting with token contracts or the recipient.
-    released = true;
-    for (uint256 i; i < sideTerms_.assets.length; ++i) {
+    uint256 start = nextAssetIndex;
+    uint256 remaining = sideTerms_.assets.length - start;
+    uint256 count = maxAssets < remaining ? maxAssets : remaining;
+    uint256 end = start + count;
+
+    // Advance progress before external calls; any failed transfer reverts the complete batch.
+    nextAssetIndex = end;
+    released = end == sideTerms_.assets.length;
+    for (uint256 i = start; i < end; ++i) {
       _transfer(sideTerms_.assets[i], recipient);
     }
-    emit Released(tradeId, lock, side, recipient);
+    if (released) emit Released(tradeId, lock, side, recipient);
   }
 
   function _requireBoundTerms(SideTerms calldata sideTerms_) private view {
