@@ -35,6 +35,10 @@ contract DeployedWrapperGuardsTest is Test {
   event BobCommitSecretPublished(bytes32 indexed tradeId, bytes32 bobCommitSecret);
   event ClaimSelected(bytes32 indexed tradeId, bytes32 indexed lock);
   event ReclaimSelected(bytes32 indexed tradeId, bytes32 indexed lock, uint8 expectedSides);
+  event SettlementBatchExecuted(
+    bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, uint256 nextAssetIndex, bool complete
+  );
+  event SideReleased(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
@@ -628,9 +632,12 @@ contract DeployedWrapperGuardsTest is Test {
     bytes32 lock = _lock(terms);
     _commitSame(terms, true, lock, 105, 1);
     _commitSame(terms, false, lock, 106, 2);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
     address partyHTLC = same.htlcOf(terms, true, lock);
 
     same.selectClaim(terms, lock, SECRET);
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SettlementBatchExecuted(trade, lock, SideTag.Party, 1, false);
     same.executeSettlement(terms, lock, true, 1);
     (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(terms, lock);
     assertEq(expectedSides, 3);
@@ -640,17 +647,29 @@ contract DeployedWrapperGuardsTest is Test {
     assertFalse(SwapHTLC(payable(partyHTLC)).released());
     assertEq(BOB_RECIPIENT.balance, 1);
 
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SettlementBatchExecuted(trade, lock, SideTag.Counterparty, 1, true);
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SideReleased(trade, lock, SideTag.Counterparty);
     same.executeSettlement(terms, lock, false, 1);
     (, completedSides) = same.settlementProgress(terms, lock);
     assertEq(completedSides, 2);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
 
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SettlementBatchExecuted(trade, lock, SideTag.Party, 2, false);
     same.executeSettlement(terms, lock, true, 1);
     (, completedSides) = same.settlementProgress(terms, lock);
     assertEq(completedSides, 2);
     assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 2);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
 
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SettlementBatchExecuted(trade, lock, SideTag.Party, 3, true);
+    vm.expectEmit(true, true, true, true, address(same));
+    emit SideReleased(trade, lock, SideTag.Party);
+    vm.expectEmit(true, true, false, true, address(same));
+    emit Claimed(trade, lock);
     same.executeSettlement(terms, lock, true, 10);
     (, completedSides) = same.settlementProgress(terms, lock);
     assertEq(completedSides, 3);

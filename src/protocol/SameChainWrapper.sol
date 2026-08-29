@@ -48,6 +48,10 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   event HTLCCreated(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address htlc);
   event ClaimSelected(bytes32 indexed tradeId, bytes32 indexed lock);
   event ReclaimSelected(bytes32 indexed tradeId, bytes32 indexed lock, uint8 expectedSides);
+  event SettlementBatchExecuted(
+    bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, uint256 nextAssetIndex, bool complete
+  );
+  event SideReleased(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
 
@@ -150,14 +154,14 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
     uint256 maxAssets
   ) external nonReentrant {
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    SameChainState outcome;
-    bool terminal;
-    (trade, outcome, terminal) = states.executeSelectedSameChainHTLC(
-      _htlc(trade, lock, ProtocolHashing.sideTag(party)), terms, party, lock, maxAssets
-    );
-    if (terminal) {
-      if (outcome == SameChainState.ClaimPending) emit Claimed(trade, lock);
-      else emit Reclaimed(trade, lock);
+    SideTag side = ProtocolHashing.sideTag(party);
+    Settlement.SameChainBatchResult memory result =
+      states.executeSelectedSameChainHTLC(_htlc(trade, lock, side), terms, party, lock, maxAssets);
+    emit SettlementBatchExecuted(result.trade, lock, side, result.nextAssetIndex, result.sideComplete);
+    if (result.sideComplete) emit SideReleased(result.trade, lock, side);
+    if (result.terminal) {
+      if (result.outcome == SameChainState.ClaimPending) emit Claimed(result.trade, lock);
+      else emit Reclaimed(result.trade, lock);
     }
   }
 

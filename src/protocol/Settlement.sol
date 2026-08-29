@@ -26,6 +26,14 @@ library Settlement {
   error InvalidHTLCBinding();
   error InvalidBatchSize();
 
+  struct SameChainBatchResult {
+    bytes32 trade;
+    SameChainState outcome;
+    uint256 nextAssetIndex;
+    bool sideComplete;
+    bool terminal;
+  }
+
   /// @notice Selects the same-chain claim outcome without executing a payout.
   function selectSameChainClaim(
     SameChainStateMachine.Layout storage self,
@@ -104,29 +112,30 @@ library Settlement {
     bool party,
     bytes32 lock,
     uint256 maxAssets
-  ) internal returns (bytes32 trade, SameChainState outcome, bool terminal) {
+  ) internal returns (SameChainBatchResult memory result) {
     _validate(terms, WrapperMode.SameChain);
     _requireBothLocal(terms);
     if (maxAssets == 0) revert InvalidBatchSize();
 
-    trade = ProtocolHashing.tradeId(terms);
-    outcome = self.state(trade, lock);
-    if (outcome != SameChainState.ClaimPending && outcome != SameChainState.ReclaimPending) {
-      revert SameChainStateMachine.SettlementNotPending(outcome);
+    result.trade = ProtocolHashing.tradeId(terms);
+    result.outcome = self.state(result.trade, lock);
+    if (result.outcome != SameChainState.ClaimPending && result.outcome != SameChainState.ReclaimPending) {
+      revert SameChainStateMachine.SettlementNotPending(result.outcome);
     }
 
     SideTag tag = ProtocolHashing.sideTag(party);
     {
       SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
-      address recipient = outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
-      _executeSelectedBatch(self, htlc, side, recipient, trade, lock, tag, maxAssets);
+      address recipient = result.outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
+      (result.nextAssetIndex, result.sideComplete) =
+        _executeSelectedBatch(self, htlc, side, recipient, result.trade, lock, tag, maxAssets);
     }
 
-    (uint8 expectedSides, uint8 completedSides) = self.settlementProgress(trade, lock);
-    terminal = completedSides == expectedSides;
-    if (terminal) {
-      if (outcome == SameChainState.ClaimPending) completeSelectedSameChainClaim(self, trade, lock);
-      else completeSelectedSameChainReclaim(self, trade, lock);
+    (uint8 expectedSides, uint8 completedSides) = self.settlementProgress(result.trade, lock);
+    result.terminal = completedSides == expectedSides;
+    if (result.terminal) {
+      if (result.outcome == SameChainState.ClaimPending) completeSelectedSameChainClaim(self, result.trade, lock);
+      else completeSelectedSameChainReclaim(self, result.trade, lock);
     }
   }
 
@@ -139,11 +148,11 @@ library Settlement {
     bytes32 lock,
     SideTag tag,
     uint256 maxAssets
-  ) private {
+  ) private returns (uint256 nextIndex, bool sideComplete) {
     // Reject an unexpected or completed side before consulting its exact committed HTLC.
     self.requirePendingSide(trade, lock, tag);
     _requireHTLCBinding(htlc, trade, lock, tag, side);
-    (, bool sideComplete) = ISwapHTLC(htlc).releaseBatch(side, recipient, maxAssets);
+    (nextIndex, sideComplete) = ISwapHTLC(htlc).releaseBatch(side, recipient, maxAssets);
     if (sideComplete) self.markSideComplete(trade, lock, tag);
   }
 
