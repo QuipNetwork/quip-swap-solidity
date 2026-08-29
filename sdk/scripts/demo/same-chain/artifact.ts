@@ -3,11 +3,34 @@ import type {Hex32, ProtocolTerms} from '../../../src/index.js'
 import type {SameChainDemoFoundation, SameChainParticipantSetup} from './demo.js'
 import type {SameChainAssetPosition} from './success.js'
 
-export const SAME_CHAIN_ARTIFACT_SCHEMA = 'quip-swap-same-chain-demo.v1' as const
+export const SAME_CHAIN_ARTIFACT_SCHEMA = 'quip-swap-same-chain-demo.v2' as const
 
-const actionOrder = ['alice-commit', 'bob-commit', 'permissionless-claim'] as const
-const stateBeforeOrder = ['Unused', 'PartyCommitted', 'BothCommitted'] as const
-const stateAfterOrder = ['PartyCommitted', 'BothCommitted', 'Claimed'] as const
+const actionOrder = [
+  'alice-commit',
+  'bob-commit',
+  'claim-selection',
+  'party-release',
+  'counterparty-release-failed',
+  'counterparty-release-retry',
+] as const
+const stateBeforeOrder = [
+  'Unused',
+  'PartyCommitted',
+  'BothCommitted',
+  'ClaimPending',
+  'ClaimPending',
+  'ClaimPending',
+] as const
+const stateAfterOrder = [
+  'PartyCommitted',
+  'BothCommitted',
+  'ClaimPending',
+  'ClaimPending',
+  'ClaimPending',
+  'Claimed',
+] as const
+const receiptStatusOrder = ['success', 'success', 'success', 'success', 'reverted', 'success'] as const
+const completedSidesOrder = [0, 0, 0, 1, 1, 3] as const
 const negativeOrder = [
   'counterparty-first',
   'commit-at-deadline',
@@ -55,19 +78,25 @@ export interface RedactedSameChainArtifact {
     readonly receipt: {
       readonly transactionHash: string
       readonly blockNumber: string
+      readonly status: 'success' | 'reverted'
       readonly events: readonly string[]
     }
     readonly stateBefore: string
     readonly stateAfter: string
     readonly progression: 'zero' | 'not-applicable'
+    readonly expectedSides: number
+    readonly completedSides: number
+    readonly failureReason: 'insufficient-gas' | null
     readonly custodyAfter: readonly SameChainAssetPosition[]
     readonly balanceDeltas: readonly Record<string, string>[]
   }[]
   readonly negativeControls: SameChainDemoFoundation['adversarial']['negativeControls']
   readonly recoveries: SameChainDemoFoundation['adversarial']['recoveries']
-  readonly atomicRollback: SameChainDemoFoundation['adversarial']['atomicRollback']
+  readonly resumableFailure: SameChainDemoFoundation['adversarial']['resumableFailure']
   readonly terminalOutcome: {
     readonly state: 'Claimed'
+    readonly expectedSides: 3
+    readonly completedSides: 3
     readonly custody: readonly SameChainAssetPosition[]
     readonly payoutsFixedByTerms: true
   }
@@ -87,11 +116,15 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
       receipt: {
         transactionHash: action.transactionHash,
         blockNumber: action.blockNumber,
+        status: action.receiptStatus,
         events: action.events,
       },
       stateBefore: action.stateBefore,
       stateAfter: action.stateAfter,
-      progression: action.action === 'permissionless-claim' ? 'not-applicable' as const : 'zero' as const,
+      progression: index < 2 ? 'zero' as const : 'not-applicable' as const,
+      expectedSides: action.expectedSides,
+      completedSides: action.completedSides,
+      failureReason: action.failureReason,
       custodyAfter: action.custodyAfter,
       balanceDeltas,
     }
@@ -116,9 +149,11 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
     transitions,
     negativeControls: execution.adversarial.negativeControls,
     recoveries: execution.adversarial.recoveries,
-    atomicRollback: execution.adversarial.atomicRollback,
+    resumableFailure: execution.adversarial.resumableFailure,
     terminalOutcome: {
       state: 'Claimed',
+      expectedSides: 3,
+      completedSides: 3,
       custody: execution.success.finalSnapshot.assets,
       payoutsFixedByTerms: execution.success.payoutsFixedByTerms,
     },
@@ -170,6 +205,8 @@ function initialPosition(
     htlcDeployed: false,
     htlcFunded: false,
     htlcReleased: false,
+    nextAssetIndex: '0',
+    payoutRecipient: '0x0000000000000000000000000000000000000000',
     principalBalance: participant.balance,
     recipientBalance: '0',
     htlcBalance: '0',
@@ -235,7 +272,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   })
 
   const transitions = array(root.transitions, 'transitions')
-  if (transitions.length !== 3) fail('transitions.length')
+  if (transitions.length !== actionOrder.length) fail('transitions.length')
   let previousCustody = initial
   transitions.forEach((item, index) => {
     const transition = record(item, `transitions[${index}]`)
@@ -244,17 +281,35 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     equal(transition.stateBefore, stateBeforeOrder[index], `transitions[${index}].stateBefore`)
     equal(transition.stateAfter, stateAfterOrder[index], `transitions[${index}].stateAfter`)
     equal(transition.progression, index < 2 ? 'zero' : 'not-applicable', `transitions[${index}].progression`)
+    equal(transition.expectedSides, index < 2 ? 0 : 3, `transitions[${index}].expectedSides`)
+    equal(transition.completedSides, completedSidesOrder[index], `transitions[${index}].completedSides`)
+    equal(
+      transition.failureReason,
+      index === 4 ? 'insufficient-gas' : null,
+      `transitions[${index}].failureReason`,
+    )
     const receipt = record(transition.receipt, `transitions[${index}].receipt`)
     hash(receipt.transactionHash, `transitions[${index}].receipt.transactionHash`)
+    equal(receipt.status, receiptStatusOrder[index], `transitions[${index}].receipt.status`)
     if (!/^[0-9]+$/.test(String(receipt.blockNumber))) fail(`transitions[${index}].receipt.blockNumber`)
     const events = array(receipt.events, 'transition events ' + index)
-    const requiredEvent = index < 2 ? 'sameChainWrapper.Committed' : 'sameChainWrapper.Claimed'
-    if (!events.includes(requiredEvent)) fail('transition event ' + index)
+    const requiredEvent = index < 2
+      ? 'sameChainWrapper.Committed'
+      : index === 2
+        ? 'sameChainWrapper.ClaimSelected'
+        : index === 3 || index === 5
+          ? 'sameChainWrapper.SettlementBatchExecuted'
+          : undefined
+    if (requiredEvent !== undefined && !events.includes(requiredEvent)) fail('transition event ' + index)
     if (index < 2 && (!events.includes('sameChainWrapper.HTLCCreated') || !events.includes('swapHTLC.Funded'))) {
       fail('HTLC funding events ' + index)
     }
-    if (index === 2 && events.filter(event => event === 'swapHTLC.Released').length !== 2) {
-      fail('HTLC release events')
+    if ((index === 3 || index === 5) && !events.includes('swapHTLC.Released')) {
+      fail('HTLC release event ' + index)
+    }
+    if (index === 5 && !events.includes('sameChainWrapper.Claimed')) fail('terminal claim event')
+    if (index === 4 && events.length !== 0) {
+      fail('reverted execution events')
     }
     const custody = array(transition.custodyAfter, `transitions[${index}].custodyAfter`)
     const deltas = array(transition.balanceDeltas, `transitions[${index}].balanceDeltas`)
@@ -264,11 +319,14 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
       custody,
       index === 0
         ? [[true, true, false], [false, false, false]]
-        : index === 1
+        : index === 1 || index === 2
           ? [[true, true, false], [true, true, false]]
-          : [[true, true, true], [true, true, true]],
+          : index === 3 || index === 4
+            ? [[true, true, true], [true, true, false]]
+            : [[true, true, true], [true, true, true]],
       `transitions[${index}].custodyAfter`,
     )
+    validateSettlementCustody(custody, terms, index, `transitions[${index}].custodyAfter`)
     previousCustody = custody
   })
   equal(record(decisions[0], 'alice decision').transactionHash, record(record(transitions[0], 'transition 0').receipt, 'receipt 0').transactionHash, 'alice transaction')
@@ -303,18 +361,26 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     )
   }
 
-  const rollback = record(root.atomicRollback, 'atomicRollback')
-  equal(rollback.stateBefore, 'BothCommitted', 'atomicRollback.stateBefore')
-  equal(rollback.stateAfter, 'BothCommitted', 'atomicRollback.stateAfter')
-  equal(rollback.firstPayoutRolledBack, true, 'atomicRollback.firstPayoutRolledBack')
-  equal(rollback.trigger, 'counterparty-htlc-deficit', 'atomicRollback.trigger')
-  equal(rollback.htlcBalancesUnchanged, true, 'atomicRollback.htlcBalancesUnchanged')
+  const failure = record(root.resumableFailure, 'resumableFailure')
+  equal(failure.stateBefore, 'BothCommitted', 'resumableFailure.stateBefore')
+  equal(failure.stateAfter, 'ReclaimPending', 'resumableFailure.stateAfter')
+  equal(failure.outcomeSelectionPreserved, true, 'resumableFailure.outcomeSelectionPreserved')
+  equal(failure.completedSides, 1, 'resumableFailure.completedSides')
+  equal(failure.completedPartyPayoutPreserved, true, 'resumableFailure.completedPartyPayoutPreserved')
+  equal(failure.failedSideCursorUnchanged, true, 'resumableFailure.failedSideCursorUnchanged')
+  equal(failure.trigger, 'counterparty-htlc-deficit', 'resumableFailure.trigger')
 
   const terminal = record(root.terminalOutcome, 'terminalOutcome')
   equal(terminal.state, 'Claimed', 'terminalOutcome.state')
+  equal(terminal.expectedSides, 3, 'terminalOutcome.expectedSides')
+  equal(terminal.completedSides, 3, 'terminalOutcome.completedSides')
   equal(terminal.payoutsFixedByTerms, true, 'terminalOutcome.payoutsFixedByTerms')
   const terminalCustody = array(terminal.custody, 'terminalOutcome.custody')
-  const lastCustody = array(record(transitions[2], 'transitions[2]').custodyAfter, 'transitions[2].custodyAfter')
+  const lastIndex = transitions.length - 1
+  const lastCustody = array(
+    record(transitions[lastIndex], `transitions[${lastIndex}]`).custodyAfter,
+    `transitions[${lastIndex}].custodyAfter`,
+  )
   if (JSON.stringify(terminalCustody) !== JSON.stringify(lastCustody)) fail('terminalOutcome.custody')
   terminalCustody.forEach((item, index) => {
     const asset = record(item, `terminalOutcome.custody[${index}]`)
@@ -446,9 +512,35 @@ function validateCustody(items: unknown[], path: string): void {
     for (const field of ['htlcDeployed', 'htlcFunded', 'htlcReleased'] as const) {
       if (typeof asset[field] !== 'boolean') fail(path + '[' + index + '].' + field)
     }
-    for (const field of ['principalBalance', 'recipientBalance', 'htlcBalance', 'allowance'] as const) {
+    address(asset.payoutRecipient, path + '[' + index + '].payoutRecipient')
+    for (const field of [
+      'principalBalance',
+      'recipientBalance',
+      'htlcBalance',
+      'allowance',
+      'nextAssetIndex',
+    ] as const) {
       if (!/^[0-9]+$/.test(String(asset[field]))) fail(path + '[' + index + '].' + field)
     }
+  })
+}
+
+function validateSettlementCustody(
+  items: unknown[],
+  terms: ProtocolTerms,
+  transitionIndex: number,
+  path: string,
+): void {
+  items.forEach((item, index) => {
+    const asset = record(item, `${path}[${index}]`)
+    const released = transitionIndex >= (index === 0 ? 3 : 5)
+    const side = index === 0 ? terms.partySide : terms.counterpartySide
+    equal(asset.nextAssetIndex, released ? side.assets.length.toString() : '0', `${path}[${index}].nextAssetIndex`)
+    equal(
+      asset.payoutRecipient,
+      released ? side.recipient : '0x0000000000000000000000000000000000000000',
+      `${path}[${index}].payoutRecipient`,
+    )
   })
 }
 

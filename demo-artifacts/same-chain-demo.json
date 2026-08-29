@@ -1,5 +1,5 @@
 {
-  "schema": "quip-swap-same-chain-demo.v1",
+  "schema": "quip-swap-same-chain-demo.v2",
   "mockVerifier": true,
   "deployment": {
     "chainId": 31337,
@@ -75,6 +75,8 @@
       "htlcDeployed": false,
       "htlcFunded": false,
       "htlcReleased": false,
+      "nextAssetIndex": "0",
+      "payoutRecipient": "0x0000000000000000000000000000000000000000",
       "principalBalance": "10000000000000000000",
       "recipientBalance": "0",
       "htlcBalance": "0",
@@ -89,6 +91,8 @@
       "htlcDeployed": false,
       "htlcFunded": false,
       "htlcReleased": false,
+      "nextAssetIndex": "0",
+      "payoutRecipient": "0x0000000000000000000000000000000000000000",
       "principalBalance": "20000000000000000000",
       "recipientBalance": "0",
       "htlcBalance": "0",
@@ -104,7 +108,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0x5f58fd24261f0001cd0d6f9616d6de9e5b729d8073e2a90b0a23128b966f117e"
+      "transactionHash": "0x1597a7d586501496eca554fa05193af41fde7d2d4f92a84f275fa9fd9ac989c9"
     },
     {
       "role": "bob",
@@ -114,7 +118,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0xaac15285dcec24ee94f592cb5d5f49c47da4433dca2165f66f3641cbbaef63d7",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0xdd9eda568a0280bad883e6170498bdee99efc0c034c04dd54a8b33183a10390f"
+      "transactionHash": "0x3d55de1d910fb7c4516f8ae0cffcdeb627f213cd1ad0b6ae728409592d874f37"
     }
   ],
   "transitions": [
@@ -123,8 +127,9 @@
       "action": "alice-commit",
       "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "receipt": {
-        "transactionHash": "0x5f58fd24261f0001cd0d6f9616d6de9e5b729d8073e2a90b0a23128b966f117e",
+        "transactionHash": "0x1597a7d586501496eca554fa05193af41fde7d2d4f92a84f275fa9fd9ac989c9",
         "blockNumber": "17",
+        "status": "success",
         "events": [
           "directAuthorization.IdentityRegistered",
           "directAuthorization.AuthorizationNonceConsumed",
@@ -137,6 +142,9 @@
       "stateBefore": "Unused",
       "stateAfter": "PartyCommitted",
       "progression": "zero",
+      "expectedSides": 0,
+      "completedSides": 0,
+      "failureReason": null,
       "custodyAfter": [
         {
           "role": "alice-asset",
@@ -147,6 +155,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
           "principalBalance": "0",
           "recipientBalance": "0",
           "htlcBalance": "10000000000000000000",
@@ -161,6 +171,8 @@
           "htlcDeployed": false,
           "htlcFunded": false,
           "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
           "htlcBalance": "0",
@@ -189,8 +201,9 @@
       "action": "bob-commit",
       "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "receipt": {
-        "transactionHash": "0xdd9eda568a0280bad883e6170498bdee99efc0c034c04dd54a8b33183a10390f",
+        "transactionHash": "0x3d55de1d910fb7c4516f8ae0cffcdeb627f213cd1ad0b6ae728409592d874f37",
         "blockNumber": "18",
+        "status": "success",
         "events": [
           "directAuthorization.IdentityRegistered",
           "directAuthorization.AuthorizationNonceConsumed",
@@ -203,6 +216,9 @@
       "stateBefore": "PartyCommitted",
       "stateAfter": "BothCommitted",
       "progression": "zero",
+      "expectedSides": 0,
+      "completedSides": 0,
+      "failureReason": null,
       "custodyAfter": [
         {
           "role": "alice-asset",
@@ -213,6 +229,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
           "principalBalance": "0",
           "recipientBalance": "0",
           "htlcBalance": "10000000000000000000",
@@ -227,6 +245,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
           "principalBalance": "0",
           "recipientBalance": "0",
           "htlcBalance": "20000000000000000000",
@@ -252,20 +272,93 @@
     },
     {
       "sequence": 3,
-      "action": "permissionless-claim",
+      "action": "claim-selection",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x21ea531c42f0ce2926f886f1479e2fa330fdc600ad5b253adaf9f4695d3dacbf",
+        "transactionHash": "0xbcb9249a8ed360cce41bb02b8b2ce9c291c80f2741ec1224eebd792360a62e27",
         "blockNumber": "19",
+        "status": "success",
         "events": [
-          "swapHTLC.Released",
-          "swapHTLC.Released",
-          "sameChainWrapper.Claimed"
+          "sameChainWrapper.ClaimSelected"
         ]
       },
       "stateBefore": "BothCommitted",
-      "stateAfter": "Claimed",
+      "stateAfter": "ClaimPending",
       "progression": "not-applicable",
+      "expectedSides": 3,
+      "completedSides": 0,
+      "failureReason": null,
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "10000000000000000000",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "20000000000000000000",
+          "allowance": "0"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
+          "allowance": "0"
+        }
+      ]
+    },
+    {
+      "sequence": 4,
+      "action": "party-release",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "receipt": {
+        "transactionHash": "0x83c28ad64924f6f1e9b36dd6fe038c6e5302e72914ed7b4091817becc9048b0a",
+        "blockNumber": "20",
+        "status": "success",
+        "events": [
+          "swapHTLC.Released",
+          "sameChainWrapper.SettlementBatchExecuted",
+          "sameChainWrapper.SideReleased"
+        ]
+      },
+      "stateBefore": "ClaimPending",
+      "stateAfter": "ClaimPending",
+      "progression": "not-applicable",
+      "expectedSides": 3,
+      "completedSides": 1,
+      "failureReason": null,
       "custodyAfter": [
         {
           "role": "alice-asset",
@@ -276,6 +369,147 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "principalBalance": "0",
+          "recipientBalance": "10000000000000000000",
+          "htlcBalance": "0",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "20000000000000000000",
+          "allowance": "0"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "0",
+          "recipientBalance": "10000000000000000000",
+          "htlcBalance": "-10000000000000000000",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
+          "allowance": "0"
+        }
+      ]
+    },
+    {
+      "sequence": 5,
+      "action": "counterparty-release-failed",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "receipt": {
+        "transactionHash": "0x19f368b2118bfbda920c62d2c4460242740d9cf4e642d40fa0dbcf5a2b49a79b",
+        "blockNumber": "21",
+        "status": "reverted",
+        "events": []
+      },
+      "stateBefore": "ClaimPending",
+      "stateAfter": "ClaimPending",
+      "progression": "not-applicable",
+      "expectedSides": 3,
+      "completedSides": 1,
+      "failureReason": "insufficient-gas",
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "principalBalance": "0",
+          "recipientBalance": "10000000000000000000",
+          "htlcBalance": "0",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principal": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "recipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "token": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+          "htlc": "0xa9BDFfcB52713b18172fB6C34199B41bE5DDcb25",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "20000000000000000000",
+          "allowance": "0"
+        }
+      ],
+      "balanceDeltas": [
+        {
+          "role": "alice-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
+          "allowance": "0"
+        },
+        {
+          "role": "bob-asset",
+          "principalBalance": "0",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
+          "allowance": "0"
+        }
+      ]
+    },
+    {
+      "sequence": 6,
+      "action": "counterparty-release-retry",
+      "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "receipt": {
+        "transactionHash": "0x030714937324601052601113e3034f1879a58ecc545e2168867e1512e67b5726",
+        "blockNumber": "22",
+        "status": "success",
+        "events": [
+          "swapHTLC.Released",
+          "sameChainWrapper.SettlementBatchExecuted",
+          "sameChainWrapper.SideReleased",
+          "sameChainWrapper.Claimed"
+        ]
+      },
+      "stateBefore": "ClaimPending",
+      "stateAfter": "Claimed",
+      "progression": "not-applicable",
+      "expectedSides": 3,
+      "completedSides": 3,
+      "failureReason": null,
+      "custodyAfter": [
+        {
+          "role": "alice-asset",
+          "principal": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+          "recipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "token": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+          "htlc": "0x43a95d978f5f57c128e8D2d0E5c27B22c202b91f",
+          "htlcDeployed": true,
+          "htlcFunded": true,
+          "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "principalBalance": "0",
           "recipientBalance": "10000000000000000000",
           "htlcBalance": "0",
@@ -290,6 +524,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "principalBalance": "0",
           "recipientBalance": "20000000000000000000",
           "htlcBalance": "0",
@@ -300,8 +536,8 @@
         {
           "role": "alice-asset",
           "principalBalance": "0",
-          "recipientBalance": "10000000000000000000",
-          "htlcBalance": "-10000000000000000000",
+          "recipientBalance": "0",
+          "htlcBalance": "0",
           "allowance": "0"
         },
         {
@@ -317,7 +553,7 @@
   "negativeControls": [
     {
       "scenario": "counterparty-first",
-      "errorName": "CommitCallbackFailed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -325,7 +561,7 @@
     },
     {
       "scenario": "commit-at-deadline",
-      "errorName": "CommitCallbackFailed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -333,7 +569,7 @@
     },
     {
       "scenario": "repeated-party-commit",
-      "errorName": "0x3be62907",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -341,7 +577,7 @@
     },
     {
       "scenario": "mismatched-terms",
-      "errorName": "CommitCallbackFailed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -349,7 +585,7 @@
     },
     {
       "scenario": "nonzero-progression",
-      "errorName": "CommitCallbackFailed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -365,7 +601,7 @@
     },
     {
       "scenario": "wrong-signature",
-      "errorName": "InvalidPQAuthorization",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -373,7 +609,7 @@
     },
     {
       "scenario": "replayed-action-nonce",
-      "errorName": "AuthorizationNonceAlreadyConsumed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -381,7 +617,7 @@
     },
     {
       "scenario": "claim-from-party-committed",
-      "errorName": "MissingHTLC",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -389,7 +625,7 @@
     },
     {
       "scenario": "reclaim-before-both-releases",
-      "errorName": "ReclaimWindowClosed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -397,7 +633,7 @@
     },
     {
       "scenario": "wrong-settlement-secret",
-      "errorName": "InvalidSettlementSecret",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -405,7 +641,7 @@
     },
     {
       "scenario": "claim-at-deadline",
-      "errorName": "ClaimWindowClosed",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
@@ -413,26 +649,26 @@
     },
     {
       "scenario": "claim-after-terminal",
-      "errorName": "InvalidSameChainState",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
-      "state": "Claimed"
+      "state": "ClaimPending"
     },
     {
       "scenario": "reclaim-after-terminal",
-      "errorName": "InvalidSameChainState",
+      "errorName": "TransactionReverted",
       "reverted": true,
       "stateAndCustodyUnchanged": true,
       "authorizationNoncePreserved": true,
-      "state": "Claimed"
+      "state": "ClaimPending"
     }
   ],
   "recoveries": [
     {
       "outcome": "party-only-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0xec5b11ce4c59cfe9885d381dea33ddaaad0cedfa8820befdb0066f74d799ccf4",
+      "transactionHash": "0xc44df3392184b3a71d4d6c328583d02ef8aee2d55868d735521b4c9ca0fb4396",
       "releaseTime": "4000001400",
       "stateBefore": "PartyCommitted",
       "stateAfter": "Reclaimed",
@@ -446,6 +682,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "principalBalance": "10000000000000000000",
           "recipientBalance": "0",
           "htlcBalance": "0",
@@ -460,6 +698,8 @@
           "htlcDeployed": false,
           "htlcFunded": false,
           "htlcReleased": false,
+          "nextAssetIndex": "0",
+          "payoutRecipient": "0x0000000000000000000000000000000000000000",
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
           "htlcBalance": "0",
@@ -471,9 +711,9 @@
     {
       "outcome": "both-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0xab0df3b6bfb4b1a9d21e86b56b1134dcf9ada907a912ccae061591b9a566dffc",
+      "transactionHash": "0xaad66218c562cb75b224847a073a2377ddbd1147cd5ed655d8d81cde734f4f07",
       "releaseTime": "4000001400",
-      "stateBefore": "BothCommitted",
+      "stateBefore": "ReclaimPending",
       "stateAfter": "Reclaimed",
       "custodyAfter": [
         {
@@ -485,6 +725,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
           "principalBalance": "10000000000000000000",
           "recipientBalance": "0",
           "htlcBalance": "0",
@@ -499,6 +741,8 @@
           "htlcDeployed": true,
           "htlcFunded": true,
           "htlcReleased": true,
+          "nextAssetIndex": "1",
+          "payoutRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
           "principalBalance": "20000000000000000000",
           "recipientBalance": "0",
           "htlcBalance": "0",
@@ -508,16 +752,20 @@
       "fixedReclaimRecipients": true
     }
   ],
-  "atomicRollback": {
+  "resumableFailure": {
     "trigger": "counterparty-htlc-deficit",
-    "errorName": "0x90b8ec18",
+    "errorName": "TransactionReverted",
     "stateBefore": "BothCommitted",
-    "stateAfter": "BothCommitted",
-    "firstPayoutRolledBack": true,
-    "htlcBalancesUnchanged": true
+    "stateAfter": "ReclaimPending",
+    "outcomeSelectionPreserved": true,
+    "completedSides": 1,
+    "completedPartyPayoutPreserved": true,
+    "failedSideCursorUnchanged": true
   },
   "terminalOutcome": {
     "state": "Claimed",
+    "expectedSides": 3,
+    "completedSides": 3,
     "custody": [
       {
         "role": "alice-asset",
@@ -528,6 +776,8 @@
         "htlcDeployed": true,
         "htlcFunded": true,
         "htlcReleased": true,
+        "nextAssetIndex": "1",
+        "payoutRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         "principalBalance": "0",
         "recipientBalance": "10000000000000000000",
         "htlcBalance": "0",
@@ -542,6 +792,8 @@
         "htlcDeployed": true,
         "htlcFunded": true,
         "htlcReleased": true,
+        "nextAssetIndex": "1",
+        "payoutRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
         "principalBalance": "0",
         "recipientBalance": "20000000000000000000",
         "htlcBalance": "0",

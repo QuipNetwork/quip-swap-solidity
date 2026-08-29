@@ -23,7 +23,7 @@ import {runSameChainAdversarial} from './adversarial.js'
 import type {SameChainSuccessTrace} from './success.js'
 import type {SameChainAdversarialTrace} from './adversarial.js'
 
-export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v1' as const
+export const SAME_CHAIN_DEMO_SCHEMA = 'quip-swap-same-chain-demo.v2' as const
 export const SAME_CHAIN_DEMO_CHAIN_ID = 31_337
 export const SAME_CHAIN_DEMO_MOCK_VERIFIER = true as const
 

@@ -32,7 +32,7 @@ try {
   const execution = await runSameChainDemoFoundation(
     connectChain(anvil.rpcUrl, anvil.chainId),
     loadArtifact,
-    message => console.log(`\x1b[32m[same-chain demo ${String(++step).padStart(2, '0')}/11] ${message}\x1b[0m`),
+    message => console.log(`\x1b[32m[same-chain demo ${String(++step).padStart(2, '0')}] ${message}\x1b[0m`),
   )
   const artifact = buildSameChainDemoArtifact(execution)
   validateSameChainDemoArtifact(artifact)
@@ -54,7 +54,7 @@ try {
     })),
     negativeControls: artifact.negativeControls.length,
     recoveries: artifact.recoveries.map(recovery => recovery.outcome),
-    atomicRollback: artifact.atomicRollback,
+    resumableFailure: artifact.resumableFailure,
     terminalOutcome: artifact.terminalOutcome,
     secretsPersisted: false,
     artifact: output,

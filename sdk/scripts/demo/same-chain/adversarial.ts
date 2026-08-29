@@ -63,19 +63,21 @@ export interface SameChainRecoveryTrace {
   readonly fixedReclaimRecipients: true
 }
 
-export interface SameChainAtomicRollbackTrace {
+export interface SameChainResumableFailureTrace {
   readonly trigger: 'counterparty-htlc-deficit'
   readonly errorName: string
   readonly stateBefore: 'BothCommitted'
-  readonly stateAfter: 'BothCommitted'
-  readonly firstPayoutRolledBack: true
-  readonly htlcBalancesUnchanged: true
+  readonly stateAfter: 'ReclaimPending'
+  readonly outcomeSelectionPreserved: true
+  readonly completedSides: 1
+  readonly completedPartyPayoutPreserved: true
+  readonly failedSideCursorUnchanged: true
 }
 
 export interface SameChainAdversarialTrace {
   readonly negativeControls: readonly SameChainNegativeRecord[]
   readonly recoveries: readonly [SameChainRecoveryTrace, SameChainRecoveryTrace]
-  readonly atomicRollback: SameChainAtomicRollbackTrace
+  readonly resumableFailure: SameChainResumableFailureTrace
 }
 
 interface BoundarySnapshot {
@@ -97,14 +99,14 @@ export async function runSameChainAdversarial(
   onProgress?.('Demonstrating exact one-sided reclaim')
   const partyRecovery = await runPartyRecovery(chain, deployment, terms, lock)
 
-  onProgress?.('Demonstrating atomic two-sided reclaim and payout rollback')
-  const {recovery: bothRecovery, rollback} = await runBothRecovery(chain, deployment, terms, lock)
+  onProgress?.('Demonstrating resumable two-sided reclaim after one side fails')
+  const {recovery: bothRecovery, failure} = await runBothRecovery(chain, deployment, terms, lock)
 
   const final = await boundarySnapshot(chain, deployment, terms, lock)
   if (final.protocol.state !== 'Unused' || final.aliceIdentity.active || final.bobIdentity.active) {
     throw new Error('isolated adversarial branches changed the primary demo state')
   }
-  return {negativeControls, recoveries: [partyRecovery, bothRecovery], atomicRollback: rollback}
+  return {negativeControls, recoveries: [partyRecovery, bothRecovery], resumableFailure: failure}
 }
 
 async function runNegativeControls(
@@ -346,7 +348,7 @@ async function runBothRecovery(
   deployment: Omit<DemoChainDeployment, 'funding'>,
   terms: ProtocolTerms,
   lock: Hex32,
-): Promise<{readonly recovery: SameChainRecoveryTrace; readonly rollback: SameChainAtomicRollbackTrace}> {
+): Promise<{readonly recovery: SameChainRecoveryTrace; readonly failure: SameChainResumableFailureTrace}> {
   const root = await chain.testClient.snapshot()
   try {
     await submitSameChainLazyCommit({
@@ -398,16 +400,25 @@ async function runBothRecovery(
     }
     if (failure === undefined) throw new Error('HTLC-deficit reclaim unexpectedly succeeded')
     const afterFailure = await boundarySnapshot(chain, deployment, terms, lock)
-    if (stable(beforeFailure) !== stable(afterFailure) || afterFailure.protocol.state !== 'BothCommitted') {
-      throw new Error('failed dual reclaim did not roll back atomically')
+    if (
+      afterFailure.protocol.state !== 'ReclaimPending'
+      || afterFailure.protocol.expectedSides !== 3
+      || afterFailure.protocol.completedSides !== 1
+      || !afterFailure.protocol.assets[0].htlcReleased
+      || afterFailure.protocol.assets[1].htlcReleased
+      || afterFailure.protocol.assets[1].nextAssetIndex !== beforeFailure.protocol.assets[1].nextAssetIndex
+    ) {
+      throw new Error('failed counterparty reclaim did not preserve selected outcome and party progress')
     }
-    const rollback: SameChainAtomicRollbackTrace = {
+    const resumableFailure: SameChainResumableFailureTrace = {
       trigger: 'counterparty-htlc-deficit',
       errorName: errorLabel(failure),
       stateBefore: 'BothCommitted',
-      stateAfter: 'BothCommitted',
-      firstPayoutRolledBack: true,
-      htlcBalancesUnchanged: true,
+      stateAfter: 'ReclaimPending',
+      outcomeSelectionPreserved: true,
+      completedSides: 1,
+      completedPartyPayoutPreserved: true,
+      failedSideCursorUnchanged: true,
     }
 
     hash = await chain.deployer.walletClient.writeContract({
@@ -420,10 +431,10 @@ async function runBothRecovery(
     })
     await requireSuccess(chain, hash)
     const before = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
-    const reclaimHash = await submitReclaimBoth(chain, deployment, terms, lock)
+    const reclaimHash = await executeCounterpartySettlement(chain, deployment, terms, lock)
     const after = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
     if (
-      before.state !== 'BothCommitted'
+      before.state !== 'ReclaimPending'
       || after.state !== 'Reclaimed'
       || after.assets[0].principalBalance !== terms.partySide.assets[0]!.amount.toString()
       || after.assets[1].principalBalance !== terms.counterpartySide.assets[0]!.amount.toString()
@@ -432,7 +443,7 @@ async function runBothRecovery(
       throw new Error('two-sided reclaim did not restore both signed assets')
     }
     return {
-      rollback,
+      failure: resumableFailure,
       recovery: {
         outcome: 'both-reclaim',
         caller: chain.charlie.address,
@@ -447,6 +458,27 @@ async function runBothRecovery(
   } finally {
     await chain.testClient.revert({id: root})
   }
+}
+
+async function executeCounterpartySettlement(
+  chain: ChainContext,
+  deployment: Omit<DemoChainDeployment, 'funding'>,
+  terms: ProtocolTerms,
+  lock: Hex32,
+): Promise<Hash> {
+  const client = createProtocolClient({
+    addresses: deployment.addresses,
+    publicClient: chain.publicClient,
+    walletClient: chain.charlie.walletClient,
+  })
+  const hash = await client.executeSameChainSettlement(
+    terms,
+    lock,
+    false,
+    BigInt(terms.counterpartySide.assets.length),
+  )
+  await requireSuccess(chain, hash)
+  return hash
 }
 
 async function rejected(
