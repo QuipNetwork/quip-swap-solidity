@@ -24,6 +24,55 @@ library Settlement {
   error ReclaimWindowClosed();
   error MissingHTLC();
 
+  /// @notice Selects the same-chain claim outcome without executing a payout.
+  function selectSameChainClaim(
+    SameChainStateMachine.Layout storage self,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    bytes32 secret,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    trade = ProtocolHashing.tradeId(terms);
+    _requireSecret(trade, lock, secret);
+    uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
+      ? terms.partySide.claimDeadline
+      : terms.counterpartySide.claimDeadline;
+    if (timestamp >= deadline) revert ClaimWindowClosed();
+    self.selectClaim(trade, lock);
+  }
+
+  /// @notice Selects one-sided same-chain reclaim without executing a payout.
+  function selectSameChainPartyReclaim(
+    SameChainStateMachine.Layout storage self,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
+    trade = ProtocolHashing.tradeId(terms);
+    self.selectReclaimParty(trade, lock);
+  }
+
+  /// @notice Selects two-sided same-chain reclaim without executing a payout.
+  function selectSameChainBothReclaim(
+    SameChainStateMachine.Layout storage self,
+    ProtocolTerms memory terms,
+    bytes32 lock,
+    uint256 timestamp
+  ) internal returns (bytes32 trade) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
+      revert ReclaimWindowClosed();
+    }
+    trade = ProtocolHashing.tradeId(terms);
+    self.selectReclaimBoth(trade, lock);
+  }
+
   /// @notice Claims one local cross-chain leg held by its dedicated HTLC.
   function claimCrossChainHTLC(
     CrossChainStateMachine.Layout storage self,
@@ -76,17 +125,9 @@ library Settlement {
     bytes32 secret,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    trade = ProtocolHashing.tradeId(terms);
-    _requireSecret(trade, lock, secret);
-    uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
-      ? terms.partySide.claimDeadline
-      : terms.counterpartySide.claimDeadline;
-    if (timestamp >= deadline) revert ClaimWindowClosed();
+    trade = selectSameChainClaim(self, terms, lock, secret, timestamp);
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
-    self.selectClaim(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.recipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.recipient);
     self.completeClaim(trade, lock);
@@ -100,13 +141,9 @@ library Settlement {
     bytes32 lock,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
+    trade = selectSameChainPartyReclaim(self, terms, lock, timestamp);
     if (partyHTLC == address(0)) revert MissingHTLC();
 
-    trade = ProtocolHashing.tradeId(terms);
-    self.selectReclaimParty(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
     self.completeReclaim(trade, lock);
   }
@@ -120,15 +157,9 @@ library Settlement {
     bytes32 lock,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
-      revert ReclaimWindowClosed();
-    }
+    trade = selectSameChainBothReclaim(self, terms, lock, timestamp);
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
-    trade = ProtocolHashing.tradeId(terms);
-    self.selectReclaimBoth(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
     self.completeReclaim(trade, lock);
@@ -190,20 +221,9 @@ library Settlement {
     bytes32 secret,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    // Same-chain settlement requires both ordered sides to be local.
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    trade = ProtocolHashing.tradeId(terms);
-    // A single trade-bound preimage settles both escrows.
-    _requireSecret(trade, lock, secret);
-    // Atomic settlement must fit inside both claim windows.
-    uint256 deadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
-      ? terms.partySide.claimDeadline
-      : terms.counterpartySide.claimDeadline;
-    if (timestamp >= deadline) revert ClaimWindowClosed();
+    trade = selectSameChainClaim(self, terms, lock, secret, timestamp);
 
     // Select claim before either transfer; completion remains atomic in this compatibility path.
-    self.selectClaim(trade, lock);
     // Release each escrow to the recipient fixed by its own side terms, then complete claim.
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
@@ -218,13 +238,7 @@ library Settlement {
     bytes32 lock,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    // Only the first escrow exists on this state-machine branch.
-    if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
-
-    trade = ProtocolHashing.tradeId(terms);
-    self.selectReclaimParty(trade, lock);
+    trade = selectSameChainPartyReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     self.completeReclaim(trade, lock);
   }
@@ -237,15 +251,7 @@ library Settlement {
     bytes32 lock,
     uint256 timestamp
   ) internal returns (bytes32 trade) {
-    _validate(terms, WrapperMode.SameChain);
-    _requireBothLocal(terms);
-    // Dual reclaim waits for both independently signed release times.
-    if (timestamp < terms.partySide.reclaimRelease || timestamp < terms.counterpartySide.reclaimRelease) {
-      revert ReclaimWindowClosed();
-    }
-
-    trade = ProtocolHashing.tradeId(terms);
-    self.selectReclaimBoth(trade, lock);
+    trade = selectSameChainBothReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
     self.completeReclaim(trade, lock);

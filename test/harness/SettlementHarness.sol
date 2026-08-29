@@ -61,6 +61,18 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
     sameChain.claimSameChain(custody, terms, lock, secret, block.timestamp);
   }
 
+  function selectSameChainClaim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external {
+    sameChain.selectSameChainClaim(terms, lock, secret, block.timestamp);
+  }
+
+  function selectSameChainPartyReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
+    sameChain.selectSameChainPartyReclaim(terms, lock, block.timestamp);
+  }
+
+  function selectSameChainBothReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
+    sameChain.selectSameChainBothReclaim(terms, lock, block.timestamp);
+  }
+
   function reclaimSameChainParty(ProtocolTerms calldata terms, bytes32 lock) external {
     sameChain.reclaimSameChainParty(custody, terms, lock, block.timestamp);
   }
