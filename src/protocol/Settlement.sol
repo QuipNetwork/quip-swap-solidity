@@ -4,7 +4,7 @@ pragma solidity 0.8.33;
 import {AssetCustody} from '../assets/AssetHandling.sol';
 import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
-import {ProtocolTerms, SideTerms, WrapperMode} from './ProtocolTypes.sol';
+import {ProtocolTerms, SameChainState, SideTerms, WrapperMode} from './ProtocolTypes.sol';
 import {CrossChainStateMachine} from './StateMachines.sol';
 import {SameChainStateMachine} from './StateMachines.sol';
 
@@ -23,6 +23,8 @@ library Settlement {
   error ClaimWindowClosed();
   error ReclaimWindowClosed();
   error MissingHTLC();
+  error InvalidBatchSize();
+  error BatchLimitTooSmall(uint256 requiredAssets, uint256 maxAssets);
 
   /// @notice Selects the same-chain claim outcome without executing a payout.
   function selectSameChainClaim(
@@ -93,6 +95,42 @@ library Settlement {
     self.completeReclaim(trade, lock);
   }
 
+  /// @notice Executes one selected same-chain HTLC side without rechecking selection timing.
+  /// @dev Until HTLC batching is added, maxAssets must cover the side's complete asset list.
+  function executeSelectedSameChainHTLC(
+    SameChainStateMachine.Layout storage self,
+    address htlc,
+    ProtocolTerms memory terms,
+    bool party,
+    bytes32 lock,
+    uint256 maxAssets
+  ) internal returns (bytes32 trade, SameChainState outcome, bool terminal) {
+    _validate(terms, WrapperMode.SameChain);
+    _requireBothLocal(terms);
+    if (htlc == address(0)) revert MissingHTLC();
+    if (maxAssets == 0) revert InvalidBatchSize();
+
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    if (maxAssets < side.assets.length) revert BatchLimitTooSmall(side.assets.length, maxAssets);
+    trade = ProtocolHashing.tradeId(terms);
+    outcome = self.state(trade, lock);
+    if (outcome != SameChainState.ClaimPending && outcome != SameChainState.ReclaimPending) {
+      revert SameChainStateMachine.SettlementNotPending(outcome);
+    }
+
+    // Mark before the external call; a failed payout rolls this write back atomically.
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(party));
+    address recipient = outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
+    ISwapHTLC(htlc).release(side, recipient);
+
+    (uint8 expectedSides, uint8 completedSides) = self.settlementProgress(trade, lock);
+    terminal = completedSides == expectedSides;
+    if (terminal) {
+      if (outcome == SameChainState.ClaimPending) completeSelectedSameChainClaim(self, trade, lock);
+      else completeSelectedSameChainReclaim(self, trade, lock);
+    }
+  }
+
   /// @notice Claims one local cross-chain leg held by its dedicated HTLC.
   function claimCrossChainHTLC(
     CrossChainStateMachine.Layout storage self,
@@ -149,7 +187,9 @@ library Settlement {
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.recipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.recipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
     completeSelectedSameChainClaim(self, trade, lock);
   }
 
@@ -165,6 +205,7 @@ library Settlement {
     if (partyHTLC == address(0)) revert MissingHTLC();
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     completeSelectedSameChainReclaim(self, trade, lock);
   }
 
@@ -181,7 +222,9 @@ library Settlement {
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
     completeSelectedSameChainReclaim(self, trade, lock);
   }
 
@@ -246,7 +289,9 @@ library Settlement {
     // Select claim before either transfer; completion remains atomic in this compatibility path.
     // Release each escrow to the recipient fixed by its own side terms, then complete claim.
     custody.release(terms.partySide, terms.partySide.recipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
     completeSelectedSameChainClaim(self, trade, lock);
   }
 
@@ -260,6 +305,7 @@ library Settlement {
   ) internal returns (bytes32 trade) {
     trade = selectSameChainPartyReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     completeSelectedSameChainReclaim(self, trade, lock);
   }
 
@@ -273,7 +319,9 @@ library Settlement {
   ) internal returns (bytes32 trade) {
     trade = selectSameChainBothReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+    self.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
     completeSelectedSameChainReclaim(self, trade, lock);
   }
 

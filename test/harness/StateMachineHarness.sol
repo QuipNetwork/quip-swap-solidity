@@ -38,6 +38,13 @@ contract StateMachineHarness {
     return sameChain.state(tradeId, lock);
   }
 
+  function sameProgress(
+    bytes32 tradeId,
+    bytes32 lock
+  ) external view returns (uint8 expectedSides, uint8 completedSides) {
+    return sameChain.settlementProgress(tradeId, lock);
+  }
+
   function sameCommitParty(bytes32 tradeId, bytes32 lock) external {
     sameChain.commitParty(tradeId, lock);
   }
@@ -64,6 +71,10 @@ contract StateMachineHarness {
 
   function sameCompleteReclaim(bytes32 tradeId, bytes32 lock) external {
     sameChain.completeReclaim(tradeId, lock);
+  }
+
+  function sameMarkSideComplete(bytes32 tradeId, bytes32 lock, SideTag side) external {
+    sameChain.markSideComplete(tradeId, lock, side);
   }
 
   function sameCompleteClaimThenFail(bytes32 tradeId, bytes32 lock) external {

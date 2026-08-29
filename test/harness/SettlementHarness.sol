@@ -74,11 +74,25 @@ contract SettlementHarness is ERC721Holder, ERC1155Holder {
   }
 
   function completeSelectedSameChainClaim(ProtocolTerms calldata terms, bytes32 lock) external {
-    sameChain.completeSelectedSameChainClaim(ProtocolHashing.tradeId(terms), lock);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    sameChain.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
+    sameChain.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
+    sameChain.completeSelectedSameChainClaim(trade, lock);
   }
 
   function completeSelectedSameChainReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
-    sameChain.completeSelectedSameChainReclaim(ProtocolHashing.tradeId(terms), lock);
+    bytes32 trade = ProtocolHashing.tradeId(terms);
+    (uint8 expectedSides,) = sameChain.settlementProgress(trade, lock);
+    sameChain.markSideComplete(trade, lock, ProtocolHashing.sideTag(true));
+    if (expectedSides == 3) sameChain.markSideComplete(trade, lock, ProtocolHashing.sideTag(false));
+    sameChain.completeSelectedSameChainReclaim(trade, lock);
+  }
+
+  function sameChainProgress(
+    ProtocolTerms calldata terms,
+    bytes32 lock
+  ) external view returns (uint8 expectedSides, uint8 completedSides) {
+    return sameChain.settlementProgress(ProtocolHashing.tradeId(terms), lock);
   }
 
   function reclaimSameChainParty(ProtocolTerms calldata terms, bytes32 lock) external {

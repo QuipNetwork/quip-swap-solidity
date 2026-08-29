@@ -177,7 +177,7 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(malicious.balanceOf(counterpartyHTLC), 20);
   }
 
-  function test_failedSecondSameChainPayoutRollsBackBothHTLCsAndState() public {
+  function test_failedSecondSameChainPayoutPreservesSelectedFirstSideProgress() public {
     MaliciousERC20Mock malicious = new MaliciousERC20Mock();
     support.setAssetSupport(AssetType.ERC20, address(malicious), true);
     ProtocolTerms memory terms = _sameTerms();
@@ -192,19 +192,21 @@ contract DeployedWrapperGuardsTest is Test {
     address counterpartyHTLC = same.htlcOf(terms, false, lock);
     malicious.setBehavior(MaliciousERC20Mock.Behavior.NoOp);
 
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, 1);
     vm.expectRevert(AssetTransfers.UnexpectedAmountReceived.selector);
-    same.claim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, false, 1);
 
-    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
-    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
     assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
-    assertEq(partyHTLC.balance, 1);
+    assertEq(partyHTLC.balance, 0);
     assertEq(malicious.balanceOf(counterpartyHTLC), 20);
-    assertEq(BOB_RECIPIENT.balance, 0);
+    assertEq(BOB_RECIPIENT.balance, 1);
     assertEq(malicious.balanceOf(ALICE_RECIPIENT), 0);
 
     malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
-    same.claim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, false, 1);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
     assertTrue(SwapHTLC(payable(partyHTLC)).released());
     assertTrue(SwapHTLC(payable(counterpartyHTLC)).released());
@@ -310,22 +312,22 @@ contract DeployedWrapperGuardsTest is Test {
     ProtocolTerms memory crossTerms = _crossTerms();
     bytes32 crossLock = _lock(crossTerms);
     vm.expectRevert(Settlement.InvalidSettlementMode.selector);
-    same.claim(crossTerms, crossLock, SECRET);
+    same.selectClaim(crossTerms, crossLock, SECRET);
     vm.expectRevert(Settlement.InvalidSettlementMode.selector);
-    same.reclaimParty(crossTerms, crossLock);
+    same.selectReclaim(crossTerms, crossLock);
     vm.expectRevert(Settlement.InvalidSettlementMode.selector);
-    same.reclaimBoth(crossTerms, crossLock);
+    same.executeSettlement(crossTerms, crossLock, true, 1);
 
     ProtocolTerms memory nonlocal = _sameTerms();
     nonlocal.partySide.chainId = block.chainid + 1;
     nonlocal.counterpartySide.chainId = block.chainid + 1;
     bytes32 nonlocalLock = _lock(nonlocal);
     vm.expectRevert(Settlement.InvalidLocalChain.selector);
-    same.claim(nonlocal, nonlocalLock, SECRET);
+    same.selectClaim(nonlocal, nonlocalLock, SECRET);
     vm.expectRevert(Settlement.InvalidLocalChain.selector);
-    same.reclaimParty(nonlocal, nonlocalLock);
+    same.selectReclaim(nonlocal, nonlocalLock);
     vm.expectRevert(Settlement.InvalidLocalChain.selector);
-    same.reclaimBoth(nonlocal, nonlocalLock);
+    same.executeSettlement(nonlocal, nonlocalLock, true, 1);
   }
 
   function test_crossWrapperRejectsMalformedEvidenceProgressionAndUnsupportedAssetsAtomically() public {
@@ -518,10 +520,45 @@ contract DeployedWrapperGuardsTest is Test {
     same.selectClaim(terms, lock, SECRET);
 
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 0);
     assertFalse(SwapHTLC(payable(partyHTLC)).released());
     assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
     assertEq(BOB_RECIPIENT.balance, 0);
     assertEq(ALICE_RECIPIENT.balance, 0);
+  }
+
+  function test_sameChainUsesOnlySelectedSideExecutionSurface() public {
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 92, 1);
+    _commitSame(terms, false, lock, 93, 2);
+
+    vm.expectRevert(
+      abi.encodeWithSelector(SameChainStateMachine.SettlementNotPending.selector, SameChainState.BothCommitted)
+    );
+    same.executeSettlement(terms, lock, true, 1);
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
+    same.claim(terms, lock, SECRET);
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
+    same.reclaimParty(terms, lock);
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
+    same.reclaimBoth(terms, lock);
+
+    same.selectClaim(terms, lock, SECRET);
+    vm.expectRevert(Settlement.InvalidBatchSize.selector);
+    same.executeSettlement(terms, lock, true, 0);
+    same.executeSettlement(terms, lock, true, 1);
+    (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+
+    vm.expectRevert(abi.encodeWithSelector(SameChainStateMachine.SettlementSideAlreadyComplete.selector, SideTag.Party));
+    same.executeSettlement(terms, lock, true, 1);
+    same.executeSettlement(terms, lock, false, 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
   }
 
   function test_sameChainReclaimSelectionDoesNotCallTheApplicableHTLCs() public {
@@ -537,6 +574,9 @@ contract DeployedWrapperGuardsTest is Test {
     emit ReclaimSelected(partyTrade, partyLock, 1);
     same.selectReclaim(partyTerms, partyLock);
     assertEq(uint8(same.state(partyTerms, partyLock)), uint8(SameChainState.ReclaimPending));
+    (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(partyTerms, partyLock);
+    assertEq(expectedSides, 1);
+    assertEq(completedSides, 0);
     assertFalse(SwapHTLC(payable(partyHTLC)).released());
 
     vm.warp(100);
@@ -557,6 +597,9 @@ contract DeployedWrapperGuardsTest is Test {
     emit ReclaimSelected(bothTrade, bothLock, 3);
     same.selectReclaim(bothTerms, bothLock);
     assertEq(uint8(same.state(bothTerms, bothLock)), uint8(SameChainState.ReclaimPending));
+    (expectedSides, completedSides) = same.settlementProgress(bothTerms, bothLock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 0);
     assertFalse(SwapHTLC(payable(bothPartyHTLC)).released());
     assertFalse(SwapHTLC(payable(bothCounterpartyHTLC)).released());
   }
@@ -576,11 +619,7 @@ contract DeployedWrapperGuardsTest is Test {
       )
     );
     same.selectClaim(terms, lock, SECRET);
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
-      )
-    );
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
     same.claim(terms, lock, SECRET);
     vm.expectRevert(
       abi.encodeWithSelector(
@@ -602,11 +641,7 @@ contract DeployedWrapperGuardsTest is Test {
       )
     );
     same.selectReclaim(terms, lock);
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.ClaimPending
-      )
-    );
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
     same.reclaimBoth(terms, lock);
 
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
@@ -624,13 +659,7 @@ contract DeployedWrapperGuardsTest is Test {
     vm.warp(terms.partySide.reclaimRelease);
     same.selectReclaim(terms, lock);
 
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        SameChainStateMachine.InvalidSameChainState.selector,
-        SameChainState.PartyCommitted,
-        SameChainState.ReclaimPending
-      )
-    );
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
     same.reclaimParty(terms, lock);
     vm.expectRevert(Settlement.ClaimWindowClosed.selector);
     same.selectClaim(terms, lock, SECRET);
@@ -649,13 +678,7 @@ contract DeployedWrapperGuardsTest is Test {
       )
     );
     same.selectReclaim(terms, lock);
-    vm.expectRevert(
-      abi.encodeWithSelector(
-        SameChainStateMachine.InvalidSameChainState.selector,
-        SameChainState.BothCommitted,
-        SameChainState.ReclaimPending
-      )
-    );
+    vm.expectRevert(SameChainWrapper.AtomicSettlementDisabled.selector);
     same.reclaimBoth(terms, lock);
 
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ReclaimPending));
@@ -676,8 +699,12 @@ contract DeployedWrapperGuardsTest is Test {
     address claimCounterpartyHTLC = same.htlcOf(claimTerms, false, claimLock);
 
     vm.expectEmit(true, true, false, true, address(same));
+    emit ClaimSelected(claimTrade, claimLock);
+    same.selectClaim(claimTerms, claimLock, SECRET);
+    same.executeSettlement(claimTerms, claimLock, true, 1);
+    vm.expectEmit(true, true, false, true, address(same));
     emit Claimed(claimTrade, claimLock);
-    same.claim(claimTerms, claimLock, SECRET);
+    same.executeSettlement(claimTerms, claimLock, false, 1);
     assertEq(uint8(same.state(claimTerms, claimLock)), uint8(SameChainState.Claimed));
     assertTrue(SwapHTLC(payable(claimPartyHTLC)).released());
     assertTrue(SwapHTLC(payable(claimCounterpartyHTLC)).released());
@@ -695,8 +722,12 @@ contract DeployedWrapperGuardsTest is Test {
     address reclaimCounterpartyHTLC = same.htlcOf(reclaimTerms, false, reclaimLock);
     vm.warp(reclaimTerms.counterpartySide.reclaimRelease);
     vm.expectEmit(true, true, false, true, address(same));
+    emit ReclaimSelected(reclaimTrade, reclaimLock, 3);
+    same.selectReclaim(reclaimTerms, reclaimLock);
+    same.executeSettlement(reclaimTerms, reclaimLock, false, 1);
+    vm.expectEmit(true, true, false, true, address(same));
     emit Reclaimed(reclaimTrade, reclaimLock);
-    same.reclaimBoth(reclaimTerms, reclaimLock);
+    same.executeSettlement(reclaimTerms, reclaimLock, true, 1);
     assertEq(uint8(same.state(reclaimTerms, reclaimLock)), uint8(SameChainState.Reclaimed));
     assertTrue(SwapHTLC(payable(reclaimPartyHTLC)).released());
     assertTrue(SwapHTLC(payable(reclaimCounterpartyHTLC)).released());
@@ -711,7 +742,8 @@ contract DeployedWrapperGuardsTest is Test {
     address partyHTLC = same.htlcOf(terms, true, lock);
 
     vm.warp(terms.partySide.reclaimRelease);
-    same.reclaimParty(terms, lock);
+    same.selectReclaim(terms, lock);
+    same.executeSettlement(terms, lock, true, 1);
 
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Reclaimed));
     assertTrue(SwapHTLC(payable(partyHTLC)).released());

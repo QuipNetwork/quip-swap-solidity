@@ -554,7 +554,7 @@ contract WrapperFundingTest is Test {
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Reclaimed));
   }
 
-  function test_sameChainSecondERC721PayoutFailureRollsBackBothLegs() public {
+  function test_sameChainSecondERC721PayoutFailurePreservesFirstLegProgress() public {
     MaliciousERC721Mock malicious = new MaliciousERC721Mock();
     Asset[] memory partyAssets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     Asset[] memory counterpartyAssets = _oneAsset(AssetType.ERC721, address(malicious), 10, 1);
@@ -574,17 +574,19 @@ contract WrapperFundingTest is Test {
     address counterpartyHTLC = same.htlcOf(terms, false, lock);
     malicious.setBehavior(MaliciousERC721Mock.Behavior.NoOp);
 
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, 1);
     vm.expectRevert(abi.encodeWithSelector(AssetCustody.UnexpectedERC721Owner.selector, RECIPIENT, counterpartyHTLC));
-    same.claim(terms, lock, SECRET);
-    assertEq(token.balanceOf(RECIPIENT), 0);
-    assertEq(token.balanceOf(partyHTLC), 10 ether);
+    same.executeSettlement(terms, lock, false, 1);
+    assertEq(token.balanceOf(RECIPIENT), 10 ether);
+    assertEq(token.balanceOf(partyHTLC), 0);
     assertEq(malicious.ownerOf(10), counterpartyHTLC);
-    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
     assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
-    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
 
     malicious.setBehavior(MaliciousERC721Mock.Behavior.Exact);
-    same.claim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, false, 1);
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
     assertEq(malicious.ownerOf(10), RECIPIENT);
     assertTrue(SwapHTLC(payable(partyHTLC)).released());
@@ -738,7 +740,7 @@ contract WrapperFundingTest is Test {
     }
   }
 
-  function test_sameChainBalanceQueryFailuresRollbackBothHTLCsAndState() public {
+  function test_sameChainBalanceQueryFailurePreservesCompletedSideForRetry() public {
     for (
       uint8 raw = uint8(AdversarialERC20Mock.BalanceBehavior.RevertQuery);
       raw <= uint8(AdversarialERC20Mock.BalanceBehavior.MalformedQuery);
@@ -764,18 +766,20 @@ contract WrapperFundingTest is Test {
       address counterpartyHTLC = same.htlcOf(terms, false, lock);
       malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior(raw), RECIPIENT);
 
+      same.selectClaim(terms, lock, SECRET);
+      same.executeSettlement(terms, lock, true, 1);
       vm.expectRevert();
-      same.claim(terms, lock, SECRET);
-      assertEq(partyToken.balanceOf(RECIPIENT), 0);
-      assertEq(partyToken.balanceOf(partyHTLC), 10 ether);
+      same.executeSettlement(terms, lock, false, 1);
+      assertEq(partyToken.balanceOf(RECIPIENT), 10 ether);
+      assertEq(partyToken.balanceOf(partyHTLC), 0);
       assertEq(malicious.rawBalanceOf(RECIPIENT), 0);
       assertEq(malicious.rawBalanceOf(counterpartyHTLC), 20 ether);
-      assertFalse(SwapHTLC(payable(partyHTLC)).released());
+      assertTrue(SwapHTLC(payable(partyHTLC)).released());
       assertFalse(SwapHTLC(payable(counterpartyHTLC)).released());
-      assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.BothCommitted));
+      assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
 
       malicious.setBalanceBehavior(AdversarialERC20Mock.BalanceBehavior.Exact, address(0));
-      same.claim(terms, lock, SECRET);
+      same.executeSettlement(terms, lock, false, 1);
       assertEq(partyToken.balanceOf(RECIPIENT), 10 ether);
       assertEq(malicious.rawBalanceOf(RECIPIENT), 20 ether);
       assertTrue(SwapHTLC(payable(partyHTLC)).released());
@@ -857,9 +861,9 @@ contract WrapperFundingTest is Test {
     (ProtocolTerms memory terms, bytes32 lock) =
       _sameChainNativeTerms(address(attacker), RECIPIENT, RECLAIMER, RECLAIMER);
     _commitSameChainNative(terms, lock, 31);
-    attacker.arm(address(same), abi.encodeCall(same.claim, (terms, lock, SECRET)));
+    attacker.arm(address(same), abi.encodeCall(same.executeSettlement, (terms, lock, true, 1)));
 
-    same.claim(terms, lock, SECRET);
+    _claimSame(terms, lock);
 
     assertTrue(attacker.reentered());
     assertFalse(attacker.innerSucceeded());
@@ -873,10 +877,10 @@ contract WrapperFundingTest is Test {
     (ProtocolTerms memory terms, bytes32 lock) =
       _sameChainNativeTerms(RECIPIENT, RECIPIENT, address(attacker), RECLAIMER);
     _commitSameChainNative(terms, lock, 31);
-    attacker.arm(address(same), abi.encodeCall(same.reclaimBoth, (terms, lock)));
+    attacker.arm(address(same), abi.encodeCall(same.executeSettlement, (terms, lock, true, 1)));
 
     vm.warp(terms.counterpartySide.reclaimRelease);
-    same.reclaimBoth(terms, lock);
+    _reclaimSameBoth(terms, lock);
 
     assertTrue(attacker.reentered());
     assertFalse(attacker.innerSucceeded());
@@ -933,7 +937,7 @@ contract WrapperFundingTest is Test {
     (ProtocolTerms memory claimedTerms, bytes32 claimedLock) =
       _sameChainNativeTerms(RECIPIENT, RECIPIENT, RECLAIMER, RECLAIMER);
     _commitSameChainNative(claimedTerms, claimedLock, 41);
-    same.claim(claimedTerms, claimedLock, SECRET);
+    _claimSame(claimedTerms, claimedLock);
     uint256 paidAfterClaim = RECIPIENT.balance;
     vm.warp(claimedTerms.counterpartySide.reclaimRelease);
     vm.expectRevert(
@@ -941,7 +945,7 @@ contract WrapperFundingTest is Test {
         SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.Claimed
       )
     );
-    same.reclaimBoth(claimedTerms, claimedLock);
+    same.selectReclaim(claimedTerms, claimedLock);
     assertEq(RECIPIENT.balance, paidAfterClaim);
     assertTrue(SwapHTLC(payable(same.htlcOf(claimedTerms, true, claimedLock))).released());
     assertTrue(SwapHTLC(payable(same.htlcOf(claimedTerms, false, claimedLock))).released());
@@ -954,7 +958,7 @@ contract WrapperFundingTest is Test {
     reclaimedLock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(reclaimedTerms), SECRET);
     _commitSameChainNative(reclaimedTerms, reclaimedLock, 51);
     vm.warp(reclaimedTerms.counterpartySide.reclaimRelease);
-    same.reclaimBoth(reclaimedTerms, reclaimedLock);
+    _reclaimSameBoth(reclaimedTerms, reclaimedLock);
     uint256 refundedAfterReclaim = RECLAIMER.balance;
     vm.warp(100);
     vm.expectRevert(
@@ -962,7 +966,7 @@ contract WrapperFundingTest is Test {
         SameChainStateMachine.InvalidSameChainState.selector, SameChainState.BothCommitted, SameChainState.Reclaimed
       )
     );
-    same.claim(reclaimedTerms, reclaimedLock, SECRET);
+    same.selectClaim(reclaimedTerms, reclaimedLock, SECRET);
     assertEq(RECLAIMER.balance, refundedAfterReclaim);
     assertTrue(SwapHTLC(payable(same.htlcOf(reclaimedTerms, true, reclaimedLock))).released());
     assertTrue(SwapHTLC(payable(same.htlcOf(reclaimedTerms, false, reclaimedLock))).released());
@@ -985,7 +989,7 @@ contract WrapperFundingTest is Test {
     _matrixCommit(principalTerms, true, principalLock, 1301, alice, aliceKey);
     _matrixCommit(principalTerms, false, principalLock, 1302, bob, bobKey);
     vm.prank(RELAYER);
-    same.claim(principalTerms, principalLock, SECRET);
+    _claimSame(principalTerms, principalLock);
     _assertMatrixFinal(principalTerms, principalLock, principalToken, bobToken);
 
     (ProtocolTerms memory brokerTerms, bytes32 brokerLock, ERC20Mock brokerToken, ERC20Mock secondBobToken) =
@@ -1009,7 +1013,7 @@ contract WrapperFundingTest is Test {
     assertEq(brokerToken.balanceOf(same.htlcOf(brokerTerms, true, brokerLock)), 10 ether);
     _matrixCommit(brokerTerms, false, brokerLock, 1402, bob, bobKey);
     vm.prank(RELAYER);
-    same.claim(brokerTerms, brokerLock, SECRET);
+    _claimSame(brokerTerms, brokerLock);
     _assertMatrixFinal(brokerTerms, brokerLock, brokerToken, secondBobToken);
   }
 
@@ -1029,7 +1033,7 @@ contract WrapperFundingTest is Test {
     assertEq(bobToken.balanceOf(same.htlcOf(terms, false, lock)), 20 ether);
 
     vm.prank(RELAYER);
-    same.claim(terms, lock, SECRET);
+    _claimSame(terms, lock);
     _assertMatrixFinal(terms, lock, aliceToken, bobToken);
     assertEq(aliceToken.balanceOf(RELAYER), 0);
     assertEq(bobToken.balanceOf(RELAYER), 0);
@@ -1065,7 +1069,7 @@ contract WrapperFundingTest is Test {
 
     _matrixCommit(terms, false, lock, 1602, address(bobWallet), bobWalletKey);
     vm.prank(RELAYER);
-    same.claim(terms, lock, SECRET);
+    _claimSame(terms, lock);
     _assertMatrixFinal(terms, lock, aliceToken, bobToken);
   }
 
@@ -1090,7 +1094,7 @@ contract WrapperFundingTest is Test {
     _directCommitTo(address(same), terms, true, lock, 9, alice, aliceKey, bytes32(0));
     _directCommitTo(address(same), terms, false, lock, 10, bob, bobKey, bytes32(0));
     vm.prank(RELAYER);
-    same.claim(terms, lock, SECRET);
+    _claimSame(terms, lock);
 
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
     assertEq(bobToken.balanceOf(RECIPIENT), 20 ether);
@@ -1122,7 +1126,7 @@ contract WrapperFundingTest is Test {
       counterpartyMode == AuthorizationMode.QuipWallet ? bobWalletKey : bobKey
     );
     vm.prank(RELAYER);
-    same.claim(terms, lock, SECRET);
+    _claimSame(terms, lock);
     _assertMatrixFinal(terms, lock, partyToken, counterpartyToken);
   }
 
@@ -1260,6 +1264,23 @@ contract WrapperFundingTest is Test {
     gateway.authorizeCommit{value: 2 ether}(
       counterpartyRequest, _signature(counterpartyRequest, address(gateway), bobKey)
     );
+  }
+
+  function _claimSame(ProtocolTerms memory terms, bytes32 lock) internal {
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, terms.partySide.assets.length);
+    same.executeSettlement(terms, lock, false, terms.counterpartySide.assets.length);
+  }
+
+  function _reclaimSameBoth(ProtocolTerms memory terms, bytes32 lock) internal {
+    same.selectReclaim(terms, lock);
+    same.executeSettlement(terms, lock, true, terms.partySide.assets.length);
+    same.executeSettlement(terms, lock, false, terms.counterpartySide.assets.length);
+  }
+
+  function _reclaimSameParty(ProtocolTerms memory terms, bytes32 lock) internal {
+    same.selectReclaim(terms, lock);
+    same.executeSettlement(terms, lock, true, terms.partySide.assets.length);
   }
 
   function _directCommit(

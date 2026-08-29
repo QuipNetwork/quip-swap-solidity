@@ -26,7 +26,7 @@ import {ERC721Holder} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/util
 import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/ReentrancyGuard.sol';
 
 /// @title SameChainWrapper
-/// @notice Escrows two local legs and settles them atomically in a v1.1 same-chain swap.
+/// @notice Escrows two local legs and settles a selected outcome through resumable side execution.
 /// @dev Commits must arrive from the authorization boundary named by the terms. Claims and
 ///      reclaims are permissionless because terms fix every payout recipient. Wallet-mode
 ///      provenance is not factory-checked here; the signed principal address is the trust boundary.
@@ -42,6 +42,7 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   error InvalidLocalChain();
   error CommitWindowClosed();
   error HTLCAlreadyExists();
+  error AtomicSettlementDisabled();
 
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
   event HTLCCreated(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address htlc);
@@ -128,48 +129,61 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   function selectReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
     bytes32 trade = ProtocolHashing.tradeId(terms);
     SameChainState current = states.state(trade, lock);
-    uint8 expectedSides;
     if (current == SameChainState.PartyCommitted) {
       trade = states.selectSameChainPartyReclaim(terms, lock, block.timestamp);
-      expectedSides = 1;
     } else {
       trade = states.selectSameChainBothReclaim(terms, lock, block.timestamp);
-      expectedSides = 3;
     }
+    (uint8 expectedSides,) = states.settlementProgress(trade, lock);
     emit ReclaimSelected(trade, lock, expectedSides);
   }
 
-  /// @notice Permissionlessly claims both escrows atomically to their fixed recipients.
-  function claim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external nonReentrant {
+  /// @notice Releases one required HTLC side for an already selected outcome.
+  /// @dev The current HTLC implementation releases the full side, so maxAssets must cover its list.
+  function executeSettlement(
+    ProtocolTerms calldata terms,
+    bytes32 lock,
+    bool party,
+    uint256 maxAssets
+  ) external nonReentrant {
     bytes32 trade = ProtocolHashing.tradeId(terms);
-    // One state transition and transaction release both dedicated local HTLCs atomically.
-    trade = states.claimSameChainHTLC(
-      _htlc(trade, lock, SideTag.Party), _htlc(trade, lock, SideTag.Counterparty), terms, lock, secret, block.timestamp
+    SameChainState outcome;
+    bool terminal;
+    (trade, outcome, terminal) = states.executeSelectedSameChainHTLC(
+      _htlc(trade, lock, ProtocolHashing.sideTag(party)), terms, party, lock, maxAssets
     );
-    emit Claimed(trade, lock);
+    if (terminal) {
+      if (outcome == SameChainState.ClaimPending) emit Claimed(trade, lock);
+      else emit Reclaimed(trade, lock);
+    }
   }
 
-  /// @notice Reclaims the party escrow if the counterparty never committed.
-  function reclaimParty(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    bytes32 trade = ProtocolHashing.tradeId(terms);
-    // This path releases only the party HTLC and is reachable only from PartyCommitted.
-    trade = states.reclaimSameChainPartyHTLC(_htlc(trade, lock, SideTag.Party), terms, lock, block.timestamp);
-    emit Reclaimed(trade, lock);
+  /// @notice Disabled legacy atomic claim entry point.
+  function claim(ProtocolTerms calldata, bytes32, bytes32) external pure {
+    revert AtomicSettlementDisabled();
   }
 
-  /// @notice Reclaims both committed escrows atomically after both reclaim releases.
-  function reclaimBoth(ProtocolTerms calldata terms, bytes32 lock) external nonReentrant {
-    bytes32 trade = ProtocolHashing.tradeId(terms);
-    // This path requires BothCommitted and releases both dedicated HTLCs atomically.
-    trade = states.reclaimSameChainBothHTLC(
-      _htlc(trade, lock, SideTag.Party), _htlc(trade, lock, SideTag.Counterparty), terms, lock, block.timestamp
-    );
-    emit Reclaimed(trade, lock);
+  /// @notice Disabled legacy atomic party-reclaim entry point.
+  function reclaimParty(ProtocolTerms calldata, bytes32) external pure {
+    revert AtomicSettlementDisabled();
+  }
+
+  /// @notice Disabled legacy atomic dual-reclaim entry point.
+  function reclaimBoth(ProtocolTerms calldata, bytes32) external pure {
+    revert AtomicSettlementDisabled();
   }
 
   /// @notice Returns the joint state for these exact terms and settlement lock.
   function state(ProtocolTerms calldata terms, bytes32 lock) external view returns (SameChainState) {
     return states.state(ProtocolHashing.tradeId(terms), lock);
+  }
+
+  /// @notice Returns the required and completed side bitmaps for a selected settlement.
+  function settlementProgress(
+    ProtocolTerms calldata terms,
+    bytes32 lock
+  ) external view returns (uint8 expectedSides, uint8 completedSides) {
+    return states.settlementProgress(ProtocolHashing.tradeId(terms), lock);
   }
 
   /// @notice Returns the deployed custody contract for one exact side, or zero before commit.
