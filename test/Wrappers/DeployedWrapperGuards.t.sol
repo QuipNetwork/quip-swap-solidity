@@ -44,6 +44,8 @@ contract DeployedWrapperGuardsTest is Test {
   address internal constant BOB = address(0xB0B);
   address internal constant ALICE_RECIPIENT = address(0xA1CE);
   address internal constant BOB_RECIPIENT = address(0xB0B0);
+  address internal constant EXECUTOR_A = address(0xE0A);
+  address internal constant EXECUTOR_B = address(0xE0B);
   bytes32 internal constant SECRET = keccak256('settlement-secret');
   bytes32 internal constant BOB_COMMIT_SECRET = keccak256('bob-commit-secret');
 
@@ -559,6 +561,45 @@ contract DeployedWrapperGuardsTest is Test {
     same.executeSettlement(terms, lock, true, 1);
     same.executeSettlement(terms, lock, false, 1);
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
+  function test_sameChainSettlementIsPermissionlessAndTermsFixEveryPayout() public {
+    ProtocolTerms memory claimTerms = _sameTerms();
+    bytes32 claimLock = _lock(claimTerms);
+    _commitSame(claimTerms, true, claimLock, 94, 1);
+    _commitSame(claimTerms, false, claimLock, 95, 2);
+
+    vm.startPrank(EXECUTOR_A);
+    same.selectClaim(claimTerms, claimLock, SECRET);
+    same.executeSettlement(claimTerms, claimLock, false, 1);
+    same.executeSettlement(claimTerms, claimLock, true, 1);
+    vm.stopPrank();
+
+    assertEq(BOB_RECIPIENT.balance, 1);
+    assertEq(ALICE_RECIPIENT.balance, 2);
+    assertEq(EXECUTOR_A.balance, 0);
+
+    ProtocolTerms memory reclaimTerms = _sameTerms();
+    reclaimTerms.partySide.sideNonce = bytes32(uint256(96));
+    reclaimTerms.counterpartySide.sideNonce = bytes32(uint256(97));
+    reclaimTerms.partySide.delegationPolicy = DelegationPolicy.SpecificDelegate;
+    reclaimTerms.partySide.delegate = address(0xD1E6A7E);
+    reclaimTerms.partySide.delegateKeyVersion = 1;
+    reclaimTerms.counterpartySide.delegationPolicy = DelegationPolicy.Permissionless;
+    bytes32 reclaimLock = _lock(reclaimTerms);
+    _commitSame(reclaimTerms, true, reclaimLock, 96, 1);
+    _commitSame(reclaimTerms, false, reclaimLock, 97, 2);
+    vm.warp(reclaimTerms.counterpartySide.reclaimRelease);
+
+    vm.startPrank(EXECUTOR_B);
+    same.selectReclaim(reclaimTerms, reclaimLock);
+    same.executeSettlement(reclaimTerms, reclaimLock, true, 1);
+    same.executeSettlement(reclaimTerms, reclaimLock, false, 1);
+    vm.stopPrank();
+
+    assertEq(ALICE.balance, 1);
+    assertEq(BOB.balance, 2);
+    assertEq(EXECUTOR_B.balance, 0);
   }
 
   function test_sameChainReclaimSelectionDoesNotCallTheApplicableHTLCs() public {

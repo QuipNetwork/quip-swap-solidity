@@ -120,12 +120,14 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   }
 
   /// @notice Permissionlessly and irreversibly selects claim without executing a payout.
+  /// @dev Settlement does not consult either side's commit-only delegation policy.
   function selectClaim(ProtocolTerms calldata terms, bytes32 lock, bytes32 secret) external {
     bytes32 trade = states.selectSameChainClaim(terms, lock, secret, block.timestamp);
     emit ClaimSelected(trade, lock);
   }
 
   /// @notice Permissionlessly and irreversibly selects the applicable reclaim without a payout.
+  /// @dev Settlement does not consult either side's commit-only delegation policy.
   function selectReclaim(ProtocolTerms calldata terms, bytes32 lock) external {
     bytes32 trade = ProtocolHashing.tradeId(terms);
     SameChainState current = states.state(trade, lock);
@@ -139,7 +141,8 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   }
 
   /// @notice Releases one required HTLC side for an already selected outcome.
-  /// @dev The current HTLC implementation releases the full side, so maxAssets must cover its list.
+  /// @dev Any caller may execute. The selected outcome and terms fix the recipient; the current
+  ///      HTLC implementation releases the full side, so maxAssets must cover its list.
   function executeSettlement(
     ProtocolTerms calldata terms,
     bytes32 lock,
