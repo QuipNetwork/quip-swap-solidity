@@ -25,7 +25,6 @@ library Settlement {
   error MissingHTLC();
   error InvalidHTLCBinding();
   error InvalidBatchSize();
-  error BatchLimitTooSmall(uint256 requiredAssets, uint256 maxAssets);
 
   /// @notice Selects the same-chain claim outcome without executing a payout.
   function selectSameChainClaim(
@@ -97,7 +96,7 @@ library Settlement {
   }
 
   /// @notice Executes one selected same-chain HTLC side without rechecking selection timing.
-  /// @dev Until HTLC batching is added, maxAssets must cover the side's complete asset list.
+  /// @dev Partial batches preserve the pending outcome and do not mark their side complete.
   function executeSelectedSameChainHTLC(
     SameChainStateMachine.Layout storage self,
     address htlc,
@@ -119,13 +118,8 @@ library Settlement {
     SideTag tag = ProtocolHashing.sideTag(party);
     {
       SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
-      if (maxAssets < side.assets.length) revert BatchLimitTooSmall(side.assets.length, maxAssets);
-
-      // Validate the required side before consulting or paying its exact committed HTLC.
-      self.markSideComplete(trade, lock, tag);
-      _requireHTLCBinding(htlc, trade, lock, tag, side);
       address recipient = outcome == SameChainState.ClaimPending ? side.recipient : side.reclaimRecipient;
-      ISwapHTLC(htlc).release(side, recipient);
+      _executeSelectedBatch(self, htlc, side, recipient, trade, lock, tag, maxAssets);
     }
 
     (uint8 expectedSides, uint8 completedSides) = self.settlementProgress(trade, lock);
@@ -134,6 +128,23 @@ library Settlement {
       if (outcome == SameChainState.ClaimPending) completeSelectedSameChainClaim(self, trade, lock);
       else completeSelectedSameChainReclaim(self, trade, lock);
     }
+  }
+
+  function _executeSelectedBatch(
+    SameChainStateMachine.Layout storage self,
+    address htlc,
+    SideTerms memory side,
+    address recipient,
+    bytes32 trade,
+    bytes32 lock,
+    SideTag tag,
+    uint256 maxAssets
+  ) private {
+    // Reject an unexpected or completed side before consulting its exact committed HTLC.
+    self.requirePendingSide(trade, lock, tag);
+    _requireHTLCBinding(htlc, trade, lock, tag, side);
+    (, bool sideComplete) = ISwapHTLC(htlc).releaseBatch(side, recipient, maxAssets);
+    if (sideComplete) self.markSideComplete(trade, lock, tag);
   }
 
   /// @notice Claims one local cross-chain leg held by its dedicated HTLC.

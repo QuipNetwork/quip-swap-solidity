@@ -603,6 +603,65 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(EXECUTOR_B.balance, 0);
   }
 
+  function test_sameChainFinalizesOnlyAfterEveryRequiredHTLCFinishes() public {
+    ERC20Mock tokenA = new ERC20Mock('Token A', 'TKA', 18);
+    ERC20Mock tokenB = new ERC20Mock('Token B', 'TKB', 18);
+    support.setAssetSupport(AssetType.ERC20, address(tokenA), true);
+    support.setAssetSupport(AssetType.ERC20, address(tokenB), true);
+    tokenA.mint(ALICE, 2);
+    tokenB.mint(ALICE, 3);
+    vm.startPrank(ALICE);
+    tokenA.approve(address(same), 2);
+    tokenB.approve(address(same), 3);
+    vm.stopPrank();
+
+    ProtocolTerms memory terms = _sameTerms();
+    terms.partySide.assets = new Asset[](3);
+    terms.partySide.assets[0] = Asset(AssetType.Native, address(0), 0, 1);
+    if (address(tokenA) < address(tokenB)) {
+      terms.partySide.assets[1] = Asset(AssetType.ERC20, address(tokenA), 0, 2);
+      terms.partySide.assets[2] = Asset(AssetType.ERC20, address(tokenB), 0, 3);
+    } else {
+      terms.partySide.assets[1] = Asset(AssetType.ERC20, address(tokenB), 0, 3);
+      terms.partySide.assets[2] = Asset(AssetType.ERC20, address(tokenA), 0, 2);
+    }
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 105, 1);
+    _commitSame(terms, false, lock, 106, 2);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, 1);
+    (uint8 expectedSides, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(expectedSides, 3);
+    assertEq(completedSides, 0);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+    assertFalse(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(BOB_RECIPIENT.balance, 1);
+
+    same.executeSettlement(terms, lock, false, 1);
+    (, completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 2);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+
+    same.executeSettlement(terms, lock, true, 1);
+    (, completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 2);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 2);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+
+    same.executeSettlement(terms, lock, true, 10);
+    (, completedSides) = same.settlementProgress(terms, lock);
+    assertEq(completedSides, 3);
+    assertTrue(SwapHTLC(payable(partyHTLC)).released());
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Claimed));
+    assertEq(BOB_RECIPIENT.balance, 1);
+    assertEq(tokenA.balanceOf(BOB_RECIPIENT), 2);
+    assertEq(tokenB.balanceOf(BOB_RECIPIENT), 3);
+    assertEq(ALICE_RECIPIENT.balance, 2);
+  }
+
   function test_sameChainExecutionRejectsAbsentUnexpectedAndMismatchedHTLCs() public {
     ProtocolTerms memory oneSidedTerms = _sameTerms();
     bytes32 oneSidedLock = _lock(oneSidedTerms);

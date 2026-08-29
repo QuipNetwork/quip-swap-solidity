@@ -150,13 +150,23 @@ library SameChainStateMachine {
   /// @notice Marks one required side complete while preserving the selected pending outcome.
   function markSideComplete(Layout storage self, bytes32 tradeId, bytes32 lock, SideTag side) internal {
     Record storage record = self.records[recordKey(tradeId, lock)];
+    _requirePendingSide(record, side);
+    uint8 bit = side == SideTag.Party ? PARTY_SIDE_BIT : COUNTERPARTY_SIDE_BIT;
+    record.completedSides |= bit;
+  }
+
+  /// @notice Requires a side to be selected, required, and not yet complete without mutating it.
+  function requirePendingSide(Layout storage self, bytes32 tradeId, bytes32 lock, SideTag side) internal view {
+    _requirePendingSide(self.records[recordKey(tradeId, lock)], side);
+  }
+
+  function _requirePendingSide(Record storage record, SideTag side) private view {
     if (record.state != SameChainState.ClaimPending && record.state != SameChainState.ReclaimPending) {
       revert SettlementNotPending(record.state);
     }
     uint8 bit = side == SideTag.Party ? PARTY_SIDE_BIT : COUNTERPARTY_SIDE_BIT;
     if (record.expectedSides & bit == 0) revert UnexpectedSettlementSide(side);
     if (record.completedSides & bit != 0) revert SettlementSideAlreadyComplete(side);
-    record.completedSides |= bit;
   }
 
   /// @notice Completes a previously selected claim.

@@ -141,8 +141,8 @@ contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155
   }
 
   /// @notice Releases one required HTLC side for an already selected outcome.
-  /// @dev Any caller may execute. The selected outcome and terms fix the recipient; the current
-  ///      HTLC implementation releases the full side, so maxAssets must cover its list.
+  /// @dev Any caller may execute. The selected outcome and terms fix the recipient, while
+  ///      `maxAssets` bounds this call's progress through the selected HTLC.
   function executeSettlement(
     ProtocolTerms calldata terms,
     bytes32 lock,
