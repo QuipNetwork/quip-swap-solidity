@@ -73,6 +73,26 @@ library Settlement {
     self.selectReclaimBoth(trade, lock);
   }
 
+  /// @notice Completes a selected same-chain claim after all required payouts finish.
+  /// @dev Deliberately has no timestamp argument: the claim window applies only to selection.
+  function completeSelectedSameChainClaim(
+    SameChainStateMachine.Layout storage self,
+    bytes32 trade,
+    bytes32 lock
+  ) internal {
+    self.completeClaim(trade, lock);
+  }
+
+  /// @notice Completes a selected same-chain reclaim after all required payouts finish.
+  /// @dev Deliberately has no timestamp argument: reclaim releases apply only to selection.
+  function completeSelectedSameChainReclaim(
+    SameChainStateMachine.Layout storage self,
+    bytes32 trade,
+    bytes32 lock
+  ) internal {
+    self.completeReclaim(trade, lock);
+  }
+
   /// @notice Claims one local cross-chain leg held by its dedicated HTLC.
   function claimCrossChainHTLC(
     CrossChainStateMachine.Layout storage self,
@@ -130,7 +150,7 @@ library Settlement {
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.recipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.recipient);
-    self.completeClaim(trade, lock);
+    completeSelectedSameChainClaim(self, trade, lock);
   }
 
   /// @notice Reclaims the sole party HTLC when no counterparty commit was recorded.
@@ -145,7 +165,7 @@ library Settlement {
     if (partyHTLC == address(0)) revert MissingHTLC();
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
-    self.completeReclaim(trade, lock);
+    completeSelectedSameChainReclaim(self, trade, lock);
   }
 
   /// @notice Atomically reclaims both committed same-chain HTLCs.
@@ -162,7 +182,7 @@ library Settlement {
 
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
-    self.completeReclaim(trade, lock);
+    completeSelectedSameChainReclaim(self, trade, lock);
   }
 
   /// @notice Claims one local cross-chain leg with the trade-bound settlement preimage.
@@ -227,7 +247,7 @@ library Settlement {
     // Release each escrow to the recipient fixed by its own side terms, then complete claim.
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
-    self.completeClaim(trade, lock);
+    completeSelectedSameChainClaim(self, trade, lock);
   }
 
   /// @notice Reclaims the party escrow when no counterparty commit was recorded.
@@ -240,7 +260,7 @@ library Settlement {
   ) internal returns (bytes32 trade) {
     trade = selectSameChainPartyReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
-    self.completeReclaim(trade, lock);
+    completeSelectedSameChainReclaim(self, trade, lock);
   }
 
   /// @notice Atomically reclaims both committed escrows after both reclaim releases.
@@ -254,7 +274,7 @@ library Settlement {
     trade = selectSameChainBothReclaim(self, terms, lock, timestamp);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
-    self.completeReclaim(trade, lock);
+    completeSelectedSameChainReclaim(self, trade, lock);
   }
 
   function _validate(ProtocolTerms memory terms, WrapperMode expected) private pure {

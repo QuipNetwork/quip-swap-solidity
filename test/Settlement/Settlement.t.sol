@@ -205,6 +205,19 @@ contract SettlementTest is Test {
     assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.BothCommitted));
   }
 
+  function test_selectedSameChainClaimCanCompleteAfterEveryDeadline() public {
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
+    _fundAndSeedSame(terms, lock, true);
+    vm.warp(terms.partySide.claimDeadline - 1);
+    harness.selectSameChainClaim(terms, lock, SECRET);
+
+    vm.warp(terms.counterpartySide.reclaimRelease + 365 days);
+    vm.prank(EXECUTOR);
+    harness.completeSelectedSameChainClaim(terms, lock);
+
+    assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.Claimed));
+  }
+
   function test_leakedSettlementSecretCannotClaimHalfCommittedSameChainTrade() public {
     (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
     _fundAndSeedSame(terms, lock, false);
@@ -320,6 +333,19 @@ contract SettlementTest is Test {
     assertEq(counterpartyToken.balanceOf(address(harness)), 20 ether);
     assertEq(partyToken.balanceOf(PARTY_RECLAIMER), 0);
     assertEq(counterpartyToken.balanceOf(COUNTERPARTY_RECLAIMER), 0);
+  }
+
+  function test_selectedSameChainReclaimCanCompleteLongAfterSelection() public {
+    (ProtocolTerms memory terms, bytes32 lock) = _sameTerms();
+    _fundAndSeedSame(terms, lock, true);
+    vm.warp(terms.counterpartySide.reclaimRelease);
+    harness.selectSameChainBothReclaim(terms, lock);
+
+    vm.warp(terms.counterpartySide.reclaimRelease + 365 days);
+    vm.prank(EXECUTOR);
+    harness.completeSelectedSameChainReclaim(terms, lock);
+
+    assertEq(uint8(harness.sameState(terms, lock)), uint8(SameChainState.Reclaimed));
   }
 
   function test_validCrossChainClaimHasNoPermanentDelay() public {
