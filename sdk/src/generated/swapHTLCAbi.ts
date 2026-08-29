@@ -410,6 +410,19 @@ export const swapHTLCAbi = [
   },
   {
     "type": "function",
+    "name": "payoutRecipient",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "release",
     "inputs": [
       {
@@ -860,6 +873,11 @@ export const swapHTLCAbi = [
   {
     "type": "error",
     "name": "NotInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PayoutRecipientMismatch",
     "inputs": []
   },
   {

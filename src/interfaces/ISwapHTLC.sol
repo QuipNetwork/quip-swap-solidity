@@ -26,6 +26,8 @@ interface ISwapHTLC {
   error InvalidBatchSize();
   /// @notice Thrown when the selected payout is not one of the two terms-fixed recipients.
   error InvalidRecipient();
+  /// @notice Thrown when a later release batch changes the first batch's payout recipient.
+  error PayoutRecipientMismatch();
   /// @notice Thrown when initialization receives a native amount different from the signed bundle.
   error IncorrectNativeAmount();
   /// @notice Thrown when an asset required by the signed bundle is not present in full.
@@ -92,4 +94,7 @@ interface ISwapHTLC {
 
   /// @notice Index of the next signed asset entry awaiting payout.
   function nextAssetIndex() external view returns (uint256);
+
+  /// @notice Terms-fixed recipient selected by the first successful release batch.
+  function payoutRecipient() external view returns (address);
 }

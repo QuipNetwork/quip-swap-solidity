@@ -158,6 +158,7 @@ contract SwapHTLCTest is Test {
     (uint256 nextIndex, bool complete) = htlc.releaseBatch(sideTerms, RECIPIENT, 2);
     assertEq(nextIndex, 2);
     assertEq(htlc.nextAssetIndex(), 2);
+    assertEq(htlc.payoutRecipient(), RECIPIENT);
     assertFalse(complete);
     assertFalse(htlc.released());
     assertEq(RECIPIENT.balance, 1 ether);
@@ -194,6 +195,33 @@ contract SwapHTLCTest is Test {
     assertEq(htlc.nextAssetIndex(), 0);
     assertFalse(htlc.released());
     assertEq(address(htlc).balance, 1 ether);
+  }
+
+  function test_firstBatchLocksPayoutRecipientForEveryLaterBatch() public {
+    SwapHTLC htlc = _clone();
+    SideTerms memory sideTerms = _mixedTerms();
+    htlc.initialize{value: 1 ether}(TRADE, LOCK, SideTag.Party, sideTerms);
+    token.mint(address(htlc), 10 ether);
+    nft.mint(address(htlc), 7);
+    multiToken.mint(address(htlc), 9, 3, '');
+    htlc.confirmFunding(sideTerms);
+
+    htlc.releaseBatch(sideTerms, RECIPIENT, 1);
+    assertEq(htlc.payoutRecipient(), RECIPIENT);
+    assertEq(htlc.nextAssetIndex(), 1);
+
+    vm.expectRevert(ISwapHTLC.PayoutRecipientMismatch.selector);
+    htlc.releaseBatch(sideTerms, RECLAIMER, 1);
+    assertEq(htlc.payoutRecipient(), RECIPIENT);
+    assertEq(htlc.nextAssetIndex(), 1);
+    assertEq(token.balanceOf(RECLAIMER), 0);
+
+    htlc.releaseBatch(sideTerms, RECIPIENT, 3);
+    assertTrue(htlc.released());
+    assertEq(htlc.nextAssetIndex(), 4);
+    assertEq(token.balanceOf(RECIPIENT), 10 ether);
+    assertEq(nft.ownerOf(7), RECIPIENT);
+    assertEq(multiToken.balanceOf(RECIPIENT, 9), 3);
   }
 
   function test_releaseBeforeFundingAndWithChangedTermsRevertsWithoutEffects() public {

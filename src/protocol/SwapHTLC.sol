@@ -24,6 +24,7 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
   bool public override funded;
   bool public override released;
   uint256 public override nextAssetIndex;
+  address public override payoutRecipient;
 
   bool private initialized;
 
@@ -101,6 +102,8 @@ contract SwapHTLC is ISwapHTLC, ERC721Holder, ERC1155Holder, ReentrancyGuard {
     if (recipient == address(this)) revert InvalidRecipient();
 
     uint256 start = nextAssetIndex;
+    if (start == 0) payoutRecipient = recipient;
+    else if (recipient != payoutRecipient) revert PayoutRecipientMismatch();
     uint256 remaining = sideTerms_.assets.length - start;
     uint256 count = maxAssets < remaining ? maxAssets : remaining;
     uint256 end = start + count;
