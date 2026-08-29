@@ -91,27 +91,38 @@ library SameChainStateMachine {
     self.states[key] = SameChainState.BothCommitted;
   }
 
-  /// @notice Marks both committed escrows as jointly claimed.
-  function claim(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
-    // Atomic claim requires both escrows and produces one terminal state.
+  /// @notice Irreversibly selects claim after both sides have committed.
+  function selectClaim(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
     bytes32 key = recordKey(tradeId, lock);
     _requireState(self.states[key], SameChainState.BothCommitted);
+    self.states[key] = SameChainState.ClaimPending;
+  }
+
+  /// @notice Irreversibly selects reclaim when only the party side committed.
+  function selectReclaimParty(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
+    bytes32 key = recordKey(tradeId, lock);
+    _requireState(self.states[key], SameChainState.PartyCommitted);
+    self.states[key] = SameChainState.ReclaimPending;
+  }
+
+  /// @notice Irreversibly selects reclaim after both sides have committed.
+  function selectReclaimBoth(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
+    bytes32 key = recordKey(tradeId, lock);
+    _requireState(self.states[key], SameChainState.BothCommitted);
+    self.states[key] = SameChainState.ReclaimPending;
+  }
+
+  /// @notice Completes a previously selected claim.
+  function completeClaim(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
+    bytes32 key = recordKey(tradeId, lock);
+    _requireState(self.states[key], SameChainState.ClaimPending);
     self.states[key] = SameChainState.Claimed;
   }
 
-  /// @notice Reclaims the only escrow when the counterparty never committed.
-  function reclaimParty(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
-    // One-sided reclaim is valid only when the second escrow never arrived.
+  /// @notice Completes a previously selected reclaim.
+  function completeReclaim(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
     bytes32 key = recordKey(tradeId, lock);
-    _requireState(self.states[key], SameChainState.PartyCommitted);
-    self.states[key] = SameChainState.Reclaimed;
-  }
-
-  /// @notice Reclaims both escrows after both sides committed and both releases opened.
-  function reclaimBoth(Layout storage self, bytes32 tradeId, bytes32 lock) internal {
-    // Dual reclaim requires both escrows and produces one terminal state.
-    bytes32 key = recordKey(tradeId, lock);
-    _requireState(self.states[key], SameChainState.BothCommitted);
+    _requireState(self.states[key], SameChainState.ReclaimPending);
     self.states[key] = SameChainState.Reclaimed;
   }
 

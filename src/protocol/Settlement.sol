@@ -86,9 +86,10 @@ library Settlement {
     if (timestamp >= deadline) revert ClaimWindowClosed();
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
-    self.claim(trade, lock);
+    self.selectClaim(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.recipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.recipient);
+    self.completeClaim(trade, lock);
   }
 
   /// @notice Reclaims the sole party HTLC when no counterparty commit was recorded.
@@ -105,8 +106,9 @@ library Settlement {
     if (partyHTLC == address(0)) revert MissingHTLC();
 
     trade = ProtocolHashing.tradeId(terms);
-    self.reclaimParty(trade, lock);
+    self.selectReclaimParty(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.completeReclaim(trade, lock);
   }
 
   /// @notice Atomically reclaims both committed same-chain HTLCs.
@@ -126,9 +128,10 @@ library Settlement {
     _requireTwoHTLCs(partyHTLC, counterpartyHTLC);
 
     trade = ProtocolHashing.tradeId(terms);
-    self.reclaimBoth(trade, lock);
+    self.selectReclaimBoth(trade, lock);
     ISwapHTLC(partyHTLC).release(terms.partySide, terms.partySide.reclaimRecipient);
     ISwapHTLC(counterpartyHTLC).release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+    self.completeReclaim(trade, lock);
   }
 
   /// @notice Claims one local cross-chain leg with the trade-bound settlement preimage.
@@ -199,11 +202,12 @@ library Settlement {
       : terms.counterpartySide.claimDeadline;
     if (timestamp >= deadline) revert ClaimWindowClosed();
 
-    // Mark the joint state terminal before either external transfer.
-    self.claim(trade, lock);
-    // Release each escrow to the recipient fixed by its own side terms.
+    // Select claim before either transfer; completion remains atomic in this compatibility path.
+    self.selectClaim(trade, lock);
+    // Release each escrow to the recipient fixed by its own side terms, then complete claim.
     custody.release(terms.partySide, terms.partySide.recipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.recipient);
+    self.completeClaim(trade, lock);
   }
 
   /// @notice Reclaims the party escrow when no counterparty commit was recorded.
@@ -220,8 +224,9 @@ library Settlement {
     if (timestamp < terms.partySide.reclaimRelease) revert ReclaimWindowClosed();
 
     trade = ProtocolHashing.tradeId(terms);
-    self.reclaimParty(trade, lock);
+    self.selectReclaimParty(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
+    self.completeReclaim(trade, lock);
   }
 
   /// @notice Atomically reclaims both committed escrows after both reclaim releases.
@@ -240,9 +245,10 @@ library Settlement {
     }
 
     trade = ProtocolHashing.tradeId(terms);
-    self.reclaimBoth(trade, lock);
+    self.selectReclaimBoth(trade, lock);
     custody.release(terms.partySide, terms.partySide.reclaimRecipient);
     custody.release(terms.counterpartySide, terms.counterpartySide.reclaimRecipient);
+    self.completeReclaim(trade, lock);
   }
 
   function _validate(ProtocolTerms memory terms, WrapperMode expected) private pure {

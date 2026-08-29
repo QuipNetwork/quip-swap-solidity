@@ -81,6 +81,8 @@ enum SameChainState {
   Unused,
   PartyCommitted,
   BothCommitted,
+  ClaimPending,
+  ReclaimPending,
   Claimed,
   Reclaimed
 }

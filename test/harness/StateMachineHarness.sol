@@ -46,20 +46,28 @@ contract StateMachineHarness {
     sameChain.commitCounterparty(tradeId, lock);
   }
 
-  function sameClaim(bytes32 tradeId, bytes32 lock) external {
-    sameChain.claim(tradeId, lock);
+  function sameSelectClaim(bytes32 tradeId, bytes32 lock) external {
+    sameChain.selectClaim(tradeId, lock);
   }
 
-  function sameReclaimParty(bytes32 tradeId, bytes32 lock) external {
-    sameChain.reclaimParty(tradeId, lock);
+  function sameSelectReclaimParty(bytes32 tradeId, bytes32 lock) external {
+    sameChain.selectReclaimParty(tradeId, lock);
   }
 
-  function sameReclaimBoth(bytes32 tradeId, bytes32 lock) external {
-    sameChain.reclaimBoth(tradeId, lock);
+  function sameSelectReclaimBoth(bytes32 tradeId, bytes32 lock) external {
+    sameChain.selectReclaimBoth(tradeId, lock);
   }
 
-  function sameClaimThenFail(bytes32 tradeId, bytes32 lock) external {
-    sameChain.claim(tradeId, lock);
+  function sameCompleteClaim(bytes32 tradeId, bytes32 lock) external {
+    sameChain.completeClaim(tradeId, lock);
+  }
+
+  function sameCompleteReclaim(bytes32 tradeId, bytes32 lock) external {
+    sameChain.completeReclaim(tradeId, lock);
+  }
+
+  function sameCompleteClaimThenFail(bytes32 tradeId, bytes32 lock) external {
+    sameChain.completeClaim(tradeId, lock);
     revert ForcedFailure();
   }
 }

@@ -76,22 +76,27 @@ contract StateMachinesTest is Test {
     _assertCrossState(CrossChainLegState.Committed);
   }
 
-  function test_sameChainAllowedClaimPath() public {
+  function test_sameChainAllowedClaimSelectionAndCompletion() public {
     _sameCommitBoth();
-    _assertSameState(SameChainState.BothCommitted);
-    harness.sameClaim(TRADE, LOCK);
+    harness.sameSelectClaim(TRADE, LOCK);
+    _assertSameState(SameChainState.ClaimPending);
+    harness.sameCompleteClaim(TRADE, LOCK);
     _assertSameState(SameChainState.Claimed);
   }
 
-  function test_sameChainAllowedOneSidedReclaimPath() public {
+  function test_sameChainAllowedOneSidedReclaimSelectionAndCompletion() public {
     _sameCommitParty();
-    harness.sameReclaimParty(TRADE, LOCK);
+    harness.sameSelectReclaimParty(TRADE, LOCK);
+    _assertSameState(SameChainState.ReclaimPending);
+    harness.sameCompleteReclaim(TRADE, LOCK);
     _assertSameState(SameChainState.Reclaimed);
   }
 
-  function test_sameChainAllowedDualReclaimPath() public {
+  function test_sameChainAllowedDualReclaimSelectionAndCompletion() public {
     _sameCommitBoth();
-    harness.sameReclaimBoth(TRADE, LOCK);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    _assertSameState(SameChainState.ReclaimPending);
+    harness.sameCompleteReclaim(TRADE, LOCK);
     _assertSameState(SameChainState.Reclaimed);
   }
 
@@ -99,11 +104,15 @@ contract StateMachinesTest is Test {
     _expectSameState(SameChainState.PartyCommitted, SameChainState.Unused);
     harness.sameCommitCounterparty(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, SameChainState.Unused);
-    harness.sameClaim(TRADE, LOCK);
+    harness.sameSelectClaim(TRADE, LOCK);
     _expectSameState(SameChainState.PartyCommitted, SameChainState.Unused);
-    harness.sameReclaimParty(TRADE, LOCK);
+    harness.sameSelectReclaimParty(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, SameChainState.Unused);
-    harness.sameReclaimBoth(TRADE, LOCK);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    _expectSameState(SameChainState.ClaimPending, SameChainState.Unused);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    _expectSameState(SameChainState.ReclaimPending, SameChainState.Unused);
+    harness.sameCompleteReclaim(TRADE, LOCK);
   }
 
   function test_sameChainPartyCommittedRejectsAllExceptCounterCommitOrOneSidedReclaim() public {
@@ -111,30 +120,60 @@ contract StateMachinesTest is Test {
     _expectSameState(SameChainState.Unused, SameChainState.PartyCommitted);
     harness.sameCommitParty(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, SameChainState.PartyCommitted);
-    harness.sameClaim(TRADE, LOCK);
+    harness.sameSelectClaim(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, SameChainState.PartyCommitted);
-    harness.sameReclaimBoth(TRADE, LOCK);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    _expectSameState(SameChainState.ClaimPending, SameChainState.PartyCommitted);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    _expectSameState(SameChainState.ReclaimPending, SameChainState.PartyCommitted);
+    harness.sameCompleteReclaim(TRADE, LOCK);
   }
 
-  function test_sameChainBothCommittedRejectsAllExceptAtomicClaimOrDualReclaim() public {
+  function test_sameChainBothCommittedRejectsAllExceptOutcomeSelection() public {
     _sameCommitBoth();
     _expectSameState(SameChainState.Unused, SameChainState.BothCommitted);
     harness.sameCommitParty(TRADE, LOCK);
     _expectSameState(SameChainState.PartyCommitted, SameChainState.BothCommitted);
     harness.sameCommitCounterparty(TRADE, LOCK);
     _expectSameState(SameChainState.PartyCommitted, SameChainState.BothCommitted);
-    harness.sameReclaimParty(TRADE, LOCK);
+    harness.sameSelectReclaimParty(TRADE, LOCK);
+    _expectSameState(SameChainState.ClaimPending, SameChainState.BothCommitted);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    _expectSameState(SameChainState.ReclaimPending, SameChainState.BothCommitted);
+    harness.sameCompleteReclaim(TRADE, LOCK);
+  }
+
+  function test_sameChainClaimPendingAllowsOnlyClaimCompletion() public {
+    _sameCommitBoth();
+    harness.sameSelectClaim(TRADE, LOCK);
+    _assertPendingRejectsEveryAction(SameChainState.ClaimPending);
+    _expectSameState(SameChainState.ReclaimPending, SameChainState.ClaimPending);
+    harness.sameCompleteReclaim(TRADE, LOCK);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    _assertSameState(SameChainState.Claimed);
+  }
+
+  function test_sameChainReclaimPendingAllowsOnlyReclaimCompletion() public {
+    _sameCommitBoth();
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    _assertPendingRejectsEveryAction(SameChainState.ReclaimPending);
+    _expectSameState(SameChainState.ClaimPending, SameChainState.ReclaimPending);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    harness.sameCompleteReclaim(TRADE, LOCK);
+    _assertSameState(SameChainState.Reclaimed);
   }
 
   function test_sameChainClaimedIsTerminal() public {
     _sameCommitBoth();
-    harness.sameClaim(TRADE, LOCK);
+    harness.sameSelectClaim(TRADE, LOCK);
+    harness.sameCompleteClaim(TRADE, LOCK);
     _assertSameTerminal(SameChainState.Claimed);
   }
 
   function test_sameChainReclaimedIsTerminalFromEitherSource() public {
     _sameCommitBoth();
-    harness.sameReclaimBoth(TRADE, LOCK);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    harness.sameCompleteReclaim(TRADE, LOCK);
     _assertSameTerminal(SameChainState.Reclaimed);
   }
 
@@ -146,11 +185,12 @@ contract StateMachinesTest is Test {
     assertEq(uint8(harness.sameState(TRADE, bytes32(uint256(LOCK) + 1))), uint8(SameChainState.PartyCommitted));
   }
 
-  function test_sameChainLaterFailureRollsBackAtomicTerminalTransition() public {
+  function test_sameChainLaterFailureRollsBackPendingCompletion() public {
     _sameCommitBoth();
+    harness.sameSelectClaim(TRADE, LOCK);
     vm.expectRevert(StateMachineHarness.ForcedFailure.selector);
-    harness.sameClaimThenFail(TRADE, LOCK);
-    _assertSameState(SameChainState.BothCommitted);
+    harness.sameCompleteClaimThenFail(TRADE, LOCK);
+    _assertSameState(SameChainState.ClaimPending);
   }
 
   function _crossCommit() internal {
@@ -197,10 +237,27 @@ contract StateMachinesTest is Test {
     _expectSameState(SameChainState.PartyCommitted, terminal);
     harness.sameCommitCounterparty(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, terminal);
-    harness.sameClaim(TRADE, LOCK);
+    harness.sameSelectClaim(TRADE, LOCK);
     _expectSameState(SameChainState.PartyCommitted, terminal);
-    harness.sameReclaimParty(TRADE, LOCK);
+    harness.sameSelectReclaimParty(TRADE, LOCK);
     _expectSameState(SameChainState.BothCommitted, terminal);
-    harness.sameReclaimBoth(TRADE, LOCK);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
+    _expectSameState(SameChainState.ClaimPending, terminal);
+    harness.sameCompleteClaim(TRADE, LOCK);
+    _expectSameState(SameChainState.ReclaimPending, terminal);
+    harness.sameCompleteReclaim(TRADE, LOCK);
+  }
+
+  function _assertPendingRejectsEveryAction(SameChainState pending) internal {
+    _expectSameState(SameChainState.Unused, pending);
+    harness.sameCommitParty(TRADE, LOCK);
+    _expectSameState(SameChainState.PartyCommitted, pending);
+    harness.sameCommitCounterparty(TRADE, LOCK);
+    _expectSameState(SameChainState.BothCommitted, pending);
+    harness.sameSelectClaim(TRADE, LOCK);
+    _expectSameState(SameChainState.PartyCommitted, pending);
+    harness.sameSelectReclaimParty(TRADE, LOCK);
+    _expectSameState(SameChainState.BothCommitted, pending);
+    harness.sameSelectReclaimBoth(TRADE, LOCK);
   }
 }
