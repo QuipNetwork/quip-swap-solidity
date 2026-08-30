@@ -314,7 +314,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
         "expiry": "4000000510",
         "status": "accepted",
-        "transactionHash": "0x0a5ad75b37ae7d7e7fea5f9d9d35b083a42656af6383039760196342195e880d",
+        "transactionHash": "0x1599bf3cab434990d9306d0334e18fc3722414bbdd42d932d4a3533fb43f73e6",
         "errorName": null
       },
       {
@@ -330,7 +330,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
         "expiry": "4000000610",
         "status": "accepted",
-        "transactionHash": "0x74e94e9c1a77b01fe2fa88aa257dadf4785c8459216c05e9407c0cc1d0b6f5f5",
+        "transactionHash": "0x090e1c90c2e28e43d6380c5c50645d60d073a9132d1d3de2297bf2d2c53bfcf7",
         "errorName": null
       }
     ]
@@ -342,7 +342,7 @@
         "sequence": 1,
         "action": "alice-commit",
         "chainId": 31337,
-        "transactionHash": "0x0a5ad75b37ae7d7e7fea5f9d9d35b083a42656af6383039760196342195e880d",
+        "transactionHash": "0x1599bf3cab434990d9306d0334e18fc3722414bbdd42d932d4a3533fb43f73e6",
         "blockNumber": "13",
         "progressionGate": "bob-secret-published",
         "before": {
@@ -492,7 +492,7 @@
         "sequence": 2,
         "action": "bob-commit",
         "chainId": 31338,
-        "transactionHash": "0x74e94e9c1a77b01fe2fa88aa257dadf4785c8459216c05e9407c0cc1d0b6f5f5",
+        "transactionHash": "0x090e1c90c2e28e43d6380c5c50645d60d073a9132d1d3de2297bf2d2c53bfcf7",
         "blockNumber": "13",
         "progressionGate": "bob-secret-accepted",
         "before": {
@@ -632,7 +632,7 @@
         "sequence": 3,
         "action": "revealing-claim",
         "chainId": 31338,
-        "transactionHash": "0x00aae52dbb1e8a7222c0c9eb60eda22c54f4f0d84bea5511ca6ee4754a096bbe",
+        "transactionHash": "0x50a01201c8f7adca2ae3e9013e9eedcb69cba569bfe30e777a651059f7f5da9e",
         "blockNumber": "14",
         "progressionGate": "not-applicable",
         "before": {
@@ -725,7 +725,7 @@
         "sequence": 4,
         "action": "final-claim",
         "chainId": 31337,
-        "transactionHash": "0x3563330742520e2be00da06247f58e61a571cc823e675493d0cd646d343a8fc0",
+        "transactionHash": "0x95f0ad5e3792f8419c0186d83808e21f4018cf2351fb2f77ecade744dc36397d",
         "blockNumber": "16",
         "progressionGate": "not-applicable",
         "before": {

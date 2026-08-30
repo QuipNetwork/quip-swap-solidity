@@ -19,8 +19,9 @@ asset type.
 
 The wrappers and dedicated HTLCs check exact native value, fungible balance
 deltas, and ERC-721 ownership. A failure rolls back protocol state, HTLC
-creation/funding or release, prior atomic payouts, and authorization nonce
-consumption. Reentrancy guards cover commit, claim, and reclaim entry points.
+creation/funding, the current release batch, and authorization nonce
+consumption. Earlier successful same-chain settlement batches remain complete.
+Reentrancy guards cover commit and settlement execution entry points.
 
 ## Governance and operations
 

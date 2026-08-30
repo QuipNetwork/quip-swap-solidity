@@ -147,14 +147,18 @@ Unused -> Committed -> Claimed
 Same-chain state is local to `(TradeID, Lock)`:
 
 ```text
-Unused -> PartyCommitted -> BothCommitted -> Claimed
+Unused -> PartyCommitted -> BothCommitted -> ClaimPending -> Claimed
              |                  |
-             +-> Reclaimed      +-> Reclaimed
+             |                  +-> ReclaimPending -> Reclaimed
+             +--------------------> ReclaimPending -> Reclaimed
 ```
 
 The first same-chain commit binds both sides. Each commit creates and funds its
-own deterministic HTLC. Claim and dual reclaim release both HTLCs atomically;
-a payout failure rolls back the action.
+own deterministic HTLC. A payout-free transaction irreversibly selects claim
+or reclaim inside its valid time window. Permissionless calls then release one
+selected HTLC side in bounded asset batches. Required/completed side bitmaps
+keep the outcome pending until every applicable HTLC completes; a failed batch
+does not undo earlier successful batches or permit switching outcomes.
 
 ## Asset custody
 
@@ -189,5 +193,8 @@ workflow, and console primitives. Omnibus compatibility is isolated at
 - Assets are pulled from the signed principal, not a broker or relayer.
 - Callers cannot redirect claim or reclaim payouts.
 - Terminal local state cannot be reused.
+- Same-chain payout work is bounded per call and retryable after transient
+  failure, while the selected payout address remains fixed across batches.
 - Contracts do not establish remote finality, asset honesty, verifier
-  immutability, wallet provenance, bounded settlement gas, or timely execution.
+  immutability, wallet provenance, a bound on term asset counts, or timely
+  execution.

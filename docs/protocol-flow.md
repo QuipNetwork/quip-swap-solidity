@@ -77,15 +77,25 @@ progression locks.
    deterministic side HTLC, and funds it from her principal.
 2. Bob's authorized commit requires that exact source state and moves
    `PartyCommitted -> BothCommitted`, creating and funding his separate HTLC.
-3. Any caller with the settlement secret submits one atomic claim.
-4. Both HTLCs release to their signed recipients and state becomes `Claimed`.
+3. Any caller with the settlement secret selects claim before the earlier claim
+   deadline. Selection moves `BothCommitted -> ClaimPending` without a payout.
+4. Any callers release each required HTLC with bounded
+   `executeSettlement(..., maxAssets)` calls. Each HTLC locks its terms-fixed
+   recipient on its first successful batch.
+5. Completed-side bits persist across calls. The final required side moves
+   `ClaimPending -> Claimed`.
 
 ## Same-chain recovery
 
-- From `PartyCommitted`, Alice's leg can be reclaimed after her release.
-- From `BothCommitted`, one permissionless dual reclaim becomes available only
-  after both releases. Both payouts and the terminal transition are atomic.
-- A reverting asset or recipient rolls back the whole claim or dual reclaim.
+- From `PartyCommitted`, reclaim selection is available at Alice's release and
+  requires only Alice's HTLC to complete.
+- From `BothCommitted`, reclaim selection is available only after both releases
+  and requires both HTLCs to complete.
+- Claim and reclaim selection are mutually exclusive and irreversible. Timing
+  is checked at selection; selected payouts may finish later.
+- Each payout call is atomic only for its own batch. A failed batch preserves
+  the selected outcome and every earlier completed batch. A permanently
+  failing asset can strand its own HTLC, but cannot roll back the other side.
 
 ## Authorization and submission
 

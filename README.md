@@ -67,6 +67,7 @@ import {createOmnibusClient} from '@quip.network/quip-swap-sdk/legacy'
 - [Security assumptions](docs/security-assumptions.md)
 - [Remaining issues](docs/issues.md)
 - [Asset compatibility](docs/asset-support.md)
+- [Gas checkpoint](docs/gas.md)
 - [Prototype deployment](script/DEPLOYMENT.md)
 - [SDK overview](sdk/README.md)
 - [SDK usage](sdk/USAGE.md)

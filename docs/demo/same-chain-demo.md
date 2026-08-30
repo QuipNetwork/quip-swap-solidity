@@ -7,17 +7,22 @@ bun run demo:same-chain
 ```
 
 The runner starts one temporary chain, deploys the current protocol, exercises
-success, invalid actions, one-sided reclaim, atomic two-sided reclaim, and
-payout rollback, then writes `../demo-artifacts/same-chain-demo.json`.
+success, invalid actions, one- and two-sided reclaim, failed-payout retry, and a
+permanently reverting asset, then writes
+`../demo-artifacts/same-chain-demo.json`.
 
 Success reports:
 
-- schema `quip-swap-same-chain-demo.v1` and state `Claimed`;
-- transitions `Unused -> PartyCommitted -> BothCommitted -> Claimed`;
+- schema `quip-swap-same-chain-demo.v3` and state `Claimed`;
+- transitions through `ClaimPending`, including a mined under-gassed payout and
+  a successful retry;
 - 14 rejected invalid actions;
-- both recovery branches and atomic rollback evidence;
+- one- and two-sided reclaim with exact required/completed side bitmaps;
+- preservation of one completed payout when the other side fails;
+- a separate `ReclaimPending` trade where a permanently reverting asset strands
+  only its own funded HTLC after two failed attempts;
 - one funded HTLC per side, fixed recipient payouts, and empty HTLC custody
-  after settlement;
+  after successful settlement;
 - no persisted secret preimages.
 
 This demo uses the prototype verifier mock; it is not evidence of production PQ

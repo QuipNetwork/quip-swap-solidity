@@ -50,9 +50,11 @@ tracker or remediation-status ledger.
 - Upgradeable, rebasing, fee-on-transfer, callback-heavy, or dishonest tokens
   can block settlement or invalidate accounting assumptions.
 - Asset arrays and reclaim horizons are not contract-bounded. Excessive lists
-  can exceed block gas; extreme timestamps can make recovery impractical.
-- Atomic same-chain claim and dual reclaim fail completely if either payout
-  fails.
+  can make commits impractical and require many settlement batches; extreme
+  timestamps can make recovery impractical.
+- Same-chain outcome selection survives payout failure and settlement is
+  resumable by asset batch. A permanently failing asset can still strand its
+  own HTLC after the outcome becomes irreversible.
 - A local wrapper can currently be signed as `recipient` or
   `reclaimRecipient`; this can revert settlement or strand an ERC-721.
 - Asset-support governance can delist a second-side asset after agreement or
@@ -82,7 +84,7 @@ tracker or remediation-status ledger.
 ## Before production
 
 At minimum, resolve the high-severity verifier, wallet provenance, and
-deployment-verification gaps; bound settlement work and recovery horizons;
+deployment-verification gaps; bound commit work and recovery horizons;
 define asset and registry governance; add durable transaction recovery;
 validate real PQ gas and signatures end to end; and complete an independent
 security audit plus the planned EasyCrypt adversary model.

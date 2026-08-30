@@ -43,8 +43,12 @@ const {receipt, events} = await waitForProtocolReceipt(
 
 The client exposes direct and wallet commit authorization, lazy direct
 registration, registry operations, asset allowlisting, cross-chain and
-same-chain claim/reclaim calls, and state reads. Always verify the receipt and
-the expected protocol events before advancing local state.
+same-chain settlement calls, and state reads. Same-chain callers first use
+`selectSameChainClaim` or `selectSameChainReclaim`, then call
+`executeSameChainSettlement` for each required side and asset batch. Read
+`sameChainSettlementProgress` to determine required and completed side bits.
+Always verify the receipt and expected protocol events before advancing local
+state.
 
 ## Trusted cross-chain coordination
 

@@ -62,14 +62,16 @@ constructor-mismatched deployment could be accepted.
 Required: verify released runtime hashes and all immutable dependencies on new,
 partial, and resumed deployments.
 
-### Unbounded settlement work can make funds unclaimable — open
+### Unbounded commit and total settlement work — partially mitigated
 
-Terms have no contract-level asset-count bound. A fundable trade may require
-more gas to claim or reclaim than a destination block permits, especially for
-same-chain atomic settlement.
+Terms have no contract-level asset-count bound. Funding still processes a
+side's complete list in one commit, and a very large list may exceed block gas.
+Same-chain payout execution is now bounded by caller-selected `maxAssets` and
+resumable, so the complete list no longer has to settle in one transaction.
+Large lists still increase the number and total cost of required calls.
 
-Required: enforce conservative bounds or prove a safe worst-case limit for
-every supported chain and asset type.
+Required: enforce a conservative term asset-count bound for commits and define
+per-chain execution policy for settlement batch sizes.
 
 ## Medium
 
@@ -143,10 +145,13 @@ blocked transfer can make a dedicated HTLC unpayable.
 Required: narrowly govern exact `(assetType, target)` entries, monitor upgrades,
 and use audited adapters where necessary.
 
-### Atomic same-chain payout reduces recovery liveness — design limitation
+### Permanently failing asset can strand its selected HTLC — design limitation
 
-From `BothCommitted`, claim and dual reclaim pay both legs atomically. If either
-asset or recipient reverts, neither leg has an independent recovery path.
+Same-chain claim or reclaim selection is irreversible, and each HTLC can then
+settle independently in bounded batches. A permanently failing asset or
+recipient can leave only that HTLC pending indefinitely. It cannot roll back a
+completed payout on the other side, but the trade cannot reach terminal state
+and the failing side cannot switch to the opposite outcome.
 
 ### Reclaim horizons are unbounded — open
 

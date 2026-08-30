@@ -108,7 +108,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0xc26aa72e01cd5820b8ee73279f618925b6177df6a8a40b69740e56079eea5a78"
+      "transactionHash": "0xaf10dbb0f30a18c200e12b0256016727887dc71abd786206c04cc964e678ac30"
     },
     {
       "role": "bob",
@@ -118,7 +118,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0xaac15285dcec24ee94f592cb5d5f49c47da4433dca2165f66f3641cbbaef63d7",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0xfb9fcfd0329d71b63a12ec7fcb06ef49a938be599162aa3d7febc1d3973a99c6"
+      "transactionHash": "0x9653b3b47f626e1c64cf687412a94da9dde18e9ecd7eed68592f53e26ba64ecd"
     }
   ],
   "transitions": [
@@ -127,7 +127,7 @@
       "action": "alice-commit",
       "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "receipt": {
-        "transactionHash": "0xc26aa72e01cd5820b8ee73279f618925b6177df6a8a40b69740e56079eea5a78",
+        "transactionHash": "0xaf10dbb0f30a18c200e12b0256016727887dc71abd786206c04cc964e678ac30",
         "blockNumber": "17",
         "status": "success",
         "events": [
@@ -201,7 +201,7 @@
       "action": "bob-commit",
       "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "receipt": {
-        "transactionHash": "0xfb9fcfd0329d71b63a12ec7fcb06ef49a938be599162aa3d7febc1d3973a99c6",
+        "transactionHash": "0x9653b3b47f626e1c64cf687412a94da9dde18e9ecd7eed68592f53e26ba64ecd",
         "blockNumber": "18",
         "status": "success",
         "events": [
@@ -275,7 +275,7 @@
       "action": "claim-selection",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x48a7ccc100e2065086dabe0bdaede31d64911edbaa18ec6e7231ae3ecf58b5cf",
+        "transactionHash": "0xa1b84276376a61b7783807e1fcdf3e71e1973eecbd774e9f994c99ce83fcf66e",
         "blockNumber": "19",
         "status": "success",
         "events": [
@@ -344,7 +344,7 @@
       "action": "party-release",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x671311eaa7e8bb1716272a6125fb0a5d15b245d111c2eff947a3e7d4e891d6f4",
+        "transactionHash": "0xf68134684046a7669bf88426789a22c2594d602f9f87de401a18c8defa6ce3fa",
         "blockNumber": "20",
         "status": "success",
         "events": [
@@ -415,7 +415,7 @@
       "action": "counterparty-release-failed",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x4264ac61d380704edf3d847b11dd3a3e18fef16ba93f96728ece36280faca6a9",
+        "transactionHash": "0x65e92e6facdfdb5d3e93491905e3bc9be7d9583d4ecc2125199ecf49bf77a88d",
         "blockNumber": "21",
         "status": "reverted",
         "events": []
@@ -482,7 +482,7 @@
       "action": "counterparty-release-retry",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x80f32515f6ed03ab31c734302d7f31d4fe9e676bf3f046544e7c05eeaf870635",
+        "transactionHash": "0x4ac8b17b359cd9f84202df4f24866ad4535c331a506144142ed55512eea63456",
         "blockNumber": "22",
         "status": "success",
         "events": [
@@ -771,8 +771,8 @@
     "failingSide": "counterparty",
     "attempts": 2,
     "transactionHashes": [
-      "0xe6ca4887c6995d502a409ff34c697ac62d98e59b1e02723090944db177a8796f",
-      "0xb5bf84e2c0357b581dc45212c64c77f5864c2d77236c2c5a3dc8f788ac3c8656"
+      "0x18d7e9c902c03c12f3c3be086fcedcae99dacccbde71eebd1f169d10084c8ff9",
+      "0xc994e8731d5d1d6a3333f7a5307e3365928a50f2e597f605a40af15c1f06a922"
     ],
     "state": "ReclaimPending",
     "expectedSides": 3,
@@ -781,7 +781,7 @@
     "otherSideReleased": true,
     "otherSideRecipient": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "failingReclaimRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
-    "failingHTLC": "0xcaF07b7B2e6f4c6e31B54DefB2EB3fb0eaB2DD8F",
+    "failingHTLC": "0x374badbF7C1283067CfBa6e0EdAc6Edd93242af7",
     "failingCursor": "0",
     "failingPayoutRecipient": "0x0000000000000000000000000000000000000000",
     "failingBalance": "20000000000000000000"

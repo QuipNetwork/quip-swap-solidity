@@ -19,6 +19,7 @@ docs/*
 !docs/protocol-flow.md
 !docs/security-assumptions.md
 !docs/issues.md
+!docs/gas.md
 !docs/demo/
 docs/demo/*
 !docs/demo/*.md
