@@ -250,6 +250,89 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(address(cross).balance, fee);
   }
 
+  function test_crossFeesRemainAccruedAcrossClaimReclaimAndAbandonment() public {
+    uint256 fee = 0.005 ether;
+    cross.setCommitmentFee(fee);
+
+    ProtocolTerms memory claimTerms = _crossTerms();
+    bytes32 claimLock = _lock(claimTerms);
+    _commitCross(claimTerms, true, claimLock, 75, 1 + fee);
+    address claimHTLC = cross.htlcOf(claimTerms, true, claimLock);
+
+    // A later live-fee update must not affect funded custody or its fixed payout.
+    cross.setCommitmentFee(cross.MAX_FEE());
+    assertEq(cross.accruedFees(), fee);
+    assertEq(claimHTLC.balance, 1);
+    assertEq(SwapHTLC(payable(claimHTLC)).nextAssetIndex(), 0);
+    assertEq(SwapHTLC(payable(claimHTLC)).payoutRecipient(), address(0));
+
+    cross.claim(claimTerms, true, claimLock, SECRET);
+    assertEq(uint8(cross.state(claimTerms, true, claimLock)), uint8(CrossChainLegState.Claimed));
+    assertEq(SwapHTLC(payable(claimHTLC)).payoutRecipient(), BOB_RECIPIENT);
+    assertEq(cross.accruedFees(), fee);
+    assertEq(address(cross).balance, fee);
+
+    ProtocolTerms memory reclaimTerms = _crossTerms();
+    reclaimTerms.partySide.sideNonce = bytes32(uint256(76));
+    _bindCross(reclaimTerms);
+    bytes32 reclaimLock = _lock(reclaimTerms);
+    _commitCross(reclaimTerms, true, reclaimLock, 76, 1 + cross.MAX_FEE());
+
+    // With no remote/counterparty action, an accepted local fee is still revenue.
+    ProtocolTerms memory abandonedTerms = _crossTerms();
+    abandonedTerms.partySide.sideNonce = bytes32(uint256(77));
+    _bindCross(abandonedTerms);
+    bytes32 abandonedLock = _lock(abandonedTerms);
+    _commitCross(abandonedTerms, true, abandonedLock, 77, 1 + cross.MAX_FEE());
+
+    vm.warp(reclaimTerms.partySide.reclaimRelease);
+    cross.reclaim(reclaimTerms, true, reclaimLock);
+    assertEq(uint8(cross.state(reclaimTerms, true, reclaimLock)), uint8(CrossChainLegState.Reclaimed));
+    assertEq(uint8(cross.state(abandonedTerms, true, abandonedLock)), uint8(CrossChainLegState.Committed));
+    assertEq(cross.accruedFees(), fee + 2 * cross.MAX_FEE());
+    assertEq(address(cross).balance, fee + 2 * cross.MAX_FEE());
+  }
+
+  function test_sameFeesAreIndependentOfPartialAndFailingSettlement() public {
+    uint256 fee = 0.005 ether;
+    same.setCommitmentFee(fee);
+    MaliciousERC20Mock malicious = new MaliciousERC20Mock();
+    support.setAssetSupport(AssetType.ERC20, address(malicious), true);
+    malicious.mint(ALICE, 10);
+    vm.prank(ALICE);
+    malicious.approve(address(same), 10);
+
+    ProtocolTerms memory terms = _sameTerms();
+    terms.partySide.assets = new Asset[](2);
+    terms.partySide.assets[0] = Asset(AssetType.Native, address(0), 0, 1);
+    terms.partySide.assets[1] = Asset(AssetType.ERC20, address(malicious), 0, 10);
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 78, 1 + fee);
+    _commitSame(terms, false, lock, 79, 2 + fee);
+    address partyHTLC = same.htlcOf(terms, true, lock);
+    assertEq(same.accruedFees(), 2 * fee);
+    assertEq(address(same).balance, 2 * fee);
+
+    same.selectClaim(terms, lock, SECRET);
+    same.executeSettlement(terms, lock, true, 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+
+    // Fee administration neither changes nor participates in settlement state.
+    same.setCommitmentFee(same.MAX_FEE());
+    malicious.setBehavior(MaliciousERC20Mock.Behavior.ReturnFalse);
+    vm.expectRevert();
+    same.executeSettlement(terms, lock, true, 1);
+
+    (, uint8 completedSides) = same.settlementProgress(terms, lock);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertEq(completedSides, 0);
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).payoutRecipient(), BOB_RECIPIENT);
+    assertEq(malicious.balanceOf(partyHTLC), 10);
+    assertEq(same.accruedFees(), 2 * fee);
+    assertEq(address(same).balance, 2 * fee);
+  }
+
   function test_failedSecondSameChainFundingLeavesFirstHTLCIsolatedAndPermitsRetry() public {
     MaliciousERC20Mock malicious = new MaliciousERC20Mock();
     support.setAssetSupport(AssetType.ERC20, address(malicious), true);
