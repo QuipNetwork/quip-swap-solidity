@@ -33,4 +33,8 @@ interface ICommitmentFees {
   /// @notice Sets the live per-commit fee; callable only by the wrapper owner.
   /// @param newFee New native fee, which must not exceed `MAX_FEE`.
   function setCommitmentFee(uint256 newFee) external;
+
+  /// @notice Withdraws exactly the explicitly accrued fees.
+  /// @param to Recipient of the accrued native fees; cannot be zero.
+  function withdrawFees(address to) external;
 }

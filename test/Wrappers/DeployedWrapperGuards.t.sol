@@ -31,6 +31,7 @@ import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
 import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
+import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 contract DeployedWrapperGuardsTest is Test {
   event Committed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side, address principal);
@@ -46,6 +47,7 @@ contract DeployedWrapperGuardsTest is Test {
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event FeeUpdated(uint256 oldFee, uint256 newFee);
+  event FeesWithdrawn(address indexed to, uint256 amount);
 
   address internal constant GATEWAY = address(0xA000);
   address internal constant ALICE = address(0xA11CE);
@@ -54,6 +56,7 @@ contract DeployedWrapperGuardsTest is Test {
   address internal constant BOB_RECIPIENT = address(0xB0B0);
   address internal constant EXECUTOR_A = address(0xE0A);
   address internal constant EXECUTOR_B = address(0xE0B);
+  address internal constant TREASURY = address(0x7EA5);
   bytes32 internal constant SECRET = keccak256('settlement-secret');
   bytes32 internal constant BOB_COMMIT_SECRET = keccak256('bob-commit-secret');
 
@@ -331,6 +334,63 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(malicious.balanceOf(partyHTLC), 10);
     assertEq(same.accruedFees(), 2 * fee);
     assertEq(address(same).balance, 2 * fee);
+
+    uint256 treasuryBefore = TREASURY.balance;
+    same.withdrawFees(TREASURY);
+    assertEq(TREASURY.balance - treasuryBefore, 2 * fee);
+    assertEq(same.accruedFees(), 0);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.ClaimPending));
+    assertEq(SwapHTLC(payable(partyHTLC)).nextAssetIndex(), 1);
+    assertEq(SwapHTLC(payable(partyHTLC)).payoutRecipient(), BOB_RECIPIENT);
+    assertEq(malicious.balanceOf(partyHTLC), 10);
+  }
+
+  function test_withdrawFeesIsOwnerOnlyRejectsZeroAndTransfersOnlyAccruedRevenue() public {
+    uint256 fee = 0.005 ether;
+    cross.setCommitmentFee(fee);
+    ProtocolTerms memory terms = _crossTerms();
+    bytes32 lock = _lock(terms);
+    _commitCross(terms, true, lock, 80, 1 + fee);
+
+    // Unaccounted native value must remain outside the withdrawable fee ledger.
+    uint256 unaccounted = 3 ether;
+    vm.deal(address(cross), address(cross).balance + unaccounted);
+
+    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+    vm.prank(ALICE);
+    cross.withdrawFees(TREASURY);
+    assertEq(cross.accruedFees(), fee);
+
+    vm.expectRevert(ICommitmentFees.ZeroFeeRecipient.selector);
+    cross.withdrawFees(address(0));
+    assertEq(cross.accruedFees(), fee);
+
+    uint256 treasuryBefore = TREASURY.balance;
+    vm.expectEmit(true, false, false, true, address(cross));
+    emit FeesWithdrawn(TREASURY, fee);
+    cross.withdrawFees(TREASURY);
+
+    assertEq(TREASURY.balance - treasuryBefore, fee);
+    assertEq(cross.accruedFees(), 0);
+    assertEq(address(cross).balance, unaccounted);
+    assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(cross.htlcOf(terms, true, lock).balance, 1);
+  }
+
+  function test_failedFeeWithdrawalRestoresAccruedBalance() public {
+    uint256 fee = 0.005 ether;
+    same.setCommitmentFee(fee);
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+    _commitSame(terms, true, lock, 81, 1 + fee);
+    RejectingFeeReceiver rejecter = new RejectingFeeReceiver();
+
+    vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
+    same.withdrawFees(address(rejecter));
+
+    assertEq(same.accruedFees(), fee);
+    assertEq(address(same).balance, fee);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
   }
 
   function test_failedSecondSameChainFundingLeavesFirstHTLCIsolatedAndPermitsRetry() public {
@@ -1308,5 +1368,11 @@ contract DeployedWrapperGuardsTest is Test {
 
   function _assertCrossUnused(ProtocolTerms memory terms, bool party, bytes32 lock) internal view {
     assertEq(uint8(cross.state(terms, party, lock)), uint8(CrossChainLegState.Unused));
+  }
+}
+
+contract RejectingFeeReceiver {
+  receive() external payable {
+    revert();
   }
 }
