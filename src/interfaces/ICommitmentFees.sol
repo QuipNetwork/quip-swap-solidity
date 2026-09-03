@@ -15,6 +15,9 @@ interface ICommitmentFees {
   /// @notice Thrown when accrued fees would be withdrawn to the zero address.
   error ZeroFeeRecipient();
 
+  /// @notice Thrown when ownership renunciation is disabled to avoid stranding fee administration.
+  error RenounceDisabled();
+
   /// @notice Emitted when the live per-commit fee changes.
   event FeeUpdated(uint256 oldFee, uint256 newFee);
 

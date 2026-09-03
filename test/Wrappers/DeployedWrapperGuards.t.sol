@@ -124,6 +124,14 @@ contract DeployedWrapperGuardsTest is Test {
     new SameChainWrapper(GATEWAY, support, address(htlcImplementation), address(0));
   }
 
+  function test_wrapperOwnershipRenunciationIsDisabled() public {
+    vm.expectRevert(ICommitmentFees.RenounceDisabled.selector);
+    cross.renounceOwnership();
+
+    vm.expectRevert(ICommitmentFees.RenounceDisabled.selector);
+    same.renounceOwnership();
+  }
+
   function test_wrappersExposeTheSharedZeroDefaultFeeSurface() public view {
     assertEq(cross.MAX_FEE(), 0.01 ether);
     assertEq(same.MAX_FEE(), cross.MAX_FEE());

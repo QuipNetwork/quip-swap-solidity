@@ -42,6 +42,11 @@ abstract contract CommitmentFees is ICommitmentFees, Ownable2Step {
     emit FeesWithdrawn(to, amount);
   }
 
+  /// @notice Ownership renunciation is disabled so fee administration cannot be stranded.
+  function renounceOwnership() public pure override {
+    revert RenounceDisabled();
+  }
+
   /// @notice Requires exact native escrow plus the current live fee.
   function _requireCommitValue(uint256 nativeEscrow) internal view {
     if (msg.value != nativeEscrow + commitmentFee) revert IncorrectNativeAmount();
