@@ -56,6 +56,7 @@ try {
     recoveries: artifact.recoveries.map(recovery => recovery.outcome),
     resumableFailure: artifact.resumableFailure,
     permanentAssetFailure: artifact.permanentAssetFailure,
+    feeFlow: artifact.feeFlow,
     terminalOutcome: artifact.terminalOutcome,
     secretsPersisted: false,
     artifact: output,

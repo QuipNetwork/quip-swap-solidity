@@ -3,7 +3,7 @@
 The canonical regression record is [`.gas-snapshot`](../.gas-snapshot). It was
 regenerated after the resumable same-chain migration with Foundry's default
 snapshot settings. Its SHA-256 is
-`e8df761fc6f34aa064803944a60400723ca39ebfa2f87c4a3f93e75580c296b1`.
+`9204d5fe64d9c1475857d79b4bfb13ea3bd10978e3d6f540c4819e84960664ab`.
 
 A focused `forge test --gas-report` over `DeployedWrapperGuardsTest` reported:
 

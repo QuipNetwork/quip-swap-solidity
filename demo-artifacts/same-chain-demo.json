@@ -99,6 +99,27 @@
       "allowance": "20000000000000000000"
     }
   ],
+  "feeFlow": {
+    "quotes": [
+      {
+        "side": "alice",
+        "nativeEscrow": "0",
+        "commitmentFee": "5000000000000",
+        "totalValue": "5000000000000"
+      },
+      {
+        "side": "bob",
+        "nativeEscrow": "0",
+        "commitmentFee": "5000000000000",
+        "totalValue": "5000000000000"
+      }
+    ],
+    "accruedAfterCommits": "10000000000000",
+    "accruedAfterSettlement": "10000000000000",
+    "withdrawn": "10000000000000",
+    "accruedAfterWithdrawal": "0",
+    "gasIncludedInProtocolRevenue": false
+  },
   "authorizationDecisions": [
     {
       "role": "alice",
@@ -108,7 +129,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0x9d339c6482a19736d150be12589740b7886a44607c404ac1786d8a479f2ede1d",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0xaf10dbb0f30a18c200e12b0256016727887dc71abd786206c04cc964e678ac30"
+      "transactionHash": "0xe27c96d6919f78e3a0a627253fb7c86eb4a179f7d75548b6dc2ee8c910ba0e4e"
     },
     {
       "role": "bob",
@@ -118,7 +139,7 @@
       "keyVersion": "1",
       "authorizationNonceKey": "0xaac15285dcec24ee94f592cb5d5f49c47da4433dca2165f66f3641cbbaef63d7",
       "authorizationNonceConsumed": true,
-      "transactionHash": "0x9653b3b47f626e1c64cf687412a94da9dde18e9ecd7eed68592f53e26ba64ecd"
+      "transactionHash": "0x36acd28b400f900456620f425ef5cd56e5b3dd26a37ad3b47b2d4c42b763309c"
     }
   ],
   "transitions": [
@@ -127,8 +148,8 @@
       "action": "alice-commit",
       "caller": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
       "receipt": {
-        "transactionHash": "0xaf10dbb0f30a18c200e12b0256016727887dc71abd786206c04cc964e678ac30",
-        "blockNumber": "17",
+        "transactionHash": "0xe27c96d6919f78e3a0a627253fb7c86eb4a179f7d75548b6dc2ee8c910ba0e4e",
+        "blockNumber": "18",
         "status": "success",
         "events": [
           "directAuthorization.IdentityRegistered",
@@ -201,8 +222,8 @@
       "action": "bob-commit",
       "caller": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "receipt": {
-        "transactionHash": "0x9653b3b47f626e1c64cf687412a94da9dde18e9ecd7eed68592f53e26ba64ecd",
-        "blockNumber": "18",
+        "transactionHash": "0x36acd28b400f900456620f425ef5cd56e5b3dd26a37ad3b47b2d4c42b763309c",
+        "blockNumber": "19",
         "status": "success",
         "events": [
           "directAuthorization.IdentityRegistered",
@@ -275,8 +296,8 @@
       "action": "claim-selection",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0xa1b84276376a61b7783807e1fcdf3e71e1973eecbd774e9f994c99ce83fcf66e",
-        "blockNumber": "19",
+        "transactionHash": "0xfe250e44efb28eb8e60c9d5289d1588941cb5b955f257f71d612b2c1d12ff921",
+        "blockNumber": "20",
         "status": "success",
         "events": [
           "sameChainWrapper.ClaimSelected"
@@ -344,8 +365,8 @@
       "action": "party-release",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0xf68134684046a7669bf88426789a22c2594d602f9f87de401a18c8defa6ce3fa",
-        "blockNumber": "20",
+        "transactionHash": "0x7b0fde360de951d6f3e9f6a88bcbfd4aebe8c07d636970dd8557603ee14be1c1",
+        "blockNumber": "21",
         "status": "success",
         "events": [
           "swapHTLC.Released",
@@ -415,8 +436,8 @@
       "action": "counterparty-release-failed",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x65e92e6facdfdb5d3e93491905e3bc9be7d9583d4ecc2125199ecf49bf77a88d",
-        "blockNumber": "21",
+        "transactionHash": "0xecb66b2f9faa46424532b7aafd627b3091e99de34cd146cb1eb499b3948fb94e",
+        "blockNumber": "22",
         "status": "reverted",
         "events": []
       },
@@ -482,8 +503,8 @@
       "action": "counterparty-release-retry",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       "receipt": {
-        "transactionHash": "0x4ac8b17b359cd9f84202df4f24866ad4535c331a506144142ed55512eea63456",
-        "blockNumber": "22",
+        "transactionHash": "0xd7cb903ea1d374836d6c9dac3c83c502ec992e0828d477b440f5e796e2a51c5a",
+        "blockNumber": "23",
         "status": "success",
         "events": [
           "swapHTLC.Released",
@@ -668,7 +689,7 @@
     {
       "outcome": "party-only-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0xc44df3392184b3a71d4d6c328583d02ef8aee2d55868d735521b4c9ca0fb4396",
+      "transactionHash": "0x9b3561046179807960649ad3f1ae7cc607b5b00a8cbebe6f1b372aa84ac96b34",
       "releaseTime": "4000001400",
       "stateBefore": "PartyCommitted",
       "stateAfter": "Reclaimed",
@@ -713,7 +734,7 @@
     {
       "outcome": "both-reclaim",
       "caller": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
-      "transactionHash": "0xaad66218c562cb75b224847a073a2377ddbd1147cd5ed655d8d81cde734f4f07",
+      "transactionHash": "0x08b21281a85f30c693a67d94139a91c67e589ef73f5ab80f933f679a5a6c09d9",
       "releaseTime": "4000001400",
       "stateBefore": "ReclaimPending",
       "stateAfter": "Reclaimed",
@@ -771,8 +792,8 @@
     "failingSide": "counterparty",
     "attempts": 2,
     "transactionHashes": [
-      "0x18d7e9c902c03c12f3c3be086fcedcae99dacccbde71eebd1f169d10084c8ff9",
-      "0xc994e8731d5d1d6a3333f7a5307e3365928a50f2e597f605a40af15c1f06a922"
+      "0x815ccfd0eb9344ccfeaa41e6cf58db7eca97bb1bb03673a1fd7e3f87e78e7b13",
+      "0xe9d56a43a67f2cc14c9e7a29b1fa667185bab2921ea64ab5a4edbab1c4a74332"
     ],
     "state": "ReclaimPending",
     "expectedSides": 3,

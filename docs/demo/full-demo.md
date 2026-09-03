@@ -21,7 +21,13 @@ Success reports:
 - both chain states `Claimed`;
 - four rejected invalid actions;
 - one funded HTLC per committed leg and empty HTLC custody after settlement;
+- independent live fee quotes and payments on both chains, fee accrual unchanged
+  by settlement, and exact owner withdrawal to zero accrued balance;
 - 10 chain-A demo tokens paid to Bob and 20 chain-B tokens paid to Alice.
+
+The artifact keeps native escrow, commitment fee, total transaction value, and
+gas semantics separate. Its fee trace demonstrates protocol revenue only; gas
+paid to validators is not included.
 
 The invalid controls reject a disallowed submitter, a missing or wrong
 Bob-commit preimage, and a wrong settlement preimage without changing state.

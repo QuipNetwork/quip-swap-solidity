@@ -101,6 +101,8 @@ export interface SameChainSuccessTrace {
     SameChainActionTrace,
   ]
   readonly finalSnapshot: SameChainSnapshot
+  readonly accruedFeesAfterCommits: string
+  readonly accruedFeesAfterSettlement: string
   readonly payoutsFixedByTerms: true
   readonly identities: {
     readonly alice: {readonly active: true; readonly activeKeyVersion: '1'; readonly recoveryKeyVersion: '1'}
@@ -172,6 +174,11 @@ export async function runSameChainSuccess(
     bobCommit.events,
     bobCommit.nonceKey,
   )
+  const accruedFeesAfterCommits = await chain.publicClient.readContract({
+    address: addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'accruedFees',
+  })
 
   onProgress?.('Selecting the permissionless claim outcome without moving assets')
   const claimant = createProtocolClient({
@@ -262,6 +269,11 @@ export async function runSameChainSuccess(
   const claimReceipt = await successfulReceipt(chain, claimHash)
   const claimEvents = decodeProtocolEvents(claimReceipt.logs, addresses, [], [counterpartyHTLC])
   const finalSnapshot = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+  const accruedFeesAfterSettlement = await chain.publicClient.readContract({
+    address: addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'accruedFees',
+  })
   assertFinalPayouts(finalSnapshot, terms)
   const claimTrace = trace(
     'counterparty-release-retry',
@@ -302,6 +314,8 @@ export async function runSameChainSuccess(
     settlementSecret: SAME_CHAIN_SETTLEMENT_SECRET,
     actions: [aliceTrace, bobTrace, selectionTrace, partyTrace, failedTrace, claimTrace],
     finalSnapshot,
+    accruedFeesAfterCommits: accruedFeesAfterCommits.toString(),
+    accruedFeesAfterSettlement: accruedFeesAfterSettlement.toString(),
     payoutsFixedByTerms: true,
     identities: {
       alice: {active: true, activeKeyVersion: '1', recoveryKeyVersion: '1'},

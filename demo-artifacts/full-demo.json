@@ -5,6 +5,7 @@
     "schema": "quip-swap-demo-deployment.v1",
     "deploymentVersion": "v1.1.0-alpha.4",
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "identityRegistration": "lazy-on-first-commit",
     "chains": [
       {
@@ -314,7 +315,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000005",
         "expiry": "4000000510",
         "status": "accepted",
-        "transactionHash": "0x1599bf3cab434990d9306d0334e18fc3722414bbdd42d932d4a3533fb43f73e6",
+        "transactionHash": "0x2a60d01ecdf7f72cd01585b0e36d9ac367c9fef8f54807544d75994105d9644b",
         "errorName": null
       },
       {
@@ -330,7 +331,7 @@
         "actionNonce": "0x0000000000000000000000000000000000000000000000000000000000000006",
         "expiry": "4000000610",
         "status": "accepted",
-        "transactionHash": "0x090e1c90c2e28e43d6380c5c50645d60d073a9132d1d3de2297bf2d2c53bfcf7",
+        "transactionHash": "0x0eb9cbcdff6c0b5dcc20f7f737ec3e1e1a54e42b0ea5f2daf590d486a717cd90",
         "errorName": null
       }
     ]
@@ -342,8 +343,8 @@
         "sequence": 1,
         "action": "alice-commit",
         "chainId": 31337,
-        "transactionHash": "0x1599bf3cab434990d9306d0334e18fc3722414bbdd42d932d4a3533fb43f73e6",
-        "blockNumber": "13",
+        "transactionHash": "0x2a60d01ecdf7f72cd01585b0e36d9ac367c9fef8f54807544d75994105d9644b",
+        "blockNumber": "14",
         "progressionGate": "bob-secret-published",
         "before": {
           "chainId": 31337,
@@ -492,8 +493,8 @@
         "sequence": 2,
         "action": "bob-commit",
         "chainId": 31338,
-        "transactionHash": "0x090e1c90c2e28e43d6380c5c50645d60d073a9132d1d3de2297bf2d2c53bfcf7",
-        "blockNumber": "13",
+        "transactionHash": "0x0eb9cbcdff6c0b5dcc20f7f737ec3e1e1a54e42b0ea5f2daf590d486a717cd90",
+        "blockNumber": "14",
         "progressionGate": "bob-secret-accepted",
         "before": {
           "chainId": 31338,
@@ -632,8 +633,8 @@
         "sequence": 3,
         "action": "revealing-claim",
         "chainId": 31338,
-        "transactionHash": "0x50a01201c8f7adca2ae3e9013e9eedcb69cba569bfe30e777a651059f7f5da9e",
-        "blockNumber": "14",
+        "transactionHash": "0x36ae6428c0bb57ba87a2bea6cadea3c666abae3332e83048eeaf57c71e8b7f37",
+        "blockNumber": "15",
         "progressionGate": "not-applicable",
         "before": {
           "chainId": 31338,
@@ -725,8 +726,8 @@
         "sequence": 4,
         "action": "final-claim",
         "chainId": 31337,
-        "transactionHash": "0x95f0ad5e3792f8419c0186d83808e21f4018cf2351fb2f77ecade744dc36397d",
-        "blockNumber": "16",
+        "transactionHash": "0xf7db451e23113cc2f444dce4208b6831706d235b1d219ded0e99de25d5f71c73",
+        "blockNumber": "17",
         "progressionGate": "not-applicable",
         "before": {
           "chainId": 31337,
@@ -1150,5 +1151,38 @@
         }
       }
     ]
+  },
+  "feeFlow": {
+    "quotes": [
+      {
+        "side": "alice",
+        "nativeEscrow": "0",
+        "commitmentFee": "3000000000000",
+        "totalValue": "3000000000000"
+      },
+      {
+        "side": "bob",
+        "nativeEscrow": "0",
+        "commitmentFee": "7000000000000",
+        "totalValue": "7000000000000"
+      }
+    ],
+    "accruedAfterCommits": [
+      "3000000000000",
+      "7000000000000"
+    ],
+    "accruedAfterSettlement": [
+      "3000000000000",
+      "7000000000000"
+    ],
+    "withdrawn": [
+      "3000000000000",
+      "7000000000000"
+    ],
+    "accruedAfterWithdrawal": [
+      "0",
+      "0"
+    ],
+    "gasIncludedInProtocolRevenue": false
   }
 }

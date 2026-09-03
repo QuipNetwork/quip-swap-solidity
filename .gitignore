@@ -20,6 +20,7 @@ docs/*
 !docs/security-assumptions.md
 !docs/issues.md
 !docs/gas.md
+!docs/fees.md
 !docs/demo/
 docs/demo/*
 !docs/demo/*.md

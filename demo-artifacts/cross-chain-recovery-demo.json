@@ -5,6 +5,7 @@
     "schema": "quip-swap-demo-deployment.v1",
     "deploymentVersion": "v1.1.0-alpha.4",
     "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "owner": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "identityRegistration": "lazy-on-first-commit",
     "chains": [
       {
@@ -121,10 +122,10 @@
         }
       ],
       "transactionHashes": [
-        "0x1599bf3cab434990d9306d0334e18fc3722414bbdd42d932d4a3533fb43f73e6",
-        "0x090e1c90c2e28e43d6380c5c50645d60d073a9132d1d3de2297bf2d2c53bfcf7",
-        "0xb244a4df583ca8cf20fe9af1e6763246fe4ce04d16db492b570bb7c1e531afe9",
-        "0x7d6edc9606d776915c2e54152f4f5fdd836a2dc0f7d60e7951c2b4514d2156b9"
+        "0xacf3ac15f8c3356c440628aa924722c2ddc8f4f563a4a57fdc0734a77979c974",
+        "0xc1672bf1acb29af0893fbc3652925076d42ea5fff74c622f612fb0e969af32eb",
+        "0xbc5159d277241530cad1abba80d9442779551dad733883054456741c54479dd1",
+        "0xc78ce4737967cd1a2e8ff90dbb5db1586a33788d819e760ca9df09c86bcc7de6"
       ],
       "fixedPayouts": true
     },
@@ -193,10 +194,10 @@
         }
       ],
       "transactionHashes": [
-        "0xc4ffc17fd76fb2541a37acbbc5e2a83cf5b4ba02b0dd5f9cc5e6fb2aa5ee9991",
-        "0xa4a82ad228c91d5b59b3f308afef99757f73934b0fb78a5e3b7e8c16ff95e304",
-        "0x2f0a4dddf3b2311986d2b0ccd4890510b5f5cfd7745c6170be40947b060f5a36",
-        "0x6855a5b6e6ef67e2e422cd95a12908804a214ed5d39ba78220acf8cd3ecc0d66"
+        "0x2c4eb83a89a1fadf88d7097b1623e2e11f36197be445dafec3ba63bfda8377e0",
+        "0x76a8414b4cdc355fca2275d42f88cbaad2f01e8df768b6c822e255b95df49508",
+        "0x0fbcb00df0032266d7e9f9d80f66b2ce34b014fb2dd353b56f55e6e92df17bea",
+        "0x1e05d8e423112c8bc00c51c129b2879b51d6dd8d7631932f474e2a5187b06030"
       ],
       "rejectedCompetingAction": {
         "action": "claim",
@@ -269,10 +270,10 @@
         }
       ],
       "transactionHashes": [
-        "0x710f73871d1240bfeac89cd2c37b6912ae7f689a8e02f63a00617598507bd123",
-        "0xf5dd7959ba4d7950d2faa32eb971448925f69cd262fd7404ed1503b1f05af8f2",
-        "0x1327a4b9d772974f55232094e0d65b774428d4089f0b878eb571435f755849f7",
-        "0xdeee6671dfb6a7a7a1bd51c3b3f8ba15657c70f5aa4ee43503c2c763bd23513a"
+        "0xe6054d160ea88e817bf61fd0fb667079859c31a5281a5ed63527efcc38e52d2b",
+        "0x7430df0f495566f169fea14ae3062120eba8cc37d0d8fbde4e81c367e2298976",
+        "0x97311278bd366638b06f0ded0754de26b6a2cea233b5e83087382cee8176fd2e",
+        "0x4f1344d5e1901852cfec140e9a613ff4fb604779c62b832baa32049c150b3b62"
       ],
       "rejectedCompetingAction": {
         "action": "reclaim",
@@ -345,10 +346,10 @@
         }
       ],
       "transactionHashes": [
-        "0x9a37c4f129ce87904bab78b075ba8d56c8b6301d30ef6b68f391b9cd32cc0f62",
-        "0x766e30ea3e6488e87418956a2d79675283bd6050c06b72901420058408ce1b26",
-        "0x26aa3e1cbb59be95449041ef5cf44b3cd13fdcde5f2b1ee457974f11b976dcc8",
-        "0x45c5de1e4335014c339d238f2577d0020ea2ade0f056d853cefab1c94f839419"
+        "0x97c17b12fb2db3b0de8c3c06fd0be418fa7fed30270f27af6ff6250107a13a89",
+        "0x4cac394c3fed02d84dc408bcb7c47976cacbb91fc632339e6e084ff7434a8618",
+        "0x1d9342a067cea994c308608e4d759b70d13aaeef14b7625ccabc64a5ebf47994",
+        "0x28935c7f0b3253d3771e0d50b93ba5035af626a63d5b47ae6a26206c182e1edc"
       ],
       "rejectedCompetingAction": {
         "action": "claim",

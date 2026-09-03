@@ -22,14 +22,16 @@ secret is part of the signed terms.
 ## Cross-chain success
 
 1. Both parties independently validate the same terms and timing margins.
-2. Alice PQ-authorizes her local commit. The wrapper creates her deterministic
-   side HTLC and funds it directly from her principal.
+2. Alice discovers her local wrapper's live fee, PQ-authorizes her local
+   commit, and submits the exact native escrow plus that fee. The wrapper keeps
+   the fee and funds the deterministic side HTLC only with signed escrow.
 3. Alice's transaction verifies and publishes `BobCommitSecret` atomically with
    escrow. The preimage is public as soon as the transaction is visible.
 4. Bob's trusted client authenticates Alice's transaction and waits for its
    configured finality threshold.
-5. Bob PQ-authorizes his commit using the published preimage. His wrapper
-   creates and funds Bob's distinct side HTLC.
+5. Bob independently discovers his local wrapper fee and PQ-authorizes his
+   commit using the published preimage. His wrapper keeps its fee and creates
+   and funds Bob's distinct side HTLC.
 6. Alice observes Bob's local `Committed` state and claims Bob's leg with the
    settlement secret. The secret becomes public in calldata.
 7. Bob or another funded executor waits for the configured reveal finality and
@@ -73,9 +75,10 @@ settlement secrets, or an executor missing the remaining claim window.
 Both sides use one `SameChainWrapper`, one settlement lock, and canonical zero
 progression locks.
 
-1. Alice's authorized commit moves `Unused -> PartyCommitted`, creates her
-   deterministic side HTLC, and funds it from her principal.
-2. Bob's authorized commit requires that exact source state and moves
+1. Alice's authorized commit pays one live fee, moves
+   `Unused -> PartyCommitted`, creates her deterministic side HTLC, and funds
+   it from her principal.
+2. Bob's authorized commit pays a second live fee, requires that exact source state, and moves
    `PartyCommitted -> BothCommitted`, creating and funding his separate HTLC.
 3. Any caller with the settlement secret selects claim before the earlier claim
    deadline. Selection moves `BothCommitted -> ClaimPending` without a payout.
@@ -102,11 +105,27 @@ progression locks.
 Every commit requires the principal's exact PQ authorization. Depending on the
 signed delegation policy, the transaction may be transported by the principal,
 a specific registered delegate, or any relayer. Tokens are always pulled from
-the principal. Native value may be transported by the caller but must exactly
-match the signed native assets.
+the principal. Native value is transported by the caller and must exactly
+equal the selected side's signed native assets plus the wrapper's current fee.
 
 Claims and reclaims do not use delegation policy. They are permissionless
 because their payouts are immutable.
+
+## Commitment-fee lifecycle
+
+Each wrapper owner configures a native `commitmentFee`, capped at `0.01 ether`.
+The value is live and mutable: it is not part of `ProtocolTerms`, the
+authorization signature, or a per-trade snapshot. A client must read it
+immediately before submission and explicitly retry after a fee-change revert.
+
+Each accepted local commit accrues exactly one fee in addition to exact HTLC
+escrow. A same-chain trade therefore pays two fees to one wrapper. A
+cross-chain trade pays the independently configured fee on each chain. Once a
+commit is accepted, its fee is protocol revenue even if the trade later
+reclaims, never receives the other leg, or has an incomplete payout. The owner
+may withdraw only `accruedFees`; HTLC escrow and unaccounted native value are
+not withdrawable through the fee function. Transaction gas is paid separately
+to the network and is never protocol revenue.
 
 ## Observation rule
 

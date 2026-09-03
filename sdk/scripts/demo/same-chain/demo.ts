@@ -11,7 +11,7 @@ import {
   validateProtocolTerms,
   wrapperMode,
 } from '../../../src/index.js'
-import type {Hex32, ProtocolTerms, TimingPolicy} from '../../../src/index.js'
+import type {CommitAuthorizationRequest, Hex32, ProtocolTerms, TimingPolicy} from '../../../src/index.js'
 import {assetSupportRegistryAbi} from '../../../src/generated/assetSupportRegistryAbi.js'
 import {directAuthorizationAbi} from '../../../src/generated/directAuthorizationAbi.js'
 import {sameChainWrapperAbi} from '../../../src/generated/sameChainWrapperAbi.js'
@@ -80,6 +80,14 @@ export interface SameChainDemoFoundation {
   readonly setup: SameChainSetup
   readonly adversarial: SameChainAdversarialTrace
   readonly success: SameChainSuccessTrace
+  readonly feeFlow: {
+    readonly quotes: readonly [{readonly side: 'alice'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}, {readonly side: 'bob'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}]
+    readonly accruedAfterCommits: string
+    readonly accruedAfterSettlement: string
+    readonly withdrawn: string
+    readonly accruedAfterWithdrawal: '0'
+    readonly gasIncludedInProtocolRevenue: false
+  }
 }
 
 export function sameChainDemoPolicy(chainId: bigint): TimingPolicy {
@@ -173,7 +181,18 @@ export async function runSameChainDemoFoundation(
   onProgress?.('Preparing both lazy direct-authorization identities')
   const setup = await readSameChainSetup(chain, deployment, terms, lock)
   const adversarial = await runSameChainAdversarial(chain, deployment, terms, lock, load, onProgress)
+  const commitmentFee = 5_000_000_000_000n
+  onProgress?.('Configuring and discovering the live same-chain commitment fee')
+  let feeHash = await chain.deployer.walletClient.writeContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'setCommitmentFee', args: [commitmentFee], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
+  await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
+  const quoteClient = createProtocolClient({addresses: deployment.addresses, publicClient: chain.publicClient})
+  const quoteRequest = (party: boolean): CommitAuthorizationRequest => ({receiver: deployment.addresses.sameChainWrapper, terms, party, lock, actionNonce: fixed(party ? 5 : 6), bobCommitSecret: ZERO32, expiry: party ? terms.partySide.commitmentDeadline : terms.counterpartySide.commitmentDeadline, commitData: '0x'})
+  const [aliceQuote, bobQuote] = await Promise.all([quoteClient.getCommitValueQuote(quoteRequest(true)), quoteClient.getCommitValueQuote(quoteRequest(false))])
   const success = await runSameChainSuccess(chain, deployment, terms, lock, onProgress)
+  onProgress?.('Withdrawing accrued same-chain protocol fees independently of gas')
+  feeHash = await chain.deployer.walletClient.writeContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'withdrawFees', args: [chain.deployer.address], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
+  await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
+  const accruedAfterWithdrawal = await chain.publicClient.readContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'accruedFees'})
   return {
     schema: SAME_CHAIN_DEMO_SCHEMA,
     phase: 'claimed',
@@ -186,6 +205,17 @@ export async function runSameChainDemoFoundation(
     setup,
     adversarial,
     success,
+    feeFlow: {
+      quotes: [
+        {side: 'alice', nativeEscrow: aliceQuote.nativeEscrow.toString(), commitmentFee: aliceQuote.commitmentFee.toString(), totalValue: aliceQuote.totalValue.toString()},
+        {side: 'bob', nativeEscrow: bobQuote.nativeEscrow.toString(), commitmentFee: bobQuote.commitmentFee.toString(), totalValue: bobQuote.totalValue.toString()},
+      ],
+      accruedAfterCommits: success.accruedFeesAfterCommits,
+      accruedAfterSettlement: success.accruedFeesAfterSettlement,
+      withdrawn: success.accruedFeesAfterSettlement,
+      accruedAfterWithdrawal: accruedAfterWithdrawal.toString() as '0',
+      gasIncludedInProtocolRevenue: false,
+    },
   }
 }
 

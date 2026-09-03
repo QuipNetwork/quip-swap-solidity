@@ -173,6 +173,13 @@ and pays only the destination selected by the wrapper from signed terms.
 `reserved(Asset)` remains as a compatibility view and always returns zero. It
 is not custody accounting.
 
+Commitment fees are separate wrapper accounting. Each accepted local commit
+retains one live owner-configured native fee while forwarding only signed
+native escrow to its HTLC. Fees are not signed or snapshotted, remain accrued
+through claim and reclaim, and only the accrued ledger—not raw wrapper
+balance—is owner-withdrawable. Network gas is never protocol revenue. See
+[commitment fees](docs/fees.md).
+
 Allowlisting is an assertion of continued token behavior, not proof of safety.
 See [asset compatibility](docs/asset-support.md).
 

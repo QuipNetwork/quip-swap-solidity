@@ -61,6 +61,7 @@ export interface RedactedSameChainArtifact {
   readonly tradeId: Hex32
   readonly lock: Hex32
   readonly initialCustody: readonly SameChainAssetPosition[]
+  readonly feeFlow: SameChainDemoFoundation['feeFlow']
   readonly authorizationDecisions: readonly {
     readonly role: 'alice' | 'bob'
     readonly mode: 'registered-direct'
@@ -143,6 +144,7 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
     tradeId: execution.tradeId,
     lock: execution.lock,
     initialCustody: initialCustody(execution.setup),
+    feeFlow: execution.feeFlow,
     authorizationDecisions: [
       authorizationDecision(execution, 'alice', 0),
       authorizationDecision(execution, 'bob', 1),
@@ -261,6 +263,21 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   if (initial.length !== 2) fail('initialCustody.length')
   validateCustody(initial, 'initialCustody')
   validateLifecycle(initial, [[false, false, false], [false, false, false]], 'initialCustody')
+  const feeFlow = record(root.feeFlow, 'feeFlow')
+  const feeQuotes = array(feeFlow.quotes, 'feeFlow.quotes')
+  if (feeQuotes.length !== 2) fail('feeFlow.quotes.length')
+  feeQuotes.forEach((item, index) => {
+    const quote = record(item, `feeFlow.quotes[${index}]`)
+    equal(quote.side, index === 0 ? 'alice' : 'bob', `feeFlow.quotes[${index}].side`)
+    equal(quote.nativeEscrow, '0', `feeFlow.quotes[${index}].nativeEscrow`)
+    equal(quote.commitmentFee, '5000000000000', `feeFlow.quotes[${index}].commitmentFee`)
+    equal(quote.totalValue, '5000000000000', `feeFlow.quotes[${index}].totalValue`)
+  })
+  equal(feeFlow.accruedAfterCommits, '10000000000000', 'feeFlow.accruedAfterCommits')
+  equal(feeFlow.accruedAfterSettlement, feeFlow.accruedAfterCommits, 'feeFlow.accruedAfterSettlement')
+  equal(feeFlow.withdrawn, feeFlow.accruedAfterSettlement, 'feeFlow.withdrawn')
+  equal(feeFlow.accruedAfterWithdrawal, '0', 'feeFlow.accruedAfterWithdrawal')
+  equal(feeFlow.gasIncludedInProtocolRevenue, false, 'feeFlow.gasIncludedInProtocolRevenue')
   const decisions = array(root.authorizationDecisions, 'authorizationDecisions')
   if (decisions.length !== 2) fail('authorizationDecisions.length')
   decisions.forEach((item, index) => {
