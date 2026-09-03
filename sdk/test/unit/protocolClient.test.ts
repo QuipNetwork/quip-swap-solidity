@@ -12,7 +12,13 @@ import {
   swapHTLCAbi,
   SameChainState,
 } from '../../src/index.js'
-import type {Hex32, ProtocolAddresses, ProtocolTerms} from '../../src/index.js'
+import type {
+  CommitAuthorizationRequest,
+  Hex32,
+  InitialRegistration,
+  ProtocolAddresses,
+  ProtocolTerms,
+} from '../../src/index.js'
 
 const address = (suffix: string): Address => `0x${suffix.padStart(40, '0')}` as Address
 const addresses: ProtocolAddresses = {
@@ -24,6 +30,105 @@ const addresses: ProtocolAddresses = {
 const hash = (byte: string): Hex32 => `0x${byte.repeat(64)}` as Hex32
 
 describe('current protocol SDK surface', () => {
+  it('quotes and forwards live fee separately from native escrow on every commit route', async () => {
+    const sequence: string[] = []
+    const writes: Array<Record<string, unknown>> = []
+    const publicClient = {
+      readContract: async (request: Record<string, unknown>) => {
+        sequence.push(`read:${String(request['functionName'])}`)
+        return 7n
+      },
+    } as unknown as PublicClient
+    const walletClient = {
+      account: {address: address('a')},
+      chain: undefined,
+      writeContract: async (request: Record<string, unknown>) => {
+        sequence.push(`write:${String(request['functionName'])}`)
+        writes.push(request)
+        return hash('1')
+      },
+    } as unknown as WalletClient
+    const client = createProtocolClient({addresses, publicClient, walletClient})
+    const terms = {
+      partySide: {
+        assets: [
+          {assetType: AssetType.Native, amount: 11n},
+          {assetType: AssetType.ERC20, amount: 99n},
+          {assetType: AssetType.Native, amount: 13n},
+        ],
+      },
+      counterpartySide: {assets: [{assetType: AssetType.Native, amount: 17n}]},
+    } as unknown as ProtocolTerms
+    const request = {receiver: addresses.crossChainWrapper, terms, party: true} as CommitAuthorizationRequest
+    const registration = {} as InitialRegistration
+
+    await expect(client.getCommitValueQuote(request)).resolves.toEqual({
+      nativeEscrow: 24n,
+      commitmentFee: 7n,
+      totalValue: 31n,
+    })
+    await client.authorizeDirectCommit(request, '0x')
+    await client.authorizeWalletCommit(address('b'), request, '0x')
+    await client.registerAndCommit(registration, '0x', '0x', '0x', '0x', request)
+
+    expect(writes.map(write => [write['functionName'], write['value']])).toEqual([
+      ['authorizeCommit', 31n],
+      ['authorizeCommit', 31n],
+      ['registerAndCommit', 31n],
+    ])
+    expect(sequence).toEqual([
+      'read:commitmentFee',
+      'read:commitmentFee',
+      'write:authorizeCommit',
+      'read:commitmentFee',
+      'write:authorizeCommit',
+      'read:commitmentFee',
+      'write:registerAndCommit',
+    ])
+  })
+
+  it('rejects an unknown wrapper before submitting a commit', async () => {
+    const client = createProtocolClient({addresses, publicClient: {} as PublicClient})
+    const request = {
+      receiver: address('9'),
+      terms: {partySide: {assets: []}, counterpartySide: {assets: []}},
+      party: true,
+    } as unknown as CommitAuthorizationRequest
+    await expect(client.getCommitValueQuote(request)).rejects.toMatchObject({code: 'INVALID_COMMIT_WRAPPER'})
+  })
+
+  it('does not silently retry when the live fee changes before submission', async () => {
+    let fee = 7n
+    let writes = 0
+    const publicClient = {
+      readContract: async () => fee,
+    } as unknown as PublicClient
+    const walletClient = {
+      account: {address: address('a')},
+      chain: undefined,
+      writeContract: async (request: Record<string, unknown>) => {
+        writes += 1
+        if (writes === 1) {
+          fee = 9n
+          throw new Error('IncorrectNativeAmount')
+        }
+        expect(request['value']).toBe(20n)
+        return hash('1')
+      },
+    } as unknown as WalletClient
+    const client = createProtocolClient({addresses, publicClient, walletClient})
+    const terms = {
+      partySide: {assets: [{assetType: AssetType.Native, amount: 11n}]},
+      counterpartySide: {assets: []},
+    } as unknown as ProtocolTerms
+    const request = {receiver: addresses.crossChainWrapper, terms, party: true} as CommitAuthorizationRequest
+
+    await expect(client.authorizeDirectCommit(request, '0x')).rejects.toMatchObject({code: 'CONTRACT_REVERT'})
+    expect(writes).toBe(1)
+    await expect(client.authorizeDirectCommit(request, '0x')).resolves.toBe(hash('1'))
+    expect(writes).toBe(2)
+  })
+
   it('submits asset policy writes through the configured registry', async () => {
     const calls: unknown[] = []
     const walletClient = {

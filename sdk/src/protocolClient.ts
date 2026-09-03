@@ -15,7 +15,7 @@ import type {
 } from './protocol.js'
 import {SameChainState, SideTag} from './protocol.js'
 import type {CrossChainLegState} from './protocol.js'
-import type {AssetType} from './types.js'
+import {AssetType} from './types.js'
 import type {Hex32} from './types.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
 
@@ -32,8 +32,10 @@ export interface CreateProtocolClientArgs {
   readonly walletClient?: WalletClient
 }
 
-export interface WriteOptions {
-  readonly value?: bigint
+export interface CommitValueQuote {
+  readonly nativeEscrow: bigint
+  readonly commitmentFee: bigint
+  readonly totalValue: bigint
 }
 
 export interface HTLCState {
@@ -67,12 +69,12 @@ export interface SameChainSettlementPreview extends SameChainSettlementProgress 
 
 export interface ProtocolClient {
   readonly addresses: ProtocolAddresses
-  authorizeDirectCommit(request: CommitAuthorizationRequest, signature: Hex, options?: WriteOptions): Promise<Hash>
+  getCommitValueQuote(request: CommitAuthorizationRequest): Promise<CommitValueQuote>
+  authorizeDirectCommit(request: CommitAuthorizationRequest, signature: Hex): Promise<Hash>
   authorizeWalletCommit(
     wallet: Address,
     request: CommitAuthorizationRequest,
     signature: Hex,
-    options?: WriteOptions,
   ): Promise<Hash>
   registerAndCommit(
     registration: InitialRegistration,
@@ -80,7 +82,7 @@ export interface ProtocolClient {
     activeProof: Hex,
     recoveryProof: Hex,
     commitData: Hex,
-    options?: WriteOptions,
+    request: CommitAuthorizationRequest,
   ): Promise<Hash>
   executeRegistry(request: RegistryOperation, authorization: RegistryAuthorization): Promise<Hash>
   setAssetSupport(assetType: AssetType, target: Address, supported: boolean): Promise<Hash>
@@ -153,15 +155,52 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
     return publicClient.readContract({address, abi, functionName, args: fnArgs} as never) as Promise<T>
   }
 
+  async function getCommitValueQuote(request: CommitAuthorizationRequest): Promise<CommitValueQuote> {
+    const wrapper = request.receiver
+    const wrapperAbi = wrapper.toLowerCase() === addresses.crossChainWrapper.toLowerCase()
+      ? crossChainWrapperAbi
+      : wrapper.toLowerCase() === addresses.sameChainWrapper.toLowerCase()
+        ? sameChainWrapperAbi
+        : undefined
+    if (wrapperAbi === undefined) {
+      throw new QuipSwapError({code: 'INVALID_COMMIT_WRAPPER', message: `Unknown commit wrapper ${wrapper}`})
+    }
+    const side = request.party ? request.terms.partySide : request.terms.counterpartySide
+    const nativeEscrow = side.assets.reduce(
+      (total, asset) => asset.assetType === AssetType.Native ? total + asset.amount : total,
+      0n,
+    )
+    const commitmentFee = await read<bigint>(wrapper, wrapperAbi, 'commitmentFee', [])
+    return {nativeEscrow, commitmentFee, totalValue: nativeEscrow + commitmentFee}
+  }
+
   return {
     addresses,
-    authorizeDirectCommit: (request, signature, options) =>
-      write(addresses.directAuthorization, directAuthorizationAbi, 'authorizeCommit', [request, signature], options?.value),
-    authorizeWalletCommit: (wallet, request, signature, options) =>
-      write(wallet, quipWalletAbi, 'authorizeCommit', [request, signature], options?.value),
-    registerAndCommit: (registration, eoaSignature, activeProof, recoveryProof, commitData, options) =>
-      write(addresses.directAuthorization, directAuthorizationAbi, 'registerAndCommit',
-        [registration, eoaSignature, activeProof, recoveryProof, commitData], options?.value),
+    getCommitValueQuote,
+    authorizeDirectCommit: async (request, signature) => {
+      const quote = await getCommitValueQuote(request)
+      return await write(
+        addresses.directAuthorization,
+        directAuthorizationAbi,
+        'authorizeCommit',
+        [request, signature],
+        quote.totalValue,
+      )
+    },
+    authorizeWalletCommit: async (wallet, request, signature) => {
+      const quote = await getCommitValueQuote(request)
+      return await write(wallet, quipWalletAbi, 'authorizeCommit', [request, signature], quote.totalValue)
+    },
+    registerAndCommit: async (registration, eoaSignature, activeProof, recoveryProof, commitData, request) => {
+      const quote = await getCommitValueQuote(request)
+      return await write(
+        addresses.directAuthorization,
+        directAuthorizationAbi,
+        'registerAndCommit',
+        [registration, eoaSignature, activeProof, recoveryProof, commitData],
+        quote.totalValue,
+      )
+    },
     executeRegistry: (request, authorization) =>
       write(addresses.directAuthorization, directAuthorizationAbi, 'execute', [request, authorization]),
     setAssetSupport: (assetType, target, supported) =>

@@ -109,7 +109,7 @@ export function createLocalAliceCommitBoundary(config: ConsoleRuntimeConfig): Al
       const registration: InitialRegistration = {eoa: config.actors.alice, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: route.verifier, commitPayloadHash: payloadHash, operationNonce: keccak256(concatHex([tradeId(terms), actionNonce])), expiry}
       const digest = registrationDigest(31337n, addresses.directAuthorization, registration)
       const call = encodeFunctionData({abi: directAuthorizationAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, payloadHash)]})
-      const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4))
+      const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), request)
       const [transaction, blockNumber] = await Promise.all([publicClient.getTransaction({hash}), publicClient.getBlockNumber()])
       return {hash, nonce: transaction.nonce, submittedAtBlock: blockNumber}
     },

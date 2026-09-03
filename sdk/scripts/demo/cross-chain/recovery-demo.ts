@@ -257,7 +257,7 @@ async function lazyCommit(
   const digest = registrationDigest(BigInt(chain.chainId), deployment.addresses.directAuthorization, registration)
   const call = encodeFunctionData({abi: directAuthorizationAbi, functionName: 'authorizeCommit', args: [request, pqSignature(activeKey, prepared.payloadHash)]})
   const client = createProtocolClient({addresses: deployment.addresses, publicClient: chain.publicClient, walletClient: (prepared.payload.party ? chain.alice : chain.bob).walletClient})
-  return submitAndWait(chain, client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4)))
+  return submitAndWait(chain, client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), request))
 }
 
 async function outcome(scenario: RecoveryOutcome['scenario'], fixture: Fixture, transactionHashes: readonly Hash[], rejectedCompetingAction?: RecoveryOutcome['rejectedCompetingAction']): Promise<RecoveryOutcome> {

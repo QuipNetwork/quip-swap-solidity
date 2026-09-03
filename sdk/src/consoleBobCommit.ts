@@ -221,7 +221,7 @@ export function createLocalBobCommitBoundary(config: ConsoleRuntimeConfig): BobC
         functionName: 'authorizeCommit',
         args: [request, pqSignature(activeKey, payloadHash)],
       })
-      const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4))
+      const hash = await client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), request)
       const [transaction, submittedAtBlock] = await Promise.all([publicClient.getTransaction({ hash }), publicClient.getBlockNumber()])
       return { hash, nonce: transaction.nonce, submittedAtBlock }
     },

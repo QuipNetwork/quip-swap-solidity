@@ -69,7 +69,7 @@ export type {
   ProtocolAddresses,
   CreateProtocolClientArgs,
   ProtocolClient,
-  WriteOptions,
+  CommitValueQuote,
   HTLCState,
   SameChainSettlementProgress,
   SameChainSettlementPreview,

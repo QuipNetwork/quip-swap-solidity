@@ -378,6 +378,7 @@ export async function submitSameChainLazyCommit(input: {
     pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)),
     pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)),
     sliceHex(call, 4),
+    request,
   )
   const receipt = await successfulReceipt(chain, hash)
   const events = decodeProtocolEvents(receipt.logs, addresses, [], [htlc])
