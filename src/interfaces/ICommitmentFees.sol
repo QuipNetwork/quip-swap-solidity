@@ -26,4 +26,8 @@ interface ICommitmentFees {
 
   /// @notice Native commitment fees accrued and available for withdrawal.
   function accruedFees() external view returns (uint256);
+
+  /// @notice Sets the live per-commit fee; callable only by the wrapper owner.
+  /// @param newFee New native fee, which must not exceed `MAX_FEE`.
+  function setCommitmentFee(uint256 newFee) external;
 }

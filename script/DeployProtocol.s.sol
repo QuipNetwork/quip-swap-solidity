@@ -68,7 +68,7 @@ contract DeployProtocol is Script {
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
         type(CrossChainWrapper).creationCode,
-        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC)
+        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, owner)
       ),
       addresses.crossChainWrapper
     );
@@ -78,7 +78,7 @@ contract DeployProtocol is Script {
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(
         type(SameChainWrapper).creationCode,
-        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC)
+        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, owner)
       ),
       addresses.sameChainWrapper
     );
@@ -116,6 +116,8 @@ contract DeployProtocol is Script {
   function _verify(Addresses memory a, address owner, address verifier) internal view {
     require(a.swapHTLC.code.length != 0, 'HTLC implementation missing');
     require(AssetSupportRegistry(a.assetSupportRegistry).owner() == owner, 'asset owner mismatch');
+    require(CrossChainWrapper(payable(a.crossChainWrapper)).owner() == owner, 'cross owner mismatch');
+    require(SameChainWrapper(payable(a.sameChainWrapper)).owner() == owner, 'same owner mismatch');
     require(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER() == verifier, 'verifier mismatch');
     require(
       CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION() == a.directAuthorization,

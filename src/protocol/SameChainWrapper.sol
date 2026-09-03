@@ -74,7 +74,12 @@ contract SameChainWrapper is
   mapping(bytes32 recordKey => address htlc) private htlcs;
 
   /// @notice Configures the immutable direct authorization gateway and asset allowlist.
-  constructor(address directAuthorization, IAssetSupportRegistry assetSupport, address htlcImplementation) {
+  constructor(
+    address directAuthorization,
+    IAssetSupportRegistry assetSupport,
+    address htlcImplementation,
+    address initialOwner
+  ) CommitmentFees(initialOwner) {
     if (directAuthorization == address(0) || address(assetSupport) == address(0) || htlcImplementation.code.length == 0)
     {
       revert ZeroConfiguration();

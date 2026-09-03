@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {AssetSupport, AssetTransfers} from '../../src/assets/AssetHandling.sol';
 import {AssetSupportRegistry} from '../../src/assets/AssetSupportRegistry.sol';
+import {ICommitmentFees} from '../../src/interfaces/ICommitmentFees.sol';
 import {ISwapHTLC} from '../../src/interfaces/ISwapHTLC.sol';
 import {CommitAuthorization} from '../../src/protocol/CommitValidation.sol';
 import {ProgressionGate} from '../../src/protocol/CommitValidation.sol';
@@ -28,6 +29,7 @@ import {SameChainStateMachine} from '../../src/protocol/StateMachines.sol';
 import {SwapHTLC} from '../../src/protocol/SwapHTLC.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
 import {MaliciousERC20Mock} from '../mocks/MaliciousERC20Mock.sol';
+import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
 contract DeployedWrapperGuardsTest is Test {
@@ -43,6 +45,7 @@ contract DeployedWrapperGuardsTest is Test {
   event Claimed(bytes32 indexed tradeId, bytes32 indexed lock);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock, SideTag indexed side);
   event Reclaimed(bytes32 indexed tradeId, bytes32 indexed lock);
+  event FeeUpdated(uint256 oldFee, uint256 newFee);
 
   address internal constant GATEWAY = address(0xA000);
   address internal constant ALICE = address(0xA11CE);
@@ -64,24 +67,58 @@ contract DeployedWrapperGuardsTest is Test {
     vm.warp(100);
     support = new AssetSupportRegistry(address(this));
     htlcImplementation = new SwapHTLC();
-    cross = new CrossChainWrapper(GATEWAY, support, address(htlcImplementation));
-    same = new SameChainWrapper(GATEWAY, support, address(htlcImplementation));
+    cross = new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
+    same = new SameChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
     vm.deal(GATEWAY, 100 ether);
   }
 
   function test_constructorsRejectEveryZeroDependency() public {
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(address(0), support, address(htlcImplementation));
+    new CrossChainWrapper(address(0), support, address(htlcImplementation), address(this));
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation));
+    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation), address(this));
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(GATEWAY, support, address(0));
+    new CrossChainWrapper(GATEWAY, support, address(0), address(this));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
-    new SameChainWrapper(address(0), support, address(htlcImplementation));
+    new SameChainWrapper(address(0), support, address(htlcImplementation), address(this));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
-    new SameChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation));
+    new SameChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation), address(this));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
-    new SameChainWrapper(GATEWAY, support, address(0));
+    new SameChainWrapper(GATEWAY, support, address(0), address(this));
+  }
+
+  function test_feeConfigurationIsOwnerOnlyBoundedAndIndependent() public {
+    vm.expectEmit(false, false, false, true, address(cross));
+    emit FeeUpdated(0, 0.005 ether);
+    cross.setCommitmentFee(0.005 ether);
+    assertEq(cross.commitmentFee(), 0.005 ether);
+    assertEq(same.commitmentFee(), 0);
+
+    vm.expectEmit(false, false, false, true, address(cross));
+    emit FeeUpdated(0.005 ether, cross.MAX_FEE());
+    cross.setCommitmentFee(cross.MAX_FEE());
+    assertEq(cross.commitmentFee(), cross.MAX_FEE());
+
+    uint256 excessiveFee = cross.MAX_FEE() + 1;
+    vm.expectRevert(ICommitmentFees.FeeExceedsMax.selector);
+    cross.setCommitmentFee(excessiveFee);
+    assertEq(cross.commitmentFee(), cross.MAX_FEE());
+
+    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+    vm.prank(ALICE);
+    same.setCommitmentFee(1);
+    assertEq(same.commitmentFee(), 0);
+
+    same.setCommitmentFee(same.MAX_FEE());
+    same.setCommitmentFee(0);
+    assertEq(same.commitmentFee(), 0);
+  }
+
+  function test_constructorsRejectZeroFeeOwner() public {
+    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
+    new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(0));
+    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
+    new SameChainWrapper(GATEWAY, support, address(htlcImplementation), address(0));
   }
 
   function test_wrappersExposeTheSharedZeroDefaultFeeSurface() public view {

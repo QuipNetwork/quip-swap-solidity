@@ -91,8 +91,8 @@ contract WrapperFundingTest is Test {
     gateway = registry;
     assetSupport = new AssetSupportRegistry(address(this));
     htlcImplementation = new SwapHTLC();
-    cross = new CrossChainWrapper(address(gateway), assetSupport, address(htlcImplementation));
-    same = new SameChainWrapper(address(gateway), assetSupport, address(htlcImplementation));
+    cross = new CrossChainWrapper(address(gateway), assetSupport, address(htlcImplementation), address(this));
+    same = new SameChainWrapper(address(gateway), assetSupport, address(htlcImplementation), address(this));
     wallet = new QuipWallet(address(this), registry, walletKey);
     bobWallet = new QuipWallet(bob, registry, bobWalletKey);
     token = new ERC20Mock('Token', 'TOK', 18);

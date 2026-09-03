@@ -70,19 +70,23 @@ contract DeployProtocolTest is Test {
     _deploy(
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
-        type(CrossChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC)
+        type(CrossChainWrapper).creationCode,
+        abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC, address(this))
       ),
       a.crossChainWrapper
     );
     _deploy(
       PrototypeDeployment.Component.SameChainWrapper,
       abi.encodePacked(
-        type(SameChainWrapper).creationCode, abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC)
+        type(SameChainWrapper).creationCode,
+        abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC, address(this))
       ),
       a.sameChainWrapper
     );
 
     assertEq(AssetSupportRegistry(a.assetSupportRegistry).owner(), address(this));
+    assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).owner(), address(this));
+    assertEq(SameChainWrapper(payable(a.sameChainWrapper)).owner(), address(this));
     assertEq(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER(), address(verifier));
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);
     assertEq(address(CrossChainWrapper(payable(a.crossChainWrapper)).ASSET_SUPPORT()), a.assetSupportRegistry);
