@@ -1,8 +1,8 @@
 import {readFile} from 'node:fs/promises'
 import {join, resolve} from 'node:path'
 import type {Address} from 'viem'
-import type {CliCommand, ClientParty} from './cliSurface.js'
-import type {PartySecretState} from './clientPersistence.js'
+import type {CliCommand, ClientParty} from '../cliSurface.js'
+import type {PartySecretState} from '../clientPersistence.js'
 import {loadConsoleRuntimeConfig} from './consoleTrade.js'
 import {restoreWorkspaceWorkflowState} from './consoleWorkspace.js'
 

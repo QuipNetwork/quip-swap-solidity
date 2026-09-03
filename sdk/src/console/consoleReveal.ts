@@ -5,11 +5,11 @@ import type {Address, Hash, Hex, PublicClient, WalletClient} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {loadConsoleRuntimeConfig} from './consoleTrade.js'
 import type {ConsoleRuntimeConfig} from './consoleTrade.js'
-import {CrossChainLegState} from './protocol.js'
-import type {ProtocolTerms} from './protocol.js'
-import {createProtocolClient} from './protocolClient.js'
+import {CrossChainLegState} from '../protocol.js'
+import type {ProtocolTerms} from '../protocol.js'
+import {createProtocolClient} from '../protocolClient.js'
 import {restoreWorkspaceWorkflowState, withWorkspaceMutation, writeLockedWorkspaceJournal} from './consoleWorkspace.js'
-import type {Hex32} from './types.js'
+import type {Hex32} from '../types.js'
 
 export const REVEALING_CLAIM_INPUT_SCHEMA = 'quip-swap-revealing-claim.v1' as const
 export const REVEALING_CLAIM_REFERENCE_SCHEMA = 'quip-swap-revealing-claim-reference.v1' as const

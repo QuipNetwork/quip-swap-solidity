@@ -134,8 +134,8 @@ export {
   parseConsoleArgs,
   runConsole,
   consoleContract,
-} from './consoleApp.js'
-export type {ConsoleOptions, ConsoleIo, ConsoleDependencies, ConsoleParseResult} from './consoleApp.js'
+} from './console/consoleApp.js'
+export type {ConsoleOptions, ConsoleIo, ConsoleDependencies, ConsoleParseResult} from './console/consoleApp.js'
 export {
   WORKSPACE_SCHEMA,
   CONSOLE_CONFIG_SCHEMA,
@@ -148,8 +148,8 @@ export {
   acceptWorkspaceTrade,
   publishLockedWorkspaceWorkflowState,
   writeLockedWorkspaceJournal,
-} from './consoleWorkspace.js'
-export type {ConsoleConfigIdentity, WorkspaceManifest, WorkspaceExpectation} from './consoleWorkspace.js'
+} from './console/consoleWorkspace.js'
+export type {ConsoleConfigIdentity, WorkspaceManifest, WorkspaceExpectation} from './console/consoleWorkspace.js'
 export {
   PREPARE_TRADE_INPUT_SCHEMA,
   PUBLIC_OFFER_SCHEMA,
@@ -159,22 +159,22 @@ export {
   acceptConsoleTrade,
   loadConsoleRuntimeConfig,
   parseConsoleOffer,
-} from './consoleTrade.js'
-export type {PublicTradeOffer, ConsoleRuntimeConfig} from './consoleTrade.js'
+} from './console/consoleTrade.js'
+export type {PublicTradeOffer, ConsoleRuntimeConfig} from './console/consoleTrade.js'
 export {
   ALICE_COMMIT_INPUT_SCHEMA,
   ALICE_COMMIT_JOURNAL_SCHEMA,
   ALICE_COMMIT_REFERENCE_SCHEMA,
   createLocalAliceCommitBoundary,
   submitAliceCommit,
-} from './consoleCommit.js'
-export type {AliceCommitPreview, AliceCommitBoundary} from './consoleCommit.js'
+} from './console/consoleCommit.js'
+export type {AliceCommitPreview, AliceCommitBoundary} from './console/consoleCommit.js'
 export {
   ALICE_COMMIT_OBSERVATION_SCHEMA,
   createLocalAliceObservationBoundary,
   observeAliceCommit,
-} from './consoleObservation.js'
-export type {AliceCommitLifecycle, AliceCommitObservation, AliceCommitObservationBoundary} from './consoleObservation.js'
+} from './console/consoleObservation.js'
+export type {AliceCommitLifecycle, AliceCommitObservation, AliceCommitObservationBoundary} from './console/consoleObservation.js'
 export {
   BOB_COMMIT_INPUT_SCHEMA,
   BOB_COMMIT_REFERENCE_SCHEMA,
@@ -183,15 +183,15 @@ export {
   createLocalBobObservationBoundary,
   submitBobCommit,
   observeBobCommit,
-} from './consoleBobCommit.js'
-export type {BobCommitPreview, BobCommitBoundary, BobCommitLifecycle, BobCommitObservation, BobCommitObservationBoundary} from './consoleBobCommit.js'
+} from './console/consoleBobCommit.js'
+export type {BobCommitPreview, BobCommitBoundary, BobCommitLifecycle, BobCommitObservation, BobCommitObservationBoundary} from './console/consoleBobCommit.js'
 export {
   REVEALING_CLAIM_INPUT_SCHEMA,
   REVEALING_CLAIM_REFERENCE_SCHEMA,
   createLocalRevealingClaimBoundary,
   submitRevealingClaim,
-} from './consoleReveal.js'
-export type {RevealingClaimPreview, RevealingClaimBoundary} from './consoleReveal.js'
+} from './console/consoleReveal.js'
+export type {RevealingClaimPreview, RevealingClaimBoundary} from './console/consoleReveal.js'
 export {
   REVEAL_OBSERVATION_SCHEMA,
   FINAL_CLAIM_JOURNAL_SCHEMA,
@@ -199,12 +199,12 @@ export {
   createLocalFinalClaimBoundary,
   observeReveal,
   submitFinalClaim,
-} from './consoleFinalClaim.js'
-export type {RevealLifecycle, RevealObservation, RevealObservationBoundary, FinalClaimPreview, FinalClaimBoundary} from './consoleFinalClaim.js'
-export {CONSOLE_STATUS_SCHEMA, createLocalConsoleStatusBoundary, getConsoleStatus} from './consoleStatus.js'
-export type {ConsoleBalance, ConsoleLegState, ConsoleLegStatus, ConsoleStatusBoundary, ConsoleStatusReport} from './consoleStatus.js'
-export {RECLAIM_JOURNAL_SCHEMA, RECOVERY_INPUT_SCHEMA, submitReclaim, enterConsoleRecovery} from './consoleReclaim.js'
-export type {ReclaimTransactionLifecycle, ReclaimTransactionStatus, ReclaimPreview, ReclaimBoundary} from './consoleReclaim.js'
+} from './console/consoleFinalClaim.js'
+export type {RevealLifecycle, RevealObservation, RevealObservationBoundary, FinalClaimPreview, FinalClaimBoundary} from './console/consoleFinalClaim.js'
+export {CONSOLE_STATUS_SCHEMA, createLocalConsoleStatusBoundary, getConsoleStatus} from './console/consoleStatus.js'
+export type {ConsoleBalance, ConsoleLegState, ConsoleLegStatus, ConsoleStatusBoundary, ConsoleStatusReport} from './console/consoleStatus.js'
+export {RECLAIM_JOURNAL_SCHEMA, RECOVERY_INPUT_SCHEMA, submitReclaim, enterConsoleRecovery} from './console/consoleReclaim.js'
+export type {ReclaimTransactionLifecycle, ReclaimTransactionStatus, ReclaimPreview, ReclaimBoundary} from './console/consoleReclaim.js'
 export {
   CLIENT_STATE_SCHEMA,
   persistProtocolTerms,
@@ -242,7 +242,7 @@ export {
   assertRedactedOutput,
 } from './cliOutput.js'
 export type {TrustedClientStatusResult} from './cliOutput.js'
-export {CONSOLE_SUMMARY_SCHEMA, summarizeConsoleOutput} from './consoleSummary.js'
+export {CONSOLE_SUMMARY_SCHEMA, summarizeConsoleOutput} from './console/consoleSummary.js'
 export type {
   SecretStateMode,
   AliceSecretState,

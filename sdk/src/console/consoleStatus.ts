@@ -1,16 +1,16 @@
 import {createPublicClient, defineChain, http, zeroAddress} from 'viem'
 import type {Address, PublicClient} from 'viem'
 import {erc20Abi} from 'viem'
-import {restoreProtocolTerms} from './clientState.js'
-import type {ClientState} from './clientState.js'
+import {restoreProtocolTerms} from '../clientState.js'
+import type {ClientState} from '../clientState.js'
 import {loadConsoleRuntimeConfig} from './consoleTrade.js'
 import type {ConsoleRuntimeConfig} from './consoleTrade.js'
 import {loadConsoleConfigIdentity, restoreWorkspaceWorkflowState} from './consoleWorkspace.js'
-import {createProtocolClient} from './protocolClient.js'
-import {CrossChainLegState} from './protocol.js'
-import type {ProtocolTerms, SideTerms} from './protocol.js'
-import {AssetType} from './types.js'
-import type {Hex32} from './types.js'
+import {createProtocolClient} from '../protocolClient.js'
+import {CrossChainLegState} from '../protocol.js'
+import type {ProtocolTerms, SideTerms} from '../protocol.js'
+import {AssetType} from '../types.js'
+import type {Hex32} from '../types.js'
 
 export const CONSOLE_STATUS_SCHEMA = 'quip-swap-console-status.v1' as const
 

@@ -59,11 +59,11 @@ library ProtocolHashing {
   /// @notice Computes the Bob-commit gate context without its self-referential commit lock.
   function gateContextId(ProtocolTerms memory terms) internal pure returns (bytes32 contextId) {
     // Save and clear Bob commit lock so the context does not hash itself.
-    bytes32 commitLock = terms.counterpartySide.commitLock;
+    bytes32 originalCommitLock = terms.counterpartySide.commitLock;
     terms.counterpartySide.commitLock = bytes32(0);
     contextId = hashTerms(GATE_CONTEXT_DOMAIN, terms);
     // Restore the caller-owned memory value before returning.
-    terms.counterpartySide.commitLock = commitLock;
+    terms.counterpartySide.commitLock = originalCommitLock;
   }
 
   /// @notice Binds the Bob-commit preimage to one projected gate context.

@@ -1,12 +1,12 @@
 import {createHash} from 'node:crypto'
 import {mkdir, open, readFile, rename, rm} from 'node:fs/promises'
 import {basename, dirname, join, resolve} from 'node:path'
-import type {ClientParty} from './cliSurface.js'
-import {parseClientState, serializeClientState} from './clientState.js'
-import type {ClientState} from './clientState.js'
-import {serializeSecretState, validatePartyWorkflowState, validateSecretState} from './clientPersistence.js'
-import type {PartySecretState, RestoredPartyWorkflowState} from './clientPersistence.js'
-import type {Hex32} from './types.js'
+import type {ClientParty} from '../cliSurface.js'
+import {parseClientState, serializeClientState} from '../clientState.js'
+import type {ClientState} from '../clientState.js'
+import {serializeSecretState, validatePartyWorkflowState, validateSecretState} from '../clientPersistence.js'
+import type {PartySecretState, RestoredPartyWorkflowState} from '../clientPersistence.js'
+import type {Hex32} from '../types.js'
 
 export const WORKSPACE_SCHEMA = 'quip-swap-workspace.v1' as const
 export const CONSOLE_CONFIG_SCHEMA = 'quip-swap-console-config.v1' as const

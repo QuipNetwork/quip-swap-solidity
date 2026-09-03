@@ -6,8 +6,8 @@ import {
   cliCommandSpec,
   cliCommandSpecs,
   cliFailure,
-} from './cliSurface.js'
-import type {CliCommand, CliExitCode, ClientParty} from './cliSurface.js'
+} from '../cliSurface.js'
+import type {CliCommand, CliExitCode, ClientParty} from '../cliSurface.js'
 import {initializePartyWorkspace, inspectPartyWorkspace, loadConsoleConfigIdentity} from './consoleWorkspace.js'
 import {acceptConsoleTrade, importConsoleOffer, prepareConsoleTrade} from './consoleTrade.js'
 import {submitAliceCommit} from './consoleCommit.js'
