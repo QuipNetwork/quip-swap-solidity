@@ -99,6 +99,8 @@ contract WrapperFundingTest is Test {
   }
 
   function test_directBrokerTransportsButPrincipalFundsERC20() public {
+    uint256 fee = 0.004 ether;
+    cross.setCommitmentFee(fee);
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory terms, bytes32 lock) = _crossTerms(alice, AuthorizationMode.RegisteredDirect, 1, assets, 1);
     terms.partySide.delegationPolicy = DelegationPolicy.SpecificDelegate;
@@ -111,8 +113,9 @@ contract WrapperFundingTest is Test {
     token.approve(address(cross), 10 ether);
 
     CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 1);
+    vm.deal(broker, fee);
     vm.prank(broker);
-    gateway.authorizeCommit(request, _signature(request, address(gateway), aliceKey));
+    gateway.authorizeCommit{value: fee}(request, _signature(request, address(gateway), aliceKey));
 
     address htlc = cross.htlcOf(terms, true, lock);
     assertEq(htlc, cross.predictHTLC(terms, true, lock));
@@ -122,6 +125,7 @@ contract WrapperFundingTest is Test {
     assertEq(token.balanceOf(broker), 0);
     assertTrue(SwapHTLC(payable(htlc)).funded());
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(cross.accruedFees(), fee);
 
     cross.claim(terms, true, lock, SECRET);
     assertEq(token.balanceOf(RECIPIENT), 10 ether);
@@ -203,6 +207,7 @@ contract WrapperFundingTest is Test {
   }
 
   function test_failedRegisterAndCommitRollsBackIdentityCustodyStateAndAuthorizationNonce() public {
+    cross.setCommitmentFee(0.004 ether);
     address newcomer = vm.addr(0xCA11);
     bytes memory newcomerKey = _key('newcomer');
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
@@ -248,28 +253,35 @@ contract WrapperFundingTest is Test {
     );
     bytes memory commitData = abi.encode(commitRequest, commitSignature);
     token.mint(newcomer, 10 ether);
+    vm.deal(newcomer, 0.008 ether);
 
     vm.expectRevert(DirectAuthorization.CommitCallbackFailed.selector);
     vm.prank(newcomer);
-    registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
+    registry.registerAndCommit{value: 0.004 ether}(registration, '', activeProof, recoveryProof, commitData);
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 0);
     assertEq(token.balanceOf(newcomer), 10 ether);
     assertEq(token.balanceOf(address(cross)), 0);
     assertEq(cross.predictHTLC(terms, true, lock).code.length, 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Unused));
+    assertEq(cross.accruedFees(), 0);
+    assertEq(address(cross).balance, 0);
 
     vm.prank(newcomer);
     token.approve(address(cross), 10 ether);
     vm.prank(newcomer);
-    registry.registerAndCommit(registration, '', activeProof, recoveryProof, commitData);
+    registry.registerAndCommit{value: 0.004 ether}(registration, '', activeProof, recoveryProof, commitData);
     assertEq(registry.identityOf(newcomer).activeKeyVersion, 1);
     assertEq(token.balanceOf(newcomer), 0);
     assertEq(token.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
     assertEq(token.balanceOf(address(cross)), 0);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(cross.accruedFees(), 0.004 ether);
+    assertEq(address(cross).balance, 0.004 ether);
   }
 
   function test_walletPrincipalFundsTokenWhileRelayerOnlyTransports() public {
+    uint256 fee = 0.004 ether;
+    cross.setCommitmentFee(fee);
     Asset[] memory assets = _oneAsset(AssetType.ERC20, address(token), 0, 10 ether);
     (ProtocolTerms memory terms, bytes32 lock) =
       _crossTerms(address(wallet), AuthorizationMode.QuipWallet, 0, assets, 3);
@@ -281,12 +293,15 @@ contract WrapperFundingTest is Test {
     CommitAuthorizationRequest memory request = _request(address(cross), terms, true, lock, 3);
 
     bytes memory signature = _signature(request, address(wallet), walletKey);
+    vm.deal(RELAYER, fee);
     vm.prank(RELAYER);
-    wallet.authorizeCommit(request, signature);
+    wallet.authorizeCommit{value: fee}(request, signature);
 
     assertEq(token.balanceOf(cross.htlcOf(terms, true, lock)), 10 ether);
     assertEq(token.balanceOf(address(cross)), 0);
     assertEq(token.balanceOf(RELAYER), 0);
+    assertEq(cross.accruedFees(), fee);
+    assertEq(address(cross).balance, fee);
   }
 
   function test_nativeValueMayBeTransportedButMustMatchSignedAssetsExactly() public {

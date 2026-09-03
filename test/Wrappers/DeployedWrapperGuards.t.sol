@@ -184,6 +184,81 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(same.accruedFees(), fee);
   }
 
+  function test_tokenOnlyAndMixedCommitsRequireExactFeePlusNativeEscrow() public {
+    uint256 fee = 0.005 ether;
+    cross.setCommitmentFee(fee);
+    ERC20Mock token = new ERC20Mock('Fee Matrix', 'FMX', 18);
+    support.setAssetSupport(AssetType.ERC20, address(token), true);
+    token.mint(ALICE, 20);
+    vm.prank(ALICE);
+    token.approve(address(cross), 20);
+
+    ProtocolTerms memory tokenTerms = _crossTerms();
+    tokenTerms.partySide.assets = _oneAsset(AssetType.ERC20, address(token), 0, 10);
+    _bindCross(tokenTerms);
+    bytes32 tokenLock = _lock(tokenTerms);
+    VerifiedCommitAuthorization memory tokenEvidence = _evidence(tokenTerms, true, address(cross), tokenLock, 84, 190);
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit(tokenTerms, true, tokenLock, BOB_COMMIT_SECRET, tokenEvidence, '');
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: fee - 1}(tokenTerms, true, tokenLock, BOB_COMMIT_SECRET, tokenEvidence, '');
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: fee}(tokenTerms, true, tokenLock, BOB_COMMIT_SECRET, tokenEvidence, '');
+    assertEq(cross.htlcOf(tokenTerms, true, tokenLock).balance, 0);
+    assertEq(cross.accruedFees(), fee);
+
+    ProtocolTerms memory mixedTerms = _crossTerms();
+    mixedTerms.partySide.assets = new Asset[](2);
+    mixedTerms.partySide.assets[0] = Asset(AssetType.Native, address(0), 0, 1);
+    mixedTerms.partySide.assets[1] = Asset(AssetType.ERC20, address(token), 0, 10);
+    _bindCross(mixedTerms);
+    bytes32 mixedLock = _lock(mixedTerms);
+    VerifiedCommitAuthorization memory mixedEvidence = _evidence(mixedTerms, true, address(cross), mixedLock, 85, 190);
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: fee}(mixedTerms, true, mixedLock, BOB_COMMIT_SECRET, mixedEvidence, '');
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1 + fee + 1}(mixedTerms, true, mixedLock, BOB_COMMIT_SECRET, mixedEvidence, '');
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1 + fee}(mixedTerms, true, mixedLock, BOB_COMMIT_SECRET, mixedEvidence, '');
+    address mixedHTLC = cross.htlcOf(mixedTerms, true, mixedLock);
+    assertEq(mixedHTLC.balance, 1);
+    assertEq(token.balanceOf(mixedHTLC), 10);
+    assertEq(cross.accruedFees(), 2 * fee);
+    assertEq(address(cross).balance, 2 * fee);
+  }
+
+  function test_crossChainLegsAccrueTheirLocalWrapperFeesIndependently() public {
+    uint256 partyFee = 0.003 ether;
+    uint256 counterpartyFee = 0.007 ether;
+    cross.setCommitmentFee(partyFee);
+    CrossChainWrapper counterpartyWrapper =
+      new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
+    counterpartyWrapper.setCommitmentFee(counterpartyFee);
+    ProtocolTerms memory terms = _crossTerms();
+    bytes32 lock = _lock(terms);
+
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1 + partyFee}(
+      terms, true, lock, BOB_COMMIT_SECRET, _evidence(terms, true, address(cross), lock, 86, 190), ''
+    );
+    vm.chainId(terms.counterpartySide.chainId);
+    vm.prank(GATEWAY);
+    counterpartyWrapper.receiveAuthorizedCommit{value: 2 + counterpartyFee}(
+      terms, false, lock, BOB_COMMIT_SECRET, _evidence(terms, false, address(counterpartyWrapper), lock, 87, 190), ''
+    );
+
+    assertEq(cross.accruedFees(), partyFee);
+    assertEq(counterpartyWrapper.accruedFees(), counterpartyFee);
+    assertEq(address(cross).balance, partyFee);
+    assertEq(address(counterpartyWrapper).balance, counterpartyFee);
+    assertEq(cross.htlcOf(terms, true, lock).balance, 1);
+    assertEq(counterpartyWrapper.htlcOf(terms, false, lock).balance, 2);
+  }
+
   function test_wrappersPinAndPredictIsolatedHTLCAddresses() public view {
     ProtocolTerms memory crossTerms = _crossTerms();
     ProtocolTerms memory sameTerms = _sameTerms();
@@ -375,6 +450,13 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(address(cross).balance, unaccounted);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
     assertEq(cross.htlcOf(terms, true, lock).balance, 1);
+
+    uint256 balanceBefore = address(cross).balance;
+    vm.expectEmit(true, false, false, true, address(cross));
+    emit FeesWithdrawn(TREASURY, 0);
+    cross.withdrawFees(TREASURY);
+    assertEq(address(cross).balance, balanceBefore);
+    assertEq(cross.accruedFees(), 0);
   }
 
   function test_failedFeeWithdrawalRestoresAccruedBalance() public {
