@@ -36,6 +36,7 @@ export interface DemoDeploymentArtifact {
   readonly schema: 'quip-swap-demo-deployment.v1'
   readonly deploymentVersion: typeof PROTOTYPE_DEPLOYMENT_VERSION
   readonly deployer: Address
+  readonly owner: Address
   readonly identityRegistration: 'lazy-on-first-commit'
   readonly chains: readonly [DemoChainDeployment, DemoChainDeployment]
 }
@@ -56,6 +57,7 @@ export async function bootstrapDemoEnvironment(
     schema: 'quip-swap-demo-deployment.v1',
     deploymentVersion: PROTOTYPE_DEPLOYMENT_VERSION,
     deployer: chainA.deployer.address,
+    owner: chainA.deployer.address,
     identityRegistration: 'lazy-on-first-commit',
     chains: [left, right],
   }
@@ -72,8 +74,8 @@ export async function bootstrapProtocolChain(
     ['assetSupportRegistry', 'AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
     ['directAuthorization', 'DirectAuthorization.sol', 'DirectAuthorization', [trustedVerifier]],
     ['swapHTLC', 'SwapHTLC.sol', 'SwapHTLC', []],
-    ['crossChainWrapper', 'CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC]],
-    ['sameChainWrapper', 'SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC]],
+    ['crossChainWrapper', 'CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, ctx.deployer.address]],
+    ['sameChainWrapper', 'SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, ctx.deployer.address]],
   ]
   for (const [component, solFile, contract, args] of definitions) {
     const index = prototypeComponents.indexOf(component)
@@ -124,10 +126,15 @@ async function setupDemoFunding(
 }
 
 async function verifyGraph(ctx: ChainContext, addresses: DemoChainDeployment['addresses'], verifier: Address): Promise<void> {
-  const registryVerifier = await ctx.publicClient.readContract({address: addresses.directAuthorization, abi: directAuthorizationAbi, functionName: 'TRUSTED_VERIFIER'})
-  const crossChainAuthorization = await ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'})
-  const sameChainAuthorization = await ctx.publicClient.readContract({address: addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'})
+  const [registryVerifier, crossChainAuthorization, sameChainAuthorization, crossChainOwner, sameChainOwner] = await Promise.all([
+    ctx.publicClient.readContract({address: addresses.directAuthorization, abi: directAuthorizationAbi, functionName: 'TRUSTED_VERIFIER'}),
+    ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'}),
+    ctx.publicClient.readContract({address: addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'DIRECT_AUTHORIZATION'}),
+    ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'owner'}),
+    ctx.publicClient.readContract({address: addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'owner'}),
+  ])
   if (getAddress(registryVerifier) !== verifier || getAddress(crossChainAuthorization) !== addresses.directAuthorization || getAddress(sameChainAuthorization) !== addresses.directAuthorization) throw new Error('immutable deployment graph mismatch')
+  if (getAddress(crossChainOwner) !== ctx.deployer.address || getAddress(sameChainOwner) !== ctx.deployer.address) throw new Error('wrapper owner mismatch')
 }
 
 export function serializeDemoDeploymentArtifact(artifact: DemoDeploymentArtifact): string {

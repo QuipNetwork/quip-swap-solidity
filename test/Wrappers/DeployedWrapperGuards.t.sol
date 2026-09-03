@@ -393,6 +393,49 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.PartyCommitted));
   }
 
+  function test_twoStepOwnershipTransferPreservesLiveAndAccruedFees() public {
+    uint256 crossFee = 0.004 ether;
+    uint256 sameFee = 0.006 ether;
+    cross.setCommitmentFee(crossFee);
+    same.setCommitmentFee(sameFee);
+
+    ProtocolTerms memory crossTerms = _crossTerms();
+    bytes32 crossLock = _lock(crossTerms);
+    _commitCross(crossTerms, true, crossLock, 82, 1 + crossFee);
+    ProtocolTerms memory sameTerms = _sameTerms();
+    bytes32 sameLock = _lock(sameTerms);
+    _commitSame(sameTerms, true, sameLock, 83, 1 + sameFee);
+
+    cross.transferOwnership(ALICE);
+    same.transferOwnership(ALICE);
+    assertEq(cross.owner(), address(this));
+    assertEq(same.owner(), address(this));
+    assertEq(cross.pendingOwner(), ALICE);
+    assertEq(same.pendingOwner(), ALICE);
+    assertEq(cross.commitmentFee(), crossFee);
+    assertEq(same.commitmentFee(), sameFee);
+    assertEq(cross.accruedFees(), crossFee);
+    assertEq(same.accruedFees(), sameFee);
+
+    vm.startPrank(ALICE);
+    cross.acceptOwnership();
+    same.acceptOwnership();
+    vm.stopPrank();
+    assertEq(cross.owner(), ALICE);
+    assertEq(same.owner(), ALICE);
+    assertEq(cross.commitmentFee(), crossFee);
+    assertEq(same.commitmentFee(), sameFee);
+    assertEq(cross.accruedFees(), crossFee);
+    assertEq(same.accruedFees(), sameFee);
+
+    vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+    cross.setCommitmentFee(0);
+    vm.prank(ALICE);
+    cross.setCommitmentFee(0);
+    assertEq(cross.commitmentFee(), 0);
+    assertEq(cross.accruedFees(), crossFee);
+  }
+
   function test_failedSecondSameChainFundingLeavesFirstHTLCIsolatedAndPermitsRetry() public {
     MaliciousERC20Mock malicious = new MaliciousERC20Mock();
     support.setAssetSupport(AssetType.ERC20, address(malicious), true);

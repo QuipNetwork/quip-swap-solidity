@@ -97,11 +97,13 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
     directAuthorization,
     assetSupportRegistry,
     swapHTLC,
+    ctx.deployer.address,
   ])
   const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
     directAuthorization,
     assetSupportRegistry,
     swapHTLC,
+    ctx.deployer.address,
   ])
   return {
     verifier,
@@ -288,6 +290,7 @@ describe('v1.1 deployment smoke', () => {
   it('emits the deterministic two-chain CREATE3 bootstrap artifact', () => {
     expect(demoDeployment.schema).toBe('quip-swap-demo-deployment.v1')
     expect(demoDeployment.identityRegistration).toBe('lazy-on-first-commit')
+    expect(demoDeployment.owner).toBe(chainA.deployer.address)
     expect(demoDeployment.chains.map(chain => chain.chainId)).toEqual([31337, 31338])
     expect(demoDeployment.chains[0].addresses).toEqual(demoDeployment.chains[1].addresses)
     expect(serializeDemoDeploymentArtifact(demoDeployment)).toContain('crossChainWrapper')

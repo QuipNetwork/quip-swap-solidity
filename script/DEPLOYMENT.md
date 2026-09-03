@@ -13,8 +13,9 @@ not part of this procedure.
 ## Required configuration
 
 - `DEPLOYER_PK`: broadcasting key.
-- `PROTOCOL_OWNER`: nonzero initial `AssetSupportRegistry` owner. The current
-  script requires it to equal the deployer.
+- `PROTOCOL_OWNER`: nonzero initial owner of `AssetSupportRegistry`,
+  `CrossChainWrapper`, and `SameChainWrapper`. The current script requires it
+  to equal the deployer.
 - `TRUSTED_VERIFIER`: deployed SHRINCS 256s-Keccak verifier reporting the
   expected version and profile.
 - `RPC`: Make variable naming an RPC URL variable loaded from `.env`, for
@@ -48,7 +49,7 @@ Before publishing an address, record and verify on every chain:
 
 - chain ID, CreateX address, deployer, version, and salt;
 - runtime bytecode identity for every component;
-- asset-registry owner;
+- asset-registry owner and both wrapper fee administrators;
 - direct authorization's verifier address, runtime code hash, version, and
   profile;
 - both wrappers' `DIRECT_AUTHORIZATION`; and
@@ -74,12 +75,15 @@ implementation and upgrade controls are explicitly part of the reviewed trust
 model. The current authorization path does not recheck every pinned verifier
 property on every signature use.
 
-## Asset registry ownership
+## Protocol ownership
 
 Configure and independently verify all initial asset entries before transferring
-ownership. Ownership transfer uses OpenZeppelin's two-step flow and is separate
-from deterministic deployment. Define production multisig/timelock, monitoring,
-emergency delisting, and ownership-renunciation policy before deployment.
+ownership. The registry and both wrappers use OpenZeppelin's two-step flow;
+wrapper ownership controls commitment-fee configuration and withdrawal.
+Ownership transfer is separate from deterministic deployment and does not alter
+the live or accrued fee values. Define the production multisig/timelock,
+monitoring, fee treasury, emergency delisting, and ownership-renunciation policy
+before deployment.
 
 ## Release gate
 
