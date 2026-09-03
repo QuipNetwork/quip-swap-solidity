@@ -130,6 +130,22 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(same.accruedFees(), 0);
   }
 
+  function test_eachAcceptedSameChainCommitAccruesExactlyOneFee() public {
+    uint256 fee = 0.005 ether;
+    same.setCommitmentFee(fee);
+    ProtocolTerms memory terms = _sameTerms();
+    bytes32 lock = _lock(terms);
+
+    _commitSame(terms, true, lock, 72, 1 + fee);
+    assertEq(same.accruedFees(), fee);
+    _commitSame(terms, false, lock, 73, 2 + fee);
+    assertEq(same.accruedFees(), 2 * fee);
+
+    vm.expectRevert();
+    _commitSame(terms, false, lock, 74, 2 + fee);
+    assertEq(same.accruedFees(), 2 * fee);
+  }
+
   function test_wrappersRetainLiveFeeAndForwardOnlyExactNativeEscrow() public {
     uint256 fee = 0.005 ether;
     cross.setCommitmentFee(fee);
@@ -151,7 +167,7 @@ contract DeployedWrapperGuardsTest is Test {
     address crossHTLC = cross.htlcOf(crossTerms, true, crossLock);
     assertEq(crossHTLC.balance, 1);
     assertEq(address(cross).balance, fee);
-    assertEq(cross.accruedFees(), 0);
+    assertEq(cross.accruedFees(), fee);
 
     ProtocolTerms memory sameTerms = _sameTerms();
     bytes32 sameLock = _lock(sameTerms);
@@ -162,7 +178,7 @@ contract DeployedWrapperGuardsTest is Test {
     address sameHTLC = same.htlcOf(sameTerms, true, sameLock);
     assertEq(sameHTLC.balance, 1);
     assertEq(address(same).balance, fee);
-    assertEq(same.accruedFees(), 0);
+    assertEq(same.accruedFees(), fee);
   }
 
   function test_wrappersPinAndPredictIsolatedHTLCAddresses() public view {
@@ -194,6 +210,8 @@ contract DeployedWrapperGuardsTest is Test {
   }
 
   function test_failedCrossFundingRollsBackCloneStateAndAssetsThenPermitsRetry() public {
+    uint256 fee = 0.005 ether;
+    cross.setCommitmentFee(fee);
     MaliciousERC20Mock malicious = new MaliciousERC20Mock();
     support.setAssetSupport(AssetType.ERC20, address(malicious), true);
     ProtocolTerms memory terms = _crossTerms();
@@ -208,7 +226,7 @@ contract DeployedWrapperGuardsTest is Test {
 
     vm.expectRevert(AssetTransfers.UnexpectedAmountReceived.selector);
     vm.prank(GATEWAY);
-    cross.receiveAuthorizedCommit(
+    cross.receiveAuthorizedCommit{value: fee}(
       terms, true, lock, BOB_COMMIT_SECRET, _evidence(terms, true, address(cross), lock, 70, 190), ''
     );
 
@@ -217,15 +235,19 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(predicted.code.length, 0);
     assertEq(malicious.balanceOf(ALICE), 10);
     assertEq(malicious.balanceOf(predicted), 0);
+    assertEq(cross.accruedFees(), 0);
+    assertEq(address(cross).balance, 0);
 
     malicious.setBehavior(MaliciousERC20Mock.Behavior.Exact);
     vm.prank(GATEWAY);
-    cross.receiveAuthorizedCommit(
+    cross.receiveAuthorizedCommit{value: fee}(
       terms, true, lock, BOB_COMMIT_SECRET, _evidence(terms, true, address(cross), lock, 70, 190), ''
     );
     assertEq(cross.htlcOf(terms, true, lock), predicted);
     assertEq(malicious.balanceOf(predicted), 10);
     assertEq(uint8(cross.state(terms, true, lock)), uint8(CrossChainLegState.Committed));
+    assertEq(cross.accruedFees(), fee);
+    assertEq(address(cross).balance, fee);
   }
 
   function test_failedSecondSameChainFundingLeavesFirstHTLCIsolatedAndPermitsRetry() public {

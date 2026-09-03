@@ -116,7 +116,7 @@ contract SameChainWrapper is
     // Treat the commitment deadline as an exclusive upper bound.
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
     // The wrapper retains the live fee and forwards only terms-declared escrow.
-    uint256 nativeEscrow = _requireCommitValue(side.nativeAmount());
+    _requireCommitValue(side.nativeAmount());
 
     // Enforce party-first ordering through the joint state machine before external calls.
     if (party) states.commitParty(trade, lock);
@@ -127,11 +127,13 @@ contract SameChainWrapper is
 
     // Deploy and initialize one deterministic custody clone, forwarding native value directly.
     address htlc = HTLCDeployer.deploy(HTLC_IMPLEMENTATION, trade, lock, tag);
-    ISwapHTLC(htlc).initialize{value: nativeEscrow}(trade, lock, tag, side);
+    ISwapHTLC(htlc).initialize{value: side.nativeAmount()}(trade, lock, tag, side);
     // The wrapper remains the allowance spender but tokens move principal -> HTLC without pooling.
     side.transferNonNative(htlc);
     ISwapHTLC(htlc).confirmFunding(side);
     htlcs[htlcKey] = htlc;
+    // Accrue only after every custody operation succeeds, using the validated snapshot.
+    _accrueCommitmentFee(msg.value - side.nativeAmount());
 
     emit Committed(trade, lock, ProtocolHashing.sideTag(party), side.principal);
     emit HTLCCreated(trade, lock, tag, htlc);
