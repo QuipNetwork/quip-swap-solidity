@@ -31,4 +31,11 @@ abstract contract CommitmentFees is ICommitmentFees, Ownable2Step {
     commitmentFee = newFee;
     emit FeeUpdated(oldFee, newFee);
   }
+
+  /// @notice Requires exact native escrow plus the current live fee.
+  /// @return nativeEscrow Amount that must be forwarded into isolated custody.
+  function _requireCommitValue(uint256 nativeEscrow) internal view returns (uint256) {
+    if (msg.value != nativeEscrow + commitmentFee) revert IncorrectNativeAmount();
+    return nativeEscrow;
+  }
 }

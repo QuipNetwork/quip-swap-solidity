@@ -110,6 +110,8 @@ contract CrossChainWrapper is
     ProgressionGate.validate(validatedTerms, bobCommitSecret);
     // Treat the commitment deadline as an exclusive upper bound.
     if (block.timestamp >= side.commitmentDeadline) revert CommitWindowClosed();
+    // The wrapper retains the live fee and forwards only terms-declared escrow.
+    uint256 nativeEscrow = _requireCommitValue(side.nativeAmount());
 
     // Advance state before interacting with the clone or any asset contract.
     SideTag tag = ProtocolHashing.sideTag(party);
@@ -119,7 +121,7 @@ contract CrossChainWrapper is
 
     // Deploy and initialize one deterministic custody clone, forwarding native value directly.
     address htlc = HTLCDeployer.deploy(HTLC_IMPLEMENTATION, trade, lock, tag);
-    ISwapHTLC(htlc).initialize{value: msg.value}(trade, lock, tag, side);
+    ISwapHTLC(htlc).initialize{value: nativeEscrow}(trade, lock, tag, side);
     // The wrapper remains the allowance spender but tokens move principal -> HTLC without pooling.
     side.transferNonNative(htlc);
     ISwapHTLC(htlc).confirmFunding(side);

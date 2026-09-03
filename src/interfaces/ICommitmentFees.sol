@@ -6,6 +6,9 @@ pragma solidity 0.8.33;
 /// @dev The fee policy follows v1: the live fee is charged once per accepted
 ///      local commit, in addition to native escrow, and is not transaction gas.
 interface ICommitmentFees {
+  /// @notice Thrown when a commit does not provide exact escrow plus fee.
+  error IncorrectNativeAmount();
+
   /// @notice Thrown when a configured commitment fee exceeds `MAX_FEE`.
   error FeeExceedsMax();
 

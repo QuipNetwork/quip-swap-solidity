@@ -130,6 +130,41 @@ contract DeployedWrapperGuardsTest is Test {
     assertEq(same.accruedFees(), 0);
   }
 
+  function test_wrappersRetainLiveFeeAndForwardOnlyExactNativeEscrow() public {
+    uint256 fee = 0.005 ether;
+    cross.setCommitmentFee(fee);
+    same.setCommitmentFee(fee);
+
+    ProtocolTerms memory crossTerms = _crossTerms();
+    bytes32 crossLock = _lock(crossTerms);
+    VerifiedCommitAuthorization memory crossEvidence = _evidence(crossTerms, true, address(cross), crossLock, 70, 190);
+
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1}(crossTerms, true, crossLock, BOB_COMMIT_SECRET, crossEvidence, '');
+    vm.expectRevert(ICommitmentFees.IncorrectNativeAmount.selector);
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1 + fee + 1}(crossTerms, true, crossLock, BOB_COMMIT_SECRET, crossEvidence, '');
+    vm.prank(GATEWAY);
+    cross.receiveAuthorizedCommit{value: 1 + fee}(crossTerms, true, crossLock, BOB_COMMIT_SECRET, crossEvidence, '');
+
+    address crossHTLC = cross.htlcOf(crossTerms, true, crossLock);
+    assertEq(crossHTLC.balance, 1);
+    assertEq(address(cross).balance, fee);
+    assertEq(cross.accruedFees(), 0);
+
+    ProtocolTerms memory sameTerms = _sameTerms();
+    bytes32 sameLock = _lock(sameTerms);
+    VerifiedCommitAuthorization memory sameEvidence = _evidence(sameTerms, true, address(same), sameLock, 71, 190);
+    vm.prank(GATEWAY);
+    same.receiveAuthorizedCommit{value: 1 + fee}(sameTerms, true, sameLock, bytes32(0), sameEvidence, '');
+
+    address sameHTLC = same.htlcOf(sameTerms, true, sameLock);
+    assertEq(sameHTLC.balance, 1);
+    assertEq(address(same).balance, fee);
+    assertEq(same.accruedFees(), 0);
+  }
+
   function test_wrappersPinAndPredictIsolatedHTLCAddresses() public view {
     ProtocolTerms memory crossTerms = _crossTerms();
     ProtocolTerms memory sameTerms = _sameTerms();
