@@ -8,6 +8,7 @@ import {ICommitAuthorizationReceiver} from '../interfaces/ICommitAuthorizationRe
 import {ISwapHTLC} from '../interfaces/ISwapHTLC.sol';
 import {CommitAuthorization} from './CommitValidation.sol';
 import {ProgressionGate} from './CommitValidation.sol';
+import {CommitmentFees} from './CommitmentFees.sol';
 import {HTLCDeployer} from './HTLCDeployer.sol';
 import {ProtocolHashing} from './ProtocolHashing.sol';
 import {
@@ -30,7 +31,13 @@ import {ReentrancyGuard} from '@openzeppelin-contracts-5.6.0-rc.1/utils/Reentran
 /// @dev Commits must arrive from the authorization boundary named by the terms. Claims and
 ///      reclaims are permissionless because terms fix every payout recipient. Wallet-mode
 ///      provenance is not factory-checked here; the signed principal address is the trust boundary.
-contract SameChainWrapper is ICommitAuthorizationReceiver, ERC721Holder, ERC1155Holder, ReentrancyGuard {
+contract SameChainWrapper is
+  ICommitAuthorizationReceiver,
+  CommitmentFees,
+  ERC721Holder,
+  ERC1155Holder,
+  ReentrancyGuard
+{
   using AssetCustody for AssetCustody.Layout;
   using HTLCFunding for SideTerms;
   using AssetSupport for SideTerms;

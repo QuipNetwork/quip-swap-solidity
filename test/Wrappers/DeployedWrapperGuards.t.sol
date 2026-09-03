@@ -84,6 +84,15 @@ contract DeployedWrapperGuardsTest is Test {
     new SameChainWrapper(GATEWAY, support, address(0));
   }
 
+  function test_wrappersExposeTheSharedZeroDefaultFeeSurface() public view {
+    assertEq(cross.MAX_FEE(), 0.01 ether);
+    assertEq(same.MAX_FEE(), cross.MAX_FEE());
+    assertEq(cross.commitmentFee(), 0);
+    assertEq(same.commitmentFee(), 0);
+    assertEq(cross.accruedFees(), 0);
+    assertEq(same.accruedFees(), 0);
+  }
+
   function test_wrappersPinAndPredictIsolatedHTLCAddresses() public view {
     ProtocolTerms memory crossTerms = _crossTerms();
     ProtocolTerms memory sameTerms = _sameTerms();
