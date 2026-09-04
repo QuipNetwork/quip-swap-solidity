@@ -163,6 +163,24 @@ all clients.
 
 ## Low
 
+### Live commitment-fee changes can race pending commits — open
+
+The commitment fee is mutable, is read at execution time, and is not bound into
+the signed protocol terms or commit payload. An owner can change it after a
+caller obtains a quote, including between the two commits of a same-chain
+trade. The wrapper then rejects the pending transaction because its `msg.value`
+no longer equals the native escrow plus the current fee.
+
+This is a retryable availability and fee-slippage problem rather than permanent
+fund loss: the caller can read the new fee and resubmit, and `MAX_FEE` caps the
+charge. Repeated owner changes can nevertheless disrupt a pending second leg
+while the first leg remains escrowed until settlement or reclaim.
+
+Required: bind an `expectedFee` or `maxFee` into commit submission, or introduce
+a delayed fee update or per-trade fee snapshot. Until then, clients must refresh
+the quote immediately before submission and clearly surface fee-related retry
+failures.
+
 ### Timing-policy enforcement is a trusted-client assumption — open
 
 The current Solidity prototype intentionally omits a signed on-chain timing-policy
