@@ -1488,7 +1488,7 @@ export const crossChainWrapperAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -2191,6 +2191,11 @@ export const crossChainWrapperAbi = [
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
     "inputs": []
   },
   {

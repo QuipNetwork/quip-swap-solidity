@@ -1944,7 +1944,7 @@ export const sameChainWrapperAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -3432,6 +3432,11 @@ export const sameChainWrapperAbi = [
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
     "inputs": []
   },
   {
