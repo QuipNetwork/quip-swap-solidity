@@ -55,6 +55,7 @@ export interface RedactedSameChainArtifact {
     readonly chainId: number
     readonly createX: string
     readonly trustedVerifier: string
+    readonly protocolOwner: string
     readonly addresses: Readonly<Record<string, string>>
   }
   readonly terms: unknown
@@ -138,6 +139,7 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
       chainId: execution.deployment.chainId,
       createX: execution.deployment.createX,
       trustedVerifier: execution.deployment.trustedVerifier,
+      protocolOwner: execution.protocolOwner,
       addresses: execution.deployment.addresses,
     },
     terms: jsonValue(execution.terms),
@@ -251,6 +253,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   address(addresses.sameChainWrapper, 'deployment.addresses.sameChainWrapper')
   address(addresses.directAuthorization, 'deployment.addresses.directAuthorization')
   address(deployment.trustedVerifier, 'deployment.trustedVerifier')
+  address(deployment.protocolOwner, 'deployment.protocolOwner')
   bytes32(root.tradeId, 'tradeId')
   bytes32(root.lock, 'lock')
   if (root.lock === `0x${'00'.repeat(32)}`) fail('lock')
@@ -275,7 +278,10 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   })
   equal(feeFlow.accruedAfterCommits, '10000000000000', 'feeFlow.accruedAfterCommits')
   equal(feeFlow.accruedAfterSettlement, feeFlow.accruedAfterCommits, 'feeFlow.accruedAfterSettlement')
-  equal(feeFlow.withdrawn, feeFlow.accruedAfterSettlement, 'feeFlow.withdrawn')
+  const withdrawal = record(feeFlow.withdrawal, 'feeFlow.withdrawal')
+  equal(withdrawal.recipient, deployment.protocolOwner, 'feeFlow.withdrawal.recipient')
+  equal(withdrawal.amount, feeFlow.accruedAfterSettlement, 'feeFlow.withdrawal.amount')
+  hash(withdrawal.transactionHash, 'feeFlow.withdrawal.transactionHash')
   equal(feeFlow.accruedAfterWithdrawal, '0', 'feeFlow.accruedAfterWithdrawal')
   equal(feeFlow.gasIncludedInProtocolRevenue, false, 'feeFlow.gasIncludedInProtocolRevenue')
   const decisions = array(root.authorizationDecisions, 'authorizationDecisions')

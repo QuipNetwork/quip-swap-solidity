@@ -13,7 +13,7 @@ afterAll(() => rmSync(root, {recursive: true, force: true}))
 
 function invoke(command: string, party: 'alice' | 'bob') {
   const stateRoot = join(root, `${command}-${party}`)
-  return spawnSync(process.execPath, [executable, command, '--party', party, '--state-root', stateRoot, '--config', missingConfig, '--json'], {
+  return spawnSync('bun', [executable, command, '--party', party, '--state-root', stateRoot, '--config', missingConfig, '--json'], {
     cwd: resolve('.'),
     encoding: 'utf8',
     input: '',

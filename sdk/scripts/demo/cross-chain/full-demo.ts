@@ -1,4 +1,4 @@
-import {concatHex, encodeAbiParameters, encodeFunctionData, getAddress, keccak256, sliceHex, stringToHex} from 'viem'
+import {concatHex, decodeEventLog, encodeAbiParameters, encodeFunctionData, getAddress, keccak256, sliceHex, stringToHex} from 'viem'
 import type {Address, Hash, Hex, TransactionReceipt} from 'viem'
 import {
   AssetType,
@@ -60,7 +60,7 @@ export interface FullDemoArtifact {
     readonly quotes: readonly [DemoFeeQuote, DemoFeeQuote]
     readonly accruedAfterCommits: readonly [string, string]
     readonly accruedAfterSettlement: readonly [string, string]
-    readonly withdrawn: readonly [string, string]
+    readonly withdrawals: readonly [DemoFeeWithdrawal, DemoFeeWithdrawal]
     readonly accruedAfterWithdrawal: readonly ['0', '0']
     readonly gasIncludedInProtocolRevenue: false
   }
@@ -71,6 +71,12 @@ export interface DemoFeeQuote {
   readonly nativeEscrow: string
   readonly commitmentFee: string
   readonly totalValue: string
+}
+
+export interface DemoFeeWithdrawal {
+  readonly recipient: Address
+  readonly amount: string
+  readonly transactionHash: Hash
 }
 
 export interface FullDemoProgress {
@@ -215,9 +221,10 @@ export async function runFullDemo(
     readFee(chainA, addressesA.crossChainWrapper, 'accruedFees'),
     readFee(chainB, addressesB.crossChainWrapper, 'accruedFees'),
   ])
+  const withdrawals: DemoFeeWithdrawal[] = []
   for (const [chain, wrapper] of [[chainA, addressesA.crossChainWrapper], [chainB, addressesB.crossChainWrapper]] as const) {
     const hash = await chain.deployer.walletClient.writeContract({address: wrapper, abi: crossChainWrapperAbi, functionName: 'withdrawFees', args: [chain.deployer.address], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
-    await receipt(chain, hash)
+    withdrawals.push(observedWithdrawal(await receipt(chain, hash), wrapper))
   }
   const accruedAfterWithdrawal = await Promise.all([
     readFee(chainA, addressesA.crossChainWrapper, 'accruedFees'),
@@ -228,7 +235,7 @@ export async function runFullDemo(
     quotes: [demoFeeQuote('alice', aliceQuote), demoFeeQuote('bob', bobQuote)],
     accruedAfterCommits: [accruedAfterCommits[0].toString(), accruedAfterCommits[1].toString()],
     accruedAfterSettlement: [accruedAfterSettlement[0].toString(), accruedAfterSettlement[1].toString()],
-    withdrawn: [accruedAfterSettlement[0].toString(), accruedAfterSettlement[1].toString()],
+    withdrawals: [withdrawals[0]!, withdrawals[1]!],
     accruedAfterWithdrawal: [accruedAfterWithdrawal[0].toString() as '0', accruedAfterWithdrawal[1].toString() as '0'],
     gasIncludedInProtocolRevenue: false,
   }
@@ -247,6 +254,16 @@ function request(prepared: ReturnType<typeof preparedAuthorization>, bobCommitSe
 function pqKey(verifier: Address, seed: Hex32): Hex { return concatHex([verifier, seed]) }
 function pqSignature(key: Hex, digest: Hex32): Hex { return encodeAbiParameters([{type: 'bytes'}, {type: 'bytes32'}], [sliceHex(key, 20), digest]) }
 function demoFeeQuote(side: DemoFeeQuote['side'], quote: Awaited<ReturnType<ReturnType<typeof createProtocolClient>['getCommitValueQuote']>>): DemoFeeQuote { return {side, nativeEscrow: quote.nativeEscrow.toString(), commitmentFee: quote.commitmentFee.toString(), totalValue: quote.totalValue.toString()} }
+function observedWithdrawal(receipt: TransactionReceipt, wrapper: Address): DemoFeeWithdrawal {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== wrapper.toLowerCase()) continue
+    try {
+      const decoded = decodeEventLog({abi: crossChainWrapperAbi, data: log.data, topics: log.topics})
+      if (decoded.eventName === 'FeesWithdrawn') return {recipient: decoded.args.to, amount: decoded.args.amount.toString(), transactionHash: receipt.transactionHash}
+    } catch {}
+  }
+  throw new Error(`fee withdrawal receipt lacks FeesWithdrawn: ${receipt.transactionHash}`)
+}
 async function readFee(ctx: ChainContext, wrapper: Address, functionName: 'accruedFees' | 'commitmentFee'): Promise<bigint> { return await ctx.publicClient.readContract({address: wrapper, abi: crossChainWrapperAbi, functionName}) }
 async function lazyCommit(ctx: ChainContext, client: ReturnType<typeof createProtocolClient>, deployment: DemoDeploymentArtifact['chains'][number], commitRequest: CommitAuthorizationRequest, payloadHash: Hex32, activeKey: Hex, recoveryKey: Hex, operationNonce: Hex32, expiry: bigint, commitSignature: Hex): Promise<Hash> { const registration: InitialRegistration = {eoa: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: deployment.addresses.directAuthorization, commitPayloadHash: payloadHash, operationNonce, expiry}; const digest = registrationDigest(BigInt(ctx.chainId), deployment.addresses.directAuthorization, registration); const call = encodeFunctionData({abi: directAuthorizationAbi, functionName: 'authorizeCommit', args: [commitRequest, commitSignature]}); return client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), commitRequest) }
 async function receipt(ctx: ChainContext, hash: Hash): Promise<TransactionReceipt> { const value = await ctx.publicClient.waitForTransactionReceipt({hash}); if (value.status !== 'success') throw new Error(`demo transaction reverted: ${hash}`); return value }
@@ -267,7 +284,7 @@ export function validateFullDemoArtifact(artifact: FullDemoArtifact): void {
   if (artifact.authorizationTrace.records.map(record => `${record.side}:${record.status}`).join('|') !== 'alice:accepted|bob:accepted') throw new Error('full demo authorization trace is incomplete')
   if (artifact.settlementTrace.transactions.map(record => record.action).join('|') !== expectedActions.join('|')) throw new Error('full demo settlement trace is incomplete')
   if (artifact.negativeControls.records.map(record => record.scenario).join('|') !== expectedNegative.join('|') || artifact.negativeControls.records.some(record => !record.reverted || !record.stateUnchanged || JSON.stringify(record.before) !== JSON.stringify(record.after))) throw new Error('full demo negative controls are incomplete')
-  if (artifact.feeFlow.gasIncludedInProtocolRevenue !== false || artifact.feeFlow.quotes.map(quote => quote.commitmentFee).join(',') !== '3000000000000,7000000000000' || artifact.feeFlow.accruedAfterCommits.join(',') !== artifact.feeFlow.accruedAfterSettlement.join(',') || artifact.feeFlow.accruedAfterSettlement.join(',') !== artifact.feeFlow.withdrawn.join(',') || artifact.feeFlow.accruedAfterWithdrawal.join(',') !== '0,0') throw new Error('full demo fee flow is incomplete')
+  if (artifact.feeFlow.gasIncludedInProtocolRevenue !== false || artifact.feeFlow.quotes.map(quote => quote.commitmentFee).join(',') !== '3000000000000,7000000000000' || artifact.feeFlow.accruedAfterCommits.join(',') !== artifact.feeFlow.accruedAfterSettlement.join(',') || artifact.feeFlow.accruedAfterSettlement.join(',') !== artifact.feeFlow.withdrawals.map(withdrawal => withdrawal.amount).join(',') || artifact.feeFlow.withdrawals.some(withdrawal => withdrawal.recipient.toLowerCase() !== artifact.deployment.owner.toLowerCase() || !/^0x[0-9a-fA-F]{64}$/.test(withdrawal.transactionHash)) || artifact.feeFlow.accruedAfterWithdrawal.join(',') !== '0,0') throw new Error('full demo fee flow is incomplete')
   const [left, right] = artifact.settlementTrace.finalSnapshots
   const balances = (snapshot: CrossChainSettlementSnapshot | undefined) => snapshot?.holdings.map(holding => 'balance' in holding ? holding.balance : null)
   if (left?.state !== 'Claimed' || right?.state !== 'Claimed' || JSON.stringify(balances(left)) !== JSON.stringify(['0', (10n * 10n ** 18n).toString(), '0']) || JSON.stringify(balances(right)) !== JSON.stringify(['0', (20n * 10n ** 18n).toString(), '0'])) throw new Error('full demo final state or balances mismatch')

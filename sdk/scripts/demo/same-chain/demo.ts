@@ -1,5 +1,5 @@
-import {concatHex, getAddress, keccak256} from 'viem'
-import type {Address, Hex} from 'viem'
+import {concatHex, decodeEventLog, getAddress, keccak256} from 'viem'
+import type {Address, Hash, Hex, TransactionReceipt} from 'viem'
 import {
   AssetType,
   AuthorizationMode,
@@ -73,6 +73,7 @@ export interface SameChainDemoFoundation {
   readonly phase: 'claimed'
   readonly mockVerifier: typeof SAME_CHAIN_DEMO_MOCK_VERIFIER
   readonly publicTestSecrets: true
+  readonly protocolOwner: Address
   readonly deployment: Awaited<ReturnType<typeof bootstrapProtocolChain>>
   readonly terms: ProtocolTerms
   readonly tradeId: Hex32
@@ -84,7 +85,7 @@ export interface SameChainDemoFoundation {
     readonly quotes: readonly [{readonly side: 'alice'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}, {readonly side: 'bob'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}]
     readonly accruedAfterCommits: string
     readonly accruedAfterSettlement: string
-    readonly withdrawn: string
+    readonly withdrawal: {readonly recipient: Address; readonly amount: string; readonly transactionHash: Hash}
     readonly accruedAfterWithdrawal: '0'
     readonly gasIncludedInProtocolRevenue: false
   }
@@ -191,13 +192,16 @@ export async function runSameChainDemoFoundation(
   const success = await runSameChainSuccess(chain, deployment, terms, lock, onProgress)
   onProgress?.('Withdrawing accrued same-chain protocol fees independently of gas')
   feeHash = await chain.deployer.walletClient.writeContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'withdrawFees', args: [chain.deployer.address], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
-  await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
+  const withdrawalReceipt = await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
+  if (withdrawalReceipt.status !== 'success') throw new Error(`fee withdrawal reverted: ${feeHash}`)
+  const withdrawal = observedWithdrawal(withdrawalReceipt, deployment.addresses.sameChainWrapper)
   const accruedAfterWithdrawal = await chain.publicClient.readContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'accruedFees'})
   return {
     schema: SAME_CHAIN_DEMO_SCHEMA,
     phase: 'claimed',
     mockVerifier: SAME_CHAIN_DEMO_MOCK_VERIFIER,
     publicTestSecrets: true,
+    protocolOwner: chain.deployer.address,
     deployment,
     terms,
     tradeId: id,
@@ -212,11 +216,22 @@ export async function runSameChainDemoFoundation(
       ],
       accruedAfterCommits: success.accruedFeesAfterCommits,
       accruedAfterSettlement: success.accruedFeesAfterSettlement,
-      withdrawn: success.accruedFeesAfterSettlement,
+      withdrawal,
       accruedAfterWithdrawal: accruedAfterWithdrawal.toString() as '0',
       gasIncludedInProtocolRevenue: false,
     },
   }
+}
+
+function observedWithdrawal(receipt: TransactionReceipt, wrapper: Address): SameChainDemoFoundation['feeFlow']['withdrawal'] {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== wrapper.toLowerCase()) continue
+    try {
+      const decoded = decodeEventLog({abi: sameChainWrapperAbi, data: log.data, topics: log.topics})
+      if (decoded.eventName === 'FeesWithdrawn') return {recipient: decoded.args.to, amount: decoded.args.amount.toString(), transactionHash: receipt.transactionHash}
+    } catch {}
+  }
+  throw new Error(`fee withdrawal receipt lacks FeesWithdrawn: ${receipt.transactionHash}`)
 }
 
 function prototypePQKey(verifier: Address, seed: Hex32): Hex {
