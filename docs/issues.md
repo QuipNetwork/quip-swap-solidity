@@ -121,6 +121,33 @@ Required: define a pure `StructurallyValidTerms` predicate and separate mutable
 structural validity; claims and reclaims must not reconsult mutable admission.
 
 
+### Reclaim horizons are unbounded — open
+
+Solidity validates deadline ordering but permits impractically distant reclaim
+releases, including values near `uint256` maximum.
+
+Required: impose contract or deployment-policy bounds and reject unsafe terms in
+all clients.
+
+
+### Transaction broadcast precedes durable journaling — open
+
+Commit, claim, and reclaim transactions can be broadcast before their journal
+entry is durable. A crash may leave a pending or mined transaction without a
+local hash, and stale workspace locks can block later commands.
+
+Required: persist intent and sender nonce before broadcast, reconcile from
+chain afterward, add binding-aware recovery scanning, and define safe stale-lock
+recovery.
+
+
+### Permanently failing asset can strand its selected HTLC — design limitation
+
+Same-chain claim or reclaim selection is irreversible, and each HTLC can then
+settle independently in bounded batches. A permanently failing asset or
+recipient can leave only that HTLC pending indefinitely. It cannot roll back a
+completed payout on the other side, but the trade cannot reach terminal state
+and the failing side cannot switch to the opposite outcome.
 
 ## To fix
 
@@ -137,16 +164,6 @@ Required: classify remote-chain support as an explicit client/deployment
 predicate, or add an on-chain supported-chain policy if contract enforcement is
 required.
 
-
-### Transaction broadcast precedes durable journaling — open
-
-Commit, claim, and reclaim transactions can be broadcast before their journal
-entry is durable. A crash may leave a pending or mined transaction without a
-local hash, and stale workspace locks can block later commands.
-
-Required: persist intent and sender nonce before broadcast, reconcile from
-chain afterward, add binding-aware recovery scanning, and define safe stale-lock
-recovery.
 
 
 ### Mutable asset admission can strand an accepted trade — partially mitigated
@@ -168,21 +185,6 @@ blocked transfer can make a dedicated HTLC unpayable.
 Required: narrowly govern exact `(assetType, target)` entries, monitor upgrades,
 and use audited adapters where necessary.
 
-### Permanently failing asset can strand its selected HTLC — design limitation
-
-Same-chain claim or reclaim selection is irreversible, and each HTLC can then
-settle independently in bounded batches. A permanently failing asset or
-recipient can leave only that HTLC pending indefinitely. It cannot roll back a
-completed payout on the other side, but the trade cannot reach terminal state
-and the failing side cannot switch to the opposite outcome.
-
-### Reclaim horizons are unbounded — open
-
-Solidity validates deadline ordering but permits impractically distant reclaim
-releases, including values near `uint256` maximum.
-
-Required: impose contract or deployment-policy bounds and reject unsafe terms in
-all clients.
 
 
 ## Intentional simplifications
@@ -236,15 +238,6 @@ Required: specify and prove that committed state implies structural validity at
 commit time and that collision-resistant keyed lookup binds settlement to those
 same terms.
 
-### Authorization component names describe a superseded split — resolved
-
-Protocol, technical specification, proof model/map, and prototype plans now use
-`DirectAuthorization` for the single contract implementing both identity-registry
-and direct commit gateway roles. Deployment documentation identifies the same
-instance as the wrappers' `DIRECT_AUTHORIZATION` dependency. The proof-to-code
-mapping preserves distinct registry-operation and commit-authorization nonce
-scopes and stores without implying separate contract deployments or completed
-boundary soundness proofs.
 
 ### Canonical vectors are not executable sources of truth — open conformance gap
 
@@ -256,23 +249,13 @@ without failing either suite.
 Required: regenerate vectors for the selected timing-policy model and make both
 Solidity and SDK tests consume the same checked-in values.
 
-### Solidity and SDK accept zero side nonces — open
+### Solidity and SDK accept zero side nonces — resolved
 
-Neither Solidity term validation nor the SDK protocol validator rejects a zero
-`sideNonce`. Randomness cannot be proven on-chain, but rejecting zero in both
-layers would catch an obvious generation failure. Otherwise the documentation
-must classify nonce quality entirely as a client responsibility.
-
-## Cross-cutting production requirements
-
-Before production, complete the EasyCrypt adversary model, stateful invariant
-and malicious-component testing, real-verifier gas and signature validation,
-chain-specific timing calibration, deployment and governance runbooks,
-independent audits, executor failover exercises, monitoring, and incident
-response.
-
-
-## Resolved issues
+Solidity term validation and the SDK protocol validator reject zero `sideNonce`
+values on either side in both modes. Clients must resample zero outputs and
+remain responsible for cryptographically random per-run nonces. The check
+catches an obvious generation failure; it does not prove randomness or
+uniqueness, add a nonce registry, or consume side nonces.
 
 ### Wrapper addresses are valid payout destinations — resolved
 
@@ -283,3 +266,14 @@ The SDK applies the same case-insensitive address check when preparing commit ha
 and before quoting or submitting direct, wallet, or registration commits.
 Remote-chain destinations are not rejected merely for matching the local
 wrapper address. Existing settlement remains available.
+
+
+### Authorization component names describe a superseded split — resolved
+
+Protocol, technical specification, proof model/map, and prototype plans now use
+`DirectAuthorization` for the single contract implementing both identity-registry
+and direct commit gateway roles. Deployment documentation identifies the same
+instance as the wrappers' `DIRECT_AUTHORIZATION` dependency. The proof-to-code
+mapping preserves distinct registry-operation and commit-authorization nonce
+scopes and stores without implying separate contract deployments or completed
+boundary soundness proofs.

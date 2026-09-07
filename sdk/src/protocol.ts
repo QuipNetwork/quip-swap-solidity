@@ -1,4 +1,4 @@
-import {encodeAbiParameters, keccak256, zeroAddress} from 'viem'
+import {encodeAbiParameters, keccak256, zeroAddress, zeroHash} from 'viem'
 import type {Address, Hex} from 'viem'
 import {assetArrayAbiParameter} from './hashing.js'
 import {AssetType} from './types.js'
@@ -339,6 +339,7 @@ export function validateProtocolTerms(terms: ProtocolTerms, policy: TimingPolicy
 function validateSide(side: SideTerms): void {
   const invalid = () => { throw new Error('Invalid protocol side terms') }
   if (side.recipient === zeroAddress || side.reclaimRecipient === zeroAddress || side.assets.length === 0 ||
+      side.sideNonce === zeroHash ||
       !(side.commitmentDeadline < side.claimDeadline && side.claimDeadline < side.reclaimRelease)) invalid()
   if ((side.authorizationMode !== AuthorizationMode.QuipWallet &&
       side.authorizationMode !== AuthorizationMode.RegisteredDirect) ||

@@ -55,6 +55,20 @@ const accepts = (terms: ProtocolTerms, policy: TimingPolicy): boolean => {
 }
 
 describe('current protocol term validation', () => {
+  for (const sameChain of [false, true]) for (const party of [false, true]) {
+    it(`rejects zero ${party ? 'party' : 'counterparty'} nonce in ${sameChain ? 'same' : 'cross'} chain terms`, () => {
+      const terms = sameChain ? {partySide: side(true, 1n), counterpartySide: side(false, 1n)} : cross()
+      const policy = sameChain ? samePolicy : crossPolicy
+      const selected = party ? 'partySide' : 'counterpartySide'
+      expect(accepts({...terms, [selected]: {...terms[selected], sideNonce: Z32}}, policy)).toBe(false)
+      // Nonzero does not imply uniqueness or prove randomness.
+      for (const nonce of [H(1), `0x${'ff'.repeat(32)}` as Hex32]) {
+        expect(accepts({...terms, partySide: {...terms.partySide, sideNonce: nonce},
+          counterpartySide: {...terms.counterpartySide, sideNonce: nonce}}, policy)).toBe(true)
+      }
+    })
+  }
+
   it('derives both modes and all source-state projections', () => {
     const same = {partySide: side(true, 1n), counterpartySide: side(false, 1n)}
     expect(wrapperMode(cross())).toBe(WrapperMode.CrossChain)

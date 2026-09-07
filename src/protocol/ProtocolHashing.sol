@@ -227,6 +227,7 @@ library ProtocolHashing {
     // Require payable destinations, at least one asset, and strict local timing.
     if (
       side.recipient == address(0) || side.reclaimRecipient == address(0) || side.assets.length == 0
+        || side.sideNonce == bytes32(0)
         || !(side.commitmentDeadline < side.claimDeadline && side.claimDeadline < side.reclaimRelease)
     ) revert InvalidTerms();
     // Wallet keys are internal and version zero; direct keys are registry-versioned.

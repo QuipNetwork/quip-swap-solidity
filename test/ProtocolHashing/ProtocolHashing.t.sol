@@ -294,6 +294,22 @@ contract ProtocolHashingTest is Test {
     _assertInvalid(invalid);
   }
 
+  function testFuzz_validateTermsRejectsZeroSideNonce(bool sameChain, bool party) public {
+    ProtocolTerms memory terms = sameChain ? _sameChainTerms() : _crossChainTerms();
+    if (party) terms.partySide.sideNonce = bytes32(0);
+    else terms.counterpartySide.sideNonce = bytes32(0);
+    _assertInvalid(terms);
+  }
+
+  function testFuzz_validateTermsAllowsNonzeroSideNonce(bool sameChain, bytes32 nonce) public pure {
+    if (nonce == bytes32(0)) return;
+    ProtocolTerms memory terms = sameChain ? _sameChainTerms() : _crossChainTerms();
+    // Nonzero is structural validation, not a uniqueness or randomness proof.
+    terms.partySide.sideNonce = nonce;
+    terms.counterpartySide.sideNonce = nonce;
+    ProtocolHashing.validateTerms(terms);
+  }
+
   function test_validateTermsRejectsChainDeadlineAndProgressionShapes() public {
     ProtocolTerms memory terms = _crossChainTerms();
     ProtocolTerms memory invalid = _copy(terms);
