@@ -43,7 +43,7 @@ const T1 = '0x6666666666666666666666666666666666666666' as Address
 const T2 = '0x7777777777777777777777777777777777777777' as Address
 const H = (n: number) => `0x${n.toString(16).padStart(64, '0')}` as Hex32
 const policy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31337n, counterpartyChainId: 31338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
-const input = `${JSON.stringify({schema: PREPARE_TRADE_INPUT_SCHEMA, partyCommitmentDeadline: '100', counterpartyCommitmentDeadline: '200', partyClaimDeadline: '1000', counterpartyClaimDeadline: '1100', partyReclaimRelease: '1400', counterpartyReclaimRelease: '1300', partyAuthorizationExpiry: '500', counterpartyAuthorizationExpiry: '600'})}\n`
+const input = `${JSON.stringify({schema: PREPARE_TRADE_INPUT_SCHEMA, partyCommitmentDeadline: '100', counterpartyCommitmentDeadline: '200', partyClaimDeadline: '1000', counterpartyClaimDeadline: '900', partyReclaimRelease: '1400', counterpartyReclaimRelease: '1300', partyAuthorizationExpiry: '500', counterpartyAuthorizationExpiry: '600'})}\n`
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'quip-trade-'))

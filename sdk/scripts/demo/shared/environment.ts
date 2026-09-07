@@ -74,7 +74,7 @@ export async function bootstrapProtocolChain(
     ['assetSupportRegistry', 'AssetSupportRegistry.sol', 'AssetSupportRegistry', [ctx.deployer.address]],
     ['directAuthorization', 'DirectAuthorization.sol', 'DirectAuthorization', [trustedVerifier]],
     ['swapHTLC', 'SwapHTLC.sol', 'SwapHTLC', []],
-    ['crossChainWrapper', 'CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, ctx.deployer.address]],
+    ['crossChainWrapper', 'CrossChainWrapper.sol', 'CrossChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, ctx.deployer.address, 10n]],
     ['sameChainWrapper', 'SameChainWrapper.sol', 'SameChainWrapper', [addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, ctx.deployer.address]],
   ]
   for (const [component, solFile, contract, args] of definitions) {
@@ -86,6 +86,8 @@ export async function bootstrapProtocolChain(
     if ((await ctx.publicClient.getCode({address: addresses[component]})) === undefined) throw new Error(`missing deployed ${contract}`)
   }
   await verifyGraph(ctx, addresses, trustedVerifier)
+  const delay = await ctx.publicClient.readContract({address: addresses.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'FINAL_CLAIM_DELAY'})
+  if (delay !== 10n) throw new Error('local demo final claim delay mismatch')
   return {chainId: ctx.chainId, createX, trustedVerifier, addresses}
 }
 

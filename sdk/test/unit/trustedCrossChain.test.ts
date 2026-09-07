@@ -16,7 +16,7 @@ const side = (party: boolean): Omit<SideTerms, 'commitLock' | 'sideNonce'> => ({
   chainId: party ? 31337n : 31338n, assets: [{assetType: AssetType.Native, target: ZERO, id: 0n, amount: 1n}],
   principal: party ? ALICE : BOB, authorizationMode: AuthorizationMode.QuipWallet, principalKeyVersion: 0n,
   reclaimRecipient: party ? ALICE : BOB, recipient: party ? BOB : ALICE,
-  commitmentDeadline: party ? 100n : 200n, claimDeadline: party ? 300n : 350n, reclaimRelease: 500n,
+  commitmentDeadline: party ? 100n : 200n, claimDeadline: party ? 350n : 300n, reclaimRelease: 500n,
   delegationPolicy: party ? DelegationPolicy.NotAllowed : DelegationPolicy.Permissionless,
   delegate: ZERO, delegateKeyVersion: 0n,
 })

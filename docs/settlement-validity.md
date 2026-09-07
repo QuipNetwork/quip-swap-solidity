@@ -15,7 +15,8 @@ nonces, progression-field shape, and structural deadline ordering.
 
 This predicate does not include mutable asset admission, signature validity,
 current time, remote-chain support, or client timing-policy margins. Local
-chain and wrapper payout-address checks are additional commit guards. A cached
+chain, wrapper payout-address checks, and the cross-chain immutable final-claim
+margin are additional commit guards. A cached
 structural check does not establish the broader specification's complete
 `ValidTerms` predicate where that predicate includes policies absent from this
 prototype.
@@ -33,6 +34,7 @@ For each non-`Unused` record in wrapper `W`, there exist complete terms `T0`
 and a successful originating commit in `W` such that:
 
 - `StructurallyValidTerms(T0)` held when that commit executed;
+- for cross-chain records, the immutable final-claim margin also held at commit;
 - the record is keyed by `TradeID(T0)` and its settlement lock, plus the local
   side tag for cross-chain records;
 - every subsequent transition of that record retains this binding.

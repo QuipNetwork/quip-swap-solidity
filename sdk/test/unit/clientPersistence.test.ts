@@ -45,7 +45,7 @@ const side = (party: boolean): Omit<SideTerms, 'commitLock' | 'sideNonce'> => ({
   reclaimRecipient: party ? ALICE : BOB,
   recipient: party ? BOB : ALICE,
   commitmentDeadline: party ? 100n : 200n,
-  claimDeadline: party ? 300n : 350n,
+  claimDeadline: party ? 350n : 300n,
   reclaimRelease: 500n,
   delegationPolicy: party ? DelegationPolicy.NotAllowed : DelegationPolicy.Permissionless,
   delegate: ZERO,

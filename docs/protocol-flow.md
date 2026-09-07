@@ -54,6 +54,31 @@ final claim + same secret      |
    Claimed                   Claimed
 ```
 
+## Cross-chain final-claim window
+
+Let `B` be the counterparty-side claim deadline, `A` the party-side claim
+deadline, and `D > 0` the reviewed counterparty-to-party delivery budget in
+seconds. Both cross-chain wrappers require `B + FINAL_CLAIM_DELAY <= A` at
+commit admission. The SDK requires `B + counterpartyToPartyDelay <= A` before
+workflow authorization. Its configured budget must cover both wrappers' values
+and the reviewed route assumptions. An earlier reveal deadline alone is not
+enough, and a margin before reclaim does not keep a claim callable.
+
+Claims require `timestamp < claimDeadline`. If Alice's accepted revealing claim
+occurs at `t < B` and a funded executor can include Bob's final claim on Chain A
+by timestamp `t + D`, then `t + D < B + D <= A`: the final claim is still open.
+At integer-second equality, a reveal at `B - 1` delivered after the full budget
+lands at `A - 1`. Tests exercise both payouts at this boundary and reject the
+unsafe `A = 300, B = 320, D = 10` schedule and a margin one second too short.
+
+This is a conditional liveness argument, not a cross-chain finality guarantee.
+`D` must include source finality, observation and relay latency, destination
+inclusion, and relative timestamp skew. Secret confidentiality must hold until
+Alice's accepted counterparty-side reveal after both commits are safe. The
+opposite first-reveal direction and secrets leaked through failed or late
+transactions are outside this argument. Both positive directional claim-window
+inequalities cannot hold at once. Same-chain settlement is unaffected.
+
 ## Cross-chain recovery
 
 A committed local leg can be reclaimed permissionlessly once its signed

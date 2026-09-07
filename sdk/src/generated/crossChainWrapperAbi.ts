@@ -22,6 +22,11 @@ export const crossChainWrapperAbi = [
         "name": "initialOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "finalClaimDelay",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "nonpayable"
@@ -48,6 +53,19 @@ export const crossChainWrapperAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "FINAL_CLAIM_DELAY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -2063,6 +2081,11 @@ export const crossChainWrapperAbi = [
   {
     "type": "error",
     "name": "IncorrectNativeAmount",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientFinalClaimWindow",
     "inputs": []
   },
   {

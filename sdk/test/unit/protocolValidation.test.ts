@@ -26,7 +26,7 @@ const side = (party: boolean, chainId: bigint): SideTerms => ({
   reclaimRecipient: party ? A : B,
   recipient: party ? B : A,
   commitmentDeadline: party ? 100n : 200n,
-  claimDeadline: party ? 300n : 400n,
+  claimDeadline: party ? 400n : 300n,
   reclaimRelease: party ? 900n : 800n,
   commitLock: Z32,
   delegationPolicy: party ? DelegationPolicy.NotAllowed : DelegationPolicy.SpecificDelegate,
@@ -55,6 +55,18 @@ const accepts = (terms: ProtocolTerms, policy: TimingPolicy): boolean => {
 }
 
 describe('current protocol term validation', () => {
+  it('reserves the final claim budget, including equality at the margin', () => {
+    const base = cross()
+    const terms = {...base, partySide: {...base.partySide, commitmentDeadline: 200n, claimDeadline: 300n, reclaimRelease: 500n},
+      counterpartySide: {...base.counterpartySide, commitmentDeadline: 220n, claimDeadline: 320n, reclaimRelease: 520n}}
+    for (const deadline of [320n, 300n, 291n]) {
+      expect(accepts({...terms, counterpartySide: {...terms.counterpartySide, claimDeadline: deadline}}, crossPolicy)).toBe(false)
+    }
+    for (const deadline of [290n, 289n]) {
+      expect(accepts({...terms, counterpartySide: {...terms.counterpartySide, claimDeadline: deadline}}, crossPolicy)).toBe(true)
+    }
+  })
+
   for (const sameChain of [false, true]) for (const party of [false, true]) {
     it(`rejects zero ${party ? 'party' : 'counterparty'} nonce in ${sameChain ? 'same' : 'cross'} chain terms`, () => {
       const terms = sameChain ? {partySide: side(true, 1n), counterpartySide: side(false, 1n)} : cross()

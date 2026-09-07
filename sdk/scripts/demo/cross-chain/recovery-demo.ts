@@ -115,7 +115,7 @@ async function prepareFixture(chainA: ChainContext, chainB: ChainContext, load: 
   const now = (currentA > currentB ? currentA : currentB) + 10n
   const policy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
   const partySide = sideTemplate(chainA, chainB.bob.address, deployment.chains[0].funding.token, 10n * 10n ** 18n, now + 100n, now + 1_000n, now + 1_400n)
-  const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 1_100n, now + 1_300n)
+  const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 900n, now + 1_300n)
   const workflowArgs = {
     policy,
     partySide,

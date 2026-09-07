@@ -66,6 +66,26 @@ publishes the Bob-commit preimage on-chain; no private handoff is required.
 For the separate-process prototype client, use the [CLI](CLI.md). For protocol
 ordering and recovery, see [protocol flow](../docs/protocol-flow.md).
 
+## Cross-chain timing configuration
+
+Before either party signs, call `validateProtocolTerms(terms, policy)` (the
+trusted workflow does this during preparation and restoration). It requires
+`counterpartySide.claimDeadline + policy.counterpartyToPartyDelay <= partySide.claimDeadline`,
+alongside the existing reclaim margins. Low-level hashing and signing helpers
+are not substitutes for this validation.
+
+Read `FINAL_CLAIM_DELAY()` from both verified cross-chain wrapper deployments.
+Use a reviewed `counterpartyToPartyDelay` at least as large as either immutable
+value, covering finality, observation, relay, inclusion, and timestamp skew.
+The exported prototype policies are examples, not evidence of a reviewed
+production bound. The deployment manifest now requires `finalClaimDelay` and
+binds it into its configuration hash.
+
+This schedule supports Alice revealing on the counterparty leg, followed by
+Bob's final claim on the party leg. Keep the settlement secret confidential
+until that accepted reveal after both commits are safe. See the
+[timing argument and assumptions](../docs/protocol-flow.md#cross-chain-final-claim-window).
+
 ## Legacy API
 
 Omnibus helpers are compatibility-only:

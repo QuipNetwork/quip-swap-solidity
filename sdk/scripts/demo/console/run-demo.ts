@@ -74,7 +74,7 @@ try {
   const latest = await rpc(aliceRpcUrl, 'eth_getBlockByNumber', ['latest', false]) as {timestamp: string}
   const now = BigInt(latest.timestamp)
   const base = now + 10n
-  const prepare = command('prepare-trade', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-prepare-trade.v1', partyCommitmentDeadline: (base + 100n).toString(), counterpartyCommitmentDeadline: (base + 200n).toString(), partyClaimDeadline: (base + 1_000n).toString(), counterpartyClaimDeadline: (base + 1_100n).toString(), partyReclaimRelease: (base + 1_400n).toString(), counterpartyReclaimRelease: (base + 1_300n).toString(), partyAuthorizationExpiry: (base + 500n).toString(), counterpartyAuthorizationExpiry: (base + 600n).toString()}))
+  const prepare = command('prepare-trade', 'alice', aliceRoot, aliceConfig, json({schema: 'quip-swap-prepare-trade.v1', partyCommitmentDeadline: (base + 100n).toString(), counterpartyCommitmentDeadline: (base + 200n).toString(), partyClaimDeadline: (base + 1_000n).toString(), counterpartyClaimDeadline: (base + 900n).toString(), partyReclaimRelease: (base + 1_400n).toString(), counterpartyReclaimRelease: (base + 1_300n).toString(), partyAuthorizationExpiry: (base + 500n).toString(), counterpartyAuthorizationExpiry: (base + 600n).toString()}))
   const tradeId = String(prepare.result.tradeId)
   command('import-offer', 'bob', bobRoot, bobConfig, read(join(aliceRoot, 'public', 'offer.json')))
   command('accept-trade', 'bob', bobRoot, bobConfig)

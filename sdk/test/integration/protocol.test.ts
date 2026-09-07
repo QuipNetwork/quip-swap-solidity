@@ -39,8 +39,8 @@ function side(overrides: Partial<SideTerms> = {}): SideTerms {
       {assetType: AssetType.ERC20, target: TOKEN, id: 0n, amount: 2n},
     ],
     principal: ALICE, authorizationMode: AuthorizationMode.QuipWallet, principalKeyVersion: 0n,
-    reclaimRecipient: ALICE, recipient: BOB, commitmentDeadline: 100n, claimDeadline: 300n,
-    reclaimRelease: 500n, commitLock: ZERO32, delegationPolicy: DelegationPolicy.NotAllowed,
+    reclaimRecipient: ALICE, recipient: BOB, commitmentDeadline: 100n, claimDeadline: 450n,
+    reclaimRelease: 600n, commitLock: ZERO32, delegationPolicy: DelegationPolicy.NotAllowed,
     delegate: '0x0000000000000000000000000000000000000000', delegateKeyVersion: 0n,
     sideNonce: `0x${'aa'.repeat(32)}` as Hex32, ...overrides,
   }
@@ -111,7 +111,7 @@ function deterministicVectors(): Array<{terms: ProtocolTerms, policy: TimingPoli
       partySide: side({
         chainId: generatedPolicy.partyChainId,
         assets: [{assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: n}],
-        commitmentDeadline: 100n + n, claimDeadline: 400n + n, reclaimRelease: 900n + n * 10n,
+        commitmentDeadline: 100n + n, claimDeadline: 600n + n * 6n, reclaimRelease: 900n + n * 10n,
         sideNonce: `0x${(0x2000n + n).toString(16).padStart(64, '0')}` as Hex32,
       }),
       counterpartySide: side({

@@ -70,7 +70,7 @@ contract DeployedWrapperGuardsTest is Test {
     vm.warp(100);
     support = new AssetSupportRegistry(address(this));
     htlcImplementation = new SwapHTLC();
-    cross = new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
+    cross = new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this), 10);
     same = new SameChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
     vm.deal(GATEWAY, 100 ether);
   }
@@ -117,11 +117,11 @@ contract DeployedWrapperGuardsTest is Test {
 
   function test_constructorsRejectEveryZeroDependency() public {
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(address(0), support, address(htlcImplementation), address(this));
+    new CrossChainWrapper(address(0), support, address(htlcImplementation), address(this), 10);
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation), address(this));
+    new CrossChainWrapper(GATEWAY, AssetSupportRegistry(address(0)), address(htlcImplementation), address(this), 10);
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
-    new CrossChainWrapper(GATEWAY, support, address(0), address(this));
+    new CrossChainWrapper(GATEWAY, support, address(0), address(this), 10);
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
     new SameChainWrapper(address(0), support, address(htlcImplementation), address(this));
     vm.expectRevert(SameChainWrapper.ZeroConfiguration.selector);
@@ -159,7 +159,7 @@ contract DeployedWrapperGuardsTest is Test {
 
   function test_constructorsRejectZeroFeeOwner() public {
     vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-    new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(0));
+    new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(0), 10);
     vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
     new SameChainWrapper(GATEWAY, support, address(htlcImplementation), address(0));
   }
@@ -284,7 +284,7 @@ contract DeployedWrapperGuardsTest is Test {
     uint256 counterpartyFee = 0.007 ether;
     cross.setCommitmentFee(partyFee);
     CrossChainWrapper counterpartyWrapper =
-      new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this));
+      new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this), 10);
     counterpartyWrapper.setCommitmentFee(counterpartyFee);
     ProtocolTerms memory terms = _crossTerms();
     bytes32 lock = _lock(terms);
@@ -1479,9 +1479,51 @@ contract DeployedWrapperGuardsTest is Test {
     evidence.expiry = expiry;
   }
 
+  function test_crossRejectsZeroFinalClaimDelay() public {
+    vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
+    new CrossChainWrapper(GATEWAY, support, address(htlcImplementation), address(this), 0);
+  }
+
+  function test_crossRejectsUnsafeAndInsufficientFinalClaimSchedulesOnBothSides() public {
+    for (uint256 i; i < 3; ++i) {
+      for (uint256 j; j < 2; ++j) {
+        ProtocolTerms memory terms = _crossTerms();
+        // Reproduced unsafe ordering, equal deadlines, and one second short of the budget.
+        terms.counterpartySide.claimDeadline = i == 0 ? 320 : (i == 1 ? 300 : 291);
+        _bindCross(terms);
+        bytes32 lock = _lock(terms);
+        bool party = j == 0;
+        uint256 originalChain = block.chainid;
+        if (!party) vm.chainId(terms.counterpartySide.chainId);
+        vm.expectRevert(CrossChainWrapper.InsufficientFinalClaimWindow.selector);
+        _commitCross(terms, party, lock, 1, party ? 1 : 2);
+        vm.chainId(originalChain);
+      }
+    }
+  }
+
+  function test_crossExactMarginAllowsLastMomentRevealAndFullBudgetFinalClaim() public {
+    ProtocolTerms memory terms = _crossTerms();
+    terms.counterpartySide.claimDeadline = terms.partySide.claimDeadline - cross.FINAL_CLAIM_DELAY();
+    _bindCross(terms);
+    bytes32 lock = _lock(terms);
+    _commitCross(terms, true, lock, 1, 1);
+    vm.chainId(terms.counterpartySide.chainId);
+    _commitCross(terms, false, lock, 2, 2);
+    uint256 revealTime = terms.counterpartySide.claimDeadline - 1;
+    vm.warp(revealTime);
+    cross.claim(terms, false, lock, SECRET);
+    vm.chainId(terms.partySide.chainId);
+    vm.warp(revealTime + cross.FINAL_CLAIM_DELAY());
+    assertEq(block.timestamp, terms.partySide.claimDeadline - 1);
+    cross.claim(terms, true, lock, SECRET);
+    assertEq(ALICE_RECIPIENT.balance, 2);
+    assertEq(BOB_RECIPIENT.balance, 1);
+  }
+
   function _crossTerms() internal view returns (ProtocolTerms memory terms) {
     terms.partySide = _side(block.chainid, ALICE, BOB_RECIPIENT, 1, 200, 300, 500, 1);
-    terms.counterpartySide = _side(block.chainid + 1, BOB, ALICE_RECIPIENT, 2, 220, 320, 520, 2);
+    terms.counterpartySide = _side(block.chainid + 1, BOB, ALICE_RECIPIENT, 2, 220, 280, 520, 2);
     _bindCross(terms);
   }
 

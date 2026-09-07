@@ -1,21 +1,20 @@
 # Gas checkpoint
 
 The canonical regression record is [`.gas-snapshot`](../.gas-snapshot). This
-checkpoint was regenerated after the local wrapper-payout and zero-side-nonce
-validation fixes, using source revision
-`895c4277f8550aa6c88aaaf4fb5289d528c43622`, Forge 1.7.1, and the repository's
-default Foundry profile (Solidity 0.8.33, Prague, 10,000 optimizer runs, with the
-configured dependency-specific via-IR compilation restriction). All 672 tests
+checkpoint was regenerated for the final-claim-window admission change on top
+of source revision `dff98fc48c73378e318349aa779aa1a4b2ed30c9`, using Forge 1.7.1
+and the repository's default Foundry profile (Solidity 0.8.33, Prague, 10,000 optimizer runs, with the
+configured dependency-specific via-IR compilation restriction). All 675 tests
 passed. The snapshot SHA-256 is
-`b653d1658c830aa4bbd76ca7ac3ac94dcd360db3d3983c9e98377423ff5549e5`.
+`bcb6677000cb9e9e1719685e7f167f0b1ac9ecae41b9bb293e338fff4164c577`.
 
 The focused gas report used
 `forge test --gas-report --match-contract DeployedWrapperGuardsTest`:
 
 | Current same-chain call | Average | Median | Observations |
 | --- | ---: | ---: | ---: |
-| `selectClaim` | 43,473 | 44,284 | 17 |
-| `selectReclaim` | 49,027 | 51,557 | 12 |
+| `selectClaim` | 43,475 | 44,284 | 17 |
+| `selectReclaim` | 49,028 | 51,557 | 12 |
 | `executeSettlement` | 134,964 | 173,943 | 37 |
 | HTLC `releaseBatch` | 85,610 | 96,276 | 26 |
 

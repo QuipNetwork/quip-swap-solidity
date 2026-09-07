@@ -98,6 +98,7 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
     assetSupportRegistry,
     swapHTLC,
     ctx.deployer.address,
+    10n,
   ])
   const sameChainWrapper = await ctx.deploy(loadArtifact('SameChainWrapper.sol', 'SameChainWrapper'), [
     directAuthorization,

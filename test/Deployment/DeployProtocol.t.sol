@@ -47,11 +47,11 @@ contract DeployProtocolTest is Test {
 
   function test_predictionMatchesPublishedSdkVector() public view {
     DeployProtocol.Addresses memory a = script.predicted(CANONICAL_CREATEX, VECTOR_DEPLOYER);
-    assertEq(a.assetSupportRegistry, 0x9Ba57720D36d83954e5ba03185e92A918D028EDF);
-    assertEq(a.directAuthorization, 0xe5c123bbB955e82208d76114aBe4170C0E0b2F95);
-    assertEq(a.crossChainWrapper, 0x795C93561Bd9F9E30FF62aCDe821B38148229E30);
-    assertEq(a.sameChainWrapper, 0xE740Bf2De5123F801AdCf534414F039ca2e83c44);
-    assertEq(a.swapHTLC, 0x1268B3FF8C710ca5629Bb0385d84D130A8e139f9);
+    assertEq(a.assetSupportRegistry, 0xeAAD1bADf49D6F7D440b7951B5d3dEA16c106Add);
+    assertEq(a.directAuthorization, 0x3393579801E4CEbf80fA6F1B0D6f78EF074f3BB3);
+    assertEq(a.crossChainWrapper, 0xF9A9912FF311C99Ee47108468a8f6d60fB926a0B);
+    assertEq(a.sameChainWrapper, 0x11259234aC38CBa5a07e0fe3282535EfD65224E8);
+    assertEq(a.swapHTLC, 0x99aaDD53189eAd2Db2eB77C2A98e9745B8145930);
   }
 
   function test_localCreate3DeploymentPinsCompleteGraph() public {
@@ -71,7 +71,7 @@ contract DeployProtocolTest is Test {
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
         type(CrossChainWrapper).creationCode,
-        abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC, address(this))
+        abi.encode(a.directAuthorization, a.assetSupportRegistry, a.swapHTLC, address(this), uint256(10))
       ),
       a.crossChainWrapper
     );
@@ -86,6 +86,7 @@ contract DeployProtocolTest is Test {
 
     assertEq(AssetSupportRegistry(a.assetSupportRegistry).owner(), address(this));
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).owner(), address(this));
+    assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).FINAL_CLAIM_DELAY(), 10);
     assertEq(SameChainWrapper(payable(a.sameChainWrapper)).owner(), address(this));
     assertEq(DirectAuthorization(a.directAuthorization).TRUSTED_VERIFIER(), address(verifier));
     assertEq(CrossChainWrapper(payable(a.crossChainWrapper)).DIRECT_AUTHORIZATION(), a.directAuthorization);

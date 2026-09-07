@@ -73,7 +73,7 @@ jq -n --argjson now "$NOW" '{
   partyCommitmentDeadline:($now + 86400 | tostring),
   counterpartyCommitmentDeadline:($now + 172800 | tostring),
   partyClaimDeadline:($now + 864000 | tostring),
-  counterpartyClaimDeadline:($now + 950400 | tostring),
+  counterpartyClaimDeadline:($now + 777600 | tostring),
   partyReclaimRelease:($now + 1209600 | tostring),
   counterpartyReclaimRelease:($now + 1123200 | tostring),
   partyAuthorizationExpiry:($now + 432000 | tostring),

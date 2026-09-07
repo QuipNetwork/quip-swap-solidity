@@ -17,13 +17,14 @@ committed leg may be claimed while the opposite leg is absent or later
 reclaimed. The local HTLC predicate cannot verify remote-chain readiness.
 
 Mitigation: fresh secrets, restricted storage, authenticated observations, and
-revealing only after Bob's exact commit. Residual device, logging, backup, and
-application compromise remains.
+first revealing through an accepted counterparty-side claim after Bob's exact
+commit is stable. Residual device, logging, backup, and application compromise
+remains.
 
 ### KI02 - Final-claim delivery and finality are not guaranteed — partially mitigated
 
 After the revealing claim, an executor must land and finalize the opposite
-claim before reclaim becomes admissible. Censorship, congestion,
+claim before its claim deadline. Censorship, congestion,
 reorganization, delayed observation, or bad timing calibration can produce an
 asymmetric `(Claimed, Reclaimed)` outcome.
 
@@ -61,23 +62,30 @@ a delayed fee update or per-trade fee snapshot. Until then, clients must refresh
 the quote immediately before submission and clearly surface fee-related retry
 failures.
 
-### IS03 - Timing-policy enforcement is a trusted-client assumption — open
+### IS03 - Directional final-claim margin — enforced; calibration remains operational
 
-The current Solidity prototype intentionally omits a signed on-chain timing-policy
-identifier and does not resolve route timing policy inside wrappers.
-Contracts enforce only structural deadline ordering and local-chain predicates;
-chain-pair support and directional final-claim safety margins are validated by
-client software before authorization and submission.
+Cross-chain admission now requires
+`counterpartySide.claimDeadline + FINAL_CLAIM_DELAY <= partySide.claimDeadline`
+on each cross-chain wrapper deployment. `FINAL_CLAIM_DELAY` is a nonzero
+immutable deployment parameter.
+The SDK enforces the same inequality using `counterpartyToPartyDelay` before
+workflow authorization, in addition to its existing reclaim margins. The
+reproduced schedule (party claim 300, counterparty claim 320, delay 10) is
+rejected; equality at the required margin is accepted and tested through both
+payouts after a last-moment reveal.
 
-Consequently, the contracts can accept structurally valid terms that a
-conforming client should reject as timing-unsafe. **This is an intentional
-prototype simplification for gas efficiency, but it moves part of admissibility
-from the contracts into the trusted client.**
+The supported direction is Alice revealing on the counterparty leg, then Bob
+claiming the party leg. The settlement secret must first become available
+through that accepted reveal after both commits are safely established.
+Arbitrary early disclosure or the opposite first-reveal direction is outside
+this completion guarantee.
 
-Required: document the split explicitly everywhere the prototype is described,
-define a clear client-side timing-safety predicate, and ensure every supported
-signing or submission path applies it before producing commit authorization.
-
+Required for production: review the immutable budget for every supported route,
+including finality, observation, relay, transaction inclusion, and timestamp
+skew. Clients must use a reviewed `counterpartyToPartyDelay` at least as large
+as both wrappers' on-chain values. Route support and the SDK's additional
+reclaim margins remain client policy; contracts do not resolve a route policy.
+See [the timing argument](protocol-flow.md#cross-chain-final-claim-window).
 
 ### IS04 - Supported remote chains are enforced only by clients — open specification mismatch
 
@@ -175,8 +183,6 @@ Required: regenerate vectors for the selected timing-policy model and make both
 Solidity and SDK tests consume the same checked-in values.
 
 ### PG10 - QuipWallet cannot receive standard NFT safe transfers — open
-
-Severity: **Medium**.
 
 [`QuipWallet`](../src/authorization/wallet/QuipWallet.sol) implements neither
 ERC-721 nor ERC-1155 receiver callbacks. Reproduction tests confirmed that

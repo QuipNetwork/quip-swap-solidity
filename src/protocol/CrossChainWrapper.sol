@@ -47,6 +47,7 @@ contract CrossChainWrapper is
   error ZeroConfiguration();
   error InvalidWrapperMode();
   error InvalidLocalChain();
+  error InsufficientFinalClaimWindow();
   error CommitWindowClosed();
   error HTLCAlreadyExists();
 
@@ -62,25 +63,32 @@ contract CrossChainWrapper is
   IAssetSupportRegistry public immutable ASSET_SUPPORT;
   /// @notice Non-upgradeable implementation cloned once for every committed local leg.
   address public immutable HTLC_IMPLEMENTATION;
+  /// @notice Minimum seconds reserved from counterparty reveal deadline to party final-claim deadline.
+  /// @dev Deployment review must cover finality, observation, inclusion and timestamp skew for every supported route.
+  uint256 public immutable FINAL_CLAIM_DELAY;
 
   CrossChainStateMachine.Layout private states;
   AssetCustody.Layout private custody;
   mapping(bytes32 recordKey => address htlc) private htlcs;
 
-  /// @notice Configures the immutable direct authorization gateway and asset allowlist.
+  /// @notice Configures the immutable dependencies and reviewed final-claim delivery budget.
   constructor(
     address directAuthorization,
     IAssetSupportRegistry assetSupport,
     address htlcImplementation,
-    address initialOwner
+    address initialOwner,
+    uint256 finalClaimDelay
   ) CommitmentFees(initialOwner) {
-    if (directAuthorization == address(0) || address(assetSupport) == address(0) || htlcImplementation.code.length == 0)
-    {
+    if (
+      directAuthorization == address(0) || address(assetSupport) == address(0) || htlcImplementation.code.length == 0
+        || finalClaimDelay == 0
+    ) {
       revert ZeroConfiguration();
     }
     DIRECT_AUTHORIZATION = directAuthorization;
     ASSET_SUPPORT = assetSupport;
     HTLC_IMPLEMENTATION = htlcImplementation;
+    FINAL_CLAIM_DELAY = finalClaimDelay;
   }
 
   /// @notice Validates authorization evidence, the Bob-commit gate, and funding, then escrows one leg.
@@ -97,6 +105,12 @@ contract CrossChainWrapper is
     // Copy calldata once, then validate the complete cross-chain term set.
     ProtocolTerms memory validatedTerms = terms;
     _validate(validatedTerms);
+    // Alice reveals on the counterparty leg; Bob must still be able to claim the party leg.
+    // Subtraction after ordering avoids overflow even for adversarial uint256 deadlines.
+    if (
+      validatedTerms.counterpartySide.claimDeadline >= validatedTerms.partySide.claimDeadline
+        || validatedTerms.partySide.claimDeadline - validatedTerms.counterpartySide.claimDeadline < FINAL_CLAIM_DELAY
+    ) revert InsufficientFinalClaimWindow();
     // Select the funded leg and require this deployment to be its named chain.
     SideTerms memory side = party ? validatedTerms.partySide : validatedTerms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();

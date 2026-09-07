@@ -34,6 +34,8 @@ contract DeployProtocol is Script {
     address deployer = vm.addr(privateKey);
     address owner = vm.envAddress('PROTOCOL_OWNER');
     address verifier = vm.envAddress('TRUSTED_VERIFIER');
+    uint256 finalClaimDelay = vm.envUint('FINAL_CLAIM_DELAY');
+    require(finalClaimDelay > 0, 'FINAL_CLAIM_DELAY must be non-zero');
     require(owner != address(0), 'PROTOCOL_OWNER must be non-zero');
     require(owner == deployer, 'PROTOCOL_OWNER must initially be deployer');
     require(PrototypeDeployment.CREATEX.code.length != 0, 'CreateX not deployed');
@@ -68,7 +70,9 @@ contract DeployProtocol is Script {
       PrototypeDeployment.Component.CrossChainWrapper,
       abi.encodePacked(
         type(CrossChainWrapper).creationCode,
-        abi.encode(addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, owner)
+        abi.encode(
+          addresses.directAuthorization, addresses.assetSupportRegistry, addresses.swapHTLC, owner, finalClaimDelay
+        )
       ),
       addresses.crossChainWrapper
     );
@@ -85,6 +89,11 @@ contract DeployProtocol is Script {
     vm.stopBroadcast();
 
     _verify(addresses, owner, verifier);
+    require(
+      CrossChainWrapper(payable(addresses.crossChainWrapper)).FINAL_CLAIM_DELAY() == finalClaimDelay,
+      'cross delay mismatch'
+    );
+    console.log('Final claim delay (seconds):', finalClaimDelay);
     emit ProtocolDeployment(block.chainid, PrototypeDeployment.VERSION, deployer, owner, verifier, addresses);
     _print(addresses, deployer, owner, verifier);
   }

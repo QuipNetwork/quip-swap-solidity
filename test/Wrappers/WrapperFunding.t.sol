@@ -91,7 +91,7 @@ contract WrapperFundingTest is Test {
     gateway = registry;
     assetSupport = new AssetSupportRegistry(address(this));
     htlcImplementation = new SwapHTLC();
-    cross = new CrossChainWrapper(address(gateway), assetSupport, address(htlcImplementation), address(this));
+    cross = new CrossChainWrapper(address(gateway), assetSupport, address(htlcImplementation), address(this), 10);
     same = new SameChainWrapper(address(gateway), assetSupport, address(htlcImplementation), address(this));
     wallet = new QuipWallet(address(this), registry, walletKey);
     bobWallet = new QuipWallet(bob, registry, bobWalletKey);
@@ -1339,6 +1339,7 @@ contract WrapperFundingTest is Test {
     terms.counterpartySide =
       _side(bob, AuthorizationMode.RegisteredDirect, 1, _oneAsset(AssetType.Native, address(0), 0, 1), nonce + 100);
     terms.counterpartySide.chainId = block.chainid + 1;
+    terms.counterpartySide.claimDeadline = 280;
     terms.counterpartySide.commitLock =
       ProtocolHashing.commitLock(ProtocolHashing.gateContextId(terms), BOB_COMMIT_SECRET);
     lock = ProtocolHashing.settlementLock(ProtocolHashing.tradeId(terms), SECRET);

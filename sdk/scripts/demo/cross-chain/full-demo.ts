@@ -100,7 +100,7 @@ export async function runFullDemo(
   const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
   const now = await latestTime(chainA, chainB)
   const partySide = sideTemplate(chainA, chainB.bob.address, deployment.chains[0].funding.token, 10n * 10n ** 18n, now + 100n, now + 1_000n, now + 1_400n)
-  const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 1_100n, now + 1_300n)
+  const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 900n, now + 1_300n)
   const randomness: ProtocolRandomness = {settlementSecret: fixed(1), bobCommitSecret: fixed(2), partySideNonce: fixed(3), counterpartySideNonce: fixed(4), partyActionNonce: fixed(5), counterpartyActionNonce: fixed(6)}
   progress('Preparing terms, secrets, locks, and exact commit authorizations')
   const prepared = prepareTradeCommand({workflow: {policy: localPolicy, partySide, counterpartySide, partyVerifier: deployment.chains[0].addresses.directAuthorization, counterpartyVerifier: deployment.chains[1].addresses.directAuthorization, partyWrapper: deployment.chains[0].addresses.crossChainWrapper, counterpartyWrapper: deployment.chains[1].addresses.crossChainWrapper, partyExpiry: now + 500n, counterpartyExpiry: now + 600n, requiredConfirmations: 3n, selectedBobSubmitter: chainB.bob.address, randomness}, finalClaimExecutors: [chainA.charlie.address], secretMode: 'unsafe-demo'})

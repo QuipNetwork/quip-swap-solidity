@@ -6,24 +6,23 @@ tracker or remediation-status ledger.
 
 ## Protocol assumptions
 
-- The settlement secret remains confidential until both intended commits are
-  safely established. Earlier disclosure can enable one-sided settlement.
+- The settlement secret first becomes available through Alice's accepted
+  counterparty-side revealing claim after both intended commits are safely
+  established. Earlier disclosure or revealing first on the party side can
+  enable one-sided settlement.
 - `BobCommitSecret` is public in Alice's commit. Client-side finality gating can
   stop conforming clients from using it early, but cannot stop another actor
   from submitting Bob's already-authorized commit.
 - Each chain enforces only local state and `block.timestamp`.
-- The normative protocol design binds a timing-policy identifier into signed
-  terms and treats route-specific final-claim safety margins as part of
-  protocol-valid admission. The current Solidity prototype intentionally drifts
-  from that design for gas efficiency: terms omit a signed timing-policy identifier, wrappers do
-  not resolve or enforce route timing policy on-chain, and contracts validate
-  only structural deadline ordering and local-chain predicates.
-- As a result, timing-policy compatibility is a trusted-client assumption in
-  the prototype. Conforming client apps are trusted to validate the supported
-  chain pair and directional timing margins before producing or submitting
-  commit authorizations. If a client is bypassed, misconfigured, inconsistent,
-  or malicious, the contracts can still accept structurally valid but
-  timing-unsafe terms.
+- Cross-chain wrappers enforce a nonzero immutable `FINAL_CLAIM_DELAY` between
+  the counterparty reveal deadline and the party final-claim deadline. SDK
+  validation enforces the same inequality with `counterpartyToPartyDelay`.
+  Before signing, clients must use a reviewed budget at least as large as both
+  deployments' values. Deployment review must cover all supported routes;
+  wrappers do not resolve route policies or authenticate remote-chain support.
+- SDK policy also checks directional spacing to reclaim release. These
+  additional reclaim margins and supported-chain checks remain client policy.
+  See [the exact timing argument](protocol-flow.md#cross-chain-final-claim-window).
 - Cross-chain completion requires a funded executor to observe the revealing
   claim and land the final claim before its deadline.
 - Confirmation counts and timing margins are operational assumptions, not

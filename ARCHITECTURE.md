@@ -73,9 +73,12 @@ Important hashes are:
 - `CommitPayloadHash`: chain, mode, verifier, wrapper, trade, lock, side,
   expected source state, assets, principal, delegation, nonce, and expiry.
 
-Contracts enforce intrinsic term shapes and deadline ordering. Directional
-finality and reaction margins are client policy, not signed terms or an on-chain
-registry.
+Contracts enforce intrinsic term shapes and deadline ordering. Cross-chain
+wrappers also require the counterparty reveal deadline plus their nonzero
+immutable `FINAL_CLAIM_DELAY` to be no later than the party final-claim deadline.
+The SDK enforces this with `counterpartyToPartyDelay`, which must cover both
+deployments and the reviewed route budget. Route support and additional reclaim
+margins remain client policy. See the [timing argument](docs/protocol-flow.md#cross-chain-final-claim-window).
 
 ## Authorization
 

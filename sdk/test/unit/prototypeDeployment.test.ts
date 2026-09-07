@@ -20,11 +20,11 @@ describe('prototype deployment vectors', () => {
     expect(second).toEqual(first)
     expect(new Set(prototypeComponents.map(component => first[component])).size).toBe(prototypeComponents.length)
     expect(first).toEqual({
-      assetSupportRegistry: '0x9Ba57720D36d83954e5ba03185e92A918D028EDF',
-      directAuthorization: '0xe5c123bbB955e82208d76114aBe4170C0E0b2F95',
-      crossChainWrapper: '0x795C93561Bd9F9E30FF62aCDe821B38148229E30',
-      sameChainWrapper: '0xE740Bf2De5123F801AdCf534414F039ca2e83c44',
-      swapHTLC: '0x1268B3FF8C710ca5629Bb0385d84D130A8e139f9',
+      assetSupportRegistry: '0xeAAD1bADf49D6F7D440b7951B5d3dEA16c106Add',
+      directAuthorization: '0x3393579801E4CEbf80fA6F1B0D6f78EF074f3BB3',
+      crossChainWrapper: '0xF9A9912FF311C99Ee47108468a8f6d60fB926a0B',
+      sameChainWrapper: '0x11259234aC38CBa5a07e0fe3282535EfD65224E8',
+      swapHTLC: '0x99aaDD53189eAd2Db2eB77C2A98e9745B8145930',
     })
   })
 
@@ -34,6 +34,7 @@ describe('prototype deployment vectors', () => {
       deployer: DEPLOYER,
       owner: OWNER,
       trustedVerifier: VERIFIER,
+      finalClaimDelay: 1800n,
     })
     expect(manifest.version).toBe(PROTOTYPE_DEPLOYMENT_VERSION)
     expect(manifest.createX).toBe(CANONICAL_CREATEX)
@@ -45,10 +46,13 @@ describe('prototype deployment vectors', () => {
         manifest.owner,
         manifest.trustedVerifier,
         manifest.addresses,
+        manifest.finalClaimDelay,
       ),
     )
     const otherChain = buildPrototypeDeploymentManifest({...manifest, chainId: 11_155_420n})
     expect(otherChain.addresses).toEqual(manifest.addresses)
     expect(otherChain.vectorHash).not.toBe(manifest.vectorHash)
+    expect(buildPrototypeDeploymentManifest({...manifest, finalClaimDelay: 1801n}).vectorHash).not.toBe(manifest.vectorHash)
+    expect(() => buildPrototypeDeploymentManifest({...manifest, finalClaimDelay: 0n})).toThrow('positive')
   })
 })

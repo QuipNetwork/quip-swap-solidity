@@ -2,7 +2,7 @@
 
 This procedure deploys the five-contract prototype through canonical CreateX
 with component-specific, sender-permissioned CREATE3 salts under
-`v1.1.0-alpha.4`.
+`v1.1.0-alpha.5`.
 
 It is not yet a production deployment procedure. Read
 [`../docs/security-assumptions.md`](../docs/security-assumptions.md).
@@ -18,6 +18,10 @@ not part of this procedure.
   to equal the deployer.
 - `TRUSTED_VERIFIER`: deployed SHRINCS 256s-Keccak verifier reporting the
   expected version and profile.
+- `FINAL_CLAIM_DELAY`: required positive seconds reserved between counterparty
+  reveal and party final-claim deadlines. Review finality, observation, relay,
+  inclusion, and timestamp skew for every supported route before choosing it.
+  There is no production default; the local demos use 10 seconds only.
 - `RPC`: Make variable naming an RPC URL variable loaded from `.env`, for
   example `API_URL_BASE_SEPOLIA`.
 - Canonical CreateX must already exist at the configured address.
@@ -58,12 +62,18 @@ Before publishing an address, record and verify on every chain:
 - direct authorization's verifier address, runtime code hash, version, and
   profile;
 - both wrappers' `DIRECT_AUTHORIZATION`; and
-- both wrappers' `ASSET_SUPPORT` and `HTLC_IMPLEMENTATION`.
+- both wrappers' `ASSET_SUPPORT` and `HTLC_IMPLEMENTATION`; and
+- the cross-chain wrapper's immutable `FINAL_CLAIM_DELAY` (also checked on rerun).
 
 Generate the SDK configuration vector with `buildPrototypeDeploymentManifest`
-and preserve it with Foundry broadcast artifacts and independent RPC results.
+(including `finalClaimDelay`) and preserve it with Foundry broadcast artifacts and independent RPC results.
 The `ProtocolDeployment` event emitted by the script after `stopBroadcast` is a
 script log, not a durable on-chain registry entry.
+
+Clients must read both cross-chain wrappers' `FINAL_CLAIM_DELAY` and use a
+reviewed `counterpartyToPartyDelay` no smaller than either value before signing.
+This release changes constructor arguments and versioned addresses; existing
+wrappers do not gain the new admission check.
 
 ## Current rerun limitation
 

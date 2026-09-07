@@ -12,7 +12,7 @@ import {
 import type {Address, Hex} from 'viem'
 import type {Hex32} from './types.js'
 
-export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.4'
+export const PROTOTYPE_DEPLOYMENT_VERSION = 'v1.1.0-alpha.5'
 export const CANONICAL_CREATEX: Address = getAddress('0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed')
 const CREATE3_PROXY_INITCODE_HASH: Hex32 =
   '0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f'
@@ -34,6 +34,7 @@ export interface PrototypeDeploymentManifest {
   readonly createX: Address
   readonly deployer: Address
   readonly owner: Address
+  readonly finalClaimDelay: bigint
   readonly trustedVerifier: Address
   readonly addresses: PrototypeDeploymentAddresses
   readonly vectorHash: Hex32
@@ -65,6 +66,7 @@ export function prototypeDeploymentVectorHash(
   owner: Address,
   trustedVerifier: Address,
   addresses: PrototypeDeploymentAddresses,
+  finalClaimDelay: bigint,
 ): Hex32 {
   return keccak256(
     encodeAbiParameters(
@@ -76,6 +78,7 @@ export function prototypeDeploymentVectorHash(
         {type: 'address'},
         {type: 'address'},
         {type: 'address[5]'},
+        {type: 'uint256'},
       ],
       [
         PROTOTYPE_DEPLOYMENT_VERSION,
@@ -91,6 +94,7 @@ export function prototypeDeploymentVectorHash(
           Address,
           Address,
         ],
+        finalClaimDelay,
       ],
     ),
   )
@@ -100,9 +104,11 @@ export function buildPrototypeDeploymentManifest(args: {
   readonly chainId: bigint
   readonly deployer: Address
   readonly owner: Address
+  readonly finalClaimDelay: bigint
   readonly trustedVerifier: Address
   readonly createX?: Address
 }): PrototypeDeploymentManifest {
+  if (args.finalClaimDelay <= 0n) throw new Error('finalClaimDelay must be positive')
   const createX = args.createX ?? CANONICAL_CREATEX
   const addresses = predictPrototypeAddresses(args.deployer, createX)
   return {
@@ -112,6 +118,7 @@ export function buildPrototypeDeploymentManifest(args: {
     deployer: args.deployer,
     owner: args.owner,
     trustedVerifier: args.trustedVerifier,
+    finalClaimDelay: args.finalClaimDelay,
     addresses,
     vectorHash: prototypeDeploymentVectorHash(
       args.chainId,
@@ -120,6 +127,7 @@ export function buildPrototypeDeploymentManifest(args: {
       args.owner,
       args.trustedVerifier,
       addresses,
+      args.finalClaimDelay,
     ),
   }
 }

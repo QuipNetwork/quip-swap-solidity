@@ -323,6 +323,7 @@ export const encodeRegistryNonceKey = (
 /**
  * Validates structural terms and their route/deadline compatibility with the supplied client timing policy.
  * The caller must choose a reviewed policy; this function does not establish its finality assumptions.
+ * The counterparty-to-party budget must cover both wrappers' FINAL_CLAIM_DELAY and the reviewed route.
  * It does not inspect live chain state, asset admission, authorization, balances, or current time.
  * Wrapper-specific payout validation is separate: use validateCommitPayouts or commitPayloadHash.
  * @throws If terms or their pairing with the supplied timing policy are invalid.
@@ -348,6 +349,7 @@ export function validateProtocolTerms(terms: ProtocolTerms, policy: TimingPolicy
   } else {
     if (terms.counterpartySide.commitLock === zero || policy.partyToCounterpartyDelay <= 0n ||
         policy.counterpartyToPartyDelay <= 0n ||
+        terms.counterpartySide.claimDeadline + policy.counterpartyToPartyDelay > terms.partySide.claimDeadline ||
         terms.partySide.claimDeadline + policy.partyToCounterpartyDelay > terms.counterpartySide.reclaimRelease ||
         terms.counterpartySide.claimDeadline + policy.counterpartyToPartyDelay > terms.partySide.reclaimRelease) invalid()
   }
