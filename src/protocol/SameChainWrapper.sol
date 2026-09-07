@@ -105,6 +105,7 @@ contract SameChainWrapper is
     // Select the funded leg; both terms must name this deployment chain.
     SideTerms memory side = party ? validatedTerms.partySide : validatedTerms.counterpartySide;
     if (side.chainId != block.chainid) revert InvalidLocalChain();
+    ProtocolHashing.validateLocalPayouts(validatedTerms, party, address(this));
     // Reject token contracts that have not passed the custody compatibility policy.
     side.requireSupported(ASSET_SUPPORT);
     // Bind gateway evidence to the exact trade, wrapper, leg, state, and fresh action nonce.

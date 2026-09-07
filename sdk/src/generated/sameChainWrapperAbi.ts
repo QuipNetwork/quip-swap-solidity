@@ -3358,6 +3358,11 @@ export const sameChainWrapperAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidLocalPayoutRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidSameChainState",
     "inputs": [
       {

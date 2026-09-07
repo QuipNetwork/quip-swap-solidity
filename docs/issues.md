@@ -8,9 +8,33 @@ Status meanings: **open** requires an implementation or specification change;
 **partially mitigated** has safeguards but retains material residual risk;
 **production gap** is intentionally outside the local prototype.
 
-## Critical
+## A: Known issues from v1
 
-### Wallet-mode authorization provenance — open
+### A1 - Settlement-secret disclosure can break cross-chain atomicity — partially mitigated
+
+If the settlement secret leaks before both intended commits are stable, a
+committed leg may be claimed while the opposite leg is absent or later
+reclaimed. The local HTLC predicate cannot verify remote-chain readiness.
+
+Mitigation: fresh secrets, restricted storage, authenticated observations, and
+revealing only after Bob's exact commit. Residual device, logging, backup, and
+application compromise remains.
+
+### A2 - Final-claim delivery and finality are not guaranteed — partially mitigated
+
+After the revealing claim, an executor must land and finalize the opposite
+claim before reclaim becomes admissible. Censorship, congestion,
+reorganization, delayed observation, or bad timing calibration can produce an
+asymmetric `(Claimed, Reclaimed)` outcome.
+
+Mitigation: conservative deadlines, multiple funded permissionless executors,
+rapid fee bumping, and chain-specific finality policies.
+
+---
+
+## PG: Production gaps
+
+### B1 - Wallet-mode authorization provenance — open
 
 Wrappers do not prove that a wallet-mode caller is an approved QuipWallet
 implementation that performed PQ verification. An EOA or arbitrary contract
@@ -21,9 +45,7 @@ Required: authenticate wallets through a **pinned factory**, registry,
 implementation, or dedicated gateway, and test EOA and malicious-wallet
 masquerading.
 
-## High
-
-### Verifier identity is not rechecked on every use — open
+### B2 - Verifier identity is not rechecked on every use — open
 
 Registered-direct admission pins verifier address, code hash, version, and
 profile, but later signature paths do not recheck every property. A mutable
@@ -33,25 +55,6 @@ signatures.
 Required: enforce verifier immutability or recheck all pinned properties for
 every security-sensitive verification.
 
-### Settlement-secret disclosure can break cross-chain atomicity — partially mitigated
-
-If the settlement secret leaks before both intended commits are stable, a
-committed leg may be claimed while the opposite leg is absent or later
-reclaimed. The local HTLC predicate cannot verify remote-chain readiness.
-
-Mitigation: fresh secrets, restricted storage, authenticated observations, and
-revealing only after Bob's exact commit. Residual device, logging, backup, and
-application compromise remains.
-
-### Final-claim delivery and finality are not guaranteed — partially mitigated
-
-After the revealing claim, an executor must land and finalize the opposite
-claim before reclaim becomes admissible. Censorship, congestion,
-reorganization, delayed observation, or bad timing calibration can produce an
-asymmetric `(Claimed, Reclaimed)` outcome.
-
-Mitigation: conservative deadlines, multiple funded permissionless executors,
-rapid fee bumping, and chain-specific finality policies.
 
 ### Deterministic deployment reruns incompletely verify existing code — open
 
@@ -73,7 +76,6 @@ Large lists still increase the number and total cost of required calls.
 Required: enforce a conservative term asset-count bound for commits and define
 per-chain execution policy for settlement batch sizes.
 
-## Medium
 
 ### Mutable admission is conflated with structural term validity — open specification mismatch
 
@@ -87,6 +89,28 @@ existing escrow.
 Required: define a pure `StructurallyValidTerms` predicate and separate mutable
 `CommitAssetSupported` admission. A committed binding should imply prior
 structural validity; claims and reclaims must not reconsult mutable admission.
+
+
+### Prototype client secret storage is plaintext — production gap
+
+Party files are permission-restricted but unencrypted. Secrets may still leak
+through compromised hosts, backups, memory, telemetry, or operator mistakes.
+
+### Observation depends on one configured RPC — production gap
+
+The prototype authenticates receipts, blocks, events, protocol bindings, and
+confirmation counts, but one RPC can provide a false or stale chain view.
+Production needs explicit provider diversity and disagreement handling.
+
+### Full demos use a verifier mock — production gap
+
+The demos validate protocol plumbing, not real SHRINCS signature generation,
+calldata size, verification gas, transaction feasibility, or production
+verifier failures. A full real-verifier run is required before deployment.
+
+
+## To fix
+
 
 ### Supported remote chains are enforced only by clients — open specification mismatch
 
@@ -117,14 +141,6 @@ Required: persist intent and sender nonce before broadcast, reconcile from
 chain afterward, add binding-aware recovery scanning, and define safe stale-lock
 recovery.
 
-### Wrapper addresses are valid payout destinations — open
-
-Terms reject only zero destinations. Native and fungible payouts to the
-executing wrapper can revert; an ERC-721 payout can reach terminal state while
-leaving the NFT stranded in that wrapper.
-
-Required: reject the executing wrapper as a local recipient or reclaim
-recipient and mirror the rule in the SDK.
 
 ### Mutable asset admission can strand an accepted trade — partially mitigated
 
@@ -161,7 +177,9 @@ releases, including values near `uint256` maximum.
 Required: impose contract or deployment-policy bounds and reject unsafe terms in
 all clients.
 
-## Low
+
+## Intentional simplifications
+
 
 ### Live commitment-fee changes can race pending commits — open
 
@@ -238,23 +256,6 @@ Neither Solidity term validation nor the SDK protocol validator rejects a zero
 layers would catch an obvious generation failure. Otherwise the documentation
 must classify nonce quality entirely as a client responsibility.
 
-### Prototype client secret storage is plaintext — production gap
-
-Party files are permission-restricted but unencrypted. Secrets may still leak
-through compromised hosts, backups, memory, telemetry, or operator mistakes.
-
-### Observation depends on one configured RPC — production gap
-
-The prototype authenticates receipts, blocks, events, protocol bindings, and
-confirmation counts, but one RPC can provide a false or stale chain view.
-Production needs explicit provider diversity and disagreement handling.
-
-### Full demos use a verifier mock — production gap
-
-The demos validate protocol plumbing, not real SHRINCS signature generation,
-calldata size, verification gas, transaction feasibility, or production
-verifier failures. A full real-verifier run is required before deployment.
-
 ## Cross-cutting production requirements
 
 Before production, complete the EasyCrypt adversary model, stateful invariant
@@ -262,3 +263,16 @@ and malicious-component testing, real-verifier gas and signature validation,
 chain-specific timing calibration, deployment and governance runbooks,
 independent audits, executor failover exercises, monitoring, and incident
 response.
+
+
+## Resolved issues
+
+### Wrapper addresses are valid payout destinations — resolved
+
+Both wrappers reject the executing wrapper as a local claim or reclaim
+recipient before accepting custody. Same-chain commits check both sides before
+the first escrow; cross-chain commits check only the committing chain's side.
+The SDK applies the same case-insensitive address check when preparing commit hashes
+and before quoting or submitting direct, wallet, or registration commits.
+Remote-chain destinations are not rejected merely for matching the local
+wrapper address. Existing settlement remains available.

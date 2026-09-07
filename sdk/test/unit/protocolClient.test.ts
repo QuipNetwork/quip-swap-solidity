@@ -51,13 +51,14 @@ describe('current protocol SDK surface', () => {
     const client = createProtocolClient({addresses, publicClient, walletClient})
     const terms = {
       partySide: {
+        chainId: 1n, recipient: address('c'), reclaimRecipient: address('d'),
         assets: [
           {assetType: AssetType.Native, amount: 11n},
           {assetType: AssetType.ERC20, amount: 99n},
           {assetType: AssetType.Native, amount: 13n},
         ],
       },
-      counterpartySide: {assets: [{assetType: AssetType.Native, amount: 17n}]},
+      counterpartySide: {chainId: 2n, recipient: address('c'), reclaimRecipient: address('d'), assets: [{assetType: AssetType.Native, amount: 17n}]},
     } as unknown as ProtocolTerms
     const request = {receiver: addresses.crossChainWrapper, terms, party: true} as CommitAuthorizationRequest
     const registration = {} as InitialRegistration
@@ -85,6 +86,23 @@ describe('current protocol SDK surface', () => {
       'read:commitmentFee',
       'write:registerAndCommit',
     ])
+  })
+
+  it('rejects wrapper payouts on all commit routes before RPC or broadcast', async () => {
+    const client = createProtocolClient({addresses, publicClient: {} as PublicClient})
+    for (const receiver of [addresses.crossChainWrapper, addresses.sameChainWrapper]) {
+      for (const party of [false, true]) for (const field of ['recipient', 'reclaimRecipient']) {
+        const side = {chainId: 1n, recipient: address('c'), reclaimRecipient: address('d'), assets: []}
+        const terms = {partySide: {...side}, counterpartySide: {...side,
+          chainId: receiver === addresses.sameChainWrapper ? 1n : 2n}}
+        Object.assign(party ? terms.partySide : terms.counterpartySide, {[field]: receiver})
+        const request = {receiver, party, terms} as unknown as CommitAuthorizationRequest
+        await expect(client.authorizeDirectCommit(request, '0x')).rejects.toThrow('executing wrapper')
+        await expect(client.authorizeWalletCommit(address('b'), request, '0x')).rejects.toThrow('executing wrapper')
+        await expect(client.registerAndCommit({} as InitialRegistration, '0x', '0x', '0x', '0x', request))
+          .rejects.toThrow('executing wrapper')
+      }
+    }
   })
 
   it('rejects an unknown wrapper before submitting a commit', async () => {
@@ -118,7 +136,8 @@ describe('current protocol SDK surface', () => {
     } as unknown as WalletClient
     const client = createProtocolClient({addresses, publicClient, walletClient})
     const terms = {
-      partySide: {assets: [{assetType: AssetType.Native, amount: 11n}]},
+      partySide: {chainId: 1n, recipient: address('c'), reclaimRecipient: address('d'),
+        assets: [{assetType: AssetType.Native, amount: 11n}]},
       counterpartySide: {assets: []},
     } as unknown as ProtocolTerms
     const request = {receiver: addresses.crossChainWrapper, terms, party: true} as CommitAuthorizationRequest

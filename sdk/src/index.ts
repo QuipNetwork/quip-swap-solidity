@@ -32,6 +32,7 @@ export {
   encodeRegistryNonceKey,
   validateCommitProgression,
   validateProtocolTerms,
+  validateCommitPayouts,
 } from './protocol.js'
 export type {
   SideTerms,

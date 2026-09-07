@@ -13,7 +13,7 @@ import type {
   RegistryAuthorization,
   RegistryOperation,
 } from './protocol.js'
-import {SameChainState, SideTag} from './protocol.js'
+import {SameChainState, SideTag, validateCommitPayouts} from './protocol.js'
 import type {CrossChainLegState} from './protocol.js'
 import {AssetType} from './types.js'
 import type {Hex32} from './types.js'
@@ -165,6 +165,7 @@ export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolCl
     if (wrapperAbi === undefined) {
       throw new QuipSwapError({code: 'INVALID_COMMIT_WRAPPER', message: `Unknown commit wrapper ${wrapper}`})
     }
+    validateCommitPayouts(request.terms, request.party, wrapper)
     const side = request.party ? request.terms.partySide : request.terms.counterpartySide
     const nativeEscrow = side.assets.reduce(
       (total, asset) => asset.assetType === AssetType.Native ? total + asset.amount : total,

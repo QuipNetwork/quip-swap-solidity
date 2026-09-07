@@ -75,6 +75,46 @@ contract DeployedWrapperGuardsTest is Test {
     vm.deal(GATEWAY, 100 ether);
   }
 
+  function testFuzz_sameRejectsWrapperPayoutBeforeFirstCommit(bool party, bool reclaim) public {
+    ProtocolTerms memory terms = _sameTerms();
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    if (reclaim) side.reclaimRecipient = address(same);
+    else side.recipient = address(same);
+    bytes32 lock = _lock(terms);
+    vm.expectRevert(ProtocolHashing.InvalidLocalPayoutRecipient.selector);
+    _commitSame(terms, true, lock, 1, 1);
+    assertEq(uint8(same.state(terms, lock)), uint8(SameChainState.Unused));
+    assertEq(same.htlcOf(terms, true, lock), address(0));
+    assertEq(address(same).balance, 0);
+  }
+
+  function testFuzz_crossRejectsLocalWrapperPayout(bool party, bool reclaim) public {
+    ProtocolTerms memory terms = _crossTerms();
+    SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
+    vm.chainId(side.chainId);
+    if (reclaim) side.reclaimRecipient = address(cross);
+    else side.recipient = address(cross);
+    _bindCross(terms);
+    bytes32 lock = _lock(terms);
+    vm.expectRevert(ProtocolHashing.InvalidLocalPayoutRecipient.selector);
+    _commitCross(terms, party, lock, 1, party ? 1 : 2);
+    _assertCrossUnused(terms, party, lock);
+    assertEq(cross.htlcOf(terms, party, lock), address(0));
+    assertEq(address(cross).balance, 0);
+  }
+
+  function testFuzz_crossAllowsWrapperAddressOnRemoteChain(bool party) public {
+    ProtocolTerms memory terms = _crossTerms();
+    SideTerms memory remote = party ? terms.counterpartySide : terms.partySide;
+    remote.recipient = address(cross);
+    remote.reclaimRecipient = address(cross);
+    vm.chainId(party ? terms.partySide.chainId : terms.counterpartySide.chainId);
+    _bindCross(terms);
+    bytes32 lock = _lock(terms);
+    _commitCross(terms, party, lock, 1, party ? 1 : 2);
+    assertEq(uint8(cross.state(terms, party, lock)), uint8(CrossChainLegState.Committed));
+  }
+
   function test_constructorsRejectEveryZeroDependency() public {
     vm.expectRevert(CrossChainWrapper.ZeroConfiguration.selector);
     new CrossChainWrapper(address(0), support, address(htlcImplementation), address(this));

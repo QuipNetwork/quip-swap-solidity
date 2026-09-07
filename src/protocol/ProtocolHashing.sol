@@ -27,6 +27,20 @@ library ProtocolHashing {
   string internal constant COMMIT_DOMAIN = 'InterlockCommit-v1.1';
 
   error InvalidTerms();
+  error InvalidLocalPayoutRecipient();
+
+  /// @notice Rejects this wrapper as a destination for any side on the committing chain.
+  function validateLocalPayouts(ProtocolTerms memory terms, bool party, address wrapper) internal pure {
+    uint256 localChain = party ? terms.partySide.chainId : terms.counterpartySide.chainId;
+    _validateLocalPayout(terms.partySide, localChain, wrapper);
+    _validateLocalPayout(terms.counterpartySide, localChain, wrapper);
+  }
+
+  function _validateLocalPayout(SideTerms memory side, uint256 localChain, address wrapper) private pure {
+    if (side.chainId == localChain && (side.recipient == wrapper || side.reclaimRecipient == wrapper)) {
+      revert InvalidLocalPayoutRecipient();
+    }
+  }
 
   /// @notice Derives the wrapper mode from the two side chain identifiers.
   function mode(ProtocolTerms memory terms) internal pure returns (WrapperMode) {

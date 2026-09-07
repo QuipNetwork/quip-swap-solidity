@@ -225,6 +225,7 @@ export interface CommitPayloadArgs {
 }
 
 export function commitPayloadHash(args: CommitPayloadArgs): Hex32 {
+  validateCommitPayouts(args.terms, args.party, args.swapAddress)
   const side = args.party ? args.terms.partySide : args.terms.counterpartySide
   return keccak256(encodeAbiParameters([
     {type: 'string'}, {type: 'uint256'}, {type: 'uint8'}, {type: 'address'}, {type: 'address'},
@@ -235,6 +236,17 @@ export function commitPayloadHash(args: CommitPayloadArgs): Hex32 {
     tradeId(args.terms), args.lock, args.party ? SideTag.Party : SideTag.Counterparty, ActionTag.Commit,
     args.expectedSourceState, assetHash(side), side.principal, side.principalKeyVersion, side.delegationPolicy,
     side.delegate, side.delegateKeyVersion, args.actionNonce, side.commitmentDeadline, args.expiry]))
+}
+
+/** Checks both same-chain sides, or only the committing cross-chain side, before authorization. */
+export function validateCommitPayouts(terms: ProtocolTerms, party: boolean, wrapper: Address): void {
+  const localChain = (party ? terms.partySide : terms.counterpartySide).chainId
+  for (const side of [terms.partySide, terms.counterpartySide]) {
+    if (side.chainId === localChain &&
+      [side.recipient, side.reclaimRecipient].some(recipient => recipient.toLowerCase() === wrapper.toLowerCase())) {
+      throw new Error('Local recipient and reclaim recipient must not be the executing wrapper')
+    }
+  }
 }
 
 export const encodeAuthorizationNonceKey = (

@@ -2,7 +2,7 @@ import {describe, expect, it} from 'vitest'
 import type {Address} from 'viem'
 import {
   AssetType, AuthorizationMode, DelegationPolicy, ExpectedSourceState, WrapperMode,
-  deriveCommitLock, expectedSourceState, gateContextId, validateProtocolTerms, wrapperMode,
+  commitPayloadHash, validateCommitPayouts, deriveCommitLock, expectedSourceState, gateContextId, validateProtocolTerms, wrapperMode,
 } from '../../src/index.js'
 import type {Hex32, ProtocolTerms, SideTerms, TimingPolicy} from '../../src/index.js'
 
@@ -116,4 +116,26 @@ describe('current protocol term validation', () => {
     expect(accepts({...same, counterpartySide: {...same.counterpartySide, commitLock: H(5)}}, samePolicy)).toBe(false)
     expect(accepts({...same, partySide: {...same.partySide, reclaimRelease: 300n}}, samePolicy)).toBe(false)
   })
+})
+
+const wrapper = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd' as Address
+
+describe('local wrapper payout validation', () => {
+  for (const same of [false, true]) for (const party of [false, true]) {
+    for (const field of ['recipient', 'reclaimRecipient'] as const) {
+      it(`rejects ${same ? 'same' : 'cross'} chain ${party ? 'party' : 'counterparty'} ${field}`, () => {
+        const terms = same ? {partySide: side(true, 1n), counterpartySide: side(false, 1n)} : cross()
+        const bad = {...terms, [party ? 'partySide' : 'counterpartySide']: {
+          ...(party ? terms.partySide : terms.counterpartySide),
+          [field]: `0x${wrapper.slice(2).toUpperCase()}`,
+        }} as ProtocolTerms
+        expect(() => validateCommitPayouts(bad, same ? true : party, wrapper)).toThrow('executing wrapper')
+        expect(() => commitPayloadHash({terms: bad, party: same ? true : party,
+          authorizationVerifier: A, swapAddress: wrapper, lock: H(9),
+          expectedSourceState: ExpectedSourceState.Unused, actionNonce: H(8), expiry: 99n,
+        })).toThrow('executing wrapper')
+        if (!same) expect(() => validateCommitPayouts(bad, !party, wrapper)).not.toThrow()
+      })
+    }
+  }
 })

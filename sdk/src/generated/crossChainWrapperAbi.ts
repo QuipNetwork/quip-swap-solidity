@@ -2133,6 +2133,11 @@ export const crossChainWrapperAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidLocalPayoutRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidSettlementMode",
     "inputs": []
   },
