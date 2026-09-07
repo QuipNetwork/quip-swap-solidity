@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: UNLICENSE
+// Pin the compiler version used for these encodings and contract semantics.
 pragma solidity 0.8.33;
 
 /// @notice The type of asset exchanged by the protocol.
 enum AssetType {
+  // Native currency of the executing chain.
   Native,
+  // Fungible token quantity at a token contract.
   ERC20,
+  // One nonfungible token identified by its token ID.
   ERC721,
+  // A quantity of a token ID at a multi-token contract.
   ERC1155
 }
 
@@ -20,70 +25,99 @@ struct Asset {
 
 /// @notice Selects the contract boundary that authenticates a commit.
 enum AuthorizationMode {
+  // The signed wallet principal authenticates the commit.
   QuipWallet,
+  // The configured gateway authenticates a registered direct principal.
   RegisteredDirect
 }
 
 /// @notice Restricts who may transport an authorized commit to its verifier.
 enum DelegationPolicy {
+  // Only the principal may transport the authorization.
   NotAllowed,
+  // Any nonzero submitter may transport the authorization.
   Permissionless,
+  // The principal or the signed, versioned delegate may transport the authorization.
   SpecificDelegate
 }
 
 /// @notice Distinguishes the two deployment and settlement state machines.
 enum WrapperMode {
+  // Each chain commits and settles its own local leg.
   CrossChain,
+  // Both legs share one ordered commit and settlement lifecycle.
   SameChain
 }
 
 /// @notice Identifies one side of the ordered protocol terms.
 enum SideTag {
+  // First-committing side, conventionally Alice.
   Party,
+  // Second-committing side, conventionally Bob.
   Counterparty
 }
 
 /// @notice Domain tag for an authorized protocol action.
 enum ActionTag {
+  // Authorization to fund one protocol side.
   Commit
 }
 
 /// @notice Operations supported by the direct-user PQ identity registry.
 enum RegistryActionTag {
+  // Replace the active PQ key through the ordinary rotation flow.
   RotateActive,
+  // Recover active-key control using the recovery authority.
   RecoverActive,
+  // Replace the recovery PQ key.
   RotateRecovery,
+  // Deactivate the registered identity.
   Revoke
 }
 
 /// @notice Identifies the active or recovery key of a direct-user identity.
 enum KeyRole {
+  // Ordinary active PQ key role.
   Active,
+  // Recovery PQ key role.
   Recovery
 }
 
 /// @notice State that a signed commit expects before it is executed.
 enum ExpectedSourceState {
+  // No commitment has been recorded under this state key.
   Unused,
+  // Only Alice's commitment has been recorded.
   PartyCommitted
 }
 
 /// @notice Lifecycle of one locally escrowed cross-chain leg.
 enum CrossChainLegState {
+  // No commitment has been recorded under this state key.
   Unused,
+  // This local leg has committed custody.
   Committed,
+  // All payouts required by this claim have completed.
   Claimed,
+  // All payouts required by this reclaim have completed.
   Reclaimed
 }
 
 /// @notice Lifecycle shared by both legs of a same-chain swap.
 enum SameChainState {
+  // No commitment has been recorded under this state key.
   Unused,
+  // Only Alice's commitment has been recorded.
   PartyCommitted,
+  // Both ordered commitments have been recorded.
   BothCommitted,
+  // Claim was selected irreversibly; required payouts remain to be completed.
   ClaimPending,
+  // Reclaim was selected irreversibly; required payouts remain to be completed.
   ReclaimPending,
+  // All payouts required by this claim have completed.
   Claimed,
+  // All payouts required by this reclaim have completed.
   Reclaimed
 }
 
