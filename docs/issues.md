@@ -174,6 +174,25 @@ without failing either suite.
 Required: regenerate vectors for the selected timing-policy model and make both
 Solidity and SDK tests consume the same checked-in values.
 
+### PG10 - QuipWallet cannot receive standard NFT safe transfers — open
+
+Severity: **Medium**.
+
+[`QuipWallet`](../src/authorization/wallet/QuipWallet.sol) implements neither
+ERC-721 nor ERC-1155 receiver callbacks. Reproduction tests confirmed that
+standard safe transfers of both token types to the wallet revert.
+
+This prevents normal ERC-1155 funding and NFT payouts to the wallet. An ERC-721
+deposited through an unsafe transfer can subsequently be committed, but
+reclaim to that wallet would fail. Same-chain settlement targeting the wallet
+can remain pending.
+
+The documentation describes generic recipient compatibility but does not
+identify the supplied wallet as incompatible.
+
+Required: add the standard receiver interfaces and test wallet funding, claim,
+and reclaim for both ERC-721 and ERC-1155 assets.
+
 ---
 
 ## Asset Support issues
