@@ -79,21 +79,7 @@ define a clear client-side timing-safety predicate, and ensure every supported
 signing or submission path applies it before producing commit authorization.
 
 
-### IS04 - Settlement validity is cached only implicitly — documented Solidity refinement
-
-[Settlement validity](settlement-validity.md) defines the structural predicate,
-states the valid-origin invariant, and gives an induction argument tied to the
-wrapper entry points and state transitions. Under canonical encoding and no
-relevant terms-hash or record-key collision, settlement lookup binds supplied
-terms to the same complete terms validated by the originating commit.
-
-The argument includes same-chain pending states and distinguishes structural
-validity from mutable asset admission and client timing policy. This closes the
-Solidity documentation gap; machine-checked refinement of this argument remains
-outside this documentation change. No EasyCrypt proof is changed.
-
-
-### IS05 - Supported remote chains are enforced only by clients — open specification mismatch
+### IS04 - Supported remote chains are enforced only by clients — open specification mismatch
 
 The specification says `ValidTerms` requires supported chain identifiers.
 Solidity requires nonzero identifiers and verifies only that the selected local

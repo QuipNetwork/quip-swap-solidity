@@ -46,7 +46,8 @@ registration, registry operations, asset allowlisting, cross-chain and
 same-chain settlement calls, and state reads. Same-chain callers first use
 `selectSameChainClaim` or `selectSameChainReclaim`, then call
 `executeSameChainSettlement` for each required side and asset batch. Read
-`sameChainSettlementProgress` to determine required and completed side bits.
+`protocol.getSameChainSettlementProgress(terms, lock)` to determine required
+and completed side bits.
 Always verify the receipt and expected protocol events before advancing local
 state.
 

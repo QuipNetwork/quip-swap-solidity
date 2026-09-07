@@ -31,8 +31,8 @@ Prototype state files are permission-restricted but not encrypted.
 | `observe-bob-commit` | either | none | Verify Bob's exact committed leg. |
 | `submit-revealing-claim` | Alice | JSON | Claim Bob's leg and reveal settlement. |
 | `observe-reveal` | Bob | none | Verify finality and recover the settlement preimage. |
-| `submit-final-claim` | Bob | none | Claim Alice's leg permissionlessly. |
-| `reclaim` | either | none | Reclaim an eligible leg to its fixed recipient. |
+| `submit-final-claim` | Bob | Confirmation JSON or `--yes` | Claim Alice's leg permissionlessly. |
+| `reclaim` | either | Confirmation JSON or `--yes` | Reclaim an eligible leg to its fixed recipient. |
 | `enter-recovery` | either | JSON | Record party-local recovery mode and reason. |
 
 Alice's commit publishes `BobCommitSecret`; Bob enables it only after canonical
@@ -41,3 +41,42 @@ JSON output must redact unpublished secrets. Summary output may show a preimage
 only after the corresponding successful on-chain publication.
 
 See the [manual console demo](../docs/demo/console-demo.md) for an exact run.
+
+## Final-claim and reclaim confirmation
+
+`submit-final-claim` and `reclaim` require JSON on standard input unless
+`--yes` is supplied. The confirmation object must contain:
+
+- `schema`: exactly `quip-swap-confirmation.v1`;
+- `action`: exactly the invoked command, `submit-final-claim` or `reclaim`;
+- `confirmed`: the boolean `true`.
+
+The confirmation carries no secrets or signatures. The command obtains its
+trade data from the selected party workspace. Inputs containing secret,
+private-key, signature, or preimage field names are rejected.
+
+From `sdk/`, using the workspace and config variables established by the
+[console demo](../docs/demo/console-demo.md):
+
+```sh
+jq -n '{schema:"quip-swap-confirmation.v1",action:"submit-final-claim",confirmed:true}' |
+  bun run src/bin/quip-swap.ts submit-final-claim --party bob \
+  --state-root "$BOB_ROOT" --config "$BOB_CONFIG" --summary-json
+```
+
+For an eligible Alice reclaim:
+
+```sh
+jq -n '{schema:"quip-swap-confirmation.v1",action:"reclaim",confirmed:true}' |
+  bun run src/bin/quip-swap.ts reclaim --party alice \
+  --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json
+```
+
+In the local deterministic prototype, `--yes` replaces the confirmation JSON:
+
+```sh
+bun run src/bin/quip-swap.ts reclaim --party alice \
+  --state-root "$ALICE_ROOT" --config "$ALICE_CONFIG" --summary-json --yes
+```
+
+Confirmation does not bypass the command's state, timing, or observation checks.

@@ -1,18 +1,23 @@
 # Gas checkpoint
 
-The canonical regression record is [`.gas-snapshot`](../.gas-snapshot). It was
-regenerated after the resumable same-chain migration with Foundry's default
-snapshot settings. Its SHA-256 is
-`9204d5fe64d9c1475857d79b4bfb13ea3bd10978e3d6f540c4819e84960664ab`.
+The canonical regression record is [`.gas-snapshot`](../.gas-snapshot). This
+checkpoint was regenerated after the local wrapper-payout and zero-side-nonce
+validation fixes, using source revision
+`895c4277f8550aa6c88aaaf4fb5289d528c43622`, Forge 1.7.1, and the repository's
+default Foundry profile (Solidity 0.8.33, Prague, 10,000 optimizer runs, with the
+configured dependency-specific via-IR compilation restriction). All 672 tests
+passed. The snapshot SHA-256 is
+`b653d1658c830aa4bbd76ca7ac3ac94dcd360db3d3983c9e98377423ff5549e5`.
 
-A focused `forge test --gas-report` over `DeployedWrapperGuardsTest` reported:
+The focused gas report used
+`forge test --gas-report --match-contract DeployedWrapperGuardsTest`:
 
 | Current same-chain call | Average | Median | Observations |
 | --- | ---: | ---: | ---: |
-| `selectClaim` | 43,311 | 44,261 | 16 |
-| `selectReclaim` | 49,070 | 51,600 | 12 |
-| `executeSettlement` | 134,513 | 177,481 | 35 |
-| HTLC `releaseBatch` | 87,633 | 96,276 | 24 |
+| `selectClaim` | 43,473 | 44,284 | 17 |
+| `selectReclaim` | 49,027 | 51,557 | 12 |
+| `executeSettlement` | 134,964 | 173,943 | 37 |
+| HTLC `releaseBatch` | 85,610 | 96,276 | 26 |
 
 These are prototype test-distribution measurements, not upper bounds. Reverted
 and adversarial calls are included, assets have different costs, and PQ
@@ -21,5 +26,15 @@ one atomic payout transaction; the current path adds a bounded selection
 transaction and one or more retryable execution transactions. Its benefit is
 liveness and bounded per-call work, not lower total gas.
 
-Refresh with `make snapshot` and the focused command documented above whenever
-settlement code or compiler settings change.
+Refresh from the repository root whenever contracts, tests, or compiler settings
+change:
+
+```sh
+make snapshot
+forge snapshot --check
+forge test --gas-report --match-contract DeployedWrapperGuardsTest
+sha256sum .gas-snapshot
+```
+
+Update this page's source revision, toolchain, test count, checksum, and focused
+measurements together with the snapshot.

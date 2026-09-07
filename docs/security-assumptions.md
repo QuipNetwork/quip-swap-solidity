@@ -28,9 +28,9 @@ tracker or remediation-status ledger.
   claim and land the final claim before its deadline.
 - Confirmation counts and timing margins are operational assumptions, not
   objective economic finality.
-- Solidity currently accepts zero `sideNonce` values even though the SDK
-  rejects them. Contracts should reject zero to align validation and catch an
-  obvious nonce-generation failure.
+- Solidity and SDK term validation reject zero `sideNonce` values on either
+  side in both modes. Clients must resample zero outputs and remain responsible
+  for cryptographic randomness; the check proves neither entropy nor uniqueness.
 
 ## Authorization assumptions
 
@@ -55,8 +55,11 @@ tracker or remediation-status ledger.
 - Same-chain outcome selection survives payout failure and settlement is
   resumable by asset batch. A permanently failing asset can still strand its
   own HTLC after the outcome becomes irreversible.
-- A local wrapper can currently be signed as `recipient` or
-  `reclaimRecipient`; this can revert settlement or strand an ERC-721.
+- Both wrappers reject the executing wrapper as a local `recipient` or
+  `reclaimRecipient` before custody. Same-chain commits check both sides;
+  cross-chain commits check only the local side. SDK authorization preparation
+  and submission apply the same rule. Other contract recipients must still
+  support the applicable native/token receiver behavior.
 - Asset-support governance can delist a second-side asset after agreement or
   after the first cross-chain commit, forcing timeout recovery.
 

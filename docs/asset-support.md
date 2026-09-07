@@ -42,5 +42,9 @@ will remain transferable.
 ## Destinations
 
 Contract recipients must support the applicable native/token receiver behavior.
-Do not sign a local wrapper as `recipient` or `reclaimRecipient`; the prototype
-does not yet reject this shape and settlement may fail or strand an ERC-721.
+Both wrappers reject the executing wrapper as a local `recipient` or
+`reclaimRecipient` before accepting custody. Same-chain commits check both sides
+before the first escrow; cross-chain commits check only the committing side.
+The same address on the remote chain is not rejected merely for matching the
+local wrapper. SDK commit-hash preparation and submission mirror these checks.
+These guards do not establish that other contract recipients can receive assets.
