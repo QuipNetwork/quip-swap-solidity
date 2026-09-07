@@ -197,6 +197,16 @@ The package root exports current terms, hashes, ABIs, clients, events, trusted
 workflow, and console primitives. Omnibus compatibility is isolated at
 `@quip.network/quip-swap-sdk/legacy`.
 
+## Cached settlement validation
+
+Settlement relies on the originating commit's structural validation and the
+complete terms-hash binding of its stored record. The
+[Solidity refinement argument](docs/settlement-validity.md) states the invariant,
+proves preservation by induction over wrapper transactions, and identifies the
+hash and deployment assumptions. It also covers resumable same-chain states.
+Mutable asset admission and client timing policy are separate from this cached
+structural predicate.
+
 ## Core invariants and limits
 
 - Hashes bind security-relevant action fields to a chain and contract.

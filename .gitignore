@@ -18,6 +18,7 @@ docs/*
 !docs/asset-support.md
 !docs/protocol-flow.md
 !docs/security-assumptions.md
+!docs/settlement-validity.md
 !docs/issues.md
 !docs/gas.md
 !docs/fees.md
