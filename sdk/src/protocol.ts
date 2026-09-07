@@ -224,6 +224,12 @@ export interface CommitPayloadArgs {
   readonly actionNonce: Hex32; readonly expiry: bigint
 }
 
+/**
+ * Hashes the exact canonical commit payload after rejecting local wrapper payout destinations.
+ * This is not complete term or timing-policy validation: call validateProtocolTerms before signing.
+ * Wallet-mode signatures additionally bind this payload in the wallet's current key-epoch envelope.
+ * @throws If a local recipient or reclaim recipient is the executing wrapper, or ABI encoding fails.
+ */
 export function commitPayloadHash(args: CommitPayloadArgs): Hex32 {
   validateCommitPayouts(args.terms, args.party, args.swapAddress)
   const side = args.party ? args.terms.partySide : args.terms.counterpartySide
@@ -238,7 +244,11 @@ export function commitPayloadHash(args: CommitPayloadArgs): Hex32 {
     side.delegate, side.delegateKeyVersion, args.actionNonce, side.commitmentDeadline, args.expiry]))
 }
 
-/** Checks both same-chain sides, or only the committing cross-chain side, before authorization. */
+/**
+ * Rejects wrapper payout destinations on both same-chain sides or only the committing cross-chain side.
+ * Address comparison is case-insensitive. Matching remote-chain addresses remain permitted.
+ * This check does not validate other term fields, recipient receiver behavior, or deployment authenticity.
+ */
 export function validateCommitPayouts(terms: ProtocolTerms, party: boolean, wrapper: Address): void {
   const localChain = (party ? terms.partySide : terms.counterpartySide).chainId
   for (const side of [terms.partySide, terms.counterpartySide]) {
@@ -310,6 +320,13 @@ export const encodeRegistryNonceKey = (
   [chainId, registry, eoa, keyRole, keyVersion, nonce],
 )
 
+/**
+ * Validates structural terms and their route/deadline compatibility with the supplied client timing policy.
+ * The caller must choose a reviewed policy; this function does not establish its finality assumptions.
+ * It does not inspect live chain state, asset admission, authorization, balances, or current time.
+ * Wrapper-specific payout validation is separate: use validateCommitPayouts or commitPayloadHash.
+ * @throws If terms or their pairing with the supplied timing policy are invalid.
+ */
 export function validateProtocolTerms(terms: ProtocolTerms, policy: TimingPolicy): void {
   const mode = wrapperMode(terms)
   const invalid = () => { throw new Error('Invalid protocol terms') }

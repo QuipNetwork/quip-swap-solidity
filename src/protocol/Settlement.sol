@@ -350,6 +350,10 @@ library Settlement {
     completeSelectedSameChainReclaim(self, trade, lock);
   }
 
+  /// @dev Structural validity is established by the originating wrapper commit. Settlement's
+  ///      admissible source-state lookup binds these complete terms to that record through TradeID
+  ///      and the record-key hash, assuming canonical encoding and no relevant hash collision.
+  ///      This mode check alone does not establish validity. See docs/settlement-validity.md.
   function _validate(ProtocolTerms memory terms, WrapperMode expected) private pure {
     if (ProtocolHashing.mode(terms) != expected) revert InvalidSettlementMode();
   }

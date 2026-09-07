@@ -20,11 +20,11 @@ interface ISwapHTLC {
   error SideTermsMismatch();
   /// @notice Thrown when funding is confirmed more than once or release precedes funding.
   error InvalidFundingState();
-  /// @notice Thrown when release is attempted more than once.
+  /// @notice Thrown when a release is attempted after the complete bundle has already been paid.
   error AlreadyReleased();
   /// @notice Thrown when a release batch is asked to process no assets.
   error InvalidBatchSize();
-  /// @notice Thrown when the selected payout is not one of the two terms-fixed recipients.
+  /// @notice Thrown when the payout is not a terms-fixed recipient or is this HTLC itself.
   error InvalidRecipient();
   /// @notice Thrown when a later release batch changes the first batch's payout recipient.
   error PayoutRecipientMismatch();
@@ -56,15 +56,18 @@ interface ISwapHTLC {
   ///      principal. A successful commit must call this in the deployment transaction.
   function confirmFunding(SideTerms calldata sideTerms) external;
 
-  /// @notice Releases the complete bundle once to a terms-fixed destination.
-  /// @dev `recipient` must equal either `sideTerms.recipient` or
-  ///      `sideTerms.reclaimRecipient`; the controlling wrapper selects between them only after
-  ///      making the corresponding protocol state transition.
+  /// @notice Releases all remaining assets to a terms-fixed destination in one call.
+  /// @dev After partial batches, only unfinished entries are transferred. The destination must be
+  ///      sideTerms.recipient or sideTerms.reclaimRecipient, must not be this HTLC, and must match
+  ///      any earlier successful batch's recipient. The wrapper selects claim versus reclaim
+  ///      through its protocol state transition; a fully released HTLC rejects further releases.
   function release(SideTerms calldata sideTerms, address recipient) external;
 
   /// @notice Releases at most `maxAssets` entries from the next unfinished bundle position.
-  /// @dev Progress advances atomically with transfers and `released` becomes true only after the
-  ///      complete signed asset list has been transferred.
+  /// @dev The first successful batch fixes the terms-selected payout recipient, which must not be
+  ///      this HTLC. Later batches must use that same recipient. Progress and recipient selection
+  ///      advance atomically with transfers; failure rolls back this batch, preserving prior batches.
+  ///      `released` becomes true only after the complete signed asset list has been transferred.
   function releaseBatch(
     SideTerms calldata sideTerms,
     address recipient,

@@ -176,7 +176,9 @@ contract CrossChainWrapper is
     );
   }
 
-  /// @notice Returns aggregate custody reserved for one asset identity.
+  /// @notice Compatibility view that always returns zero in this wrapper.
+  /// @dev Commits fund dedicated HTLCs without populating the legacy aggregate reserve ledger.
+  ///      Use htlcOf and the returned HTLC's state and asset balances to inspect custody.
   function reserved(Asset calldata asset) external view returns (uint256) {
     return custody.reservedAmount(asset);
   }

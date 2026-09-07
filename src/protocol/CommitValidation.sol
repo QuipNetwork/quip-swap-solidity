@@ -23,7 +23,9 @@ library CommitAuthorization {
   error InvalidExpectedSourceState();
   error AuthorizationExpired();
 
-  /// @notice Checks caller provenance, payload binding, submitter policy, expiry, and source state.
+  /// @notice Checks the expected caller address, payload, submitter policy, expiry, and signed source-state tag.
+  /// @dev Wallet mode checks the principal address, not approved wallet implementation provenance.
+  ///      The wrapper's state-machine transition separately enforces the actual stored source state.
   function validate(
     ProtocolTerms memory terms,
     bool party,
@@ -34,14 +36,14 @@ library CommitAuthorization {
     VerifiedCommitAuthorization memory evidence,
     uint256 currentTime
   ) internal pure returns (bytes32 tradeId) {
-    // Derive the only contract allowed to attest this authorization mode.
+    // Derive the expected boundary address; wallet implementation provenance is not checked here.
     SideTerms memory side = party ? terms.partySide : terms.counterpartySide;
     address verifier = side.authorizationMode == AuthorizationMode.QuipWallet ? side.principal : configuredDirectGateway;
     if (verifier == address(0) || actualWrapperCaller != verifier || evidence.wrapperCaller != actualWrapperCaller) {
       revert InvalidAuthorizationCaller();
     }
 
-    // Prevent signatures from executing against a different state-machine position.
+    // Require the signed source-state tag for this side and mode; no stored state is read here.
     ExpectedSourceState expectedState = ProtocolHashing.expectedSourceState(party, ProtocolHashing.mode(terms));
     if (evidence.expectedSourceState != expectedState) revert InvalidExpectedSourceState();
     // Authorization expiry is an exclusive upper bound.

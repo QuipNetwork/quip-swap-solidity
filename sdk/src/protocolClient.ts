@@ -67,15 +67,34 @@ export interface SameChainSettlementPreview extends SameChainSettlementProgress 
   readonly completesTrade: boolean
 }
 
+/**
+ * Calls the configured protocol contracts. Methods returning a Hash submit a transaction;
+ * callers must verify its receipt and expected events before treating the action as complete.
+ * Commit methods check the configured receiver and local payout destinations, then quote the
+ * live fee. They do not perform full term/timing validation or verify PQ signatures locally.
+ * Callers must validate terms and policy before signing and provide token approvals from the
+ * principal to the wrapper. The on-chain authorization boundary verifies signatures.
+ */
 export interface ProtocolClient {
   readonly addresses: ProtocolAddresses
+  /**
+   * Reads the current fee after receiver/payout checks and adds the signed native escrow.
+   * The quote does not reserve a fee: an owner update before inclusion can make the commit revert.
+   * Refresh and explicitly retry after a fee-related failure; submission methods do not auto-retry it.
+   */
   getCommitValueQuote(request: CommitAuthorizationRequest): Promise<CommitValueQuote>
+  /** Submits the exact principal authorization through DirectAuthorization with a fresh fee quote. */
   authorizeDirectCommit(request: CommitAuthorizationRequest, signature: Hex): Promise<Hash>
+  /** Submits through the wallet with a fresh fee quote; the signature must use its current key-epoch envelope. */
   authorizeWalletCommit(
     wallet: Address,
     request: CommitAuthorizationRequest,
     signature: Hex,
   ): Promise<Hash>
+  /**
+   * Submits registration and first commit atomically on-chain. `request` supplies fee-quote inputs;
+   * callers must ensure it matches the encoded commitData and the registration's bound payload.
+   */
   registerAndCommit(
     registration: InitialRegistration,
     eoaSignature: Hex,
@@ -88,8 +107,14 @@ export interface ProtocolClient {
   setAssetSupport(assetType: AssetType, target: Address, supported: boolean): Promise<Hash>
   claimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32, secret: Hex32): Promise<Hash>
   reclaimCrossChain(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<Hash>
+  /** Submits irreversible claim selection, revealing the secret without paying either side yet. */
   selectSameChainClaim(terms: ProtocolTerms, lock: Hex32, secret: Hex32): Promise<Hash>
+  /** Submits irreversible reclaim selection; each required side still needs payout execution. */
   selectSameChainReclaim(terms: ProtocolTerms, lock: Hex32): Promise<Hash>
+  /**
+   * Submits at most maxAssets transfers for one selected side; maxAssets must be positive.
+   * Verify the receipt, then reread progress. A failed batch preserves earlier successful batches.
+   */
   executeSameChainSettlement(
     terms: ProtocolTerms,
     lock: Hex32,
@@ -100,7 +125,9 @@ export interface ProtocolClient {
   getIdentity(eoa: Address): Promise<PQIdentity>
   getCrossChainState(terms: ProtocolTerms, party: boolean, lock: Hex32): Promise<CrossChainLegState>
   getSameChainState(terms: ProtocolTerms, lock: Hex32): Promise<SameChainState>
+  /** Reads side bitmaps: party = 1, counterparty = 2; pending trades finish when all required bits complete. */
   getSameChainSettlementProgress(terms: ProtocolTerms, lock: Hex32): Promise<SameChainSettlementProgress>
+  /** Estimates progress from current reads; it neither simulates transfers nor guarantees inclusion-time state. */
   previewSameChainSettlement(
     terms: ProtocolTerms,
     lock: Hex32,
@@ -114,6 +141,11 @@ export interface ProtocolClient {
   getHTLCState(htlc: Address): Promise<HTLCState>
 }
 
+/**
+ * Creates a client for caller-verified addresses on the supplied clients' chain.
+ * Reads need only a public client; writes need a wallet client with an account.
+ * Deployment authenticity, route policy, signing, and confirmed completion remain caller responsibilities.
+ */
 export function createProtocolClient(args: CreateProtocolClientArgs): ProtocolClient {
   const {addresses, publicClient, walletClient} = args
 

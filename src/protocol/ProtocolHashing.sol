@@ -183,8 +183,10 @@ library ProtocolHashing {
     return abi.encode(chainId, registryAddress, eoa, authorizingKeyRole, authorizingKeyVersion, operationNonce);
   }
 
-  /// @notice Reverts unless both sides and their pairing form canonical valid protocol terms.
+  /// @notice Reverts unless both sides and their pairing satisfy structural term validity.
   /// @dev Asset arrays must be strictly sorted by identity, which also excludes duplicates.
+  ///      Client timing-policy margins and supported remote routes are not enforced here.
+  ///      Mutable asset admission, local-chain checks, and wrapper payout guards run at commit.
   function validateTerms(ProtocolTerms memory terms) internal pure {
     // Chain equality selects the validation rules before any state is consulted.
     WrapperMode wrapperMode = mode(terms);
@@ -197,14 +199,14 @@ library ProtocolHashing {
     _validateSide(terms.partySide);
     _validateSide(terms.counterpartySide);
 
-    // Alice commits first, Bob commits second, and Alice claim opens after both.
+    // Order commit deadlines before the party claim deadline; this adds no claim-opening time gate.
     if (!(terms.partySide.commitmentDeadline < terms.counterpartySide.commitmentDeadline
           && terms.counterpartySide.commitmentDeadline < terms.partySide.claimDeadline)) revert InvalidTerms();
 
     // The progression gate belongs only to the counterparty side.
     if (terms.partySide.commitLock != bytes32(0)) revert InvalidTerms();
     if (wrapperMode == WrapperMode.SameChain) {
-      // Same-chain atomic settlement has no progression gate.
+      // Same-chain progression uses local state; outcome selection and resumable payouts need no gate secret.
       if (terms.counterpartySide.commitLock != bytes32(0)) revert InvalidTerms();
       // Both escrows must remain claimable until the earlier claim deadline.
       uint256 claimDeadline = terms.partySide.claimDeadline < terms.counterpartySide.claimDeadline
@@ -224,7 +226,7 @@ library ProtocolHashing {
   }
 
   function _validateSide(SideTerms memory side) private pure {
-    // Require payable destinations, at least one asset, and strict local timing.
+    // Require nonzero destinations and side nonce, at least one asset, and strict local timing.
     if (
       side.recipient == address(0) || side.reclaimRecipient == address(0) || side.assets.length == 0
         || side.sideNonce == bytes32(0)
