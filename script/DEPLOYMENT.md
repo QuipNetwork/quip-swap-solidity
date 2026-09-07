@@ -39,6 +39,11 @@ Deployment order is:
 4. `CrossChainWrapper`
 5. `SameChainWrapper`
 
+`DirectAuthorization` is deployed once per chain and supplies both the identity
+registry and direct commit gateway. There are no separate registry/gateway
+contracts to deploy. Both wrappers pin this instance as `DIRECT_AUTHORIZATION`;
+wallet-mode principals use it as their delegate registry and key-admission policy.
+
 The same deployer and versioned salts predict the same five addresses across
 chains. Constructor configuration can still differ by chain and must be
 verified independently.

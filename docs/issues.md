@@ -32,9 +32,22 @@ rapid fee bumping, and chain-specific finality policies.
 
 ---
 
+## IS: Intentional simplifications
+
+
+### Bob-commit finality is an off-chain policy — partially mitigated
+
+Alice's commit publishes `BobCommitSecret` immediately. Bob's client waits for
+configured finality, but the destination contract cannot verify the remote
+commit. Incorrect policy, compromised software, false RPC observations, or
+client bypass can leave Bob escrowed after Alice's commit reorganizes away.
+
+
+---
+
 ## PG: Production gaps
 
-### B1 - Wallet-mode authorization provenance — open
+### PG1 - Wallet-mode authorization provenance — open
 
 Wrappers do not prove that a wallet-mode caller is an approved QuipWallet
 implementation that performed PQ verification. An EOA or arbitrary contract
@@ -45,7 +58,7 @@ Required: authenticate wallets through a **pinned factory**, registry,
 implementation, or dedicated gateway, and test EOA and malicious-wallet
 masquerading.
 
-### B2 - Verifier identity is not rechecked on every use — open
+### PG2 - Verifier identity is not rechecked on every use — open
 
 Registered-direct admission pins verifier address, code hash, version, and
 profile, but later signature paths do not recheck every property. A mutable
@@ -56,7 +69,7 @@ Required: enforce verifier immutability or recheck all pinned properties for
 every security-sensitive verification.
 
 
-### Deterministic deployment reruns incompletely verify existing code — open
+### PG3 - Deterministic deployment reruns incompletely verify existing code — open
 
 A predicted address containing code may be skipped without checking every
 runtime bytecode identity and wrapper `ASSET_SUPPORT` immutable. A stale or
@@ -65,7 +78,7 @@ constructor-mismatched deployment could be accepted.
 Required: verify released runtime hashes and all immutable dependencies on new,
 partial, and resumed deployments.
 
-### Unbounded commit and total settlement work — partially mitigated
+### PG4 - Unbounded commit and total settlement work — partially mitigated
 
 Terms have no contract-level asset-count bound. Funding still processes a
 side's complete list in one commit, and a very large list may exceed block gas.
@@ -75,20 +88,6 @@ Large lists still increase the number and total cost of required calls.
 
 Required: enforce a conservative term asset-count bound for commits and define
 per-chain execution policy for settlement batch sizes.
-
-
-### Mutable admission is conflated with structural term validity — open specification mismatch
-
-The technical specification calls `ValidTerms` pure while including supported
-assets, and then requires `ValidTerms` again for claims and reclaims. Solidity
-checks structural asset validity in `validateTerms`, consults the mutable asset
-allowlist only when committing, and intentionally permits settlement after an
-asset is delisted. Rechecking mutable support during settlement would strand
-existing escrow.
-
-Required: define a pure `StructurallyValidTerms` predicate and separate mutable
-`CommitAssetSupported` admission. A committed binding should imply prior
-structural validity; claims and reclaims must not reconsult mutable admission.
 
 
 ### Prototype client secret storage is plaintext — production gap
@@ -108,6 +107,20 @@ The demos validate protocol plumbing, not real SHRINCS signature generation,
 calldata size, verification gas, transaction feasibility, or production
 verifier failures. A full real-verifier run is required before deployment.
 
+### Mutable admission is conflated with structural term validity — open specification mismatch
+
+The technical specification calls `ValidTerms` pure while including supported
+assets, and then requires `ValidTerms` again for claims and reclaims. Solidity
+checks structural asset validity in `validateTerms`, consults the mutable asset
+allowlist only when committing, and intentionally permits settlement after an
+asset is delisted. Rechecking mutable support during settlement would strand
+existing escrow.
+
+Required: define a pure `StructurallyValidTerms` predicate and separate mutable
+`CommitAssetSupported` admission. A committed binding should imply prior
+structural validity; claims and reclaims must not reconsult mutable admission.
+
+
 
 ## To fix
 
@@ -124,12 +137,6 @@ Required: classify remote-chain support as an explicit client/deployment
 predicate, or add an on-chain supported-chain policy if contract enforcement is
 required.
 
-### Bob-commit finality is an off-chain policy — partially mitigated
-
-Alice's commit publishes `BobCommitSecret` immediately. Bob's client waits for
-configured finality, but the destination contract cannot verify the remote
-commit. Incorrect policy, compromised software, false RPC observations, or
-client bypass can leave Bob escrowed after Alice's commit reorganizes away.
 
 ### Transaction broadcast precedes durable journaling — open
 
@@ -229,15 +236,15 @@ Required: specify and prove that committed state implies structural validity at
 commit time and that collision-resistant keyed lookup binds settlement to those
 same terms.
 
-### Authorization component names describe a superseded split — open documentation gap
+### Authorization component names describe a superseded split — resolved
 
-The protocol and proof refer to separate `PQIdentityRegistry` and
-`PQAuthorizationGateway` contracts. The prototype intentionally implements both
-logical roles in `DirectAuthorization`. This is not a behavioral vulnerability,
-but it makes deployment and proof-to-code mapping ambiguous.
-
-Required: use `DirectAuthorization` consistently or state explicitly that it is
-one contract implementing the registry and gateway roles.
+Protocol, technical specification, proof model/map, and prototype plans now use
+`DirectAuthorization` for the single contract implementing both identity-registry
+and direct commit gateway roles. Deployment documentation identifies the same
+instance as the wrappers' `DIRECT_AUTHORIZATION` dependency. The proof-to-code
+mapping preserves distinct registry-operation and commit-authorization nonce
+scopes and stores without implying separate contract deployments or completed
+boundary soundness proofs.
 
 ### Canonical vectors are not executable sources of truth — open conformance gap
 

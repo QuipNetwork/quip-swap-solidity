@@ -88,7 +88,11 @@ transaction.
 
 ### Registered-direct mode
 
-`DirectAuthorization` maps an EOA to independently versioned active and
+`DirectAuthorization` is one deployed contract implementing both the identity
+registry and direct commit gateway roles. Wrappers pin its address as
+`DIRECT_AUTHORIZATION`; no separate registry/gateway deployment is required.
+
+It maps an EOA to independently versioned active and
 recovery PQ keys. Initial registration can be combined atomically with the
 first commit. Rotation, recovery, revocation, proof of possession, expiry, and
 registry replay protection are chain- and contract-bound.
