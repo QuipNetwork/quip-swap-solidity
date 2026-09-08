@@ -53,7 +53,8 @@ export interface CreateTermsArgs {
  * })
  * ```
  */
-export function createTerms(args: CreateTermsArgs): Terms {
+export function createTerms(
+  args: CreateTermsArgs): Terms {
   // defensive copy: never mutate or alias the caller's array
   const terms: Terms = Object.freeze({
     chainId: args.chainId,
@@ -64,7 +65,9 @@ export function createTerms(args: CreateTermsArgs): Terms {
     reclaimRelease: args.reclaimRelease,
     assets: Object.freeze([...args.assets]),
   })
+
   validateTerms(terms)
+
   return terms
 }
 
@@ -99,7 +102,8 @@ export function createTerms(args: CreateTermsArgs): Terms {
  * validateTerms(termsFromCounterparty) // throws before any tx is built
  * ```
  */
-export function validateTerms(terms: Terms): void {
+export function validateTerms(
+  terms: Terms): void {
   if (terms.assets.length === 0) {
     throw new QuipSwapError({
       code: 'EMPTY_ASSETS',
@@ -111,7 +115,10 @@ export function validateTerms(terms: Terms): void {
       code: 'ZERO_ADDRESS_RECIPIENT',
       message:
         'Both recipient and reclaimRecipient must be valid non-zero addresses (contract: ZeroAddressRecipient)',
-      details: {recipient: terms.recipient, reclaimRecipient: terms.reclaimRecipient},
+      details: {
+        recipient: terms.recipient,
+        reclaimRecipient: terms.reclaimRecipient
+      },
     })
   }
   if (terms.commitmentDeadline === 0n) {
@@ -138,15 +145,22 @@ export function validateTerms(terms: Terms): void {
     throw new QuipSwapError({
       code: 'ZERO_CHAIN_ID',
       message: 'chainId must be greater than zero (contract: ZeroChainId)',
-      details: {chainId: terms.chainId},
+      details: {
+        chainId: terms.chainId
+      },
     })
   }
-  for (const asset of terms.assets) validateAsset(asset)
+
+  for (const asset of terms.assets)
+    validateAsset(asset)
 }
 
 /** True when the value is a well-formed, non-zero address. */
-function isRecipientAddress(value: Address): boolean {
-  return isAddress(value, {strict: false}) && value.toLowerCase() !== zeroAddress
+function isRecipientAddress(
+  value: Address): boolean {
+  return isAddress(value, {
+    strict: false
+  }) && value.toLowerCase() !== zeroAddress
 }
 
 /**
@@ -177,7 +191,9 @@ function isRecipientAddress(value: Address): boolean {
  * validateTermPairing(aliceTerms, bobTerms) // throws if the schedule is invalid
  * ```
  */
-export function validateTermPairing(a: Terms, b: Terms): void {
+export function validateTermPairing(
+  a: Terms,
+  b: Terms): void {
   const aProposes =
     a.commitmentDeadline < b.commitmentDeadline &&
     b.commitmentDeadline < a.claimDeadline &&
@@ -199,13 +215,17 @@ export function validateTermPairing(a: Terms, b: Terms): void {
         "The two sides' lifecycle timestamps must strictly interleave " +
         '(proposer.commit < taker.commit < proposer.claim < taker.claim < proposer.reclaim < taker.reclaim; ' +
         'contract: DisordedDeadlines)',
-      details: {a: lifecycleOf(a), b: lifecycleOf(b)},
+      details: {
+        a: lifecycleOf(a),
+        b: lifecycleOf(b)
+      },
     })
   }
 }
 
 /** Extracts just the three lifecycle timestamps for error reporting. */
-function lifecycleOf(terms: Terms): Record<string, bigint> {
+function lifecycleOf(
+  terms: Terms): Record<string, bigint> {
   return {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
@@ -232,6 +252,8 @@ function lifecycleOf(terms: Terms): Record<string, bigint> {
  * }
  * ```
  */
-export function proposedBy(party: Terms, counterparty: Terms): 'party' | 'counterparty' {
+export function proposedBy(
+  party: Terms,
+  counterparty: Terms): 'party' | 'counterparty' {
   return party.commitmentDeadline < counterparty.commitmentDeadline ? 'party' : 'counterparty'
 }

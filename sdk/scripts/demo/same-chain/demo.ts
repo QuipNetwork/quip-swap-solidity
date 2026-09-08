@@ -29,7 +29,8 @@ export const SAME_CHAIN_DEMO_MOCK_VERIFIER = true as const
 
 const ZERO_ADDRESS = getAddress('0x0000000000000000000000000000000000000000')
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
-const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
+const fixed = (
+  value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
 const SETTLEMENT_SECRET = fixed(1)
 
 export interface SameChainTermsInput {
@@ -82,16 +83,31 @@ export interface SameChainDemoFoundation {
   readonly adversarial: SameChainAdversarialTrace
   readonly success: SameChainSuccessTrace
   readonly feeFlow: {
-    readonly quotes: readonly [{readonly side: 'alice'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}, {readonly side: 'bob'; readonly nativeEscrow: string; readonly commitmentFee: string; readonly totalValue: string}]
+    readonly quotes: readonly [{
+      readonly side: 'alice';
+      readonly nativeEscrow: string;
+      readonly commitmentFee: string;
+      readonly totalValue: string
+    }, {
+      readonly side: 'bob';
+      readonly nativeEscrow: string;
+      readonly commitmentFee: string;
+      readonly totalValue: string
+    }]
     readonly accruedAfterCommits: string
     readonly accruedAfterSettlement: string
-    readonly withdrawal: {readonly recipient: Address; readonly amount: string; readonly transactionHash: Hash}
+    readonly withdrawal: {
+      readonly recipient: Address;
+      readonly amount: string;
+      readonly transactionHash: Hash
+    }
     readonly accruedAfterWithdrawal: '0'
     readonly gasIncludedInProtocolRevenue: false
   }
 }
 
-export function sameChainDemoPolicy(chainId: bigint): TimingPolicy {
+export function sameChainDemoPolicy(
+  chainId: bigint): TimingPolicy {
   return {
     policyVersion: 1n,
     mode: WrapperMode.SameChain,
@@ -102,11 +118,17 @@ export function sameChainDemoPolicy(chainId: bigint): TimingPolicy {
   }
 }
 
-export function buildSameChainDemoTerms(input: SameChainTermsInput): ProtocolTerms {
+export function buildSameChainDemoTerms(
+  input: SameChainTermsInput): ProtocolTerms {
   return {
     partySide: {
       chainId: input.chainId,
-      assets: [{assetType: AssetType.ERC20, target: input.aliceToken, id: 0n, amount: 10n * 10n ** 18n}],
+      assets: [{
+        assetType: AssetType.ERC20,
+        target: input.aliceToken,
+        id: 0n,
+        amount: 10n * 10n ** 18n
+      }],
       principal: input.alice,
       authorizationMode: AuthorizationMode.RegisteredDirect,
       principalKeyVersion: 1n,
@@ -123,7 +145,12 @@ export function buildSameChainDemoTerms(input: SameChainTermsInput): ProtocolTer
     },
     counterpartySide: {
       chainId: input.chainId,
-      assets: [{assetType: AssetType.ERC20, target: input.bobToken, id: 0n, amount: 20n * 10n ** 18n}],
+      assets: [{
+        assetType: AssetType.ERC20,
+        target: input.bobToken,
+        id: 0n,
+        amount: 20n * 10n ** 18n
+      }],
       principal: input.bob,
       authorizationMode: AuthorizationMode.RegisteredDirect,
       principalKeyVersion: 1n,
@@ -143,17 +170,24 @@ export function buildSameChainDemoTerms(input: SameChainTermsInput): ProtocolTer
 
 export async function runSameChainDemoFoundation(
   chain: ChainContext,
-  load: (solFile: string, contract: string) => FoundryArtifact,
-  onProgress?: (message: string) => void,
+  load: (
+    solFile: string,
+    contract: string) => FoundryArtifact,
+  onProgress?: (
+    message: string) => void,
 ): Promise<SameChainDemoFoundation> {
   if (chain.chainId !== SAME_CHAIN_DEMO_CHAIN_ID) {
     throw new Error(`same-chain demo requires chain ID ${SAME_CHAIN_DEMO_CHAIN_ID}`)
   }
+
   onProgress?.('Deploying the current four-contract protocol stack')
+
   const deployment = await bootstrapProtocolChain(chain, load)
+
   await chain.warpTo(4_000_000_000n)
 
   onProgress?.('Deploying deterministic term assets')
+
   const aliceToken = await chain.deploy(load('ERC20Mock.sol', 'ERC20Mock'), ['AliceDemoToken', 'ALICE', 18])
   const bobToken = await chain.deploy(load('ERC20Mock.sol', 'ERC20Mock'), ['BobDemoToken', 'BOB', 18])
   const now = await chain.now()
@@ -166,12 +200,16 @@ export async function runSameChainDemoFoundation(
     now,
   })
   const policy = sameChainDemoPolicy(BigInt(chain.chainId))
+
   validateProtocolTerms(terms, policy)
-  if (wrapperMode(terms) !== WrapperMode.SameChain) throw new Error('prepared terms are not same-chain')
+  if (wrapperMode(terms) !== WrapperMode.SameChain)
+    throw new Error('prepared terms are not same-chain')
 
   onProgress?.('Binding canonical terms to the settlement lock')
+
   const id = tradeId(terms)
   const lock = settlementLock(id, SETTLEMENT_SECRET)
+
   onProgress?.('Funding, allowlisting, and approving both same-chain assets')
   await bootstrapSameChainAssets(
     chain,
@@ -180,22 +218,68 @@ export async function runSameChainDemoFoundation(
     terms,
   )
   onProgress?.('Preparing both lazy direct-authorization identities')
+
   const setup = await readSameChainSetup(chain, deployment, terms, lock)
   const adversarial = await runSameChainAdversarial(chain, deployment, terms, lock, load, onProgress)
   const commitmentFee = 5_000_000_000_000n
+
   onProgress?.('Configuring and discovering the live same-chain commitment fee')
-  let feeHash = await chain.deployer.walletClient.writeContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'setCommitmentFee', args: [commitmentFee], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
-  await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
-  const quoteClient = createProtocolClient({addresses: deployment.addresses, publicClient: chain.publicClient})
-  const quoteRequest = (party: boolean): CommitAuthorizationRequest => ({receiver: deployment.addresses.sameChainWrapper, terms, party, lock, actionNonce: fixed(party ? 5 : 6), bobCommitSecret: ZERO32, expiry: party ? terms.partySide.commitmentDeadline : terms.counterpartySide.commitmentDeadline, commitData: '0x'})
+
+  let feeHash = await chain.deployer.walletClient.writeContract({
+    address: deployment.addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'setCommitmentFee',
+    args: [commitmentFee],
+    chain: chain.publicClient.chain ?? null,
+    account: chain.deployer.account
+  })
+
+  await chain.publicClient.waitForTransactionReceipt({
+    hash: feeHash
+  })
+
+  const quoteClient = createProtocolClient({
+    addresses: deployment.addresses,
+    publicClient: chain.publicClient
+  })
+  const quoteRequest = (
+    party: boolean): CommitAuthorizationRequest => ({
+      receiver: deployment.addresses.sameChainWrapper,
+      terms,
+      party,
+      lock,
+      actionNonce: fixed(party ? 5 : 6),
+      bobCommitSecret: ZERO32,
+      expiry: party ? terms.partySide.commitmentDeadline : terms.counterpartySide.commitmentDeadline,
+      commitData: '0x'
+    })
   const [aliceQuote, bobQuote] = await Promise.all([quoteClient.getCommitValueQuote(quoteRequest(true)), quoteClient.getCommitValueQuote(quoteRequest(false))])
   const success = await runSameChainSuccess(chain, deployment, terms, lock, onProgress)
+
   onProgress?.('Withdrawing accrued same-chain protocol fees independently of gas')
-  feeHash = await chain.deployer.walletClient.writeContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'withdrawFees', args: [chain.deployer.address], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
-  const withdrawalReceipt = await chain.publicClient.waitForTransactionReceipt({hash: feeHash})
-  if (withdrawalReceipt.status !== 'success') throw new Error(`fee withdrawal reverted: ${feeHash}`)
+  feeHash = await chain.deployer.walletClient.writeContract({
+    address: deployment.addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'withdrawFees',
+    args: [chain.deployer.address],
+    chain: chain.publicClient.chain ?? null,
+    account: chain.deployer.account
+  })
+
+  const withdrawalReceipt = await chain.publicClient.waitForTransactionReceipt({
+    hash: feeHash
+  })
+
+  if (withdrawalReceipt.status !== 'success')
+    throw new Error(`fee withdrawal reverted: ${feeHash}`)
+
   const withdrawal = observedWithdrawal(withdrawalReceipt, deployment.addresses.sameChainWrapper)
-  const accruedAfterWithdrawal = await chain.publicClient.readContract({address: deployment.addresses.sameChainWrapper, abi: sameChainWrapperAbi, functionName: 'accruedFees'})
+  const accruedAfterWithdrawal = await chain.publicClient.readContract({
+    address: deployment.addresses.sameChainWrapper,
+    abi: sameChainWrapperAbi,
+    functionName: 'accruedFees'
+  })
+
   return {
     schema: SAME_CHAIN_DEMO_SCHEMA,
     phase: 'claimed',
@@ -211,8 +295,18 @@ export async function runSameChainDemoFoundation(
     success,
     feeFlow: {
       quotes: [
-        {side: 'alice', nativeEscrow: aliceQuote.nativeEscrow.toString(), commitmentFee: aliceQuote.commitmentFee.toString(), totalValue: aliceQuote.totalValue.toString()},
-        {side: 'bob', nativeEscrow: bobQuote.nativeEscrow.toString(), commitmentFee: bobQuote.commitmentFee.toString(), totalValue: bobQuote.totalValue.toString()},
+        {
+          side: 'alice',
+          nativeEscrow: aliceQuote.nativeEscrow.toString(),
+          commitmentFee: aliceQuote.commitmentFee.toString(),
+          totalValue: aliceQuote.totalValue.toString()
+        },
+        {
+          side: 'bob',
+          nativeEscrow: bobQuote.nativeEscrow.toString(),
+          commitmentFee: bobQuote.commitmentFee.toString(),
+          totalValue: bobQuote.totalValue.toString()
+        },
       ],
       accruedAfterCommits: success.accruedFeesAfterCommits,
       accruedAfterSettlement: success.accruedFeesAfterSettlement,
@@ -223,18 +317,36 @@ export async function runSameChainDemoFoundation(
   }
 }
 
-function observedWithdrawal(receipt: TransactionReceipt, wrapper: Address): SameChainDemoFoundation['feeFlow']['withdrawal'] {
+function observedWithdrawal(
+  receipt: TransactionReceipt,
+  wrapper: Address): SameChainDemoFoundation['feeFlow']['withdrawal'] {
   for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== wrapper.toLowerCase()) continue
+    if (log.address.toLowerCase() !== wrapper.toLowerCase())
+      continue
+
     try {
-      const decoded = decodeEventLog({abi: sameChainWrapperAbi, data: log.data, topics: log.topics})
-      if (decoded.eventName === 'FeesWithdrawn') return {recipient: decoded.args.to, amount: decoded.args.amount.toString(), transactionHash: receipt.transactionHash}
-    } catch {}
+      const decoded = decodeEventLog({
+        abi: sameChainWrapperAbi,
+        data: log.data,
+        topics: log.topics
+      })
+
+      if (decoded.eventName === 'FeesWithdrawn')
+        return {
+          recipient: decoded.args.to,
+          amount: decoded.args.amount.toString(),
+          transactionHash: receipt.transactionHash
+        }
+    }
+    catch {}
   }
+
   throw new Error(`fee withdrawal receipt lacks FeesWithdrawn: ${receipt.transactionHash}`)
 }
 
-function prototypePQKey(verifier: Address, seed: Hex32): Hex {
+function prototypePQKey(
+  verifier: Address,
+  seed: Hex32): Hex {
   return concatHex([verifier, seed])
 }
 
@@ -246,9 +358,11 @@ async function bootstrapSameChainAssets(
 ): Promise<void> {
   for (const [actor, side] of [[chain.alice, terms.partySide], [chain.bob, terms.counterpartySide]] as const) {
     const asset = side.assets[0]
+
     if (asset === undefined || asset.assetType !== AssetType.ERC20) {
       throw new Error('same-chain demo requires one ERC-20 per side')
     }
+
     let hash = await chain.deployer.walletClient.writeContract({
       address: registry,
       abi: assetSupportRegistryAbi,
@@ -257,7 +371,10 @@ async function bootstrapSameChainAssets(
       chain: chain.publicClient.chain ?? null,
       account: chain.deployer.account,
     })
-    await chain.publicClient.waitForTransactionReceipt({hash})
+
+    await chain.publicClient.waitForTransactionReceipt({
+      hash
+    })
     hash = await actor.walletClient.writeContract({
       address: asset.target,
       abi: erc20MockAbi,
@@ -266,7 +383,9 @@ async function bootstrapSameChainAssets(
       chain: chain.publicClient.chain ?? null,
       account: actor.account,
     })
-    await chain.publicClient.waitForTransactionReceipt({hash})
+    await chain.publicClient.waitForTransactionReceipt({
+      hash
+    })
     hash = await actor.walletClient.writeContract({
       address: asset.target,
       abi: erc20MockAbi,
@@ -275,7 +394,9 @@ async function bootstrapSameChainAssets(
       chain: chain.publicClient.chain ?? null,
       account: actor.account,
     })
-    await chain.publicClient.waitForTransactionReceipt({hash})
+    await chain.publicClient.waitForTransactionReceipt({
+      hash
+    })
   }
 }
 
@@ -297,7 +418,10 @@ async function readSameChainSetup(
     recoverySeed: Hex32,
   ): Promise<SameChainParticipantSetup> => {
     const asset = side.assets[0]
-    if (asset === undefined) throw new Error(`${role} has no demo asset`)
+
+    if (asset === undefined)
+      throw new Error(`${role} has no demo asset`)
+
     const [balance, allowance, supported, identity, htlc] = await Promise.all([
       chain.publicClient.readContract({
         address: asset.target,
@@ -325,12 +449,14 @@ async function readSameChainSetup(
       }),
       protocol.predictSameChainHTLC(terms, party, lock),
     ])
+
     if (balance !== asset.amount || allowance !== asset.amount || supported !== true) {
       throw new Error(`${role} asset bootstrap mismatch`)
     }
     if (identity.activeKeyVersion !== 0n || identity.recoveryKeyVersion !== 0n || identity.active) {
       throw new Error(`${role} identity registered before its first commit`)
     }
+
     return {
       role,
       principal: side.principal,
@@ -358,7 +484,10 @@ async function readSameChainSetup(
     functionName: 'state',
     args: [terms, lock],
   })
-  if (state !== 0) throw new Error('same-chain state advanced during bootstrap')
+
+  if (state !== 0)
+    throw new Error('same-chain state advanced during bootstrap')
+
   return {
     wrapper: deployment.addresses.sameChainWrapper,
     state: 'Unused',

@@ -56,7 +56,9 @@ export const ALICE_DEFAULT_ASSETS = [nativeAsset(10n ** 18n)] as const
 export const BOB_DEFAULT_ASSETS = [nativeAsset(2n * 10n ** 18n)] as const
 
 /** Builds Alice's (proposer) terms on `chainId` with the canonical schedule. */
-export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEFAULT_ASSETS): Terms {
+export function aliceTerms(
+  chainId: bigint,
+  assets: readonly Asset[] = ALICE_DEFAULT_ASSETS): Terms {
   return {
     chainId,
     reclaimRecipient: ALICE,
@@ -69,7 +71,9 @@ export function aliceTerms(chainId: bigint, assets: readonly Asset[] = ALICE_DEF
 }
 
 /** Builds Bob's (taker) terms on `chainId` with the canonical schedule. */
-export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT_ASSETS): Terms {
+export function bobTerms(
+  chainId: bigint,
+  assets: readonly Asset[] = BOB_DEFAULT_ASSETS): Terms {
   return {
     chainId,
     reclaimRecipient: BOB,
@@ -82,6 +86,10 @@ export function bobTerms(chainId: bigint, assets: readonly Asset[] = BOB_DEFAULT
 }
 
 /** Returns a copy of `terms` with the given overrides (tests never mutate fixtures). */
-export function withOverrides(terms: Terms, overrides: Partial<Terms>): Terms {
-  return {...terms, ...overrides}
+export function withOverrides(
+  terms: Terms,
+  overrides: Partial<Terms>): Terms {
+  return {
+...terms, ...overrides
+  }
 }

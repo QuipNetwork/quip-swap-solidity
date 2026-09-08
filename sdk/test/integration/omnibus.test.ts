@@ -58,9 +58,18 @@ let ownerClient: OmnibusClient
 
 /** Deterministic per-test secrets: keccak256 of an incrementing counter. */
 let secretCounter = 0
-function nextSecret(): {secret: Hex32; lock: Hex32} {
-  const secret = keccak256(toHex(++secretCounter, {size: 32}))
-  return {secret, lock: generateLock(secret)}
+function nextSecret(): {
+  secret: Hex32;
+  lock: Hex32
+} {
+  const secret = keccak256(toHex(++secretCounter, {
+    size: 32
+  }))
+
+  return {
+    secret,
+    lock: generateLock(secret)
+  }
 }
 
 /** One swap's schedule and warp anchors, derived from the chain's current time. */
@@ -73,8 +82,12 @@ interface Schedule {
     proposerReclaim: bigint
     takerReclaim: bigint
   }
-  aliceTerms(assets: readonly Asset[], chainId?: bigint): Terms
-  bobTerms(assets: readonly Asset[], chainId?: bigint): Terms
+  aliceTerms(
+    assets: readonly Asset[],
+    chainId?: bigint): Terms
+  bobTerms(
+    assets: readonly Asset[],
+    chainId?: bigint): Terms
 }
 
 /**
@@ -92,37 +105,46 @@ async function freshSchedule(): Promise<Schedule> {
     proposerReclaim: base + 5500n,
     takerReclaim: base + 6500n,
   }
+
   return {
     anchors,
-    aliceTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
-      chainId,
-      reclaimRecipient: ALICE_RECLAIM,
-      recipient: ALICE_RECIPIENT,
-      commitmentDeadline: base + 1000n,
-      claimDeadline: base + 3000n,
-      reclaimRelease: base + 5000n,
+    aliceTerms: (
       assets,
-    }),
-    bobTerms: (assets, chainId = BigInt(CHAIN_ID)) => ({
-      chainId,
-      reclaimRecipient: BOB_RECLAIM,
-      recipient: BOB_RECIPIENT,
-      commitmentDeadline: base + 2000n,
-      claimDeadline: base + 4000n,
-      reclaimRelease: base + 6000n,
+      chainId = BigInt(CHAIN_ID)) => ({
+        chainId,
+        reclaimRecipient: ALICE_RECLAIM,
+        recipient: ALICE_RECIPIENT,
+        commitmentDeadline: base + 1000n,
+        claimDeadline: base + 3000n,
+        reclaimRelease: base + 5000n,
+        assets,
+      }),
+    bobTerms: (
       assets,
-    }),
+      chainId = BigInt(CHAIN_ID)) => ({
+        chainId,
+        reclaimRecipient: BOB_RECLAIM,
+        recipient: BOB_RECIPIENT,
+        commitmentDeadline: base + 2000n,
+        claimDeadline: base + 4000n,
+        reclaimRelease: base + 6000n,
+        assets,
+      }),
   }
 }
 
 /** Asserts an async call reverts with the given decoded contract error. */
-async function expectContractError(promise: Promise<unknown>, errorName: string): Promise<void> {
+async function expectContractError(
+  promise: Promise<unknown>,
+  errorName: string): Promise<void> {
   try {
     await promise
     expect.unreachable(`expected revert ${errorName}`)
-  } catch (error) {
+  }
+  catch (error) {
     if (error instanceof QuipSwapError) {
       expect(error.contractErrorName, `expected ${errorName}, got SDK code ${error.code}`).toBe(errorName)
+
       return
     }
     expect(extractContractErrorName(error), String(error)).toBe(errorName)
@@ -147,10 +169,14 @@ async function rawCommit(
     account: actor.account,
   })
   const hash = await actor.walletClient.writeContract(request)
-  return ctx.publicClient.waitForTransactionReceipt({hash})
+
+  return ctx.publicClient.waitForTransactionReceipt({
+    hash
+  })
 }
 
-function toTuple(terms: Terms) {
+function toTuple(
+  terms: Terms) {
   return {
     chainId: terms.chainId,
     reclaimRecipient: terms.reclaimRecipient,
@@ -158,32 +184,54 @@ function toTuple(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
-    assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
+    assets: terms.assets.map(a => ({
+      assetType: a.assetType,
+      target: a.target,
+      id: a.id,
+      amount: a.amount
+    })),
   }
 }
 
 /** ERC-20 balance helper. */
-async function erc20Balance(token: Address, account: Address): Promise<bigint> {
-  return ctx.publicClient.readContract({address: token, abi: erc20MockAbi, functionName: 'balanceOf', args: [account]})
+async function erc20Balance(
+  token: Address,
+  account: Address): Promise<bigint> {
+  return ctx.publicClient.readContract({
+    address: token,
+    abi: erc20MockAbi,
+    functionName: 'balanceOf',
+    args: [account]
+  })
 }
 
 /**
  * Address-scoped receipt wait bound to this suite's single Omnibus — every
  * decode is filtered to `fixture.omnibus`, mirroring `client.waitForReceipt`.
  */
-function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
-  return waitForOmnibusReceipt(ctx.publicClient, hash, {address: fixture.omnibus})
+function confirmReceipt(
+  hash: Hash): Promise<OmnibusReceipt> {
+  return waitForOmnibusReceipt(ctx.publicClient, hash, {
+    address: fixture.omnibus
+  })
 }
 
 /** Keyed ERC-7913 auth for an actor via the shared helper, bound to this suite's fixture. */
-const keyedAuth = (addr: Address): CommitAuth => keyedAuthFor(fixture, addr)
+const keyedAuth = (
+  addr: Address): CommitAuth => keyedAuthFor(fixture, addr)
 
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
   fixture = await deployFixture(ctx)
 
-  const mkClient = (actor: TestActor): OmnibusClient =>
-    createOmnibusClient({address: fixture.omnibus, publicClient: ctx.publicClient, walletClient: actor.walletClient})
+  const mkClient = (
+    actor: TestActor): OmnibusClient =>
+    createOmnibusClient({
+      address: fixture.omnibus,
+      publicClient: ctx.publicClient,
+      walletClient: actor.walletClient
+    })
+
   aliceClient = mkClient(ctx.alice)
   bobClient = mkClient(ctx.bob)
   charlieClient = mkClient(ctx.charlie)
@@ -207,7 +255,10 @@ beforeAll(async () => {
         chain: ctx.publicClient.chain ?? null,
         account: actor.account,
       })
-      await ctx.publicClient.waitForTransactionReceipt({hash})
+
+      await ctx.publicClient.waitForTransactionReceipt({
+        hash
+      })
     }
   }
 })
@@ -226,24 +277,31 @@ describe('read methods', () => {
 
   it('isVerifierActive is false for an arbitrary address; the owner can flip it', async () => {
     const verifier: Address = getAddress('0x00000000000000000000000000000000000e7913')
+
     expect(await aliceClient.isVerifierActive(verifier)).toBe(false)
+
     await ctx.publicClient.waitForTransactionReceipt({
       hash: await ownerClient.admin.setVerifierActivity(verifier, true),
     })
+
     expect(await aliceClient.isVerifierActive(verifier)).toBe(true)
+
     await ctx.publicClient.waitForTransactionReceipt({
       hash: await ownerClient.admin.setVerifierActivity(verifier, false),
     })
+
     expect(await aliceClient.isVerifierActive(verifier)).toBe(false)
   })
 
   it('setVerifierActivity is owner-only', async () => {
     const verifier: Address = getAddress('0x00000000000000000000000000000000000e7914')
+
     await expectContractError(charlieClient.admin.setVerifierActivity(verifier, true), 'OwnableUnauthorizedAccount')
   })
 
   it('reads lockState, termsHash, posted for an unused lock', async () => {
     const {lock} = nextSecret()
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused)
     expect(await aliceClient.getTermsHash(lock)).toBe(`0x${'00'.repeat(32)}`)
     expect(await aliceClient.getPosted(lock, `0x${'11'.repeat(32)}`)).toBe(false)
@@ -267,10 +325,18 @@ describe('commit authorization', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     const receipt = await confirmReceipt(
-      await charlieClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.charlie.address)}),
+      await charlieClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: keyedAuth(ctx.charlie.address)
+      }),
     )
+
     expect(receipt.commitments).toHaveLength(1)
     expect(receipt.commitments[0]?.sender.toLowerCase()).toBe(ctx.charlie.address.toLowerCase())
     expect(receipt.commitments[0]?.signer.toLowerCase()).toBe(keyedAuth(ctx.charlie.address).signer.toLowerCase())
@@ -281,21 +347,35 @@ describe('commit authorization', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
 
     // SDK preflight: rejected before any transaction exists
     try {
-      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: {signer: '0x1234', signature: '0x'}})
+      await aliceClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: {
+          signer: '0x1234',
+          signature: '0x'
+        }
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('MALFORMED_SIGNER')
     }
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused) // nothing reached the chain
 
     // the contract enforces the same rule (raw call bypassing preflight)
     await expectContractError(
-      rawCommit(ctx.alice, lock, alice, bob, 10n, {signer: '0x1234', signature: '0x'}),
+      rawCommit(ctx.alice, lock, alice, bob, 10n, {
+        signer: '0x1234',
+        signature: '0x'
+      }),
       'MalformedSigner',
     )
   })
@@ -305,6 +385,7 @@ describe('commit authorization', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
     // well-formed 40-byte keyed blob, but the declared "verifier" (alice's
     // EOA address) was never activated by the owner. The signature must be
@@ -328,12 +409,19 @@ describe('commit authorization', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
 
     const auth = walletAuth(fixture, ctx.bob.address)
     const receipt = await confirmReceipt(
-      await bobClient.commit({lock, party: alice, counterparty: bob, auth}),
+      await bobClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth
+      }),
     )
+
     expect(receipt.commitments).toHaveLength(1)
     expect(receipt.commitments[0]?.sender.toLowerCase()).toBe(ctx.bob.address.toLowerCase())
     expect(receipt.commitments[0]?.signer.toLowerCase()).toBe(auth.signer.toLowerCase())
@@ -347,16 +435,24 @@ describe('commit authorization', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
 
     // SDK preflight: rejected before any transaction exists
     try {
-      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: walletAuth(fixture, ctx.alice.address)})
+      await aliceClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: walletAuth(fixture, ctx.alice.address)
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
     }
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused) // nothing reached the chain
 
     // the contract enforces the same rule (raw call bypassing preflight):
@@ -371,9 +467,13 @@ describe('commit authorization', () => {
   it('isQuipWallet and getWalletFactory read the factory surface', async () => {
     expect((await aliceClient.getWalletFactory()).toLowerCase()).toBe(fixture.walletFactory.toLowerCase())
     expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(false)
+
     await registerWallet(ctx, fixture, ctx.alice.address)
+
     expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(true)
+
     await deregisterWallet(ctx, fixture, ctx.alice.address)
+
     expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(false)
   })
 
@@ -386,12 +486,28 @@ describe('commit authorization', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 500n)])
 
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }))
     await ctx.warpTo(s.anchors.proposerClaim)
-    const hash = await charlieClient.claim({secret, party: alice, counterparty: bob})
+
+    const hash = await charlieClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    })
     const result = await confirmReceipt(hash)
+
     expect(result.claims).toHaveLength(1)
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
   })
@@ -405,7 +521,11 @@ describe('native commits and fee handling', () => {
   it('exact native amount plus fee succeeds and the fee accrues', async () => {
     // owner sets a non-zero fee; the SDK re-reads it before simulating
     const FEE = 12_345n
-    await ctx.publicClient.waitForTransactionReceipt({hash: await ownerClient.admin.setCommitmentFee(FEE)})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash: await ownerClient.admin.setCommitmentFee(FEE)
+    })
+
     expect(await aliceClient.getCommitmentFee()).toBe(FEE)
 
     const accruedBefore = await aliceClient.getAccruedFees()
@@ -413,14 +533,22 @@ describe('native commits and fee handling', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(777n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
 
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
     expect(await aliceClient.getAccruedFees()).toBe(accruedBefore + FEE)
 
     // reset the fee so later tests run with fee 0
-    await ctx.publicClient.waitForTransactionReceipt({hash: await ownerClient.admin.setCommitmentFee(0n)})
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash: await ownerClient.admin.setCommitmentFee(0n)
+    })
   })
 
   it('underpayment and overpayment both revert IncorrectNativeAmountReceived', async () => {
@@ -428,7 +556,9 @@ describe('native commits and fee handling', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(1000n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     const exact = totalNative(alice) + (await aliceClient.getCommitmentFee())
     // raw calls bypass the SDK's exact-value calculation on purpose
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, exact - 1n), 'IncorrectNativeAmountReceived')
@@ -437,10 +567,17 @@ describe('native commits and fee handling', () => {
 
   it('owner can withdraw accrued fees; non-owner cannot set the fee', async () => {
     await expectContractError(charlieClient.admin.setCommitmentFee(1n), 'OwnableUnauthorizedAccount')
+
     const accrued = await ownerClient.getAccruedFees()
     const target: Address = '0x00000000000000000000000000000000000fee01'
-    await ctx.publicClient.waitForTransactionReceipt({hash: await ownerClient.admin.withdrawFees(target)})
-    expect(await ctx.publicClient.getBalance({address: target})).toBe(accrued)
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash: await ownerClient.admin.withdrawFees(target)
+    })
+
+    expect(await ctx.publicClient.getBalance({
+      address: target
+    })).toBe(accrued)
     expect(await ownerClient.getAccruedFees()).toBe(0n)
   })
 
@@ -469,12 +606,20 @@ describe('approval planning', () => {
       committer: ctx.alice.address,
       terms: feeTerms,
     })
+
     expect(plan.satisfied).toBe(false)
-    expect(plan.items[0]).toMatchObject({kind: 'erc20', satisfied: false, requiredAllowance: 100n})
+    expect(plan.items[0]).toMatchObject({
+      kind: 'erc20',
+      satisfied: false,
+      requiredAllowance: 100n
+    })
 
     // approval succeeds (exact mode — the SDK never defaults to unlimited)
     const item = plan.items[0]
-    if (item === undefined) throw new Error('plan should have one item')
+
+    if (item === undefined)
+      throw new Error('plan should have one item')
+
     const approveHash = await submitApproval({
       publicClient: ctx.publicClient,
       walletClient: ctx.alice.walletClient,
@@ -482,13 +627,18 @@ describe('approval planning', () => {
       item,
       erc20Mode: 'exact',
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash: approveHash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash: approveHash
+    })
+
     const replanned = await planApprovals({
       publicClient: ctx.publicClient,
       omnibusAddress: fixture.omnibus,
       committer: ctx.alice.address,
       terms: feeTerms,
     })
+
     expect(replanned.satisfied).toBe(true)
 
     // commit with the STANDARD token pulls the correct balance into Omnibus
@@ -496,8 +646,15 @@ describe('approval planning', () => {
     const bob = s.bobTerms([nativeAsset(10n)])
     const omnibusBefore = await erc20Balance(fixture.erc20, fixture.omnibus)
     const aliceBefore = await erc20Balance(fixture.erc20, ctx.alice.address)
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
+
     expect(await erc20Balance(fixture.erc20, fixture.omnibus)).toBe(omnibusBefore + 5000n)
     expect(await erc20Balance(fixture.erc20, ctx.alice.address)).toBe(aliceBefore - 5000n)
   })
@@ -511,8 +668,12 @@ describe('approval planning', () => {
       committer: ctx.bob.address,
       terms,
     })
+
     expect(plan.items).toHaveLength(1)
-    expect(plan.items[0]).toMatchObject({kind: 'erc20', requiredAllowance: 100n})
+    expect(plan.items[0]).toMatchObject({
+      kind: 'erc20',
+      requiredAllowance: 100n
+    })
   })
 })
 
@@ -522,7 +683,9 @@ describe('approval planning', () => {
 
 describe('ERC-721 flows', () => {
   let nftCounter = 7000n
-  async function mintNft(actor: TestActor): Promise<bigint> {
+
+  async function mintNft(
+    actor: TestActor): Promise<bigint> {
     const tokenId = ++nftCounter
     const hash = await actor.walletClient.writeContract({
       address: fixture.erc721,
@@ -532,10 +695,15 @@ describe('ERC-721 flows', () => {
       chain: ctx.publicClient.chain ?? null,
       account: actor.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
+
     return tokenId
   }
-  async function ownerOf(tokenId: bigint): Promise<Address> {
+  async function ownerOf(
+    tokenId: bigint): Promise<Address> {
     return ctx.publicClient.readContract({
       address: fixture.erc721,
       abi: erc721MockAbi,
@@ -558,9 +726,14 @@ describe('ERC-721 flows', () => {
       committer: ctx.alice.address,
       terms: alice,
     })
+
     expect(before.satisfied).toBe(false)
+
     const item = before.items[0]
-    if (item === undefined) throw new Error('expected one approval item')
+
+    if (item === undefined)
+      throw new Error('expected one approval item')
+
     const approveHash = await submitApproval({
       publicClient: ctx.publicClient,
       walletClient: ctx.alice.walletClient,
@@ -568,27 +741,52 @@ describe('ERC-721 flows', () => {
       item,
       erc721Mode: 'token',
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash: approveHash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash: approveHash
+    })
+
     const after = await planApprovals({
       publicClient: ctx.publicClient,
       omnibusAddress: fixture.omnibus,
       committer: ctx.alice.address,
       terms: alice,
     })
-    expect(after.items[0]).toMatchObject({kind: 'erc721', tokenApproved: true, satisfied: true})
+
+    expect(after.items[0]).toMatchObject({
+      kind: 'erc721',
+      tokenApproved: true,
+      satisfied: true
+    })
 
     // commit escrows the NFT in Omnibus
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
+
     expect((await ownerOf(tokenId)).toLowerCase()).toBe(fixture.omnibus.toLowerCase())
 
     // taker commits, proposer claims: alice's NFT goes to BOB's recipient
     // (recipient receives the COUNTERPARTY's assets)
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }))
     await ctx.warpTo(s.anchors.proposerClaim)
-    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }),
     )
+
     expect((await ownerOf(tokenId)).toLowerCase()).toBe(BOB_RECIPIENT.toLowerCase())
   })
 
@@ -602,9 +800,14 @@ describe('ERC-721 flows', () => {
       committer: ctx.bob.address,
       terms,
     })
+
     expect(before.satisfied).toBe(false)
+
     const item = before.items[0]
-    if (item === undefined) throw new Error('expected one approval item')
+
+    if (item === undefined)
+      throw new Error('expected one approval item')
+
     const hash = await submitApproval({
       publicClient: ctx.publicClient,
       walletClient: ctx.bob.walletClient,
@@ -612,14 +815,23 @@ describe('ERC-721 flows', () => {
       item,
       erc721Mode: 'operator',
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
+
     const after = await planApprovals({
       publicClient: ctx.publicClient,
       omnibusAddress: fixture.omnibus,
       committer: ctx.bob.address,
       terms,
     })
-    expect(after.items[0]).toMatchObject({kind: 'erc721', operatorApproved: true, satisfied: true})
+
+    expect(after.items[0]).toMatchObject({
+      kind: 'erc721',
+      operatorApproved: true,
+      satisfied: true
+    })
   })
 })
 
@@ -628,7 +840,9 @@ describe('ERC-721 flows', () => {
 // ---------------------------------------------------------------------------
 
 describe('ERC-1155 flows', () => {
-  async function balance1155(account: Address, id: bigint): Promise<bigint> {
+  async function balance1155(
+    account: Address,
+    id: bigint): Promise<bigint> {
     return ctx.publicClient.readContract({
       address: fixture.erc1155,
       abi: erc1155MockAbi,
@@ -650,18 +864,41 @@ describe('ERC-1155 flows', () => {
       committer: ctx.alice.address,
       terms: alice,
     })
-    expect(plan.items[0]).toMatchObject({kind: 'erc1155', operatorApproved: true, satisfied: true})
+
+    expect(plan.items[0]).toMatchObject({
+      kind: 'erc1155',
+      operatorApproved: true,
+      satisfied: true
+    })
 
     const omnibusBefore = await balance1155(fixture.omnibus, 1n)
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
+
     expect(await balance1155(fixture.omnibus, 1n)).toBe(omnibusBefore + 250n)
 
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }))
     await ctx.warpTo(s.anchors.proposerClaim)
+
     const recipientBefore = await balance1155(BOB_RECIPIENT, 1n)
-    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
+
+    await confirmReceipt(await aliceClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }),
     )
     // alice's 1155 quantity lands with BOB's recipient (counterparty's assets rule)
     expect(await balance1155(BOB_RECIPIENT, 1n)).toBe(recipientBefore + 250n)
@@ -683,40 +920,76 @@ describe('same-chain happy path', () => {
 
     // proposer commit -> Free
     await ctx.warpTo(s.anchors.proposerCommit)
-    const commitA = await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}),
+
+    const commitA = await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
     expect(await aliceClient.getTermsHash(lock)).toBe(digestTermsCanonically(alice, bob))
     expect(await aliceClient.getPosted(lock, digestTerms(alice))).toBe(true)
 
     // taker MUST wait for the proposer's deadline (the window only opens there)
     await ctx.warpTo(s.anchors.takerCommit)
-    const commitB = await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}),
+
+    const commitB = await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
 
     // Commitment events decode back to the EXACT terms that were committed
     const fromA = commitA.commitments[0]
     const fromB = commitB.commitments[0]
-    if (fromA === undefined || fromB === undefined) throw new Error('missing Commitment events')
+
+    if (fromA === undefined || fromB === undefined)
+      throw new Error('missing Commitment events')
     expect(fromA.lock).toBe(lock)
     expect(fromA.sender.toLowerCase()).toBe(ctx.alice.address.toLowerCase())
     expect(fromA.signer.toLowerCase()).toBe(keyedAuth(ctx.alice.address).signer.toLowerCase()) // the full keyed blob
     expect(fromB.sender.toLowerCase()).toBe(ctx.bob.address.toLowerCase())
     expect(fromB.signer.toLowerCase()).toBe(keyedAuth(ctx.bob.address).signer.toLowerCase())
-    expect(fromA.party).toEqual({...alice, assets: alice.assets.map(a => ({...a}))})
-    expect(fromB.party).toEqual({...bob, assets: bob.assets.map(a => ({...a}))})
+    expect(fromA.party).toEqual({
+...alice,
+      assets: alice.assets.map(a => ({
+...a
+      }))
+    })
+    expect(fromB.party).toEqual({
+...bob,
+      assets: bob.assets.map(a => ({
+...a
+      }))
+    })
 
     // one claim settles BOTH legs
     await ctx.warpTo(s.anchors.proposerClaim)
-    const bobRecipientNativeBefore = await ctx.publicClient.getBalance({address: BOB_RECIPIENT})
+
+    const bobRecipientNativeBefore = await ctx.publicClient.getBalance({
+      address: BOB_RECIPIENT
+    })
     const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
-    const claim = await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}),
+    const claim = await confirmReceipt(await aliceClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
     // bob's tokens -> alice's recipient; alice's native -> bob's recipient
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
-    expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
+    expect(await ctx.publicClient.getBalance({
+      address: BOB_RECIPIENT
+    })).toBe(bobRecipientNativeBefore + NATIVE)
 
     // the Claim event reveals the ORIGINAL secret
     expect(claim.claims).toHaveLength(1)
@@ -740,6 +1013,7 @@ describe('keyed ERC-7913 commit authorization', () => {
       abi: omnibusAbi,
       functionName: 'COMMIT_DIGEST_TAG',
     })
+
     expect(onChainTag).toBe(COMMIT_DIGEST_TAG)
   })
 
@@ -749,6 +1023,7 @@ describe('keyed ERC-7913 commit authorization', () => {
       abi: omnibusAbi,
       functionName: 'DOMAIN_SEPARATOR',
     })
+
     expect(onChainSeparator).toBe(computeDomainSeparator(BigInt(CHAIN_ID), fixture.omnibus))
   })
 
@@ -773,20 +1048,27 @@ describe('keyed ERC-7913 commit authorization', () => {
       signer: keyedSigner,
       omnibusAddress: fixture.omnibus,
     })
+
     expect(await charlieClient.getCommitDigest(lock, alice, bob, keccak256(keyedSigner))).toBe(digest)
 
     // a DIFFERENT actor (charlie) submits and FUNDS the leg + fee; the
     // AcceptAll mock ignores the envelope, so '0x' suffices
     expect(signerAccount.address.toLowerCase()).not.toBe(ctx.charlie.address.toLowerCase())
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     const commitA = await confirmReceipt(
       await charlieClient.commit({
         lock,
         party: alice,
         counterparty: bob,
-        auth: {signer: keyedSigner, signature: '0x656e76656c6f7065'},
+        auth: {
+          signer: keyedSigner,
+          signature: '0x656e76656c6f7065'
+        },
       }),
     )
+
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Free)
     expect(commitA.commitments[0]?.signer.toLowerCase()).toBe(keyedSigner.toLowerCase())
     expect(commitA.commitments[0]?.sender.toLowerCase()).toBe(ctx.charlie.address.toLowerCase())
@@ -794,18 +1076,35 @@ describe('keyed ERC-7913 commit authorization', () => {
     // (b) the other side commits with its own keyed identity
     await ctx.warpTo(s.anchors.takerCommit)
     await confirmReceipt(
-      await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}),
+      await bobClient.commit({
+        lock,
+        party: bob,
+        counterparty: alice,
+        auth: keyedAuth(ctx.bob.address)
+      }),
     )
+
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Committed)
 
     // (c) the claim settles both legs — balance deltas prove it
     await ctx.warpTo(s.anchors.proposerClaim)
+
     const aliceRecipientTokensBefore = await erc20Balance(fixture.erc20, ALICE_RECIPIENT)
-    const bobRecipientNativeBefore = await ctx.publicClient.getBalance({address: BOB_RECIPIENT})
-    await confirmReceipt(await aliceClient.claim({secret, party: alice, counterparty: bob}))
+    const bobRecipientNativeBefore = await ctx.publicClient.getBalance({
+      address: BOB_RECIPIENT
+    })
+
+    await confirmReceipt(await aliceClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }))
+
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Spent)
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
-    expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
+    expect(await ctx.publicClient.getBalance({
+      address: BOB_RECIPIENT
+    })).toBe(bobRecipientNativeBefore + NATIVE)
   })
 
   it('a bare 20-byte address blob is rejected on-chain (MalformedSigner — the blob must EXCEED 20 bytes)', async () => {
@@ -815,8 +1114,12 @@ describe('keyed ERC-7913 commit authorization', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     // an address-length blob no longer routes anywhere — even for msg.sender
     await ctx.warpTo(s.anchors.proposerCommit)
+
     await expectContractError(
-      rawCommit(ctx.charlie, lock, alice, bob, 10n, {signer: ctx.charlie.address, signature: '0x'}),
+      rawCommit(ctx.charlie, lock, alice, bob, 10n, {
+        signer: ctx.charlie.address,
+        signature: '0x'
+      }),
       'MalformedSigner',
     )
   })
@@ -832,15 +1135,28 @@ describe('reclaim flows', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(100n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
 
     // SDK preflight rejects with the window error before any submission
     await ctx.warpTo(s.anchors.proposerClaim)
+
     try {
-      await aliceClient.reclaim({lock, party: alice, counterparty: bob})
+      await aliceClient.reclaim({
+        lock,
+        party: alice,
+        counterparty: bob
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('WINDOW_VIOLATED')
     }
     // the contract agrees (raw call bypassing preflight)
@@ -862,18 +1178,35 @@ describe('reclaim flows', () => {
     const NATIVE = 5_000n
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Free)
 
     await ctx.warpTo(s.anchors.proposerReclaim)
-    const reclaimBalanceBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
+
+    const reclaimBalanceBefore = await ctx.publicClient.getBalance({
+      address: ALICE_RECLAIM
+    })
     const result = await confirmReceipt(// reclaim is PERMISSIONLESS: charlie (unregistered) reclaims for alice's leg
-      await charlieClient.reclaim({lock, party: alice, counterparty: bob}),
+      await charlieClient.reclaim({
+        lock,
+        party: alice,
+        counterparty: bob
+      }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
     // assets go to the reclaimRecipient, NOT the committer
-    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(reclaimBalanceBefore + NATIVE)
+    expect(await ctx.publicClient.getBalance({
+      address: ALICE_RECLAIM
+    })).toBe(reclaimBalanceBefore + NATIVE)
     expect(result.reclaims).toHaveLength(1)
     expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
   })
@@ -885,22 +1218,43 @@ describe('reclaim flows', () => {
     const TOKENS = 4_444n
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, TOKENS)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }))
 
     // bob reclaims his own leg after HIS release; alice's local Committed
     // counterparty leg comes back in the same transaction
     await ctx.warpTo(s.anchors.takerReclaim)
-    const aliceReclaimBefore = await ctx.publicClient.getBalance({address: ALICE_RECLAIM})
+
+    const aliceReclaimBefore = await ctx.publicClient.getBalance({
+      address: ALICE_RECLAIM
+    })
     const bobReclaimBefore = await erc20Balance(fixture.erc20, BOB_RECLAIM)
-    const result = await confirmReceipt(await bobClient.reclaim({lock, party: bob, counterparty: alice}),
+    const result = await confirmReceipt(await bobClient.reclaim({
+      lock,
+      party: bob,
+      counterparty: alice
+    }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
     expect(result.reclaims).toHaveLength(2)
     expect(await erc20Balance(fixture.erc20, BOB_RECLAIM)).toBe(bobReclaimBefore + TOKENS)
-    expect(await ctx.publicClient.getBalance({address: ALICE_RECLAIM})).toBe(aliceReclaimBefore + NATIVE)
+    expect(await ctx.publicClient.getBalance({
+      address: ALICE_RECLAIM
+    })).toBe(aliceReclaimBefore + NATIVE)
   })
 
   it('double reclaim reverts InvalidLockAdvancement', async () => {
@@ -908,11 +1262,22 @@ describe('reclaim flows', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
     await ctx.warpTo(s.anchors.proposerReclaim)
-    await confirmReceipt(await aliceClient.reclaim({lock, party: alice, counterparty: bob}),
+    await confirmReceipt(await aliceClient.reclaim({
+      lock,
+      party: alice,
+      counterparty: bob
+    }),
     )
+
     await expectContractError(
       ctx.publicClient.simulateContract({
         address: fixture.omnibus,
@@ -936,12 +1301,21 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)], 999n) // wrong chain
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'ChainIdMismatch')
+
     try {
-      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      await aliceClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: keyedAuth(ctx.alice.address)
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('CHAIN_ID_MISMATCH')
     }
   })
@@ -951,6 +1325,7 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.takerCommit) // past the proposer window
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'WindowViolated')
   })
@@ -960,6 +1335,7 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit) // proposer window still open
     await expectContractError(rawCommit(ctx.bob, lock, bob, alice, 0n), 'WindowViolated')
   })
@@ -976,7 +1352,9 @@ describe('invalid operations', () => {
       claimDeadline: base + 2000n,
       reclaimRelease: base + 3000n,
     }
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'DisordedDeadlines')
   })
 
@@ -988,20 +1366,38 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
 
     // SDK preflight catches the duplicate with its precise code, before estimation
     try {
-      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      await aliceClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: keyedAuth(ctx.alice.address)
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('TERMS_ALREADY_POSTED')
     }
     // with the flag off, the same scenario surfaces through the gas-estimation
     // path as the decoded contract error
     await expectContractError(
-      aliceClient.commit({lock, party: alice, counterparty: bob, verifyOnChainState: false, auth: keyedAuth(ctx.alice.address)}),
+      aliceClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        verifyOnChainState: false,
+        auth: keyedAuth(ctx.alice.address)
+      }),
       'TermsAlreadyPosted',
     )
     // and the raw contract call agrees
@@ -1013,19 +1409,43 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
     // bob commits against MUTATED alice terms — canonical digest differs
-    const mutatedAlice: Terms = {...alice, recipient: BOB_RECIPIENT}
+    const mutatedAlice: Terms = {
+...alice,
+      recipient: BOB_RECIPIENT
+    }
+
     await ctx.warpTo(s.anchors.takerCommit)
+
     try {
-      await bobClient.commit({lock, party: bob, counterparty: mutatedAlice, auth: keyedAuth(ctx.bob.address)})
+      await bobClient.commit({
+        lock,
+        party: bob,
+        counterparty: mutatedAlice,
+        auth: keyedAuth(ctx.bob.address)
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('TERMS_NOT_ON_CHAIN')
     }
+
     await expectContractError(
-      bobClient.commit({lock, party: bob, counterparty: mutatedAlice, verifyOnChainState: false, auth: keyedAuth(ctx.bob.address)}),
+      bobClient.commit({
+        lock,
+        party: bob,
+        counterparty: mutatedAlice,
+        verifyOnChainState: false,
+        auth: keyedAuth(ctx.bob.address)
+      }),
       'TermsMismatch',
     )
     await expectContractError(rawCommit(ctx.bob, lock, bob, mutatedAlice, 0n), 'TermsMismatch')
@@ -1039,15 +1459,29 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerReclaim)
+
     try {
-      await aliceClient.reclaim({lock, party: alice, counterparty: bob})
+      await aliceClient.reclaim({
+        lock,
+        party: alice,
+        counterparty: bob
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
     }
+
     await expectContractError(
-      aliceClient.reclaim({lock, party: alice, counterparty: bob, verifyOnChainState: false}),
+      aliceClient.reclaim({
+        lock,
+        party: alice,
+        counterparty: bob,
+        verifyOnChainState: false
+      }),
       'TermsMismatch',
     )
   })
@@ -1058,13 +1492,25 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock: right.lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}),
+    await confirmReceipt(await aliceClient.commit({
+      lock: right.lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }),
     )
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock: right.lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}),
+    await confirmReceipt(await bobClient.commit({
+      lock: right.lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }),
     )
     await ctx.warpTo(s.anchors.proposerClaim)
+
     await expectContractError(
       ctx.publicClient.simulateContract({
         address: fixture.omnibus,
@@ -1082,19 +1528,33 @@ describe('invalid operations', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
 
     // lock is Free (only one side committed): the SDK preflight names the
     // cause; the raw contract call reverts InvalidLockState
     await ctx.warpTo(s.anchors.proposerClaim)
+
     try {
-      await aliceClient.claim({secret, party: alice, counterparty: bob})
+      await aliceClient.claim({
+        secret,
+        party: alice,
+        counterparty: bob
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
       expect((error as QuipSwapError).message).toContain('counterparty has not committed')
     }
+
     await expectContractError(
       ctx.publicClient.simulateContract({
         address: fixture.omnibus,
@@ -1112,28 +1572,54 @@ describe('invalid operations', () => {
     const s2 = await freshSchedule()
     const alice2 = s2.aliceTerms([nativeAsset(10n)])
     const bob2 = s2.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s2.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock: second.lock, party: alice2, counterparty: bob2, auth: keyedAuth(ctx.alice.address)}),
+    await confirmReceipt(await aliceClient.commit({
+      lock: second.lock,
+      party: alice2,
+      counterparty: bob2,
+      auth: keyedAuth(ctx.alice.address)
+    }),
     )
     await ctx.warpTo(s2.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock: second.lock, party: bob2, counterparty: alice2, auth: keyedAuth(ctx.bob.address)}),
+    await confirmReceipt(await bobClient.commit({
+      lock: second.lock,
+      party: bob2,
+      counterparty: alice2,
+      auth: keyedAuth(ctx.bob.address)
+    }),
     )
     await ctx.warpTo(s2.anchors.proposerClaim)
-    await confirmReceipt(await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2}),
+    await confirmReceipt(await aliceClient.claim({
+      secret: second.secret,
+      party: alice2,
+      counterparty: bob2
+    }),
     )
     // double claim (lock now Spent): SDK preflight catches it with its
     // precise code instead of a generic CONTRACT_REVERT...
     try {
-      await aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2})
+      await aliceClient.claim({
+        secret: second.secret,
+        party: alice2,
+        counterparty: bob2
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
       expect((error as QuipSwapError).message).toContain('already claimed or reclaimed')
     }
     // ...with the flag off, the same scenario surfaces through the
     // gas-estimation path as the decoded contract error
     await expectContractError(
-      aliceClient.claim({secret: second.secret, party: alice2, counterparty: bob2, verifyOnChainState: false}),
+      aliceClient.claim({
+        secret: second.secret,
+        party: alice2,
+        counterparty: bob2,
+        verifyOnChainState: false
+      }),
       'InvalidLockState',
     )
     await expectContractError(
@@ -1164,7 +1650,10 @@ describe('fee-on-transfer token', () => {
       chain: ctx.publicClient.chain ?? null,
       account: ctx.bob.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
     hash = await ctx.bob.walletClient.writeContract({
       address: fixture.feeERC20,
       abi: erc20MockAbi,
@@ -1173,7 +1662,9 @@ describe('fee-on-transfer token', () => {
       chain: ctx.publicClient.chain ?? null,
       account: ctx.bob.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
 
     const {lock} = nextSecret()
     const s = await freshSchedule()
@@ -1188,7 +1679,9 @@ describe('fee-on-transfer token', () => {
       chain: ctx.publicClient.chain ?? null,
       account: ctx.alice.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
 
     const plan = await planApprovals({
       publicClient: ctx.publicClient,
@@ -1199,7 +1692,10 @@ describe('fee-on-transfer token', () => {
     // alice approved exactly 100n earlier in the approvals suite; top up to satisfied
     if (!plan.satisfied) {
       const item = plan.items[0]
-      if (item === undefined) throw new Error('expected one approval item')
+
+      if (item === undefined)
+        throw new Error('expected one approval item')
+
       const approveHash = await submitApproval({
         publicClient: ctx.publicClient,
         walletClient: ctx.alice.walletClient,
@@ -1207,12 +1703,16 @@ describe('fee-on-transfer token', () => {
         item,
         erc20Mode: 'exact',
       })
-      await ctx.publicClient.waitForTransactionReceipt({hash: approveHash})
+
+      await ctx.publicClient.waitForTransactionReceipt({
+        hash: approveHash
+      })
     }
 
     // the approval plan is satisfied, yet the 1%-skim makes the escrow
     // receive 9900 != 10000 — the contract's balance reconciliation reverts
     await ctx.warpTo(s.anchors.proposerCommit)
+
     await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 0n), 'UnexpectedAmountReceived')
   })
 })
@@ -1226,7 +1726,11 @@ describe('gas and balance preflight', () => {
     // a fixed key that is NOT one of anvil's funded dev accounts → 0 balance;
     // commit is permissionless, so the balance preflight is the failing check
     const pauper = privateKeyToAccount(`0x${'77'.repeat(32)}`)
-    expect(await ctx.publicClient.getBalance({address: pauper.address})).toBe(0n)
+
+    expect(await ctx.publicClient.getBalance({
+      address: pauper.address
+    })).toBe(0n)
+
     const pauperClient = createOmnibusClient({
       address: fixture.omnibus,
       publicClient: ctx.publicClient,
@@ -1242,17 +1746,27 @@ describe('gas and balance preflight', () => {
     const NATIVE = 10n ** 18n
     const alice = s.aliceTerms([nativeAsset(NATIVE)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
 
     // the stage-1 value preflight rejects BEFORE gas estimation — were the
     // order reversed, anvil's insufficient-funds estimation error would
     // mislabel this GAS_ESTIMATION_FAILED
     try {
-      await pauperClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(pauper.address)})
+      await pauperClient.commit({
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: keyedAuth(pauper.address)
+      })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
-      expect((error as QuipSwapError).details).toMatchObject({balance: 0n, required: NATIVE})
+      expect((error as QuipSwapError).details).toMatchObject({
+        balance: 0n,
+        required: NATIVE
+      })
     }
     // nothing reached the chain
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused)
@@ -1264,10 +1778,21 @@ describe('gas and balance preflight', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(100n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 100n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
-    await confirmReceipt(await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)}))
+    await confirmReceipt(await aliceClient.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(ctx.alice.address)
+    }))
     await ctx.warpTo(s.anchors.takerCommit)
-    await confirmReceipt(await bobClient.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(ctx.bob.address)}))
+    await confirmReceipt(await bobClient.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(ctx.bob.address)
+    }))
     await ctx.warpTo(s.anchors.proposerClaim)
 
     const pauper = privateKeyToAccount(`0x${'78'.repeat(32)}`) // 0 balance, never funded
@@ -1285,17 +1810,29 @@ describe('gas and balance preflight', () => {
     // the SEND for gas funds and submitWrite maps viem's
     // InsufficientFundsError to BALANCE_TOO_LOW (not CONTRACT_REVERT)
     try {
-      await pauperClient.claim({secret, party: alice, counterparty: bob})
+      await pauperClient.claim({
+        secret,
+        party: alice,
+        counterparty: bob
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
     }
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Committed)
 
     // a funded (still permissionless, unregistered) claimer settles the swap
     // end-to-end through the same prepare+write flow
-    await confirmReceipt(await charlieClient.claim({secret, party: alice, counterparty: bob}),
+    await confirmReceipt(await charlieClient.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }),
     )
+
     expect(await aliceClient.getLockState(lock)).toBe(LockState.Spent)
   })
 
@@ -1304,14 +1841,32 @@ describe('gas and balance preflight', () => {
     const s = await freshSchedule()
     const alice = s.aliceTerms([nativeAsset(10n)])
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+
     await ctx.warpTo(s.anchors.proposerCommit)
+
     const hash = await aliceClient.commit(
-      {lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)},
-      {gas: 400_000n, maxFeePerGas: 5_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n},
+      {
+        lock,
+        party: alice,
+        counterparty: bob,
+        auth: keyedAuth(ctx.alice.address)
+      },
+      {
+        gas: 400_000n,
+        maxFeePerGas: 5_000_000_000n,
+        maxPriorityFeePerGas: 1_000_000_000n
+      },
     )
-    const receipt = await ctx.publicClient.waitForTransactionReceipt({hash})
+    const receipt = await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
+
     expect(receipt.status).toBe('success')
-    const tx = await ctx.publicClient.getTransaction({hash})
+
+    const tx = await ctx.publicClient.getTransaction({
+      hash
+    })
+
     expect(tx.gas).toBe(400_000n) // verbatim — no multiplier applied
     expect(tx.maxFeePerGas).toBe(5_000_000_000n)
     expect(tx.maxPriorityFeePerGas).toBe(1_000_000_000n)

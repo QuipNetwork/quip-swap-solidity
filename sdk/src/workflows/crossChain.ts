@@ -125,9 +125,11 @@ export interface CrossChainSchedule {
  * })
  * ```
  */
-export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs): CrossChainSchedule {
+export function validateCrossChainSchedule(
+  args: ValidateCrossChainScheduleArgs): CrossChainSchedule {
   const {proposerTerms, takerTerms} = args
   const minimumBufferSeconds = args.minimumBufferSeconds ?? DEFAULT_CROSS_CHAIN_BUFFER_SECONDS
+
   validateTerms(proposerTerms)
   validateTerms(takerTerms)
   validateTermPairing(proposerTerms, takerTerms)
@@ -152,7 +154,9 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
     throw new QuipSwapError({
       code: 'CHAIN_ID_MISMATCH',
       message: `Cross-chain schedule requires the two legs on different chains; both are on ${proposerTerms.chainId}`,
-      details: {chainId: proposerTerms.chainId},
+      details: {
+        chainId: proposerTerms.chainId
+      },
     })
   }
 
@@ -230,6 +234,7 @@ export async function verifyRemoteCommitment(
   ])
   const termsHashMatches =
     onChainTermsHash.toLowerCase() === digestTermsCanonically(proposerTerms, takerTerms).toLowerCase()
+
   return {
     // cross-chain local commits move Unused -> Committed directly
     committed: state === LockState.Committed && proposerPosted && termsHashMatches,
@@ -249,6 +254,7 @@ export async function verifyRemoteCommitment(
  * @throws QuipSwapError `INVALID_HEX32` for malformed secrets.
  * @see Omnibus._generateLock
  */
-export function deriveSharedLock(secret: Hex32): Hex32 {
+export function deriveSharedLock(
+  secret: Hex32): Hex32 {
   return generateLock(secret)
 }

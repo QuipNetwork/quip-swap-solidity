@@ -81,9 +81,13 @@ export interface TxOptions {
  * @param opts - The caller's transaction options (only `gasMultiplier` is read).
  * @returns The clamped multiplier that {@link applyGasMultiplier} will use.
  */
-export function resolveGasMultiplier(opts: TxOptions = {}): number {
+export function resolveGasMultiplier(
+  opts: TxOptions = {}): number {
   const requested = opts.gasMultiplier ?? DEFAULT_GAS_MULTIPLIER
-  if (!Number.isFinite(requested)) return MIN_GAS_MULTIPLIER
+
+  if (!Number.isFinite(requested))
+    return MIN_GAS_MULTIPLIER
+
   return Math.min(MAX_GAS_MULTIPLIER, Math.max(MIN_GAS_MULTIPLIER, requested))
 }
 
@@ -103,8 +107,11 @@ export function resolveGasMultiplier(opts: TxOptions = {}): number {
  * @param opts - Transaction options; see {@link resolveGasMultiplier}.
  * @returns The buffered gas limit, `floor(estimate * multiplier)`.
  */
-export function applyGasMultiplier(estimate: bigint, opts: TxOptions = {}): bigint {
+export function applyGasMultiplier(
+  estimate: bigint,
+  opts: TxOptions = {}): bigint {
   const scaled = Math.round(resolveGasMultiplier(opts) * 1000)
+
   return (estimate * BigInt(scaled)) / 1000n
 }
 
@@ -125,11 +132,18 @@ export interface FeeOverrides {
  * @param opts - Transaction options.
  * @returns An object with only the explicitly-set fee fields present.
  */
-export function buildFeeOverrides(opts: TxOptions = {}): FeeOverrides {
+export function buildFeeOverrides(
+  opts: TxOptions = {}): FeeOverrides {
   return {
-    ...(opts.maxFeePerGas !== undefined ? {maxFeePerGas: opts.maxFeePerGas} : {}),
-    ...(opts.maxPriorityFeePerGas !== undefined ? {maxPriorityFeePerGas: opts.maxPriorityFeePerGas} : {}),
-    ...(opts.gasPrice !== undefined ? {gasPrice: opts.gasPrice} : {}),
+    ...(opts.maxFeePerGas !== undefined ? {
+      maxFeePerGas: opts.maxFeePerGas
+    } : {}),
+    ...(opts.maxPriorityFeePerGas !== undefined ? {
+      maxPriorityFeePerGas: opts.maxPriorityFeePerGas
+    } : {}),
+    ...(opts.gasPrice !== undefined ? {
+      gasPrice: opts.gasPrice
+    } : {}),
   }
 }
 
@@ -171,7 +185,8 @@ export interface PreparedTx {
 }
 
 /** True when the error chain contains a decodable contract revert. */
-function isContractRevert(error: unknown): boolean {
+function isContractRevert(
+  error: unknown): boolean {
   return error instanceof BaseError && error.walk(e => e instanceof ContractFunctionRevertedError) !== null
 }
 
@@ -195,13 +210,21 @@ export async function preflightBalanceCheck(
   account: Address,
   required: bigint,
 ): Promise<void> {
-  if (required <= 0n) return
-  const balance = await publicClient.getBalance({address: account})
+  if (required <= 0n)
+    return
+
+  const balance = await publicClient.getBalance({
+    address: account
+  })
+
   if (balance < required) {
     throw new QuipSwapError({
       code: 'BALANCE_TOO_LOW',
       message: `Sender ${account} holds ${balance} wei but the call requires ${required} wei of value`,
-      details: {required, balance},
+      details: {
+        required,
+        balance
+      },
     })
   }
 }
@@ -239,7 +262,8 @@ export async function preflightBalanceCheck(
  * await walletClient.writeContract({...contractParams, gas: prepared.gas, ...prepared.fees})
  * ```
  */
-export async function prepareTx(args: PrepareTxArgs): Promise<PreparedTx> {
+export async function prepareTx(
+  args: PrepareTxArgs): Promise<PreparedTx> {
   const {publicClient, contractParams, totalValue, opts = {}} = args
 
   // Stage 1: balance — BEFORE estimation, bare totalValue only. This is
@@ -257,10 +281,12 @@ export async function prepareTx(args: PrepareTxArgs): Promise<PreparedTx> {
   // estimate (contract reverts surface here, decoded — this is the
   // pre-submission revert check) and buffer.
   let gas: bigint
+
   if (opts.gas !== undefined) {
     gas = opts.gas
   } else {
     let estimate: bigint
+
     try {
       estimate = await publicClient.estimateContractGas({
         address: contractParams.address,
@@ -268,12 +294,15 @@ export async function prepareTx(args: PrepareTxArgs): Promise<PreparedTx> {
         functionName: contractParams.functionName,
         args: (contractParams.args ?? []) as unknown[],
         account: contractParams.account,
-        ...(contractParams.value !== undefined ? {value: contractParams.value} : {}),
+        ...(contractParams.value !== undefined ? {
+          value: contractParams.value
+        } : {}),
         // dynamic functionName + optional payable value cannot satisfy viem's
         // conditional parameter types statically; the runtime shape is
         // exercised by the mocked-client and Anvil integration suites
       } as unknown as Parameters<PublicClient['estimateContractGas']>[0])
-    } catch (error) {
+    }
+    catch (error) {
       if (isContractRevert(error)) {
         // the call would revert on-chain — same signal simulateContract gave
         throw wrapContractError(error, `Estimating gas for ${contractParams.functionName}`)
@@ -286,8 +315,14 @@ export async function prepareTx(args: PrepareTxArgs): Promise<PreparedTx> {
         cause: error,
       })
     }
+
     gas = applyGasMultiplier(estimate, opts)
   }
 
-  return {gas, fees: buildFeeOverrides(opts), ...(opts.nonce !== undefined ? {nonce: opts.nonce} : {})}
+  return {
+    gas,
+    fees: buildFeeOverrides(opts), ...(opts.nonce !== undefined ? {
+      nonce: opts.nonce
+    } : {})
+  }
 }

@@ -22,13 +22,17 @@ import type {OmnibusDeployment} from '../../src/deployments.js'
 
 const OVERRIDE_ADDR: Address = getAddress('0x00000000000000000000000000000000000ab1ce')
 
-function codeOf(fn: () => unknown): string {
+function codeOf(
+  fn: () => unknown): string {
   try {
     fn()
-  } catch (error) {
-    if (error instanceof QuipSwapError) return error.code
+  }
+  catch (error) {
+    if (error instanceof QuipSwapError)
+      return error.code
     throw error
   }
+
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
@@ -42,7 +46,10 @@ describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
   it('ships the canonical address with Base Sepolia in the verified registry', () => {
     expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
     expect(knownDeployments.size).toBe(1)
-    expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
+    expect(resolveDeployment(BASE_SEPOLIA)).toEqual({
+      chainId: BASE_SEPOLIA,
+      omnibusAddress: SHIPPED_OMNIBUS
+    })
   })
 
   it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
@@ -52,21 +59,34 @@ describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
   })
 
   it('resolves a valid override', () => {
-    const override: OmnibusDeployment = {chainId: 8453n, omnibusAddress: OVERRIDE_ADDR}
+    const override: OmnibusDeployment = {
+      chainId: 8453n,
+      omnibusAddress: OVERRIDE_ADDR
+    }
+
     expect(resolveDeployment(8453n, override)).toEqual(override)
   })
 
   it('rejects an override with a zero/invalid address', () => {
-    expect(codeOf(() => resolveDeployment(8453n, {chainId: 8453n, omnibusAddress: `0x${'00'.repeat(20)}`}))).toBe(
+    expect(codeOf(() => resolveDeployment(8453n, {
+      chainId: 8453n,
+      omnibusAddress: `0x${'00'.repeat(20)}`
+    }))).toBe(
       'UNKNOWN_DEPLOYMENT',
     )
     expect(
-      codeOf(() => resolveDeployment(8453n, {chainId: 8453n, omnibusAddress: 'not-an-address' as Address})),
+      codeOf(() => resolveDeployment(8453n, {
+        chainId: 8453n,
+        omnibusAddress: 'not-an-address' as Address
+      })),
     ).toBe('UNKNOWN_DEPLOYMENT')
   })
 
   it('rejects an override whose chainId does not match the requested chain', () => {
-    expect(codeOf(() => resolveDeployment(8453n, {chainId: 42161n, omnibusAddress: OVERRIDE_ADDR}))).toBe(
+    expect(codeOf(() => resolveDeployment(8453n, {
+      chainId: 42161n,
+      omnibusAddress: OVERRIDE_ADDR
+    }))).toBe(
       'UNKNOWN_DEPLOYMENT',
     )
   })
@@ -77,19 +97,35 @@ describe('resolveDeployment — mechanism (local verified set, no real chain ena
   const CANONICAL: Address = getAddress('0x000000000000000000000000000000000000c3c3')
   const VERIFIED = new Set<bigint>([31337n])
   const localRegistry: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
-    [...VERIFIED].map(chainId => [chainId, {chainId, omnibusAddress: CANONICAL}]),
+    [...VERIFIED].map(chainId => [chainId, {
+      chainId,
+      omnibusAddress: CANONICAL
+    }]),
   )
 
   /** resolveDeployment's logic, but against the local registry (proves enabling a chain works). */
-  function resolveLocal(chainId: bigint, override?: OmnibusDeployment): OmnibusDeployment {
-    if (override !== undefined) return resolveDeployment(chainId, override)
+  function resolveLocal(
+    chainId: bigint,
+    override?: OmnibusDeployment): OmnibusDeployment {
+    if (override !== undefined)
+      return resolveDeployment(chainId, override)
+
     const known = localRegistry.get(chainId)
-    if (known === undefined) throw new QuipSwapError({code: 'UNKNOWN_DEPLOYMENT', message: `no deployment for ${chainId}`})
+
+    if (known === undefined)
+      throw new QuipSwapError({
+        code: 'UNKNOWN_DEPLOYMENT',
+        message: `no deployment for ${chainId}`
+      })
+
     return known
   }
 
   it('returns the canonical address for a verified chain', () => {
-    expect(resolveLocal(31337n)).toEqual({chainId: 31337n, omnibusAddress: CANONICAL})
+    expect(resolveLocal(31337n)).toEqual({
+      chainId: 31337n,
+      omnibusAddress: CANONICAL
+    })
   })
 
   it('throws for an unlisted chain', () => {
@@ -97,7 +133,11 @@ describe('resolveDeployment — mechanism (local verified set, no real chain ena
   })
 
   it('an override wins even for a chain that is in the verified set', () => {
-    const override: OmnibusDeployment = {chainId: 31337n, omnibusAddress: OVERRIDE_ADDR}
+    const override: OmnibusDeployment = {
+      chainId: 31337n,
+      omnibusAddress: OVERRIDE_ADDR
+    }
+
     expect(resolveLocal(31337n, override)).toEqual(override)
   })
 })

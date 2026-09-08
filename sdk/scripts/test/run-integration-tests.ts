@@ -31,14 +31,19 @@ const vitestExtraArgs = process.argv.slice(2)
 
 // 1. fresh artifacts — fail loudly if forge is unavailable or the build breaks
 console.log('[integration] forge build ...')
-const build = spawnSync('forge', ['build', '--root', repoRoot], {cwd: repoRoot, stdio: 'inherit'})
+const build = spawnSync('forge', ['build', '--root', repoRoot], {
+  cwd: repoRoot,
+  stdio: 'inherit'
+})
 if (build.status !== 0) {
   console.error('[integration] forge build failed; aborting')
   process.exit(build.status ?? 1)
 }
 
 // 2. one Anvil node on a free port
-const anvil = await startAnvil({chainId: 31_337})
+const anvil = await startAnvil({
+  chainId: 31_337
+})
 console.log(`[integration] anvil ready at ${anvil.rpcUrl} (chain ${anvil.chainId})`)
 
 let exitCode = 1
@@ -49,7 +54,9 @@ try {
     .filter(file => file.endsWith(".test.ts"))
     .sort()
     .map(file => join("test", "integration", file))
+
   exitCode = 0
+
   for (const file of files) {
     const result = spawnSync("bunx", ["vitest", "run", file, ...vitestExtraArgs], {
       cwd: sdkRoot,
@@ -60,8 +67,10 @@ try {
         QUIP_SDK_CHAIN_ID: String(anvil.chainId),
       },
     })
+
     if (result.status !== 0) {
       exitCode = result.status ?? 1
+
       break
     }
   }

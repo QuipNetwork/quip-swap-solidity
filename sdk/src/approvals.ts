@@ -25,20 +25,38 @@ const erc20Abi = [
     name: 'allowance',
     stateMutability: 'view',
     inputs: [
-      {name: 'owner', type: 'address'},
-      {name: 'spender', type: 'address'},
+      {
+        name: 'owner',
+        type: 'address'
+      },
+      {
+        name: 'spender',
+        type: 'address'
+      },
     ],
-    outputs: [{name: '', type: 'uint256'}],
+    outputs: [{
+      name: '',
+      type: 'uint256'
+    }],
   },
   {
     type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'spender', type: 'address'},
-      {name: 'amount', type: 'uint256'},
+      {
+        name: 'spender',
+        type: 'address'
+      },
+      {
+        name: 'amount',
+        type: 'uint256'
+      },
     ],
-    outputs: [{name: '', type: 'bool'}],
+    outputs: [{
+      name: '',
+      type: 'bool'
+    }],
   },
 ] as const
 
@@ -48,26 +66,47 @@ const erc721Abi = [
     type: 'function',
     name: 'getApproved',
     stateMutability: 'view',
-    inputs: [{name: 'tokenId', type: 'uint256'}],
-    outputs: [{name: '', type: 'address'}],
+    inputs: [{
+      name: 'tokenId',
+      type: 'uint256'
+    }],
+    outputs: [{
+      name: '',
+      type: 'address'
+    }],
   },
   {
     type: 'function',
     name: 'isApprovedForAll',
     stateMutability: 'view',
     inputs: [
-      {name: 'owner', type: 'address'},
-      {name: 'operator', type: 'address'},
+      {
+        name: 'owner',
+        type: 'address'
+      },
+      {
+        name: 'operator',
+        type: 'address'
+      },
     ],
-    outputs: [{name: '', type: 'bool'}],
+    outputs: [{
+      name: '',
+      type: 'bool'
+    }],
   },
   {
     type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'tokenId', type: 'uint256'},
+      {
+        name: 'to',
+        type: 'address'
+      },
+      {
+        name: 'tokenId',
+        type: 'uint256'
+      },
     ],
     outputs: [],
   },
@@ -76,8 +115,14 @@ const erc721Abi = [
     name: 'setApprovalForAll',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
+      {
+        name: 'operator',
+        type: 'address'
+      },
+      {
+        name: 'approved',
+        type: 'bool'
+      },
     ],
     outputs: [],
   },
@@ -90,18 +135,33 @@ const erc1155Abi = [
     name: 'isApprovedForAll',
     stateMutability: 'view',
     inputs: [
-      {name: 'account', type: 'address'},
-      {name: 'operator', type: 'address'},
+      {
+        name: 'account',
+        type: 'address'
+      },
+      {
+        name: 'operator',
+        type: 'address'
+      },
     ],
-    outputs: [{name: '', type: 'bool'}],
+    outputs: [{
+      name: '',
+      type: 'bool'
+    }],
   },
   {
     type: 'function',
     name: 'setApprovalForAll',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
+      {
+        name: 'operator',
+        type: 'address'
+      },
+      {
+        name: 'approved',
+        type: 'bool'
+      },
     ],
     outputs: [],
   },
@@ -204,30 +264,47 @@ export interface PlanApprovalsArgs {
  * }
  * ```
  */
-export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPlan> {
+export async function planApprovals(
+  args: PlanApprovalsArgs): Promise<ApprovalPlan> {
   const {publicClient, omnibusAddress, committer, terms} = args
 
   // aggregate ERC-20 requirements per token: the contract pulls each asset
   // entry separately, so the allowance must cover the SUM
-  const erc20Required = new Map<string, {token: Address; amount: bigint}>()
+  const erc20Required = new Map<string, {
+    token: Address;
+    amount: bigint
+  }>()
   // one ERC-721 check per (token, id); one ERC-1155 check per token
-  const erc721Items: {token: Address; tokenId: bigint}[] = []
+  const erc721Items: {
+    token: Address;
+    tokenId: bigint
+  }[] = []
   const erc1155Tokens = new Map<string, Address>()
 
   for (const asset of terms.assets) {
-    if (asset.assetType === AssetType.Native) continue
+    if (asset.assetType === AssetType.Native)
+      continue
     if (asset.assetType === AssetType.ERC20) {
       const key = asset.target.toLowerCase()
       const existing = erc20Required.get(key)
-      erc20Required.set(key, {token: asset.target, amount: (existing?.amount ?? 0n) + asset.amount})
-    } else if (asset.assetType === AssetType.ERC721) {
-      erc721Items.push({token: asset.target, tokenId: asset.id})
-    } else {
-      erc1155Tokens.set(asset.target.toLowerCase(), asset.target)
-    }
+
+      erc20Required.set(key, {
+        token: asset.target,
+        amount: (existing?.amount ?? 0n) + asset.amount
+      })
+    } else
+      if (asset.assetType === AssetType.ERC721) {
+        erc721Items.push({
+          token: asset.target,
+          tokenId: asset.id
+        })
+      } else {
+        erc1155Tokens.set(asset.target.toLowerCase(), asset.target)
+      }
   }
 
   const items: ApprovalItem[] = []
+
   try {
     for (const {token, amount} of erc20Required.values()) {
       const currentAllowance = await publicClient.readContract({
@@ -236,6 +313,7 @@ export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPl
         functionName: 'allowance',
         args: [committer, omnibusAddress],
       })
+
       items.push({
         kind: 'erc20',
         token,
@@ -246,7 +324,12 @@ export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPl
     }
     for (const {token, tokenId} of erc721Items) {
       const [approvedAddress, operatorApproved] = await Promise.all([
-        publicClient.readContract({address: token, abi: erc721Abi, functionName: 'getApproved', args: [tokenId]}),
+        publicClient.readContract({
+          address: token,
+          abi: erc721Abi,
+          functionName: 'getApproved',
+          args: [tokenId]
+        }),
         publicClient.readContract({
           address: token,
           abi: erc721Abi,
@@ -255,6 +338,7 @@ export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPl
         }),
       ])
       const tokenApproved = approvedAddress.toLowerCase() === omnibusAddress.toLowerCase()
+
       items.push({
         kind: 'erc721',
         token,
@@ -271,13 +355,25 @@ export async function planApprovals(args: PlanApprovalsArgs): Promise<ApprovalPl
         functionName: 'isApprovedForAll',
         args: [committer, omnibusAddress],
       })
-      items.push({kind: 'erc1155', token, operatorApproved, satisfied: operatorApproved})
+
+      items.push({
+        kind: 'erc1155',
+        token,
+        operatorApproved,
+        satisfied: operatorApproved
+      })
     }
-  } catch (error) {
+  }
+  catch (error) {
     throw wrapContractError(error, 'Reading token approvals')
   }
 
-  return {committer, omnibusAddress, items, satisfied: items.every(item => item.satisfied)}
+  return {
+    committer,
+    omnibusAddress,
+    items,
+    satisfied: items.every(item => item.satisfied)
+  }
 }
 
 /**
@@ -337,9 +433,11 @@ const MAX_UINT256 = (1n << 256n) - 1n
  * await publicClient.waitForTransactionReceipt({hash})
  * ```
  */
-export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${string}`> {
+export async function submitApproval(
+  args: SubmitApprovalArgs): Promise<`0x${string}`> {
   const {publicClient, walletClient, omnibusAddress, item} = args
   const account = walletClient.account
+
   if (account === undefined) {
     throw new QuipSwapError({
       code: 'MISSING_ACCOUNT',
@@ -356,6 +454,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
             "ERC-20 approvals require an explicit erc20Mode ('exact' or 'unlimited'); the SDK never defaults to unlimited",
         })
       }
+
       const amount = args.erc20Mode === 'exact' ? item.requiredAllowance : MAX_UINT256
       const {request} = await publicClient.simulateContract({
         address: item.token,
@@ -364,6 +463,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
         args: [omnibusAddress, amount],
         account,
       })
+
       return await walletClient.writeContract(request)
     }
 
@@ -376,8 +476,10 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
           args: [omnibusAddress, item.tokenId],
           account,
         })
+
         return await walletClient.writeContract(request)
       }
+
       const {request} = await publicClient.simulateContract({
         address: item.token,
         abi: erc721Abi,
@@ -385,6 +487,7 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
         args: [omnibusAddress, true],
         account,
       })
+
       return await walletClient.writeContract(request)
     }
 
@@ -396,9 +499,12 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
       args: [omnibusAddress, true],
       account,
     })
+
     return await walletClient.writeContract(request)
-  } catch (error) {
-    if (error instanceof QuipSwapError) throw error
+  }
+  catch (error) {
+    if (error instanceof QuipSwapError)
+      throw error
     throw wrapContractError(error, `Approving ${item.kind} ${item.token}`)
   }
 }

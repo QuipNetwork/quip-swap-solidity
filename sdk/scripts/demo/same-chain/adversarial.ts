@@ -24,38 +24,48 @@ import {
 import type {SameChainSnapshot} from './success.js'
 
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
-const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
+const fixed = (
+  value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
 const burnAbi = [{
   type: 'function',
   name: 'burn',
   stateMutability: 'nonpayable',
-  inputs: [{name: 'from', type: 'address'}, {name: 'amount', type: 'uint256'}],
+  inputs: [{
+    name: 'from',
+    type: 'address'
+  }, {
+    name: 'amount',
+    type: 'uint256'
+  }],
   outputs: [],
 }] as const
 const maliciousERC20Abi = [{
   type: 'function',
   name: 'setBehavior',
   stateMutability: 'nonpayable',
-  inputs: [{name: 'value', type: 'uint8'}],
+  inputs: [{
+    name: 'value',
+    type: 'uint8'
+  }],
   outputs: [],
 }] as const
 
 export interface SameChainNegativeRecord {
   readonly scenario:
-    | 'counterparty-first'
-    | 'repeated-party-commit'
-    | 'mismatched-terms'
-    | 'nonzero-progression'
-    | 'wrong-authorization-caller'
-    | 'wrong-signature'
-    | 'replayed-action-nonce'
-    | 'commit-at-deadline'
-    | 'claim-from-party-committed'
-    | 'wrong-settlement-secret'
-    | 'claim-at-deadline'
-    | 'reclaim-before-both-releases'
-    | 'claim-after-terminal'
-    | 'reclaim-after-terminal'
+  | 'counterparty-first'
+  | 'repeated-party-commit'
+  | 'mismatched-terms'
+  | 'nonzero-progression'
+  | 'wrong-authorization-caller'
+  | 'wrong-signature'
+  | 'replayed-action-nonce'
+  | 'commit-at-deadline'
+  | 'claim-from-party-committed'
+  | 'wrong-settlement-secret'
+  | 'claim-at-deadline'
+  | 'reclaim-before-both-releases'
+  | 'claim-after-terminal'
+  | 'reclaim-after-terminal'
   readonly errorName: string
   readonly reverted: true
   readonly stateAndCustodyUnchanged: true
@@ -114,8 +124,16 @@ export interface SameChainPermanentAssetFailureTrace {
 
 interface BoundarySnapshot {
   readonly protocol: SameChainSnapshot
-  readonly aliceIdentity: {readonly active: boolean; readonly activeKeyVersion: string; readonly recoveryKeyVersion: string}
-  readonly bobIdentity: {readonly active: boolean; readonly activeKeyVersion: string; readonly recoveryKeyVersion: string}
+  readonly aliceIdentity: {
+    readonly active: boolean;
+    readonly activeKeyVersion: string;
+    readonly recoveryKeyVersion: string
+  }
+  readonly bobIdentity: {
+    readonly active: boolean;
+    readonly activeKeyVersion: string;
+    readonly recoveryKeyVersion: string
+  }
 }
 
 export async function runSameChainAdversarial(
@@ -123,25 +141,34 @@ export async function runSameChainAdversarial(
   deployment: Omit<DemoChainDeployment, 'funding'>,
   terms: ProtocolTerms,
   lock: Hex32,
-  load: (solFile: string, contract: string) => FoundryArtifact,
-  onProgress?: (message: string) => void,
+  load: (
+    solFile: string,
+    contract: string) => FoundryArtifact,
+  onProgress?: (
+    message: string) => void,
 ): Promise<SameChainAdversarialTrace> {
   onProgress?.('Running isolated same-chain invalid-action controls')
+
   const negativeControls = await runNegativeControls(chain, deployment, terms, lock)
 
   onProgress?.('Demonstrating exact one-sided reclaim')
+
   const partyRecovery = await runPartyRecovery(chain, deployment, terms, lock)
 
   onProgress?.('Demonstrating resumable two-sided reclaim after one side fails')
+
   const {recovery: bothRecovery, failure} = await runBothRecovery(chain, deployment, terms, lock)
 
   onProgress?.('Demonstrating isolation of a permanently reverting counterparty asset')
+
   const permanentAssetFailure = await runPermanentAssetFailure(chain, deployment, terms, load)
 
   const final = await boundarySnapshot(chain, deployment, terms, lock)
+
   if (final.protocol.state !== 'Unused' || final.aliceIdentity.active || final.bobIdentity.active) {
     throw new Error('isolated adversarial branches changed the primary demo state')
   }
+
   return {
     negativeControls,
     recoveries: [partyRecovery, bothRecovery],
@@ -158,6 +185,7 @@ async function runNegativeControls(
 ): Promise<SameChainNegativeRecord[]> {
   const root = await chain.testClient.snapshot()
   const records: SameChainNegativeRecord[] = []
+
   try {
     records.push(await rejected('counterparty-first', chain, deployment, terms, lock, () =>
       submitSameChainLazyCommit({
@@ -174,6 +202,7 @@ async function runNegativeControls(
     ))
 
     const deadlineRoot = await chain.testClient.snapshot()
+
     await chain.warpTo(terms.partySide.commitmentDeadline)
     records.push(await rejected('commit-at-deadline', chain, deployment, terms, lock, () =>
       submitSameChainLazyCommit({
@@ -189,7 +218,9 @@ async function runNegativeControls(
         expiry: terms.partySide.claimDeadline,
       })
     ))
-    await chain.testClient.revert({id: deadlineRoot})
+    await chain.testClient.revert({
+      id: deadlineRoot
+    })
 
     await submitSameChainLazyCommit({
       chain,
@@ -217,8 +248,12 @@ async function runNegativeControls(
 
     const mismatchedTerms: ProtocolTerms = {
       ...terms,
-      counterpartySide: {...terms.counterpartySide, sideNonce: fixed(99)},
+      counterpartySide: {
+...terms.counterpartySide,
+        sideNonce: fixed(99)
+      },
     }
+
     records.push(await rejected('mismatched-terms', chain, deployment, terms, lock, () =>
       submitSameChainLazyCommit({
         chain,
@@ -302,13 +337,17 @@ async function runNegativeControls(
     ))
 
     const claimDeadlineRoot = await chain.testClient.snapshot()
+
     await chain.warpTo(terms.partySide.claimDeadline)
     records.push(await rejected('claim-at-deadline', chain, deployment, terms, lock, () =>
       submitClaim(chain, deployment, terms, lock, SAME_CHAIN_SETTLEMENT_SECRET)
     ))
-    await chain.testClient.revert({id: claimDeadlineRoot})
+    await chain.testClient.revert({
+      id: claimDeadlineRoot
+    })
 
     await submitClaim(chain, deployment, terms, lock, SAME_CHAIN_SETTLEMENT_SECRET)
+
     records.push(await rejected('claim-after-terminal', chain, deployment, terms, lock, () =>
       submitClaim(chain, deployment, terms, lock, SAME_CHAIN_SETTLEMENT_SECRET)
     ))
@@ -318,9 +357,12 @@ async function runNegativeControls(
     records.push(await rejected('reclaim-after-terminal', chain, deployment, terms, lock, () =>
       submitReclaimBoth(chain, deployment, terms, lock)
     ))
+
     return records
   } finally {
-    await chain.testClient.revert({id: root})
+    await chain.testClient.revert({
+      id: root
+    })
   }
 }
 
@@ -331,6 +373,7 @@ async function runPartyRecovery(
   lock: Hex32,
 ): Promise<SameChainRecoveryTrace> {
   const root = await chain.testClient.snapshot()
+
   try {
     await submitSameChainLazyCommit({
       chain,
@@ -343,23 +386,31 @@ async function runPartyRecovery(
       activeSeed: fixed(101),
       recoverySeed: fixed(102),
     })
+
     const before = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+
     await chain.warpTo(terms.partySide.reclaimRelease)
+
     const claimant = createProtocolClient({
       addresses: deployment.addresses,
       publicClient: chain.publicClient,
       walletClient: chain.charlie.walletClient,
     })
+
     await requireSuccess(chain, await claimant.selectSameChainReclaim(terms, lock))
+
     const hash = await claimant.executeSameChainSettlement(
       terms,
       lock,
       true,
       BigInt(terms.partySide.assets.length),
     )
+
     await requireSuccess(chain, hash)
+
     const after = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
     const party = after.assets[0]
+
     if (
       before.state !== 'PartyCommitted'
       || after.state !== 'Reclaimed'
@@ -373,6 +424,7 @@ async function runPartyRecovery(
     ) {
       throw new Error('party-only reclaim did not restore the signed party asset')
     }
+
     return {
       outcome: 'party-only-reclaim',
       caller: chain.charlie.address,
@@ -386,7 +438,9 @@ async function runPartyRecovery(
       completedSides: 1,
     }
   } finally {
-    await chain.testClient.revert({id: root})
+    await chain.testClient.revert({
+      id: root
+    })
   }
 }
 
@@ -395,8 +449,12 @@ async function runBothRecovery(
   deployment: Omit<DemoChainDeployment, 'funding'>,
   terms: ProtocolTerms,
   lock: Hex32,
-): Promise<{readonly recovery: SameChainRecoveryTrace; readonly failure: SameChainResumableFailureTrace}> {
+): Promise<{
+  readonly recovery: SameChainRecoveryTrace;
+  readonly failure: SameChainResumableFailureTrace
+}> {
   const root = await chain.testClient.snapshot()
+
   try {
     await submitSameChainLazyCommit({
       chain,
@@ -420,9 +478,11 @@ async function runBothRecovery(
       activeSeed: fixed(103),
       recoverySeed: fixed(104),
     })
+
     const release = terms.partySide.reclaimRelease > terms.counterpartySide.reclaimRelease
       ? terms.partySide.reclaimRelease
       : terms.counterpartySide.reclaimRelease
+
     await chain.warpTo(release)
 
     const bobAsset = terms.counterpartySide.assets[0]!
@@ -436,17 +496,24 @@ async function runBothRecovery(
       chain: chain.publicClient.chain ?? null,
       account: chain.deployer.account,
     })
+
     await requireSuccess(chain, hash)
 
     const beforeFailure = await boundarySnapshot(chain, deployment, terms, lock)
     let failure: unknown
+
     try {
       await submitReclaimBoth(chain, deployment, terms, lock)
-    } catch (error) {
+    }
+    catch (error) {
       failure = error
     }
-    if (failure === undefined) throw new Error('HTLC-deficit reclaim unexpectedly succeeded')
+
+    if (failure === undefined)
+      throw new Error('HTLC-deficit reclaim unexpectedly succeeded')
+
     const afterFailure = await boundarySnapshot(chain, deployment, terms, lock)
+
     if (
       afterFailure.protocol.state !== 'ReclaimPending'
       || afterFailure.protocol.expectedSides !== 3
@@ -457,6 +524,7 @@ async function runBothRecovery(
     ) {
       throw new Error('failed counterparty reclaim did not preserve selected outcome and party progress')
     }
+
     const resumableFailure: SameChainResumableFailureTrace = {
       trigger: 'counterparty-htlc-deficit',
       errorName: errorLabel(failure),
@@ -476,10 +544,13 @@ async function runBothRecovery(
       chain: chain.publicClient.chain ?? null,
       account: chain.deployer.account,
     })
+
     await requireSuccess(chain, hash)
+
     const before = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
     const reclaimHash = await executeCounterpartySettlement(chain, deployment, terms, lock)
     const after = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+
     if (
       before.state !== 'ReclaimPending'
       || after.state !== 'Reclaimed'
@@ -495,6 +566,7 @@ async function runBothRecovery(
     ) {
       throw new Error('two-sided reclaim did not restore both signed assets')
     }
+
     return {
       failure: resumableFailure,
       recovery: {
@@ -511,7 +583,9 @@ async function runBothRecovery(
       },
     }
   } finally {
-    await chain.testClient.revert({id: root})
+    await chain.testClient.revert({
+      id: root
+    })
   }
 }
 
@@ -532,7 +606,9 @@ async function executeCounterpartySettlement(
     false,
     BigInt(terms.counterpartySide.assets.length),
   )
+
   await requireSuccess(chain, hash)
+
   return hash
 }
 
@@ -540,9 +616,12 @@ async function runPermanentAssetFailure(
   chain: ChainContext,
   deployment: Omit<DemoChainDeployment, 'funding'>,
   baseTerms: ProtocolTerms,
-  load: (solFile: string, contract: string) => FoundryArtifact,
+  load: (
+    solFile: string,
+    contract: string) => FoundryArtifact,
 ): Promise<SameChainPermanentAssetFailureTrace> {
   const root = await chain.testClient.snapshot()
+
   try {
     const malicious = await chain.deploy(load('MaliciousERC20Mock.sol', 'MaliciousERC20Mock'))
     const now = await chain.now()
@@ -556,7 +635,10 @@ async function runPermanentAssetFailure(
       },
       counterpartySide: {
         ...baseTerms.counterpartySide,
-        assets: [{...baseTerms.counterpartySide.assets[0]!, target: malicious}],
+        assets: [{
+...baseTerms.counterpartySide.assets[0]!,
+          target: malicious
+        }],
         commitmentDeadline: now + 200n,
         claimDeadline: now + 1_100n,
         reclaimRelease: now + 1_300n,
@@ -572,7 +654,9 @@ async function runPermanentAssetFailure(
       account: chain.deployer.account,
       chain: chain.publicClient.chain ?? null,
     })
+
     await requireSuccess(chain, hash)
+
     hash = await chain.deployer.walletClient.writeContract({
       address: malicious,
       abi: erc20MockAbi,
@@ -581,7 +665,9 @@ async function runPermanentAssetFailure(
       account: chain.deployer.account,
       chain: chain.publicClient.chain ?? null,
     })
+
     await requireSuccess(chain, hash)
+
     hash = await chain.bob.walletClient.writeContract({
       address: malicious,
       abi: erc20MockAbi,
@@ -590,6 +676,7 @@ async function runPermanentAssetFailure(
       account: chain.bob.account,
       chain: chain.publicClient.chain ?? null,
     })
+
     await requireSuccess(chain, hash)
 
     await submitSameChainLazyCommit({
@@ -614,17 +701,21 @@ async function runPermanentAssetFailure(
       activeSeed: fixed(113),
       recoverySeed: fixed(114),
     })
+
     await chain.warpTo(terms.partySide.reclaimRelease)
+
     const client = createProtocolClient({
       addresses: deployment.addresses,
       publicClient: chain.publicClient,
       walletClient: chain.charlie.walletClient,
     })
+
     await requireSuccess(chain, await client.selectSameChainReclaim(terms, lock))
     await requireSuccess(
       chain,
       await client.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
     )
+
     hash = await chain.deployer.walletClient.writeContract({
       address: malicious,
       abi: maliciousERC20Abi,
@@ -633,6 +724,7 @@ async function runPermanentAssetFailure(
       account: chain.deployer.account,
       chain: chain.publicClient.chain ?? null,
     })
+
     await requireSuccess(chain, hash)
 
     const beforeFailures = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
@@ -640,11 +732,14 @@ async function runPermanentAssetFailure(
     const afterFirst = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
     const second = await submitRevertingCounterpartyExecution(chain, deployment, terms, lock)
     const afterSecond = await readSameChainSnapshot(chain, deployment.addresses.sameChainWrapper, terms, lock)
+
     if (stable(beforeFailures) !== stable(afterFirst) || stable(beforeFailures) !== stable(afterSecond)) {
       throw new Error('permanently reverting asset changed settlement progress or custody')
     }
+
     const party = afterSecond.assets[0]
     const counterparty = afterSecond.assets[1]
+
     if (
       afterSecond.state !== 'ReclaimPending'
       || afterSecond.expectedSides !== 3
@@ -659,6 +754,7 @@ async function runPermanentAssetFailure(
     ) {
       throw new Error('permanent asset failure escaped its HTLC or changed the selected reclaim')
     }
+
     return {
       failureMode: 'token-reverts',
       failingSide: 'counterparty',
@@ -677,7 +773,9 @@ async function runPermanentAssetFailure(
       failingBalance: counterparty.htlcBalance,
     }
   } finally {
-    await chain.testClient.revert({id: root})
+    await chain.testClient.revert({
+      id: root
+    })
   }
 }
 
@@ -696,8 +794,13 @@ async function submitRevertingCounterpartyExecution(
     chain: chain.publicClient.chain ?? null,
     gas: 1_000_000n,
   })
-  const receipt = await chain.publicClient.waitForTransactionReceipt({hash})
-  if (receipt.status !== 'reverted') throw new Error('permanently reverting asset execution unexpectedly succeeded')
+  const receipt = await chain.publicClient.waitForTransactionReceipt({
+    hash
+  })
+
+  if (receipt.status !== 'reverted')
+    throw new Error('permanently reverting asset execution unexpectedly succeeded')
+
   return hash
 }
 
@@ -711,14 +814,22 @@ async function rejected(
 ): Promise<SameChainNegativeRecord> {
   const before = await boundarySnapshot(chain, deployment, terms, lock)
   let failure: unknown
+
   try {
     await attempt()
-  } catch (error) {
+  }
+  catch (error) {
     failure = error
   }
-  if (failure === undefined) throw new Error(`negative control unexpectedly succeeded: ${scenario}`)
+
+  if (failure === undefined)
+    throw new Error(`negative control unexpectedly succeeded: ${scenario}`)
+
   const after = await boundarySnapshot(chain, deployment, terms, lock)
-  if (stable(before) !== stable(after)) throw new Error(`negative control changed state or custody: ${scenario}`)
+
+  if (stable(before) !== stable(after))
+    throw new Error(`negative control changed state or custody: ${scenario}`)
+
   return {
     scenario,
     errorName: errorLabel(failure),
@@ -750,6 +861,7 @@ async function boundarySnapshot(
       args: [terms.counterpartySide.principal],
     }),
   ])
+
   return {
     protocol,
     aliceIdentity: {
@@ -792,6 +904,7 @@ async function simulateWrongAuthorizationCaller(
     actionNonce,
     expiry,
   }
+
   await chain.publicClient.simulateContract({
     address: deployment.addresses.sameChainWrapper,
     abi: sameChainWrapperAbi,
@@ -813,6 +926,7 @@ async function submitClaim(
     publicClient: chain.publicClient,
     walletClient: chain.charlie.walletClient,
   })
+
   await requireSuccess(chain, await client.selectSameChainClaim(terms, lock, secret))
 }
 
@@ -827,31 +941,43 @@ async function submitReclaimBoth(
     publicClient: chain.publicClient,
     walletClient: chain.charlie.walletClient,
   })
+
   await requireSuccess(chain, await client.selectSameChainReclaim(terms, lock))
   await requireSuccess(
     chain,
     await client.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
   )
+
   const hash = await client.executeSameChainSettlement(
     terms,
     lock,
     false,
     BigInt(terms.counterpartySide.assets.length),
   )
+
   await requireSuccess(chain, hash)
+
   return hash
 }
 
-async function requireSuccess(chain: ChainContext, hash: Hash): Promise<void> {
-  const receipt = await chain.publicClient.waitForTransactionReceipt({hash})
-  if (receipt.status !== 'success') throw new Error(`transaction reverted: ${hash}`)
+async function requireSuccess(
+  chain: ChainContext,
+  hash: Hash): Promise<void> {
+  const receipt = await chain.publicClient.waitForTransactionReceipt({
+    hash
+  })
+
+  if (receipt.status !== 'success')
+    throw new Error(`transaction reverted: ${hash}`)
 }
 
-function errorLabel(error: unknown): string {
+function errorLabel(
+  error: unknown): string {
   return extractContractErrorName(error)
     ?? (error instanceof Error && error.message.includes('reverted') ? 'TransactionReverted' : 'Rejected')
 }
 
-function stable(value: unknown): string {
+function stable(
+  value: unknown): string {
   return JSON.stringify(value)
 }

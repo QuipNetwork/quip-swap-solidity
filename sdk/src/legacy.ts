@@ -151,4 +151,3 @@ export type {
 // generated
 export {omnibusAbi} from './generated/omnibusAbi.js'
 
-

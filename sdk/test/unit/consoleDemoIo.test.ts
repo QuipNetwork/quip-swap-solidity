@@ -8,7 +8,11 @@ describe('console demo child-process output', () => {
       'bootstrap-local',
       '',
     )
-    expect(envelope).toMatchObject({command: 'bootstrap-local', ok: true})
+
+    expect(envelope).toMatchObject({
+      command: 'bootstrap-local',
+      ok: true
+    })
   })
 
   it('reports a command-specific error when no JSON envelope exists', () => {

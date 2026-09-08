@@ -17,6 +17,7 @@ describe('prototype deployment vectors', () => {
   it('predicts one distinct chain-independent address per component', () => {
     const first = predictPrototypeAddresses(DEPLOYER)
     const second = predictPrototypeAddresses(DEPLOYER)
+
     expect(second).toEqual(first)
     expect(new Set(prototypeComponents.map(component => first[component])).size).toBe(prototypeComponents.length)
     expect(first).toEqual({
@@ -36,6 +37,7 @@ describe('prototype deployment vectors', () => {
       trustedVerifier: VERIFIER,
       finalClaimDelay: 1800n,
     })
+
     expect(manifest.version).toBe(PROTOTYPE_DEPLOYMENT_VERSION)
     expect(manifest.createX).toBe(CANONICAL_CREATEX)
     expect(manifest.vectorHash).toBe(
@@ -49,10 +51,21 @@ describe('prototype deployment vectors', () => {
         manifest.finalClaimDelay,
       ),
     )
-    const otherChain = buildPrototypeDeploymentManifest({...manifest, chainId: 11_155_420n})
+
+    const otherChain = buildPrototypeDeploymentManifest({
+...manifest,
+      chainId: 11_155_420n
+    })
+
     expect(otherChain.addresses).toEqual(manifest.addresses)
     expect(otherChain.vectorHash).not.toBe(manifest.vectorHash)
-    expect(buildPrototypeDeploymentManifest({...manifest, finalClaimDelay: 1801n}).vectorHash).not.toBe(manifest.vectorHash)
-    expect(() => buildPrototypeDeploymentManifest({...manifest, finalClaimDelay: 0n})).toThrow('positive')
+    expect(buildPrototypeDeploymentManifest({
+...manifest,
+      finalClaimDelay: 1801n
+    }).vectorHash).not.toBe(manifest.vectorHash)
+    expect(() => buildPrototypeDeploymentManifest({
+...manifest,
+      finalClaimDelay: 0n
+    })).toThrow('positive')
   })
 })

@@ -56,12 +56,19 @@ export interface TimeWindow {
  * enforceWithin(0n, 1000n, 1000n) // throws WINDOW_VIOLATED (upper exclusive)
  * ```
  */
-export function enforceWithin(lower: bigint, upper: bigint, timestamp: bigint): void {
+export function enforceWithin(
+  lower: bigint,
+  upper: bigint,
+  timestamp: bigint): void {
   if (lower >= upper) {
     throw new QuipSwapError({
       code: 'INVALID_RANGE',
       message: `Degenerate window: lower (${lower}) must be strictly less than upper (${upper}) (contract: InvalidRange)`,
-      details: {lower, upper, timestamp},
+      details: {
+        lower,
+        upper,
+        timestamp
+      },
     })
   }
   if (lower > timestamp || upper <= timestamp) {
@@ -70,7 +77,11 @@ export function enforceWithin(lower: bigint, upper: bigint, timestamp: bigint): 
       message:
         `Timestamp ${timestamp} is outside the half-open window [${lower}, ${upper}) ` +
         '(contract: WindowViolated; the upper bound is exclusive)',
-      details: {lower, upper, timestamp},
+      details: {
+        lower,
+        upper,
+        timestamp
+      },
     })
   }
 }
@@ -83,7 +94,9 @@ export function enforceWithin(lower: bigint, upper: bigint, timestamp: bigint): 
  * @returns `true` iff `window.lower <= timestamp < window.upper` and the
  *   window is non-degenerate.
  */
-export function isWithinWindow(window: TimeWindow, timestamp: bigint): boolean {
+export function isWithinWindow(
+  window: TimeWindow,
+  timestamp: bigint): boolean {
   return window.lower < window.upper && window.lower <= timestamp && timestamp < window.upper
 }
 
@@ -98,8 +111,12 @@ export function isWithinWindow(window: TimeWindow, timestamp: bigint): boolean {
  * @returns The half-open commit window for the proposer.
  * @see Omnibus.commit
  */
-export function proposerCommitWindow(proposer: Terms): TimeWindow {
-  return {lower: 0n, upper: proposer.commitmentDeadline}
+export function proposerCommitWindow(
+  proposer: Terms): TimeWindow {
+  return {
+    lower: 0n,
+    upper: proposer.commitmentDeadline
+  }
 }
 
 /**
@@ -117,8 +134,13 @@ export function proposerCommitWindow(proposer: Terms): TimeWindow {
  * @returns The half-open commit window for the taker.
  * @see Omnibus.commit
  */
-export function takerCommitWindow(taker: Terms, proposer: Terms): TimeWindow {
-  return {lower: proposer.commitmentDeadline, upper: taker.commitmentDeadline}
+export function takerCommitWindow(
+  taker: Terms,
+  proposer: Terms): TimeWindow {
+  return {
+    lower: proposer.commitmentDeadline,
+    upper: taker.commitmentDeadline
+  }
 }
 
 /**
@@ -133,8 +155,13 @@ export function takerCommitWindow(taker: Terms, proposer: Terms): TimeWindow {
  * @returns The half-open claim window for the proposer (secret holder).
  * @see Omnibus.claim
  */
-export function proposerClaimWindow(proposer: Terms, taker: Terms): TimeWindow {
-  return {lower: taker.commitmentDeadline, upper: proposer.claimDeadline}
+export function proposerClaimWindow(
+  proposer: Terms,
+  taker: Terms): TimeWindow {
+  return {
+    lower: taker.commitmentDeadline,
+    upper: proposer.claimDeadline
+  }
 }
 
 /**
@@ -151,8 +178,12 @@ export function proposerClaimWindow(proposer: Terms, taker: Terms): TimeWindow {
  * @returns The half-open claim window for the taker.
  * @see Omnibus.claim
  */
-export function takerClaimWindow(proposer: Terms): TimeWindow {
-  return {lower: proposer.claimDeadline, upper: proposer.reclaimRelease}
+export function takerClaimWindow(
+  proposer: Terms): TimeWindow {
+  return {
+    lower: proposer.claimDeadline,
+    upper: proposer.reclaimRelease
+  }
 }
 
 /**
@@ -166,8 +197,12 @@ export function takerClaimWindow(proposer: Terms): TimeWindow {
  * @returns The half-open reclaim window (upper bound `MAX_UINT256`).
  * @see Omnibus.reclaim
  */
-export function reclaimWindow(leg: Terms): TimeWindow {
-  return {lower: leg.reclaimRelease, upper: MAX_UINT256}
+export function reclaimWindow(
+  leg: Terms): TimeWindow {
+  return {
+    lower: leg.reclaimRelease,
+    upper: MAX_UINT256
+  }
 }
 
 /**
@@ -191,7 +226,10 @@ export function reclaimWindow(leg: Terms): TimeWindow {
  * validateCommitWindow(myTerms, theirTerms, block.timestamp)
  * ```
  */
-export function validateCommitWindow(party: Terms, counterparty: Terms, currentTimestamp: bigint): void {
+export function validateCommitWindow(
+  party: Terms,
+  counterparty: Terms,
+  currentTimestamp: bigint): void {
   if (proposedBy(party, counterparty) === 'party') {
     enforceWithin(0n, party.commitmentDeadline, currentTimestamp)
   } else {
@@ -214,7 +252,10 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
  *   {@link enforceWithin}.
  * @see Omnibus.claim
  */
-export function validateClaimWindow(party: Terms, counterparty: Terms, currentTimestamp: bigint): void {
+export function validateClaimWindow(
+  party: Terms,
+  counterparty: Terms,
+  currentTimestamp: bigint): void {
   if (proposedBy(party, counterparty) === 'party') {
     enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, currentTimestamp)
   } else {
@@ -232,6 +273,8 @@ export function validateClaimWindow(party: Terms, counterparty: Terms, currentTi
  * @throws QuipSwapError `WINDOW_VIOLATED` when the release has not elapsed.
  * @see Omnibus.reclaim
  */
-export function validateReclaimWindow(party: Terms, currentTimestamp: bigint): void {
+export function validateReclaimWindow(
+  party: Terms,
+  currentTimestamp: bigint): void {
   enforceWithin(party.reclaimRelease, MAX_UINT256, currentTimestamp)
 }

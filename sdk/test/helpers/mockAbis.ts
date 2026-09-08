@@ -14,8 +14,14 @@ export const erc20MockAbi = [
     name: 'mint',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'amount', type: 'uint256'},
+      {
+        name: 'to',
+        type: 'address'
+      },
+      {
+        name: 'amount',
+        type: 'uint256'
+      },
     ],
     outputs: [],
   },
@@ -23,28 +29,52 @@ export const erc20MockAbi = [
     type: 'function',
     name: 'balanceOf',
     stateMutability: 'view',
-    inputs: [{name: 'account', type: 'address'}],
-    outputs: [{name: '', type: 'uint256'}],
+    inputs: [{
+      name: 'account',
+      type: 'address'
+    }],
+    outputs: [{
+      name: '',
+      type: 'uint256'
+    }],
   },
   {
     type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'spender', type: 'address'},
-      {name: 'amount', type: 'uint256'},
+      {
+        name: 'spender',
+        type: 'address'
+      },
+      {
+        name: 'amount',
+        type: 'uint256'
+      },
     ],
-    outputs: [{name: '', type: 'bool'}],
+    outputs: [{
+      name: '',
+      type: 'bool'
+    }],
   },
   {
     type: 'function',
     name: 'allowance',
     stateMutability: 'view',
     inputs: [
-      {name: 'owner', type: 'address'},
-      {name: 'spender', type: 'address'},
+      {
+        name: 'owner',
+        type: 'address'
+      },
+      {
+        name: 'spender',
+        type: 'address'
+      },
     ],
-    outputs: [{name: '', type: 'uint256'}],
+    outputs: [{
+      name: '',
+      type: 'uint256'
+    }],
   },
 ] as const
 
@@ -55,8 +85,14 @@ export const walletFactoryMockAbi = [
     name: 'setWallet',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'wallet', type: 'address'},
-      {name: 'vaultId', type: 'bytes32'},
+      {
+        name: 'wallet',
+        type: 'address'
+      },
+      {
+        name: 'vaultId',
+        type: 'bytes32'
+      },
     ],
     outputs: [],
   },
@@ -64,8 +100,14 @@ export const walletFactoryMockAbi = [
     type: 'function',
     name: 'vaultIdOf',
     stateMutability: 'view',
-    inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
+    inputs: [{
+      name: 'wallet',
+      type: 'address'
+    }],
+    outputs: [{
+      name: 'vaultId',
+      type: 'bytes32'
+    }],
   },
 ] as const
 
@@ -76,8 +118,14 @@ export const erc721MockAbi = [
     name: 'mint',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'tokenId', type: 'uint256'},
+      {
+        name: 'to',
+        type: 'address'
+      },
+      {
+        name: 'tokenId',
+        type: 'uint256'
+      },
     ],
     outputs: [],
   },
@@ -85,16 +133,28 @@ export const erc721MockAbi = [
     type: 'function',
     name: 'ownerOf',
     stateMutability: 'view',
-    inputs: [{name: 'tokenId', type: 'uint256'}],
-    outputs: [{name: '', type: 'address'}],
+    inputs: [{
+      name: 'tokenId',
+      type: 'uint256'
+    }],
+    outputs: [{
+      name: '',
+      type: 'address'
+    }],
   },
   {
     type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'tokenId', type: 'uint256'},
+      {
+        name: 'to',
+        type: 'address'
+      },
+      {
+        name: 'tokenId',
+        type: 'uint256'
+      },
     ],
     outputs: [],
   },
@@ -103,8 +163,14 @@ export const erc721MockAbi = [
     name: 'setApprovalForAll',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
+      {
+        name: 'operator',
+        type: 'address'
+      },
+      {
+        name: 'approved',
+        type: 'bool'
+      },
     ],
     outputs: [],
   },
@@ -117,10 +183,22 @@ export const erc1155MockAbi = [
     name: 'mint',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'to', type: 'address'},
-      {name: 'id', type: 'uint256'},
-      {name: 'amount', type: 'uint256'},
-      {name: 'data', type: 'bytes'},
+      {
+        name: 'to',
+        type: 'address'
+      },
+      {
+        name: 'id',
+        type: 'uint256'
+      },
+      {
+        name: 'amount',
+        type: 'uint256'
+      },
+      {
+        name: 'data',
+        type: 'bytes'
+      },
     ],
     outputs: [],
   },
@@ -129,18 +207,33 @@ export const erc1155MockAbi = [
     name: 'balanceOf',
     stateMutability: 'view',
     inputs: [
-      {name: 'account', type: 'address'},
-      {name: 'id', type: 'uint256'},
+      {
+        name: 'account',
+        type: 'address'
+      },
+      {
+        name: 'id',
+        type: 'uint256'
+      },
     ],
-    outputs: [{name: '', type: 'uint256'}],
+    outputs: [{
+      name: '',
+      type: 'uint256'
+    }],
   },
   {
     type: 'function',
     name: 'setApprovalForAll',
     stateMutability: 'nonpayable',
     inputs: [
-      {name: 'operator', type: 'address'},
-      {name: 'approved', type: 'bool'},
+      {
+        name: 'operator',
+        type: 'address'
+      },
+      {
+        name: 'approved',
+        type: 'bool'
+      },
     ],
     outputs: [],
   },

@@ -63,10 +63,18 @@ export const COMMIT_DIGEST_TAG: Hex32 = keccak256(toBytes('QUIP:Omnibus:commit')
  * Mirrors `Omnibus.DOMAIN_SEPARATOR` (baked at construction on-chain):
  * `keccak256(abi.encode(COMMIT_DIGEST_TAG, chainId, omnibusAddress))`.
  */
-export function computeDomainSeparator(chainId: bigint, omnibusAddress: Address): Hex32 {
+export function computeDomainSeparator(
+  chainId: bigint,
+  omnibusAddress: Address): Hex32 {
   return keccak256(
     encodeAbiParameters(
-      [{type: 'bytes32'}, {type: 'uint256'}, {type: 'address'}],
+      [{
+        type: 'bytes32'
+      }, {
+        type: 'uint256'
+      }, {
+        type: 'address'
+      }],
       [COMMIT_DIGEST_TAG, chainId, omnibusAddress],
     ),
   )
@@ -85,16 +93,24 @@ export function computeDomainSeparator(chainId: bigint, omnibusAddress: Address)
  * @throws QuipSwapError `MALFORMED_SIGNER` when `verifier` is not an address
  *   or `key` is empty.
  */
-export function buildKeyedSigner(verifier: Address, key: Hex): Hex {
+export function buildKeyedSigner(
+  verifier: Address,
+  key: Hex): Hex {
   if (!isAddress(verifier)) {
-    throw new QuipSwapError({code: 'MALFORMED_SIGNER', message: `verifier must be an address; received ${verifier}`})
+    throw new QuipSwapError({
+      code: 'MALFORMED_SIGNER',
+      message: `verifier must be an address; received ${verifier}`
+    })
   }
-  if (!isHex(key, {strict: true}) || size(key) === 0) {
+  if (!isHex(key, {
+    strict: true
+  }) || size(key) === 0) {
     throw new QuipSwapError({
       code: 'MALFORMED_SIGNER',
       message: 'key must be non-empty hex; the signer blob must exceed 20 bytes',
     })
   }
+
   return concatHex([verifier, key])
 }
 
@@ -106,8 +122,11 @@ export function buildKeyedSigner(verifier: Address, key: Hex): Hex {
  * @param signer - The identity blob.
  * @throws QuipSwapError `MALFORMED_SIGNER`.
  */
-export function assertSignerBlob(signer: Hex): void {
-  if (!isHex(signer, {strict: true}) || size(signer) <= 20) {
+export function assertSignerBlob(
+  signer: Hex): void {
+  if (!isHex(signer, {
+    strict: true
+  }) || size(signer) <= 20) {
     throw new QuipSwapError({
       code: 'MALFORMED_SIGNER',
       message: 'signer must be more than 20 bytes of hex (contract would revert MalformedSigner)',
@@ -152,11 +171,23 @@ export interface ComputeCommitDigestArgs {
  * @param args - See {@link ComputeCommitDigestArgs}.
  * @returns The digest to hand to the keyholder's signing tooling.
  */
-export function computeCommitDigest(args: ComputeCommitDigestArgs): Hex32 {
+export function computeCommitDigest(
+  args: ComputeCommitDigestArgs): Hex32 {
   assertSignerBlob(args.signer)
+
   return keccak256(
     encodeAbiParameters(
-      [{type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}, {type: 'bytes32'}],
+      [{
+        type: 'bytes32'
+      }, {
+        type: 'bytes32'
+      }, {
+        type: 'bytes32'
+      }, {
+        type: 'bytes32'
+      }, {
+        type: 'bytes32'
+      }],
       [
         computeDomainSeparator(args.party.chainId, args.omnibusAddress),
         args.lock,

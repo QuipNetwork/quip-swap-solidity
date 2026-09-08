@@ -27,8 +27,13 @@ export const TEST_VAULT_ID: Hex32 = keccak256(toHex('sdk test vault id'))
  * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
  * (the 20-byte address doubles as the key; 40-byte blob).
  */
-export function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: PLACEHOLDER_SIGNATURE}
+export function keyedAuth(
+  fixture: Fixture,
+  addr: Address): CommitAuth {
+  return {
+    signer: buildKeyedSigner(fixture.verifier, addr),
+    signature: PLACEHOLDER_SIGNATURE
+  }
 }
 
 /**
@@ -36,8 +41,13 @@ export function keyedAuth(fixture: Fixture, addr: Address): CommitAuth {
  * signer blob is shape-checked attribution only. The SENDER must be
  * registered in the fixture's WalletFactoryMock (see {@link registerWallet}).
  */
-export function walletAuth(fixture: Fixture, addr: Address): CommitAuth {
-  return {signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'}
+export function walletAuth(
+  fixture: Fixture,
+  addr: Address): CommitAuth {
+  return {
+    signer: buildKeyedSigner(fixture.verifier, addr),
+    signature: '0x'
+  }
 }
 
 /**
@@ -59,10 +69,16 @@ export async function registerWallet(
     chain: ctx.publicClient.chain ?? null,
     account: ctx.deployer.account,
   })
-  await ctx.publicClient.waitForTransactionReceipt({hash})
+
+  await ctx.publicClient.waitForTransactionReceipt({
+    hash
+  })
 }
 
 /** Deregisters `wallet` (sets its vaultId back to zero). */
-export async function deregisterWallet(ctx: ChainContext, fixture: Fixture, wallet: Address): Promise<void> {
+export async function deregisterWallet(
+  ctx: ChainContext,
+  fixture: Fixture,
+  wallet: Address): Promise<void> {
   await registerWallet(ctx, fixture, wallet, `0x${'00'.repeat(32)}` as Hex32)
 }

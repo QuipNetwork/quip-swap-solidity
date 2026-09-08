@@ -26,9 +26,13 @@ describe('prototype operating profile', () => {
 
   it('retries three times with bounded 20-percent compounding fee multipliers', async () => {
     const observed: bigint[] = []
+
     await expect(submitWithFeeBumps(async multiplier => {
       observed.push(multiplier)
-      if (observed.length < 3) throw new Error('not included')
+
+      if (observed.length < 3)
+        throw new Error('not included')
+
       return 'included'
     }, PROTOTYPE_RETRY_POLICY)).resolves.toBe('included')
     expect(observed).toEqual([10_000n, 12_000n, 14_400n])

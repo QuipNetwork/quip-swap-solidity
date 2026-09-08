@@ -76,7 +76,10 @@ const VERIFIED_DEPLOYMENT_CHAINS: ReadonlySet<bigint> = new Set<bigint>(
  * there is a single source of truth.
  */
 export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
-  [...VERIFIED_DEPLOYMENT_CHAINS].map(chainId => [chainId, {chainId, omnibusAddress: OMNIBUS_CREATE3_ADDRESS}]),
+  [...VERIFIED_DEPLOYMENT_CHAINS].map(chainId => [chainId, {
+    chainId,
+    omnibusAddress: OMNIBUS_CREATE3_ADDRESS
+  }]),
 )
 
 /**
@@ -99,25 +102,37 @@ export const knownDeployments: ReadonlyMap<bigint, OmnibusDeployment> = new Map(
  * })
  * ```
  */
-export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment): OmnibusDeployment {
+export function resolveDeployment(
+  chainId: bigint,
+  override?: OmnibusDeployment): OmnibusDeployment {
   if (override !== undefined) {
-    if (!isAddress(override.omnibusAddress, {strict: false}) || override.omnibusAddress.toLowerCase() === zeroAddress) {
+    if (!isAddress(override.omnibusAddress, {
+      strict: false
+    }) || override.omnibusAddress.toLowerCase() === zeroAddress) {
       throw new QuipSwapError({
         code: 'UNKNOWN_DEPLOYMENT',
         message: `Deployment override for chain ${chainId} has an invalid omnibusAddress`,
-        details: {override},
+        details: {
+          override
+        },
       })
     }
     if (override.chainId !== chainId) {
       throw new QuipSwapError({
         code: 'UNKNOWN_DEPLOYMENT',
         message: `Deployment override names chain ${override.chainId} but chain ${chainId} was requested`,
-        details: {override, chainId},
+        details: {
+          override,
+          chainId
+        },
       })
     }
+
     return override
   }
+
   const known = knownDeployments.get(chainId)
+
   if (known === undefined) {
     throw new QuipSwapError({
       code: 'UNKNOWN_DEPLOYMENT',
@@ -125,8 +140,11 @@ export function resolveDeployment(chainId: bigint, override?: OmnibusDeployment)
         `No verified Omnibus deployment is known for chain ${chainId} and no override was provided. ` +
         'Supply {chainId, omnibusAddress} explicitly. Addresses are never guessed: a CREATE3 address ignores ' +
         'init code, so a deployment must be verified on-chain before it is trusted (run `make verify-omnibus`).',
-      details: {chainId},
+      details: {
+        chainId
+      },
     })
   }
+
   return known
 }

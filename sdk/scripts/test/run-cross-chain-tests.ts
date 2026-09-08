@@ -24,20 +24,29 @@ import {repoRoot, sdkRoot} from '../shared/paths.js'
 
 // 1. fresh artifacts
 console.log('[cross-chain] forge build ...')
-const build = spawnSync('forge', ['build', '--root', repoRoot], {cwd: repoRoot, stdio: 'inherit'})
+const build = spawnSync('forge', ['build', '--root', repoRoot], {
+  cwd: repoRoot,
+  stdio: 'inherit'
+})
 if (build.status !== 0) {
   console.error('[cross-chain] forge build failed; aborting')
   process.exit(build.status ?? 1)
 }
 
 // 2. two independent nodes; distinct chain ids and free ports
-const chainA = await startAnvil({chainId: 31_337})
+const chainA = await startAnvil({
+  chainId: 31_337
+})
 console.log(`[cross-chain] chain A ready at ${chainA.rpcUrl} (chain ${chainA.chainId})`)
 let chainB
 try {
-  chainB = await startAnvil({chainId: 31_338})
-} catch (error) {
+  chainB = await startAnvil({
+    chainId: 31_338
+  })
+}
+catch (error) {
   chainA.stop()
+
   throw error
 }
 console.log(`[cross-chain] chain B ready at ${chainB.rpcUrl} (chain ${chainB.chainId})`)
@@ -56,6 +65,7 @@ try {
       QUIP_SDK_CHAIN_B_ID: String(chainB.chainId),
     },
   })
+
   exitCode = result.status ?? 1
 } finally {
   // 4. teardown of BOTH nodes happens pass OR fail

@@ -14,32 +14,53 @@ const recoveryKey = '0x00000000000000000000000000000000000040007265636f76657279'
 const nonce = `0x${'11'.repeat(32)}` as `0x${string}`
 
 const registration: InitialRegistration = {
-  eoa, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: target,
-  commitPayloadHash: `0x${'22'.repeat(32)}` as `0x${string}`, operationNonce: nonce, expiry: 2_000n,
+  eoa,
+  activePQKey: activeKey,
+  recoveryPQKey: recoveryKey,
+  commitTarget: target,
+  commitPayloadHash: `0x${'22'.repeat(32)}` as `0x${string}`,
+  operationNonce: nonce,
+  expiry: 2_000n,
 }
 const rotation: RegistryOperation = {
-  action: RegistryActionTag.RotateActive, eoa, expectedActiveKeyVersion: 1n,
-  expectedRecoveryKeyVersion: 1n, newActivePQKey: `${activeKey}32`, newActiveKeyVersion: 2n,
-  newRecoveryPQKey: '0x', newRecoveryKeyVersion: 0n, operationNonce: nonce,
-  expiry: 2_000n, recoveryAuthorized: false,
+  action: RegistryActionTag.RotateActive,
+  eoa,
+  expectedActiveKeyVersion: 1n,
+  expectedRecoveryKeyVersion: 1n,
+  newActivePQKey: `${activeKey}32`,
+  newActiveKeyVersion: 2n,
+  newRecoveryPQKey: '0x',
+  newRecoveryKeyVersion: 0n,
+  operationNonce: nonce,
+  expiry: 2_000n,
+  recoveryAuthorized: false,
 }
 
 describe('v1.1 registry protocol hashing', () => {
   test('registration binds chain, registry, target, keys, commit and expiry', () => {
     const digest = registrationDigest(31337n, registry, registration)
+
     expect(registrationDigest(31337n, registry, registration)).toBe(digest)
     expect(registrationDigest(31338n, registry, registration)).not.toBe(digest)
-    expect(registrationDigest(31337n, registry, {...registration, expiry: 2_001n})).not.toBe(digest)
+    expect(registrationDigest(31337n, registry, {
+...registration,
+      expiry: 2_001n
+    })).not.toBe(digest)
   })
   test('lifecycle and possession digests bind action-specific data', () => {
     const digest = registryOperationDigest(31337n, registry, rotation)
-    expect(registryOperationDigest(31337n, registry, {...rotation, newActiveKeyVersion: 3n})).not.toBe(digest)
+
+    expect(registryOperationDigest(31337n, registry, {
+...rotation,
+      newActiveKeyVersion: 3n
+    })).not.toBe(digest)
     expect(keyPossessionDigest(digest, KeyRole.Active, rotation.newActivePQKey))
       .not.toBe(keyPossessionDigest(digest, KeyRole.Recovery, rotation.newActivePQKey))
   })
   test('wallet commit authorization binds chain, wallet, epoch, and payload', () => {
     const payload = registration.commitPayloadHash
     const digest = walletCommitAuthorizationDigest(31337n, target, 1n, payload)
+
     expect(walletCommitAuthorizationDigest(31338n, target, 1n, payload)).not.toBe(digest)
     expect(walletCommitAuthorizationDigest(31337n, registry, 1n, payload)).not.toBe(digest)
     expect(walletCommitAuthorizationDigest(31337n, target, 2n, payload)).not.toBe(digest)
@@ -48,12 +69,14 @@ describe('v1.1 registry protocol hashing', () => {
   test("wallet rotation binds internal epoch and both key hashes", () => {
     const currentHash = keccak256(activeKey)
     const digest = walletRotationDigest(31337n, target, 1n, currentHash, recoveryKey, nonce, 2_000n)
+
     expect(walletRotationDigest(31337n, target, 2n, currentHash, recoveryKey, nonce, 2_000n)).not.toBe(digest)
     expect(walletRotationDigest(31337n, target, 1n, currentHash, activeKey, nonce, 2_000n)).not.toBe(digest)
   })
 
   test('registry nonce keys are role and version scoped', () => {
     const key = keccak256(encodeRegistryNonceKey(31337n, registry, eoa, KeyRole.Active, 1n, nonce))
+
     expect(keccak256(encodeRegistryNonceKey(31337n, registry, eoa, KeyRole.Recovery, 1n, nonce))).not.toBe(key)
     expect(keccak256(encodeRegistryNonceKey(31337n, registry, eoa, KeyRole.Active, 2n, nonce))).not.toBe(key)
   })

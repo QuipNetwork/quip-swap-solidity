@@ -56,12 +56,22 @@ beforeAll(async () => {
 })
 
 /** Calls a view function on a harness, returning the raw result. */
-async function callHarness<T>(address: Address, abi: Abi, functionName: string, args: readonly unknown[]): Promise<T> {
-  return (await ctx.publicClient.readContract({address, abi, functionName, args: args as unknown[]})) as T
+async function callHarness<T>(
+  address: Address,
+  abi: Abi,
+  functionName: string,
+  args: readonly unknown[]): Promise<T> {
+  return (await ctx.publicClient.readContract({
+    address,
+    abi,
+    functionName,
+    args: args as unknown[]
+  })) as T
 }
 
 /** Terms in the tuple-object shape viem encodes for the harness ABI. */
-function abiTerms(terms: Terms) {
+function abiTerms(
+  terms: Terms) {
   return {
     chainId: terms.chainId,
     reclaimRecipient: terms.reclaimRecipient,
@@ -69,7 +79,12 @@ function abiTerms(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
-    assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
+    assets: terms.assets.map(a => ({
+      assetType: a.assetType,
+      target: a.target,
+      id: a.id,
+      amount: a.amount
+    })),
   }
 }
 
@@ -81,48 +96,81 @@ function abiTerms(terms: Terms) {
  * A tiny deterministic PRNG (splitmix64 over bigint) with a FIXED seed so
  * the generated-vector loop reproduces identically on every run.
  */
-function seededRng(seed: bigint): () => bigint {
+function seededRng(
+  seed: bigint): () => bigint {
   const MASK = (1n << 64n) - 1n
   let state = seed & MASK
+
   return () => {
     state = (state + 0x9e3779b97f4a7c15n) & MASK
+
     let z = state
+
     z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & MASK
     z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & MASK
+
     return z ^ (z >> 31n)
   }
 }
 
 /** Random value in [1, max] (never zero — keeps assets/terms hashable everywhere). */
-function rndIn(rng: () => bigint, max: bigint): bigint {
+function rndIn(
+  rng: () => bigint,
+  max: bigint): bigint {
   return (rng() % max) + 1n
 }
 
-function rndAddress(rng: () => bigint): Address {
+function rndAddress(
+  rng: () => bigint): Address {
   // compose 160 bits from three 64-bit draws; force non-zero via low byte
   const raw = ((rng() << 96n) ^ (rng() << 48n) ^ rng()) & ((1n << 160n) - 1n)
+
   return `0x${(raw | 1n).toString(16).padStart(40, '0')}` as Address
 }
 
-function rndAsset(rng: () => bigint): Asset {
+function rndAsset(
+  rng: () => bigint): Asset {
   const kind = Number(rng() % 4n) as AssetType
+
   switch (kind) {
     case AssetType.Native:
-      return {assetType: kind, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: rndIn(rng, 10n ** 24n)}
+      return {
+        assetType: kind,
+        target: '0x0000000000000000000000000000000000000000',
+        id: 0n,
+        amount: rndIn(rng, 10n ** 24n)
+      }
     case AssetType.ERC20:
-      return {assetType: kind, target: rndAddress(rng), id: 0n, amount: rndIn(rng, 10n ** 24n)}
+      return {
+        assetType: kind,
+        target: rndAddress(rng),
+        id: 0n,
+        amount: rndIn(rng, 10n ** 24n)
+      }
     case AssetType.ERC721:
       // amounts OTHER THAN 1 included on purpose: digests must be sensitive
       // to the amount, which is exactly why the SDK canonicalizes to 1n
-      return {assetType: kind, target: rndAddress(rng), id: rng() % 1000n, amount: rndIn(rng, 5n)}
+      return {
+        assetType: kind,
+        target: rndAddress(rng),
+        id: rng() % 1000n,
+        amount: rndIn(rng, 5n)
+      }
     default:
-      return {assetType: AssetType.ERC1155, target: rndAddress(rng), id: rng() % 1000n, amount: rndIn(rng, 10n ** 6n)}
+      return {
+        assetType: AssetType.ERC1155,
+        target: rndAddress(rng),
+        id: rng() % 1000n,
+        amount: rndIn(rng, 10n ** 6n)
+      }
   }
 }
 
-function rndTerms(rng: () => bigint): Terms {
+function rndTerms(
+  rng: () => bigint): Terms {
   const commitment = rndIn(rng, 10n ** 12n)
   const assetCount = Number(rng() % 3n) + 1
+
   return {
     chainId: rndIn(rng, 10n ** 6n),
     reclaimRecipient: rndAddress(rng),
@@ -130,7 +178,9 @@ function rndTerms(rng: () => bigint): Terms {
     commitmentDeadline: commitment,
     claimDeadline: commitment + rndIn(rng, 10n ** 6n),
     reclaimRelease: commitment + 10n ** 6n + rndIn(rng, 10n ** 6n),
-    assets: Array.from({length: assetCount}, () => rndAsset(rng)),
+    assets: Array.from({
+      length: assetCount
+    }, () => rndAsset(rng)),
   }
 }
 
@@ -140,38 +190,120 @@ const OTHER_TOKEN: Address = '0x2000000000000000000000000000000000000002'
 /** Hand-picked vectors covering every required category. */
 function fixedVectors(): Terms[] {
   const base = aliceTerms(CHAIN_A)
+
   return [
     // single assets of each type
-    withOverrides(base, {assets: [{assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 1n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC20, target: TOKEN, id: 0n, amount: 12_345n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 42n, amount: 1n}]}),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.Native,
+        target: '0x0000000000000000000000000000000000000000',
+        id: 0n,
+        amount: 1n
+      }]
+    }),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC20,
+        target: TOKEN,
+        id: 0n,
+        amount: 12_345n
+      }]
+    }),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC721,
+        target: TOKEN,
+        id: 42n,
+        amount: 1n
+      }]
+    }),
     // ERC-721 with amount != 1 — proves digest sensitivity, justifying SDK canonicalization
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 42n, amount: 7n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: TOKEN, id: 9n, amount: 100n}]}),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC721,
+        target: TOKEN,
+        id: 42n,
+        amount: 7n
+      }]
+    }),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC1155,
+        target: TOKEN,
+        id: 9n,
+        amount: 100n
+      }]
+    }),
     // token id zero (valid for 721 and 1155)
-    withOverrides(base, {assets: [{assetType: AssetType.ERC721, target: TOKEN, id: 0n, amount: 1n}]}),
-    withOverrides(base, {assets: [{assetType: AssetType.ERC1155, target: TOKEN, id: 0n, amount: 5n}]}),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC721,
+        target: TOKEN,
+        id: 0n,
+        amount: 1n
+      }]
+    }),
+    withOverrides(base, {
+      assets: [{
+        assetType: AssetType.ERC1155,
+        target: TOKEN,
+        id: 0n,
+        amount: 5n
+      }]
+    }),
     // multiple assets, then the same pair reordered
     withOverrides(base, {
       assets: [
-        {assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 5n},
-        {assetType: AssetType.ERC20, target: OTHER_TOKEN, id: 0n, amount: 77n},
+        {
+          assetType: AssetType.Native,
+          target: '0x0000000000000000000000000000000000000000',
+          id: 0n,
+          amount: 5n
+        },
+        {
+          assetType: AssetType.ERC20,
+          target: OTHER_TOKEN,
+          id: 0n,
+          amount: 77n
+        },
       ],
     }),
     withOverrides(base, {
       assets: [
-        {assetType: AssetType.ERC20, target: OTHER_TOKEN, id: 0n, amount: 77n},
-        {assetType: AssetType.Native, target: '0x0000000000000000000000000000000000000000', id: 0n, amount: 5n},
+        {
+          assetType: AssetType.ERC20,
+          target: OTHER_TOKEN,
+          id: 0n,
+          amount: 77n
+        },
+        {
+          assetType: AssetType.Native,
+          target: '0x0000000000000000000000000000000000000000',
+          id: 0n,
+          amount: 5n
+        },
       ],
     }),
     // different recipients
-    withOverrides(base, {recipient: '0x00000000000000000000000000000000000000fe'}),
-    withOverrides(base, {reclaimRecipient: '0x00000000000000000000000000000000000000fd'}),
+    withOverrides(base, {
+      recipient: '0x00000000000000000000000000000000000000fe'
+    }),
+    withOverrides(base, {
+      reclaimRecipient: '0x00000000000000000000000000000000000000fd'
+    }),
     // different chain ids (incl. cross-chain id)
-    withOverrides(base, {chainId: CHAIN_B}),
-    withOverrides(base, {chainId: 1n}),
+    withOverrides(base, {
+      chainId: CHAIN_B
+    }),
+    withOverrides(base, {
+      chainId: 1n
+    }),
     // a different timestamp schedule
-    withOverrides(base, {commitmentDeadline: 10n, claimDeadline: 20n, reclaimRelease: 30n}),
+    withOverrides(base, {
+      commitmentDeadline: 10n,
+      claimDeadline: 20n,
+      reclaimRelease: 30n
+    }),
     bobTerms(CHAIN_A),
   ]
 }
@@ -186,17 +318,20 @@ describe('digestTerms parity (oracle: TermsLibHarness.exposed_digestTerms)', () 
       const onChain = await callHarness<Hex32>(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_digestTerms', [
         abiTerms(terms),
       ])
+
       expect(digestTerms(terms)).toBe(onChain)
     }
   })
 
   it('matches on 40 deterministic generated vectors (fixed seed)', async () => {
     const rng = seededRng(0xdead_beefn)
+
     for (let i = 0; i < 40; i++) {
       const terms = rndTerms(rng)
       const onChain = await callHarness<Hex32>(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_digestTerms', [
         abiTerms(terms),
       ])
+
       expect(digestTerms(terms), `vector ${i}`).toBe(onChain)
     }
   })
@@ -205,6 +340,7 @@ describe('digestTerms parity (oracle: TermsLibHarness.exposed_digestTerms)', () 
 describe('digestTermsCanonically parity (oracle: exposed_digestTermsCanonically)', () => {
   it('matches in both argument orders on fixed pairs', async () => {
     const vectors = fixedVectors()
+
     for (let i = 0; i + 1 < vectors.length; i += 2) {
       const a = vectors[i] as Terms
       const b = vectors[i + 1] as Terms
@@ -214,6 +350,7 @@ describe('digestTermsCanonically parity (oracle: exposed_digestTermsCanonically)
         'exposed_digestTermsCanonically',
         [abiTerms(a), abiTerms(b)],
       )
+
       expect(digestTermsCanonically(a, b)).toBe(onChain)
       expect(digestTermsCanonically(b, a)).toBe(onChain)
     }
@@ -229,9 +366,11 @@ describe('digestTermsCanonically parity (oracle: exposed_digestTermsCanonically)
       'exposed_digestTermsCanonically',
       [abiTerms(same), abiTerms(same)],
     )
+
     expect(digestTermsCanonically(same, same)).toBe(boundary)
 
     const rng = seededRng(0xc0ffeen)
+
     for (let i = 0; i < 20; i++) {
       const a = rndTerms(rng)
       const b = rndTerms(rng)
@@ -241,6 +380,7 @@ describe('digestTermsCanonically parity (oracle: exposed_digestTermsCanonically)
         'exposed_digestTermsCanonically',
         [abiTerms(a), abiTerms(b)],
       )
+
       expect(digestTermsCanonically(a, b), `pair ${i}`).toBe(onChain)
     }
   })
@@ -253,15 +393,20 @@ describe('generateLock parity (oracle: OmnibusHarness.exposed_generateLock)', ()
       `0x${'00'.repeat(32)}`,
       `0x${'ff'.repeat(32)}`,
       `0x${'01'.repeat(32)}`,
-      ...Array.from({length: 20}, () => {
+      ...Array.from({
+        length: 20
+      }, () => {
         const raw = ((rng() << 192n) ^ (rng() << 128n) ^ (rng() << 64n) ^ rng()) & ((1n << 256n) - 1n)
+
         return `0x${raw.toString(16).padStart(64, '0')}` as Hex32
       }),
     ]
+
     for (const secret of secrets) {
       const onChain = await callHarness<Hex32>(fixture.omnibusHarness, omnibusHarnessAbi, 'exposed_generateLock', [
         secret,
       ])
+
       expect(generateLock(secret)).toBe(onChain)
     }
   })
@@ -273,7 +418,11 @@ describe('generateLock parity (oracle: OmnibusHarness.exposed_generateLock)', ()
 
 describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
   /** The deployed contract's digest for the given inputs. */
-  async function oracleDigest(lock: Hex32, party: Terms, counterparty: Terms, signer: Hex): Promise<Hex32> {
+  async function oracleDigest(
+    lock: Hex32,
+    party: Terms,
+    counterparty: Terms,
+    signer: Hex): Promise<Hex32> {
     return (await ctx.publicClient.readContract({
       address: fixture.omnibus,
       abi: omnibusAbi,
@@ -286,7 +435,10 @@ describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
     const rng = seededRng(0xd16e57n)
     // the on-chain digest binds block.chainid, so the LOCAL (party) side
     // must carry the connected chain's id — exactly the commit invariant
-    const localize = (terms: Terms): Terms => withOverrides(terms, {chainId: BigInt(CHAIN_ID)})
+    const localize = (
+      terms: Terms): Terms => withOverrides(terms, {
+        chainId: BigInt(CHAIN_ID)
+      })
 
     // keyed ERC-7913 signer blobs (verifier ‖ key) of differing key lengths
     // built with buildKeyedSigner — the only shape the contract accepts
@@ -301,28 +453,53 @@ describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
     const pairs: [Terms, Terms][] = [
       [localize(aliceTerms(CHAIN_A)), bobTerms(CHAIN_A)],
       [localize(bobTerms(CHAIN_A)), aliceTerms(CHAIN_B)], // cross-chain counterparty
-      ...Array.from({length: 8}, (): [Terms, Terms] => [localize(rndTerms(rng)), rndTerms(rng)]),
+      ...Array.from({
+        length: 8
+      }, (): [Terms, Terms] => [localize(rndTerms(rng)), rndTerms(rng)]),
     ]
 
     let vector = 0
+
     for (const [party, counterparty] of pairs) {
       const signer = signers[vector % signers.length] as Hex
       const lock = keccak256(`0x${(++vector).toString(16).padStart(64, '0')}`) as Hex32
-      const local = computeCommitDigest({lock, party, counterparty, signer, omnibusAddress: fixture.omnibus})
+      const local = computeCommitDigest({
+        lock,
+        party,
+        counterparty,
+        signer,
+        omnibusAddress: fixture.omnibus
+      })
+
       expect(local, `vector ${vector} (signer ${signer})`).toBe(await oracleDigest(lock, party, counterparty, signer))
     }
   })
 
   it('keyed blobs sharing a verifier but differing in key produce DIFFERENT digests (both in parity)', async () => {
-    const party = withOverrides(aliceTerms(CHAIN_A), {chainId: BigInt(CHAIN_ID)})
+    const party = withOverrides(aliceTerms(CHAIN_A), {
+      chainId: BigInt(CHAIN_ID)
+    })
     const counterparty = bobTerms(CHAIN_A)
     const lock = keccak256('0x51') as Hex32
     const verifier = '0x1000000000000000000000000000000000000001' as Address
     const keyedA = buildKeyedSigner(verifier, keccak256('0x52'))
     const keyedB = buildKeyedSigner(verifier, keccak256('0x53'))
 
-    const localA = computeCommitDigest({lock, party, counterparty, signer: keyedA, omnibusAddress: fixture.omnibus})
-    const localB = computeCommitDigest({lock, party, counterparty, signer: keyedB, omnibusAddress: fixture.omnibus})
+    const localA = computeCommitDigest({
+      lock,
+      party,
+      counterparty,
+      signer: keyedA,
+      omnibusAddress: fixture.omnibus
+    })
+    const localB = computeCommitDigest({
+      lock,
+      party,
+      counterparty,
+      signer: keyedB,
+      omnibusAddress: fixture.omnibus
+    })
+
     expect(localA).not.toBe(localB) // the WHOLE blob, not just the verifier, is bound
     expect(localA).toBe(await oracleDigest(lock, party, counterparty, keyedA))
     expect(localB).toBe(await oracleDigest(lock, party, counterparty, keyedB))
@@ -336,11 +513,15 @@ describe('computeCommitDigest parity (oracle: Omnibus.commitDigest)', () => {
 describe('totalNative parity (oracle: exposed_totalNative)', () => {
   it('matches on fixed and generated vectors', async () => {
     const rng = seededRng(0x707a1n)
-    const vectors = [...fixedVectors(), ...Array.from({length: 20}, () => rndTerms(rng))]
+    const vectors = [...fixedVectors(), ...Array.from({
+      length: 20
+    }, () => rndTerms(rng))]
+
     for (const terms of vectors) {
       const onChain = await callHarness<bigint>(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_totalNative', [
         abiTerms(terms),
       ])
+
       expect(totalNative(terms)).toBe(onChain)
     }
   })
@@ -352,24 +533,32 @@ describe('totalNative parity (oracle: exposed_totalNative)', () => {
 
 describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () => {
   /** True iff the harness call does NOT revert. */
-  async function oracleAccepts(a: Terms, b: Terms): Promise<boolean> {
+  async function oracleAccepts(
+    a: Terms,
+    b: Terms): Promise<boolean> {
     try {
       await callHarness(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_validateTermPairing', [
         abiTerms(a),
         abiTerms(b),
       ])
+
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
 
   /** True iff the SDK validator does NOT throw. */
-  function sdkAccepts(a: Terms, b: Terms): boolean {
+  function sdkAccepts(
+    a: Terms,
+    b: Terms): boolean {
     try {
       validateTermPairing(a, b)
+
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -381,15 +570,28 @@ describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () 
       [alice, bob],
       [bob, alice],
       // equal commitment deadlines
-      [alice, withOverrides(bob, {commitmentDeadline: alice.commitmentDeadline})],
+      [alice, withOverrides(bob, {
+        commitmentDeadline: alice.commitmentDeadline
+      })],
       // sequential, not interleaved
       [
-        withOverrides(alice, {commitmentDeadline: 100n, claimDeadline: 200n, reclaimRelease: 300n}),
-        withOverrides(bob, {commitmentDeadline: 400n, claimDeadline: 500n, reclaimRelease: 600n}),
+        withOverrides(alice, {
+          commitmentDeadline: 100n,
+          claimDeadline: 200n,
+          reclaimRelease: 300n
+        }),
+        withOverrides(bob, {
+          commitmentDeadline: 400n,
+          claimDeadline: 500n,
+          reclaimRelease: 600n
+        }),
       ],
       // taker claim before proposer claim (broken interleave)
-      [alice, withOverrides(bob, {claimDeadline: alice.claimDeadline - 1n})],
+      [alice, withOverrides(bob, {
+        claimDeadline: alice.claimDeadline - 1n
+      })],
     ]
+
     for (const [a, b] of cases) {
       expect(sdkAccepts(a, b)).toBe(await oracleAccepts(a, b))
     }
@@ -398,6 +600,7 @@ describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () 
   it('agrees across 40 deterministic generated schedule pairs (fixed seed)', async () => {
     const rng = seededRng(0x9a1219n)
     let accepted = 0
+
     for (let i = 0; i < 40; i++) {
       // half the vectors: perturb a VALID interleaving so both outcomes occur
       const offset = rng() % 1000n
@@ -413,8 +616,10 @@ describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () 
         reclaimRelease: 6000n + offset,
       })
       const sdk = sdkAccepts(alice, bob)
+
       expect(sdk, `pair ${i}`).toBe(await oracleAccepts(alice, bob))
-      if (sdk) accepted++
+      if (sdk)
+        accepted++
     }
     // sanity: the loop must exercise BOTH outcomes or the parity test is vacuous
     expect(accepted).toBeGreaterThan(0)
@@ -427,20 +632,30 @@ describe('validateTermPairing parity (oracle: exposed_validateTermPairing)', () 
 // ---------------------------------------------------------------------------
 
 describe('enforceWithin parity (oracle: exposed_enforceWithin)', () => {
-  async function oracleAccepts(lower: bigint, upper: bigint, ts: bigint): Promise<boolean> {
+  async function oracleAccepts(
+    lower: bigint,
+    upper: bigint,
+    ts: bigint): Promise<boolean> {
     try {
       await callHarness(fixture.termsLibHarness, termsLibHarnessAbi, 'exposed_enforceWithin', [lower, upper, ts])
+
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
 
-  function sdkAccepts(lower: bigint, upper: bigint, ts: bigint): boolean {
+  function sdkAccepts(
+    lower: bigint,
+    upper: bigint,
+    ts: bigint): boolean {
     try {
       enforceWithin(lower, upper, ts)
+
       return true
-    } catch {
+    }
+    catch {
       return false
     }
   }
@@ -455,14 +670,17 @@ describe('enforceWithin parity (oracle: exposed_enforceWithin)', () => {
       [201n, 200n], // degenerate reversed
     ]
     const rng = seededRng(0x717e5n)
+
     for (let i = 0; i < 10; i++) {
       const lower = rng() % 10n ** 9n
+
       windows.push([lower, lower + (rng() % 10n ** 6n)])
     }
     for (const [lower, upper] of windows) {
       // the three boundary probes per window: lower (inclusive), upper-1
       // (last accepted instant), upper (EXCLUSIVE — must reject)
       const probes = [lower, upper - 1n, upper, lower === 0n ? 0n : lower - 1n].filter(p => p >= 0n && p <= MAX)
+
       for (const ts of probes) {
         expect(sdkAccepts(lower, upper, ts), `[${lower}, ${upper}) at ${ts}`).toBe(
           await oracleAccepts(lower, upper, ts),

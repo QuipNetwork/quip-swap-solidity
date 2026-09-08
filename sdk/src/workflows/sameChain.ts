@@ -118,7 +118,9 @@ export interface SameChainSwapPlan {
 export function planSameChainSwap(
   a: Terms,
   b: Terms,
-  opts?: {readonly minimumBufferSeconds?: bigint},
+  opts?: {
+    readonly minimumBufferSeconds?: bigint
+  },
 ): SameChainSwapPlan {
   validateTerms(a)
   validateTerms(b)
@@ -127,12 +129,17 @@ export function planSameChainSwap(
     throw new QuipSwapError({
       code: 'CHAIN_ID_MISMATCH',
       message: `Same-chain plan requires both sides on one chain; got ${a.chainId} and ${b.chainId}`,
-      details: {aChainId: a.chainId, bChainId: b.chainId},
+      details: {
+        aChainId: a.chainId,
+        bChainId: b.chainId
+      },
     })
   }
+
   const [proposerTerms, takerTerms] = proposedBy(a, b) === 'party' ? [a, b] : [b, a]
   // gap-SIZE buffer check (the contract never does this) — the new protection
   checkScheduleBuffers(proposerTerms, takerTerms, opts?.minimumBufferSeconds ?? DEFAULT_SAME_CHAIN_BUFFER_SECONDS)
+
   return {
     proposerTerms,
     takerTerms,
@@ -231,6 +238,7 @@ export async function getSameChainSwapStatus(
   const timestamp = block.timestamp
 
   let status: SameChainSwapStatus
+
   switch (state) {
     case LockState.Unused:
       status = isWithinWindow(plan.proposerCommitWindow, timestamp)
@@ -242,34 +250,39 @@ export async function getSameChainSwapStatus(
         // reclaim from Free: a half-committed swap is recoverable once the
         // committed leg's release passes (Free -> Spent is a valid transition)
         status = 'reclaimable-from-free'
-      } else if (timestamp < plan.takerCommitWindow.lower) {
-        status = 'awaiting-taker-window'
-      } else if (isWithinWindow(plan.takerCommitWindow, timestamp)) {
-        status = 'awaiting-taker-commit'
-      } else {
-        status = 'half-committed-expired'
-      }
+      } else
+        if (timestamp < plan.takerCommitWindow.lower) {
+          status = 'awaiting-taker-window'
+        } else
+          if (isWithinWindow(plan.takerCommitWindow, timestamp)) {
+            status = 'awaiting-taker-commit'
+          } else {
+            status = 'half-committed-expired'
+          }
       break
     case LockState.Committed:
       if (isWithinWindow(plan.claimWindow, timestamp)) {
         status = 'claimable'
-      } else if (isWithinWindow(plan.proposerReclaimWindow, timestamp)) {
-        status = 'reclaimable'
-      } else if (timestamp >= plan.proposerTerms.claimDeadline) {
-        // between proposer.claimDeadline and proposer.reclaimRelease the
-        // taker-role claim path is still open (it settles both legs too)
-        status = 'late-claimable'
-      } else {
-        // Committed before taker.commitmentDeadline: the taker committed
-        // early in its window; the proposer-claim window opens at
-        // taker.commitmentDeadline
-        status = 'awaiting-claim-window'
-      }
+      } else
+        if (isWithinWindow(plan.proposerReclaimWindow, timestamp)) {
+          status = 'reclaimable'
+        } else
+          if (timestamp >= plan.proposerTerms.claimDeadline) {
+            status = 'late-claimable'
+          } else {
+            status = 'awaiting-claim-window'
+          }
       break
     case LockState.Spent:
       status = 'settled'
       break
   }
 
-  return {status, lockState: state, proposerPosted, takerPosted, timestamp}
+  return {
+    status,
+    lockState: state,
+    proposerPosted,
+    takerPosted,
+    timestamp
+  }
 }

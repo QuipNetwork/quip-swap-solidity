@@ -18,7 +18,11 @@ import type {Terms} from '../../src/types.js'
 import {aliceTerms, bobTerms, CHAIN_A, withOverrides} from '../helpers/fixtures.js'
 
 /** A normalized proposer/taker pair with a uniform `gap` between every adjacent timestamp. */
-function pairWithGap(gap: bigint): {proposer: Terms; taker: Terms} {
+function pairWithGap(
+  gap: bigint): {
+    proposer: Terms;
+    taker: Terms
+  } {
   const proposer = withOverrides(aliceTerms(CHAIN_A), {
     commitmentDeadline: gap,
     claimDeadline: 3n * gap,
@@ -29,12 +33,20 @@ function pairWithGap(gap: bigint): {proposer: Terms; taker: Terms} {
     claimDeadline: 4n * gap,
     reclaimRelease: 6n * gap,
   })
-  return {proposer, taker}
+
+  return {
+    proposer,
+    taker
+  }
 }
 
 describe('default buffer constants', () => {
   it('match the documented presets', () => {
-    expect(DEFAULT_BUFFERS).toEqual({fastL2: 300n, standard: 1800n, conservativeL1: 3600n})
+    expect(DEFAULT_BUFFERS).toEqual({
+      fastL2: 300n,
+      standard: 1800n,
+      conservativeL1: 3600n
+    })
     expect(DEFAULT_CROSS_CHAIN_BUFFER_SECONDS).toBe(1800n)
     expect(DEFAULT_SAME_CHAIN_BUFFER_SECONDS).toBe(1800n)
   })
@@ -43,16 +55,23 @@ describe('default buffer constants', () => {
 describe('checkScheduleBuffers', () => {
   it('passes when every adjacent gap meets the minimum and returns the smallest gap', () => {
     const {proposer, taker} = pairWithGap(1000n)
-    expect(checkScheduleBuffers(proposer, taker, 1000n)).toEqual({minimumGapSeconds: 1000n})
-    expect(checkScheduleBuffers(proposer, taker, 500n)).toEqual({minimumGapSeconds: 1000n})
+
+    expect(checkScheduleBuffers(proposer, taker, 1000n)).toEqual({
+      minimumGapSeconds: 1000n
+    })
+    expect(checkScheduleBuffers(proposer, taker, 500n)).toEqual({
+      minimumGapSeconds: 1000n
+    })
   })
 
   it('throws INSUFFICIENT_BUFFER when a gap is below the minimum, with the offending pair in details', () => {
     const {proposer, taker} = pairWithGap(1000n)
+
     try {
       checkScheduleBuffers(proposer, taker, 1001n)
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect(error).toBeInstanceOf(QuipSwapError)
       expect((error as QuipSwapError).code).toBe('INSUFFICIENT_BUFFER')
       // first adjacent pair is proposer.commit(1000) -> taker.commit(2000), gap 1000
@@ -77,7 +96,10 @@ describe('checkScheduleBuffers', () => {
       claimDeadline: 20000n, // proposer.reclaim(20100) - taker.claim(20000) = 100 (smallest)
       reclaimRelease: 30000n,
     })
-    expect(checkScheduleBuffers(proposer, taker, 100n)).toEqual({minimumGapSeconds: 100n})
+
+    expect(checkScheduleBuffers(proposer, taker, 100n)).toEqual({
+      minimumGapSeconds: 100n
+    })
     expect(() => checkScheduleBuffers(proposer, taker, 101n)).toThrow(QuipSwapError)
   })
 })

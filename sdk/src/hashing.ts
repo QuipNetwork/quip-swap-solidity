@@ -24,10 +24,22 @@ export const assetArrayAbiParameter = {
   name: 'assets',
   type: 'tuple[]',
   components: [
-    {name: 'assetType', type: 'uint8'},
-    {name: 'target', type: 'address'},
-    {name: 'id', type: 'uint256'},
-    {name: 'amount', type: 'uint256'},
+    {
+      name: 'assetType',
+      type: 'uint8'
+    },
+    {
+      name: 'target',
+      type: 'address'
+    },
+    {
+      name: 'id',
+      type: 'uint256'
+    },
+    {
+      name: 'amount',
+      type: 'uint256'
+    },
   ],
 } as const
 
@@ -47,12 +59,30 @@ export const termsAbiParameter = {
   name: 'terms',
   type: 'tuple',
   components: [
-    {name: 'chainId', type: 'uint256'},
-    {name: 'reclaimRecipient', type: 'address'},
-    {name: 'recipient', type: 'address'},
-    {name: 'commitmentDeadline', type: 'uint256'},
-    {name: 'claimDeadline', type: 'uint256'},
-    {name: 'reclaimRelease', type: 'uint256'},
+    {
+      name: 'chainId',
+      type: 'uint256'
+    },
+    {
+      name: 'reclaimRecipient',
+      type: 'address'
+    },
+    {
+      name: 'recipient',
+      type: 'address'
+    },
+    {
+      name: 'commitmentDeadline',
+      type: 'uint256'
+    },
+    {
+      name: 'claimDeadline',
+      type: 'uint256'
+    },
+    {
+      name: 'reclaimRelease',
+      type: 'uint256'
+    },
     assetArrayAbiParameter,
   ],
 } as const
@@ -62,12 +92,30 @@ export const termsAbiParameter = {
  * the exact order the contract encodes them.
  */
 const termsDigestAbiParameters = [
-  {name: 'chainId', type: 'uint256'},
-  {name: 'reclaimRecipient', type: 'address'},
-  {name: 'recipient', type: 'address'},
-  {name: 'commitmentDeadline', type: 'uint256'},
-  {name: 'claimDeadline', type: 'uint256'},
-  {name: 'reclaimRelease', type: 'uint256'},
+  {
+    name: 'chainId',
+    type: 'uint256'
+  },
+  {
+    name: 'reclaimRecipient',
+    type: 'address'
+  },
+  {
+    name: 'recipient',
+    type: 'address'
+  },
+  {
+    name: 'commitmentDeadline',
+    type: 'uint256'
+  },
+  {
+    name: 'claimDeadline',
+    type: 'uint256'
+  },
+  {
+    name: 'reclaimRelease',
+    type: 'uint256'
+  },
   assetArrayAbiParameter,
 ] as const
 
@@ -99,7 +147,8 @@ const termsDigestAbiParameters = [
  * const isPosted = await client.posted(lock, digest)
  * ```
  */
-export function digestTerms(terms: Terms): Hex32 {
+export function digestTerms(
+  terms: Terms): Hex32 {
   return keccak256(
     encodeAbiParameters(termsDigestAbiParameters, [
       terms.chainId,
@@ -109,7 +158,12 @@ export function digestTerms(terms: Terms): Hex32 {
       terms.claimDeadline,
       terms.reclaimRelease,
       // readonly Asset[] is structurally compatible with the tuple components
-      terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
+      terms.assets.map(a => ({
+        assetType: a.assetType,
+        target: a.target,
+        id: a.id,
+        amount: a.amount
+      })),
     ]),
   )
 }
@@ -139,7 +193,9 @@ export function digestTerms(terms: Terms): Hex32 {
  * digestTermsCanonically(a, b) === digestTermsCanonically(b, a) // always true
  * ```
  */
-export function digestTermsCanonically(party: Terms, counterparty: Terms): Hex32 {
+export function digestTermsCanonically(
+  party: Terms,
+  counterparty: Terms): Hex32 {
   const partyDigest = digestTerms(party)
   const counterpartyDigest = digestTerms(counterparty)
   // canonical ordering: numerically smaller digest first (unsigned-bigint compare)
@@ -167,8 +223,10 @@ export function digestTermsCanonically(party: Terms, counterparty: Terms): Hex32
  * const lock = generateLock('0x' + '11'.repeat(32) as Hex32)
  * ```
  */
-export function generateLock(secret: Hex32): Hex32 {
+export function generateLock(
+  secret: Hex32): Hex32 {
   assertHex32(secret, 'secret')
+
   return keccak256(secret)
 }
 
@@ -179,14 +237,17 @@ export function generateLock(secret: Hex32): Hex32 {
  * @param label - Name used in the error message (e.g. `"secret"`, `"lock"`).
  * @throws QuipSwapError `INVALID_HEX32` when malformed or the wrong length.
  */
-export function assertHex32(value: string, label: string): asserts value is Hex32 {
-  if (!isHex(value, {strict: true}) || value.length !== 66) {
+export function assertHex32(
+  value: string,
+  label: string): asserts value is Hex32 {
+  if (!isHex(value, {
+    strict: true
+  }) || value.length !== 66) {
     // do not echo the value itself: it may be a secret and must never be logged
     throw new QuipSwapError({
       code: 'INVALID_HEX32',
-      message: `${label} must be a 0x-prefixed 32-byte hex string (66 chars total); received ${
-        typeof value === 'string' ? `${value.length} chars` : typeof value
-      }`,
+      message: `${label} must be a 0x-prefixed 32-byte hex string (66 chars total); received ${typeof value === 'string' ? `${value.length} chars` : typeof value
+        }`,
     })
   }
 }

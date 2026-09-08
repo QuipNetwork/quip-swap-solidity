@@ -45,9 +45,14 @@ export interface WaitOptions {
  * Returns only the logs emitted by `address` (case-insensitive). When
  * `address` is undefined, returns `logs` unchanged (legacy raw behavior).
  */
-function filterLogsByAddress(logs: readonly Log[], address?: Address): readonly Log[] {
-  if (address === undefined) return logs
+function filterLogsByAddress(
+  logs: readonly Log[],
+  address?: Address): readonly Log[] {
+  if (address === undefined)
+    return logs
+
   const expected = address.toLowerCase()
+
   return logs.filter(log => log.address.toLowerCase() === expected)
 }
 
@@ -97,13 +102,19 @@ export async function waitForOmnibusReceipt(
   options: WaitOptions = {},
 ): Promise<OmnibusReceipt> {
   let receipt: TransactionReceipt
+
   try {
     receipt = await publicClient.waitForTransactionReceipt({
       hash,
-      ...(options.confirmations !== undefined ? {confirmations: options.confirmations} : {}),
-      ...(options.timeout !== undefined ? {timeout: options.timeout} : {}),
+      ...(options.confirmations !== undefined ? {
+        confirmations: options.confirmations
+      } : {}),
+      ...(options.timeout !== undefined ? {
+        timeout: options.timeout
+      } : {}),
     })
-  } catch (error) {
+  }
+  catch (error) {
     throw wrapContractError(error, `Waiting for receipt of ${hash}`)
   }
 
@@ -111,7 +122,9 @@ export async function waitForOmnibusReceipt(
     throw new QuipSwapError({
       code: 'TRANSACTION_REVERTED',
       message: `Transaction ${hash} was mined but reverted`,
-      details: {receipt},
+      details: {
+        receipt
+      },
     })
   }
 

@@ -1,3 +1,4 @@
+// Import the required helpers from vitest/config.
 import {defineConfig} from 'vitest/config'
 
 /**
@@ -11,9 +12,13 @@ import {defineConfig} from 'vitest/config'
  * deterministic everywhere.
  */
 export default defineConfig({
+  // Test value carried by this record.
   test: {
+    // File parallelism value carried by this record.
     fileParallelism: false,
+    // Test timeout value carried by this record.
     testTimeout: 120_000,
+    // Hook timeout value carried by this record.
     hookTimeout: 120_000,
   },
 })

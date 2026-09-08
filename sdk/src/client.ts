@@ -131,7 +131,9 @@ export interface OmnibusAdmin {
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW`.
    * @see Omnibus.setCommitmentFee
    */
-  setCommitmentFee(newFee: bigint, opts?: TxOptions): Promise<Hash>
+  setCommitmentFee(
+    newFee: bigint,
+    opts?: TxOptions): Promise<Hash>
   /**
    * Withdraws all accrued fees to `to`. Owner only. Escrowed swap native is
    * NOT withdrawable — only accrued fees.
@@ -143,7 +145,9 @@ export interface OmnibusAdmin {
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW`.
    * @see Omnibus.withdrawFees
    */
-  withdrawFees(to: Address, opts?: TxOptions): Promise<Hash>
+  withdrawFees(
+    to: Address,
+    opts?: TxOptions): Promise<Hash>
   /**
    * Starts the two-step ownership transfer (Ownable2Step): the new owner
    * must later call {@link acceptOwnership}.
@@ -153,7 +157,9 @@ export interface OmnibusAdmin {
    * @returns The transaction hash.
    * @see Ownable2Step.transferOwnership
    */
-  transferOwnership(newOwner: Address, opts?: TxOptions): Promise<Hash>
+  transferOwnership(
+    newOwner: Address,
+    opts?: TxOptions): Promise<Hash>
   /**
    * Completes a pending two-step ownership transfer; must be sent by the
    * pending owner.
@@ -162,7 +168,8 @@ export interface OmnibusAdmin {
    * @returns The transaction hash.
    * @see Ownable2Step.acceptOwnership
    */
-  acceptOwnership(opts?: TxOptions): Promise<Hash>
+  acceptOwnership(
+    opts?: TxOptions): Promise<Hash>
   /**
    * Sets the activity status of an ERC-7913 verifier for the keyed commit
    * route. Owner only; reverts `ZeroVerifier` for the zero address.
@@ -173,7 +180,10 @@ export interface OmnibusAdmin {
    * @returns The transaction hash.
    * @see Omnibus.setVerifierActivity
    */
-  setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash>
+  setVerifierActivity(
+    verifier: Address,
+    active: boolean,
+    opts?: TxOptions): Promise<Hash>
 }
 
 /**
@@ -203,11 +213,15 @@ export interface OmnibusClient {
   /** Reads the withdrawable accrued fees in wei. @see Omnibus.accruedFees */
   getAccruedFees(): Promise<bigint>
   /** Reads a lock's lifecycle state. @see Omnibus.lockState */
-  getLockState(lock: Hex32): Promise<LockState>
+  getLockState(
+    lock: Hex32): Promise<LockState>
   /** Reads the canonical terms digest bound to a lock (zero if none). @see Omnibus.termsHash */
-  getTermsHash(lock: Hex32): Promise<Hex32>
+  getTermsHash(
+    lock: Hex32): Promise<Hex32>
   /** Reads whether a side's terms digest was posted for a lock. @see Omnibus.posted */
-  getPosted(lock: Hex32, termsDigest: Hex32): Promise<boolean>
+  getPosted(
+    lock: Hex32,
+    termsDigest: Hex32): Promise<boolean>
   /** Reads the current owner. @see Ownable.owner */
   getOwner(): Promise<Address>
   /** Reads the pending owner of an in-flight two-step transfer. @see Ownable2Step.pendingOwner */
@@ -221,7 +235,8 @@ export interface OmnibusClient {
    * @returns `true` iff the verifier is active.
    * @see Omnibus.verifierActive
    */
-  isVerifierActive(verifier: Address): Promise<boolean>
+  isVerifierActive(
+    verifier: Address): Promise<boolean>
   /**
    * Reads the quip WalletFactory the wallet commit route trusts (baked
    * immutably at construction).
@@ -241,7 +256,8 @@ export interface OmnibusClient {
    * @returns `true` iff `account` was deployed by the wallet factory.
    * @see IWalletFactory.vaultIdOf
    */
-  isQuipWallet(account: Address): Promise<boolean>
+  isQuipWallet(
+    account: Address): Promise<boolean>
   /**
    * Reads the contract's commit digest for the given inputs — the on-chain
    * counterpart of {@link computeCommitDigest} (which computes the same
@@ -255,7 +271,11 @@ export interface OmnibusClient {
    * @returns The 32-byte commit digest.
    * @see Omnibus.commitDigest
    */
-  getCommitDigest(lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32): Promise<Hex32>
+  getCommitDigest(
+    lock: Hex32,
+    party: Terms,
+    counterparty: Terms,
+    signerHash: Hex32): Promise<Hex32>
 
   // ---- writes (preflight → estimate+buffer → write; hash returned, NOT finality) ----
 
@@ -331,7 +351,9 @@ export interface OmnibusClient {
    * const result = await client.waitForReceipt(hash) // address-scoped decoding
    * ```
    */
-  commit(args: CommitArgs, opts?: TxOptions): Promise<Hash>
+  commit(
+    args: CommitArgs,
+    opts?: TxOptions): Promise<Hash>
 
   /**
    * Claims a swap by revealing the secret. PERMISSIONLESS — the contract
@@ -359,7 +381,9 @@ export interface OmnibusClient {
    *   `GAS_ESTIMATION_FAILED` | `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.claim
    */
-  claim(args: ClaimArgs, opts?: TxOptions): Promise<Hash>
+  claim(
+    args: ClaimArgs,
+    opts?: TxOptions): Promise<Hash>
 
   /**
    * Reclaims escrowed assets after the local leg's `reclaimRelease`.
@@ -387,7 +411,9 @@ export interface OmnibusClient {
    *   `BALANCE_TOO_LOW` | `CONTRACT_REVERT`.
    * @see Omnibus.reclaim
    */
-  reclaim(args: ReclaimArgs, opts?: TxOptions): Promise<Hash>
+  reclaim(
+    args: ReclaimArgs,
+    opts?: TxOptions): Promise<Hash>
 
   /**
    * Waits for a write's receipt, verifies success, and decodes the Omnibus
@@ -409,14 +435,17 @@ export interface OmnibusClient {
    * const {commitments} = await client.waitForReceipt(hash, {confirmations: 3})
    * ```
    */
-  waitForReceipt(hash: Hash, options?: WaitOptions): Promise<OmnibusReceipt>
+  waitForReceipt(
+    hash: Hash,
+    options?: WaitOptions): Promise<OmnibusReceipt>
 
   /** Owner-only operations, namespaced to avoid mixing with user flows. */
   readonly admin: OmnibusAdmin
 }
 
 /** Convert SDK Terms (readonly) into the mutable tuple shape viem encodes. */
-function toAbiTerms(terms: Terms) {
+function toAbiTerms(
+  terms: Terms) {
   return {
     chainId: terms.chainId,
     reclaimRecipient: terms.reclaimRecipient,
@@ -424,12 +453,18 @@ function toAbiTerms(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
-    assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
+    assets: terms.assets.map(a => ({
+      assetType: a.assetType,
+      target: a.target,
+      id: a.id,
+      amount: a.amount
+    })),
   }
 }
 
 /** Human-readable name of a lock state for error messages. */
-function lockStateName(state: LockState): string {
+function lockStateName(
+  state: LockState): string {
   return LockState[state] ?? `unknown(${state})`
 }
 
@@ -456,24 +491,37 @@ const walletFactoryAbi = [
     type: 'function',
     name: 'vaultIdOf',
     stateMutability: 'view',
-    inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
+    inputs: [{
+      name: 'wallet',
+      type: 'address'
+    }],
+    outputs: [{
+      name: 'vaultId',
+      type: 'bytes32'
+    }],
   },
 ] as const
 
-export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClient {
+export function createOmnibusClient(
+  args: CreateOmnibusClientArgs): OmnibusClient {
   const {address, publicClient, walletClient} = args
-  const contract = {address, abi: omnibusAbi} as const
+  const contract = {
+    address,
+    abi: omnibusAbi
+  } as const
 
   /** Typed read with revert wrapping. */
-  async function read<T>(functionName: string, fnArgs: readonly unknown[] = []): Promise<T> {
+  async function read<T>(
+    functionName: string,
+    fnArgs: readonly unknown[] = []): Promise<T> {
     try {
       return (await publicClient.readContract({
         ...contract,
         functionName,
         args: fnArgs as unknown[],
       } as Parameters<PublicClient['readContract']>[0])) as T
-    } catch (error) {
+    }
+    catch (error) {
       throw wrapContractError(error, `Reading ${functionName}`)
     }
   }
@@ -483,8 +531,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * the contract's baked WalletFactory (write-once registry, non-zero iff
    * factory-deployed).
    */
-  async function isQuipWallet(account: Address): Promise<boolean> {
+  async function isQuipWallet(
+    account: Address): Promise<boolean> {
     const factory = await read<Address>('WALLET_FACTORY')
+
     try {
       const vaultId = await publicClient.readContract({
         address: factory,
@@ -492,33 +542,45 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         functionName: 'vaultIdOf',
         args: [account],
       })
+
       return BigInt(vaultId) !== 0n
-    } catch (error) {
+    }
+    catch (error) {
       throw wrapContractError(error, 'Reading vaultIdOf on the wallet factory')
     }
   }
 
   /** Resolves the wallet client + account or throws actionable errors. */
-  function requireWallet(): {wallet: WalletClient; sender: Address} {
+  function requireWallet(): {
+    wallet: WalletClient;
+    sender: Address
+  } {
     if (walletClient === undefined) {
       throw new QuipSwapError({
         code: 'MISSING_WALLET_CLIENT',
         message: 'This operation submits a transaction; create the client with a walletClient to use it',
       })
     }
+
     const account = walletClient.account
+
     if (account === undefined) {
       throw new QuipSwapError({
         code: 'MISSING_ACCOUNT',
         message: 'The wallet client has no account; hoist an account onto the wallet client',
       })
     }
-    return {wallet: walletClient, sender: account.address}
+
+    return {
+      wallet: walletClient,
+      sender: account.address
+    }
   }
 
   /** The chain's current block timestamp — windows are judged against this, not the local clock. */
   async function chainTimestamp(): Promise<bigint> {
     const block = await publicClient.getBlock()
+
     return block.timestamp
   }
 
@@ -530,37 +592,59 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   async function readLockBatch(
     lock: Hex32,
     postedDigest: Hex32,
-  ): Promise<{state: LockState; onChainTermsHash: Hex32; isPosted: boolean}> {
+  ): Promise<{
+    state: LockState;
+    onChainTermsHash: Hex32;
+    isPosted: boolean
+  }> {
     const [state, onChainTermsHash, isPosted] = await Promise.all([
       read<number>('lockState', [lock]),
       read<Hex32>('termsHash', [lock]),
       read<boolean>('posted', [lock, postedDigest]),
     ])
-    return {state: state as LockState, onChainTermsHash, isPosted}
+
+    return {
+      state: state as LockState,
+      onChainTermsHash,
+      isPosted
+    }
   }
 
   /** Throws TERMS_NOT_ON_CHAIN when the on-chain termsHash disagrees with the supplied pairing. */
-  function checkTermsHash(lock: Hex32, onChainTermsHash: Hex32, party: Terms, counterparty: Terms): void {
+  function checkTermsHash(
+    lock: Hex32,
+    onChainTermsHash: Hex32,
+    party: Terms,
+    counterparty: Terms): void {
     const expected = digestTermsCanonically(party, counterparty)
+
     if (onChainTermsHash.toLowerCase() !== expected.toLowerCase()) {
       throw new QuipSwapError({
         code: 'TERMS_NOT_ON_CHAIN',
         message:
           'The on-chain termsHash for this lock does not match the canonical digest of the supplied terms ' +
           '(contract would revert TermsMismatch)',
-        details: {lock, onChainTermsHash, expected},
+        details: {
+          lock,
+          onChainTermsHash,
+          expected
+        },
       })
     }
   }
 
   /** Throws TERMS_NOT_ON_CHAIN when the required side has not been posted for the lock. */
-  function checkPosted(lock: Hex32, isPosted: boolean): void {
+  function checkPosted(
+    lock: Hex32,
+    isPosted: boolean): void {
     if (!isPosted) {
       throw new QuipSwapError({
         code: 'TERMS_NOT_ON_CHAIN',
         message:
           "The required side's terms have not been posted for this lock (contract would revert TermsNotPosted)",
-        details: {lock},
+        details: {
+          lock
+        },
       })
     }
   }
@@ -585,8 +669,12 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * not atomic, it localizes which value disagrees under an RPC race or a
    * violated invariant instead of leaving a confusing revert.)
    */
-  async function verifyClaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+  async function verifyClaimState(
+    lock: Hex32,
+    party: Terms,
+    counterparty: Terms): Promise<void> {
     const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(counterparty))
+
     if (state !== LockState.Committed) {
       const cause =
         state === LockState.Unused
@@ -594,14 +682,20 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
           : state === LockState.Free
             ? 'the counterparty has not committed yet (same-chain swap is half-committed)'
             : 'the lock was already claimed or reclaimed'
+
       throw new QuipSwapError({
         code: 'INVALID_LOCK_STATE',
         message:
           `Cannot claim: lock state is ${lockStateName(state)} but claim requires Committed — ${cause} ` +
           '(contract would revert InvalidLockState)',
-        details: {lock, lockState: state, required: 'Committed'},
+        details: {
+          lock,
+          lockState: state,
+          required: 'Committed'
+        },
       })
     }
+
     checkTermsHash(lock, onChainTermsHash, party, counterparty)
     checkPosted(lock, isPosted)
   }
@@ -612,21 +706,31 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * `Committed`; the termsHash must bind this pairing; and the reclaimed
    * (party) side must be posted.
    */
-  async function verifyReclaimState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+  async function verifyReclaimState(
+    lock: Hex32,
+    party: Terms,
+    counterparty: Terms): Promise<void> {
     const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+
     if (state !== LockState.Free && state !== LockState.Committed) {
       const cause =
         state === LockState.Unused
           ? 'nothing has been committed under this lock on this chain'
           : 'the lock was already claimed or reclaimed'
+
       throw new QuipSwapError({
         code: 'INVALID_LOCK_STATE',
         message:
           `Cannot reclaim: lock state is ${lockStateName(state)} but reclaim requires Free or Committed — ` +
           `${cause} (contract would revert InvalidLockAdvancement)`,
-        details: {lock, lockState: state, required: 'Free or Committed'},
+        details: {
+          lock,
+          lockState: state,
+          required: 'Free or Committed'
+        },
       })
     }
+
     checkTermsHash(lock, onChainTermsHash, party, counterparty)
     checkPosted(lock, isPosted)
   }
@@ -639,28 +743,40 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * (`Omnibus.commit`: `if (posted[lock][partyDigest]) revert
    * TermsAlreadyPosted()`); `Unused` needs nothing extra.
    */
-  async function verifyCommitState(lock: Hex32, party: Terms, counterparty: Terms): Promise<void> {
+  async function verifyCommitState(
+    lock: Hex32,
+    party: Terms,
+    counterparty: Terms): Promise<void> {
     // all three reads go out in one parallel batch; the Free-only checks
     // simply ignore the extra values for other states
     const {state, onChainTermsHash, isPosted} = await readLockBatch(lock, digestTerms(party))
+
     if (state === LockState.Spent || state === LockState.Committed) {
       throw new QuipSwapError({
         code: 'INVALID_LOCK_STATE',
         message:
           `Cannot commit: lock state is ${lockStateName(state)} and no commit can advance from it ` +
           '(contract would revert InvalidLockAdvancement)',
-        details: {lock, lockState: state, required: 'Unused or Free'},
+        details: {
+          lock,
+          lockState: state,
+          required: 'Unused or Free'
+        },
       })
     }
     if (state === LockState.Free) {
       checkTermsHash(lock, onChainTermsHash, party, counterparty)
+
       if (isPosted) {
         throw new QuipSwapError({
           code: 'TERMS_ALREADY_POSTED',
           message:
             "This side's terms are already posted for the lock; the second same-chain commit must post the " +
             'OTHER side (contract would revert TermsAlreadyPosted)',
-          details: {lock, partyDigest: digestTerms(party)},
+          details: {
+            lock,
+            partyDigest: digestTerms(party)
+          },
         })
       }
     }
@@ -673,15 +789,16 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
    * decoded — with the safety multiplier applied) and submit with the
    * prepared gas/fees/nonce.
    */
-  async function submitWrite(params: {
-    wallet: WalletClient
-    sender: Address
-    functionName: string
-    args: readonly unknown[]
-    value?: bigint
-    opts: TxOptions | undefined
-    context: string
-  }): Promise<Hash> {
+  async function submitWrite(
+    params: {
+      wallet: WalletClient
+      sender: Address
+      functionName: string
+      args: readonly unknown[]
+      value?: bigint
+      opts: TxOptions | undefined
+      context: string
+    }): Promise<Hash> {
     const prepared = await prepareTx({
       publicClient,
       contractParams: {
@@ -689,12 +806,17 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         abi: omnibusAbi,
         functionName: params.functionName,
         args: params.args,
-        ...(params.value !== undefined ? {value: params.value} : {}),
+        ...(params.value !== undefined ? {
+          value: params.value
+        } : {}),
         account: params.sender,
       },
       totalValue: params.value ?? 0n,
-      ...(params.opts !== undefined ? {opts: params.opts} : {}),
+      ...(params.opts !== undefined ? {
+        opts: params.opts
+      } : {}),
     })
+
     try {
       return await params.wallet.writeContract({
         ...contract,
@@ -702,15 +824,20 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         args: params.args as unknown[],
         account: params.wallet.account ?? params.sender,
         chain: params.wallet.chain ?? publicClient.chain ?? null,
-        ...(params.value !== undefined ? {value: params.value} : {}),
+        ...(params.value !== undefined ? {
+          value: params.value
+        } : {}),
         gas: prepared.gas,
         ...prepared.fees,
-        ...(prepared.nonce !== undefined ? {nonce: prepared.nonce} : {}),
+        ...(prepared.nonce !== undefined ? {
+          nonce: prepared.nonce
+        } : {}),
         // dynamic functionName + optional payable value cannot satisfy viem's
         // conditional parameter types statically; the runtime shape is
         // exercised by the mocked-client and Anvil integration suites
       } as unknown as Parameters<WalletClient['writeContract']>[0])
-    } catch (error) {
+    }
+    catch (error) {
       // value-less calls (claim/reclaim/admin) carry no balance preflight,
       // so a gas-unfunded sender's failure surfaces at SEND time — map it
       // to BALANCE_TOO_LOW instead of mislabeling it CONTRACT_REVERT
@@ -726,16 +853,39 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   }
 
   const admin: OmnibusAdmin = {
-    async setCommitmentFee(newFee: bigint, opts?: TxOptions): Promise<Hash> {
+    async setCommitmentFee(
+      newFee: bigint,
+      opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      return submitWrite({wallet, sender, functionName: 'setCommitmentFee', args: [newFee], opts, context: 'setCommitmentFee'})
+
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'setCommitmentFee',
+        args: [newFee],
+        opts,
+        context: 'setCommitmentFee'
+      })
     },
-    async withdrawFees(to: Address, opts?: TxOptions): Promise<Hash> {
+    async withdrawFees(
+      to: Address,
+      opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      return submitWrite({wallet, sender, functionName: 'withdrawFees', args: [to], opts, context: 'withdrawFees'})
+
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'withdrawFees',
+        args: [to],
+        opts,
+        context: 'withdrawFees'
+      })
     },
-    async transferOwnership(newOwner: Address, opts?: TxOptions): Promise<Hash> {
+    async transferOwnership(
+      newOwner: Address,
+      opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
+
       return submitWrite({
         wallet,
         sender,
@@ -745,12 +895,25 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
         context: 'transferOwnership',
       })
     },
-    async acceptOwnership(opts?: TxOptions): Promise<Hash> {
+    async acceptOwnership(
+      opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-      return submitWrite({wallet, sender, functionName: 'acceptOwnership', args: [], opts, context: 'acceptOwnership'})
+
+      return submitWrite({
+        wallet,
+        sender,
+        functionName: 'acceptOwnership',
+        args: [],
+        opts,
+        context: 'acceptOwnership'
+      })
     },
-    async setVerifierActivity(verifier: Address, active: boolean, opts?: TxOptions): Promise<Hash> {
+    async setVerifierActivity(
+      verifier: Address,
+      active: boolean,
+      opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
+
       return submitWrite({
         wallet,
         sender,
@@ -769,35 +932,54 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     getMaxFee: () => read('MAX_FEE'),
     getCommitmentFee: () => read('commitmentFee'),
     getAccruedFees: () => read('accruedFees'),
-    getLockState: async (lock: Hex32) => {
+    getLockState: async (
+      lock: Hex32) => {
       assertHex32(lock, 'lock')
+
       const state = await read<number>('lockState', [lock])
+
       return state as LockState
     },
-    getTermsHash: (lock: Hex32) => {
+    getTermsHash: (
+      lock: Hex32) => {
       assertHex32(lock, 'lock')
+
       return read('termsHash', [lock])
     },
-    getPosted: (lock: Hex32, termsDigest: Hex32) => {
+    getPosted: (
+      lock: Hex32,
+      termsDigest: Hex32) => {
       assertHex32(lock, 'lock')
       assertHex32(termsDigest, 'termsDigest')
+
       return read('posted', [lock, termsDigest])
     },
     getOwner: () => read('owner'),
     getPendingOwner: () => read('pendingOwner'),
-    isVerifierActive: (verifier: Address) => read('verifierActive', [verifier]),
+    isVerifierActive: (
+      verifier: Address) => read('verifierActive', [verifier]),
     getWalletFactory: () => read('WALLET_FACTORY'),
     isQuipWallet,
-    getCommitDigest: (lock: Hex32, party: Terms, counterparty: Terms, signerHash: Hex32) => {
+    getCommitDigest: (
+      lock: Hex32,
+      party: Terms,
+      counterparty: Terms,
+      signerHash: Hex32) => {
       assertHex32(lock, 'lock')
       assertHex32(signerHash, 'signerHash')
+
       return read<Hex32>('commitDigest', [lock, toAbiTerms(party), toAbiTerms(counterparty), signerHash])
     },
 
     // confirm a write and decode events, always scoped to this client's
     // Omnibus address (the client knows the right address for its chain)
-    waitForReceipt: (hash: Hash, options: WaitOptions = {}) =>
-      waitForOmnibusReceipt(publicClient, hash, {...options, address}),
+    waitForReceipt: (
+      hash: Hash,
+      options: WaitOptions = {}) =>
+      waitForOmnibusReceipt(publicClient, hash, {
+...options,
+        address
+      }),
 
     // @audit-ok
     async commit(
@@ -805,6 +987,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       opts?: TxOptions,
     ): Promise<Hash> {
       assertHex32(lock, 'lock')
+
       const {wallet, sender} = requireWallet()
 
       // 1-2. structural + pairing validation (mirrors the contract's order)
@@ -814,13 +997,17 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
       // 3. only the LOCAL side's chainId must match; the counterparty may be remote
       const connectedChainId = BigInt(await publicClient.getChainId())
+
       if (party.chainId !== connectedChainId) {
         throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
           message:
             `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +
             "commit must be sent on the chain holding the party's assets (contract: ChainIdMismatch)",
-          details: {partyChainId: party.chainId, connectedChainId},
+          details: {
+            partyChainId: party.chainId,
+            connectedChainId
+          },
         })
       }
 
@@ -842,15 +1029,19 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
             `An empty auth.signature selects the wallet commit route, but the sender ${sender} is not a wallet ` +
             'deployed by the WalletFactory (contract: NotQuipWallet). Provide a signature over the commit digest ' +
             'for the keyed route, or send from a quip wallet',
-          details: {sender},
+          details: {
+            sender
+          },
         })
       }
 
       // 5. role-aware commit window; surfaces "taker too early" clearly
       const timestamp = await chainTimestamp()
+
       try {
         validateCommitWindow(party, counterparty, timestamp)
-      } catch (error) {
+      }
+      catch (error) {
         if (
           error instanceof QuipSwapError &&
           error.code === 'WINDOW_VIOLATED' &&
@@ -863,7 +1054,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
               `Taker commit window has not opened yet: it opens at the proposer's commitmentDeadline ` +
               `(${counterparty.commitmentDeadline}) and the chain time is ${timestamp}. Wait for the proposer's ` +
               'deadline to elapse before committing',
-            details: {opensAt: counterparty.commitmentDeadline, timestamp},
+            details: {
+              opensAt: counterparty.commitmentDeadline,
+              timestamp
+            },
             cause: error,
           })
         }
@@ -892,7 +1086,10 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
           lock,
           toAbiTerms(party),
           toAbiTerms(counterparty),
-          {signer: auth.signer, signature: auth.signature},
+          {
+            signer: auth.signer,
+            signature: auth.signature
+          },
         ],
         value,
         opts,
@@ -906,6 +1103,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     ): Promise<Hash> {
       // 1-2. validate the secret and derive the lock from it
       assertHex32(secret, 'secret')
+
       const lock = generateLock(secret)
       const {wallet, sender} = requireWallet()
 
@@ -916,6 +1114,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
       // 4. the CLAIMED leg (counterparty) must be local; party may be remote
       const connectedChainId = BigInt(await publicClient.getChainId())
+
       if (counterparty.chainId !== connectedChainId) {
         throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
@@ -923,12 +1122,16 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
             `counterparty.chainId (${counterparty.chainId}) does not match the connected chain ` +
             `(${connectedChainId}); claim must be sent on the chain holding the counterparty's assets ` +
             '(contract: ChainIdMismatch)',
-          details: {counterpartyChainId: counterparty.chainId, connectedChainId},
+          details: {
+            counterpartyChainId: counterparty.chainId,
+            connectedChainId
+          },
         })
       }
 
       // 5. role-aware claim window
       const timestamp = await chainTimestamp()
+
       validateClaimWindow(party, counterparty, timestamp)
 
       // 6. optional on-chain state verification (lockState + termsHash + posted)
@@ -954,6 +1157,7 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       opts?: TxOptions,
     ): Promise<Hash> {
       assertHex32(lock, 'lock')
+
       const {wallet, sender} = requireWallet()
 
       // 1. structural + pairing validation
@@ -963,19 +1167,24 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
 
       // 2. the reclaimed leg must be local
       const connectedChainId = BigInt(await publicClient.getChainId())
+
       if (party.chainId !== connectedChainId) {
         throw new QuipSwapError({
           code: 'CHAIN_ID_MISMATCH',
           message:
             `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +
             "reclaim must be sent on the chain holding the party's assets (contract: ChainIdMismatch)",
-          details: {partyChainId: party.chainId, connectedChainId},
+          details: {
+            partyChainId: party.chainId,
+            connectedChainId
+          },
         })
       }
 
       // 3. reclaim window: [party.reclaimRelease, +inf). NOTE: reclaim is
       // permissionless and pays reclaimRecipient regardless of caller
       const timestamp = await chainTimestamp()
+
       validateReclaimWindow(party, timestamp)
 
       // 4. optional on-chain state verification (lockState + termsHash + posted)

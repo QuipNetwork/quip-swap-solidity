@@ -144,7 +144,10 @@ export const cliCommandSpecs: readonly CliCommandSpec[] = [
   },
 ] as const
 
-export type CliJson = null | boolean | string | number | readonly CliJson[] | {[key: string]: CliJson}
+export type CliJson = null | boolean | string | number | readonly CliJson[] | {
+[
+  key: string]: CliJson
+}
 
 interface CliOutputBase {
   readonly schema: typeof CLI_SCHEMA_VERSION
@@ -172,61 +175,79 @@ export interface CliFailureOutput extends CliOutputBase {
 
 export type CliOutput = CliSuccessOutput | CliFailureOutput
 
-export function cliCommandSpec(command: CliCommand): CliCommandSpec {
+export function cliCommandSpec(
+  command: CliCommand): CliCommandSpec {
   const spec = cliCommandSpecs.find(candidate => candidate.command === command)
-  if (spec === undefined) throw new Error(`unknown CLI command: ${command}`)
+
+  if (spec === undefined)
+    throw new Error(`unknown CLI command: ${command}`)
+
   return spec
 }
 
-function requireParty(spec: CliCommandSpec, party: ClientParty): void {
-  if (!spec.parties.includes(party)) throw new Error(`${spec.command} is not available to ${party}`)
+function requireParty(
+  spec: CliCommandSpec,
+  party: ClientParty): void {
+  if (!spec.parties.includes(party))
+    throw new Error(`${spec.command} is not available to ${party}`)
 }
 
-export function cliSuccess(args: {
-  readonly command: CliCommand
-  readonly party: ClientParty
-  readonly sequence: number
-  readonly tradeId?: string
-  readonly result: CliJson
-  readonly warnings?: readonly string[]
-}): CliSuccessOutput {
+export function cliSuccess(
+  args: {
+    readonly command: CliCommand
+    readonly party: ClientParty
+    readonly sequence: number
+    readonly tradeId?: string
+    readonly result: CliJson
+    readonly warnings?: readonly string[]
+  }): CliSuccessOutput {
   const spec = cliCommandSpec(args.command)
+
   requireParty(spec, args.party)
+
   return {
     schema: CLI_SCHEMA_VERSION,
     command: args.command,
     party: args.party,
     mutatesState: spec.mutatesState,
     sequence: args.sequence,
-    ...(args.tradeId === undefined ? {} : {tradeId: args.tradeId}),
+    ...(args.tradeId === undefined ? {} : {
+      tradeId: args.tradeId
+    }),
     result: args.result,
     warnings: args.warnings ?? [],
     ok: true,
   }
 }
 
-export function cliFailure(args: {
-  readonly command: CliCommand
-  readonly party: ClientParty
-  readonly sequence: number
-  readonly tradeId?: string
-  readonly code: string
-  readonly message: string
-  readonly details?: CliJson
-}): CliFailureOutput {
+export function cliFailure(
+  args: {
+    readonly command: CliCommand
+    readonly party: ClientParty
+    readonly sequence: number
+    readonly tradeId?: string
+    readonly code: string
+    readonly message: string
+    readonly details?: CliJson
+  }): CliFailureOutput {
   const spec = cliCommandSpec(args.command)
+
   return {
     schema: CLI_SCHEMA_VERSION,
     command: args.command,
     party: args.party,
     mutatesState: spec.mutatesState,
     sequence: args.sequence,
-    ...(args.tradeId === undefined ? {} : {tradeId: args.tradeId}),
+    ...(args.tradeId === undefined ? {} : {
+      tradeId: args.tradeId
+    }),
     ok: false,
     error: {
       code: args.code,
       message: args.message,
-      ...(args.details === undefined ? {} : {details: args.details}),
+      ...(args.details === undefined ? {} : {
+        details: args.details
+      }),
     },
   }
 }

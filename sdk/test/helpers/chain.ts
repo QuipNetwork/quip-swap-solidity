@@ -54,10 +54,21 @@ export interface FoundryArtifact {
  * @param solFile - The source file name, e.g. `'Omnibus.sol'`.
  * @param contract - The contract name, e.g. `'Omnibus'`.
  */
-export function loadArtifact(solFile: string, contract: string): FoundryArtifact {
+export function loadArtifact(
+  solFile: string,
+  contract: string): FoundryArtifact {
   const path = join(repoRoot, 'out', solFile, `${contract}.json`)
-  const artifact = JSON.parse(readFileSync(path, 'utf8')) as {abi: Abi; bytecode: {object: Hex}}
-  return {abi: artifact.abi, bytecode: artifact.bytecode.object}
+  const artifact = JSON.parse(readFileSync(path, 'utf8')) as {
+    abi: Abi;
+    bytecode: {
+      object: Hex
+    }
+  }
+
+  return {
+    abi: artifact.abi,
+    bytecode: artifact.bytecode.object
+  }
 }
 
 /** A test actor: a funded Anvil account with public+wallet clients. */
@@ -82,11 +93,14 @@ export interface ChainContext {
   /** Actor 3 — a third-party actor (permissionless-path tests). */
   readonly charlie: TestActor
   /** Deploys a contract and returns its address. */
-  deploy(artifact: FoundryArtifact, args?: readonly unknown[]): Promise<Address>
+  deploy(
+    artifact: FoundryArtifact,
+    args?: readonly unknown[]): Promise<Address>
   /** Reads the latest block timestamp. */
   now(): Promise<bigint>
   /** Warps the chain to an absolute timestamp (must be in the future) and mines a block. */
-  warpTo(timestamp: bigint): Promise<void>
+  warpTo(
+    timestamp: bigint): Promise<void>
 }
 
 /**
@@ -95,23 +109,46 @@ export interface ChainContext {
  * @param rpcUrl - The node's RPC endpoint.
  * @param chainId - The node's chain id (must match what Anvil was started with).
  */
-export function connectChain(rpcUrl: string, chainId: number): ChainContext {
+export function connectChain(
+  rpcUrl: string,
+  chainId: number): ChainContext {
   const chain = defineChain({
     id: chainId,
     name: `anvil-${chainId}`,
-    nativeCurrency: {name: 'Ether', symbol: 'ETH', decimals: 18},
-    rpcUrls: {default: {http: [rpcUrl]}},
+    nativeCurrency: {
+      name: 'Ether',
+      symbol: 'ETH',
+      decimals: 18
+    },
+    rpcUrls: {
+      default: {
+        http: [rpcUrl]
+      }
+    },
   })
   const transport = http(rpcUrl)
-  const publicClient = createPublicClient({chain, transport}) as PublicClient
-  const testClient = createTestClient({chain, mode: 'anvil', transport})
+  const publicClient = createPublicClient({
+    chain,
+    transport
+  }) as PublicClient
+  const testClient = createTestClient({
+    chain,
+    mode: 'anvil',
+    transport
+  })
 
-  const actorFor = (key: `0x${string}`): TestActor => {
+  const actorFor = (
+    key: `0x${string}`): TestActor => {
     const account = privateKeyToAccount(key)
+
     return {
       account,
       address: account.address,
-      walletClient: createWalletClient({chain, transport, account}),
+      walletClient: createWalletClient({
+        chain,
+        transport,
+        account
+      }),
     }
   }
 
@@ -122,7 +159,9 @@ export function connectChain(rpcUrl: string, chainId: number): ChainContext {
     actorFor(ANVIL_KEYS[3]),
   ]
 
-  async function deploy(artifact: FoundryArtifact, args: readonly unknown[] = []): Promise<Address> {
+  async function deploy(
+    artifact: FoundryArtifact,
+    args: readonly unknown[] = []): Promise<Address> {
     const hash = await deployer.walletClient.deployContract({
       abi: artifact.abi,
       bytecode: artifact.bytecode,
@@ -130,7 +169,10 @@ export function connectChain(rpcUrl: string, chainId: number): ChainContext {
       chain,
       account: deployer.account,
     })
-    const receipt = await publicClient.waitForTransactionReceipt({hash})
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash
+    })
+
     if (receipt.contractAddress == null) {
       throw new Error('deployment produced no contract address')
     }
@@ -140,18 +182,36 @@ export function connectChain(rpcUrl: string, chainId: number): ChainContext {
 
   async function now(): Promise<bigint> {
     const block = await publicClient.getBlock()
+
     return block.timestamp
   }
 
-  async function warpTo(timestamp: bigint): Promise<void> {
+  async function warpTo(
+    timestamp: bigint): Promise<void> {
     // evm_setNextBlockTimestamp only applies to the NEXT block, so mine one
     // immediately — afterwards `latest.timestamp === timestamp`, mirroring
     // the vm.warp anchors in the Foundry suite
-    await testClient.setNextBlockTimestamp({timestamp})
-    await testClient.mine({blocks: 1})
+    await testClient.setNextBlockTimestamp({
+      timestamp
+    })
+    await testClient.mine({
+      blocks: 1
+    })
   }
 
-  return {chainId, rpcUrl, publicClient, testClient, deployer, alice, bob, charlie, deploy, now, warpTo}
+  return {
+    chainId,
+    rpcUrl,
+    publicClient,
+    testClient,
+    deployer,
+    alice,
+    bob,
+    charlie,
+    deploy,
+    now,
+    warpTo
+  }
 }
 
 /** Addresses of the standard per-chain contract fixture. */
@@ -182,7 +242,8 @@ export interface Fixture {
  * @param ctx - The chain context from {@link connectChain}.
  * @returns The deployed addresses.
  */
-export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
+export async function deployFixture(
+  ctx: ChainContext): Promise<Fixture> {
   // 1. the wallet-factory registry double, then the two-argument constructor:
   // (initialOwner, walletFactory); verifiers are activated post-deploy via
   // setVerifierActivity (owner action)
@@ -193,7 +254,8 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
   // an AcceptAll ERC-7913 verifier mock backs the keyed commit route
   const verifier = await ctx.deploy(loadArtifact('VerifierMock.sol', 'VerifierMock'))
 
-  const activateVerifier = async (target: Address): Promise<void> => {
+  const activateVerifier = async (
+    target: Address): Promise<void> => {
     const hash = await ctx.deployer.walletClient.writeContract({
       address: target,
       abi: omnibusArtifact.abi,
@@ -202,8 +264,12 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
       chain: null,
       account: ctx.deployer.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
   }
+
   await activateVerifier(omnibus)
 
   // 2. mock assets
@@ -224,7 +290,18 @@ export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
     ctx.deployer.address,
     walletFactory,
   ])
+
   await activateVerifier(omnibusHarness)
 
-  return {omnibus, verifier, walletFactory, erc20, erc721, erc1155, feeERC20, termsLibHarness, omnibusHarness}
+  return {
+    omnibus,
+    verifier,
+    walletFactory,
+    erc20,
+    erc721,
+    erc1155,
+    feeERC20,
+    termsLibHarness,
+    omnibusHarness
+  }
 }

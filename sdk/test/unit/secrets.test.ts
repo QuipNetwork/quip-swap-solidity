@@ -15,18 +15,23 @@ const HEX32 = /^0x[0-9a-f]{64}$/
 describe('generateSecret', () => {
   it('produces a 32-byte secret and a 32-byte lock', () => {
     const {secret, lock} = generateSecret()
+
     expect(secret).toMatch(HEX32)
     expect(lock).toMatch(HEX32)
   })
 
   it('lock is keccak256 of the secret', () => {
     const {secret, lock} = generateSecret()
+
     expect(generateLock(secret)).toBe(lock)
   })
 
   it('does not repeat across invocations (CSPRNG sanity check)', () => {
     const seen = new Set<string>()
-    for (let i = 0; i < 64; i++) seen.add(generateSecret().secret)
+
+    for (let i = 0; i < 64; i++)
+      seen.add(generateSecret().secret)
+
     expect(seen.size).toBe(64)
   })
 
@@ -52,7 +57,8 @@ describe('secretToPair', () => {
     try {
       secretToPair('0xdeadbeef')
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as Error).message).not.toContain('deadbeef')
     }
   })

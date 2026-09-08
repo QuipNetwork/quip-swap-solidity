@@ -39,13 +39,17 @@ import {
   CHAIN_A,
 } from '../helpers/fixtures.js'
 
-function codeOf(fn: () => unknown): string {
+function codeOf(
+  fn: () => unknown): string {
   try {
     fn()
-  } catch (error) {
-    if (error instanceof QuipSwapError) return error.code
+  }
+  catch (error) {
+    if (error instanceof QuipSwapError)
+      return error.code
     throw error
   }
+
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
@@ -79,34 +83,56 @@ describe('enforceWithin', () => {
 
 describe('isWithinWindow', () => {
   it('matches enforceWithin semantics without throwing', () => {
-    const window = {lower: 100n, upper: 200n}
+    const window = {
+      lower: 100n,
+      upper: 200n
+    }
+
     expect(isWithinWindow(window, 100n)).toBe(true)
     expect(isWithinWindow(window, 199n)).toBe(true)
     expect(isWithinWindow(window, 200n)).toBe(false)
     expect(isWithinWindow(window, 99n)).toBe(false)
-    expect(isWithinWindow({lower: 200n, upper: 200n}, 200n)).toBe(false) // degenerate
+    expect(isWithinWindow({
+      lower: 200n,
+      upper: 200n
+    }, 200n)).toBe(false) // degenerate
   })
 })
 
 describe('derived action windows match the contract enforceWithin calls', () => {
   it('proposer commit window = [0, proposer.commitmentDeadline)', () => {
-    expect(proposerCommitWindow(alice)).toEqual({lower: 0n, upper: ALICE_COMMIT_DEADLINE})
+    expect(proposerCommitWindow(alice)).toEqual({
+      lower: 0n,
+      upper: ALICE_COMMIT_DEADLINE
+    })
   })
 
   it('taker commit window = [proposer.commitmentDeadline, taker.commitmentDeadline)', () => {
-    expect(takerCommitWindow(bob, alice)).toEqual({lower: ALICE_COMMIT_DEADLINE, upper: BOB_COMMIT_DEADLINE})
+    expect(takerCommitWindow(bob, alice)).toEqual({
+      lower: ALICE_COMMIT_DEADLINE,
+      upper: BOB_COMMIT_DEADLINE
+    })
   })
 
   it('proposer claim window = [taker.commitmentDeadline, proposer.claimDeadline)', () => {
-    expect(proposerClaimWindow(alice, bob)).toEqual({lower: BOB_COMMIT_DEADLINE, upper: ALICE_CLAIM_DEADLINE})
+    expect(proposerClaimWindow(alice, bob)).toEqual({
+      lower: BOB_COMMIT_DEADLINE,
+      upper: ALICE_CLAIM_DEADLINE
+    })
   })
 
   it('taker claim window = [proposer.claimDeadline, proposer.reclaimRelease)', () => {
-    expect(takerClaimWindow(alice)).toEqual({lower: ALICE_CLAIM_DEADLINE, upper: ALICE_RECLAIM_RELEASE})
+    expect(takerClaimWindow(alice)).toEqual({
+      lower: ALICE_CLAIM_DEADLINE,
+      upper: ALICE_RECLAIM_RELEASE
+    })
   })
 
   it('reclaim window = [leg.reclaimRelease, +inf)', () => {
-    expect(reclaimWindow(alice)).toEqual({lower: ALICE_RECLAIM_RELEASE, upper: MAX_UINT256})
+    expect(reclaimWindow(alice)).toEqual({
+      lower: ALICE_RECLAIM_RELEASE,
+      upper: MAX_UINT256
+    })
   })
 })
 

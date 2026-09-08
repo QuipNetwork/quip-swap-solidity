@@ -38,8 +38,13 @@ export function generateSecret(): SecretLockPair {
   const bytes = new Uint8Array(32)
   // SECURITY: CSPRNG only. globalThis.crypto exists in all supported runtimes.
   globalThis.crypto.getRandomValues(bytes)
+
   const secret = bytesToHex(bytes) as Hex32
-  return Object.freeze({secret, lock: generateLock(secret)})
+
+  return Object.freeze({
+    secret,
+    lock: generateLock(secret)
+  })
 }
 
 /**
@@ -57,7 +62,12 @@ export function generateSecret(): SecretLockPair {
  * const pair = secretToPair(loadSecretFromVault())
  * ```
  */
-export function secretToPair(secret: string): SecretLockPair {
+export function secretToPair(
+  secret: string): SecretLockPair {
   assertHex32(secret, 'secret')
-  return Object.freeze({secret, lock: generateLock(secret)})
+
+  return Object.freeze({
+    secret,
+    lock: generateLock(secret)
+  })
 }

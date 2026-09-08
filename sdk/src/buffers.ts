@@ -82,7 +82,9 @@ export function checkScheduleBuffers(
   proposerTerms: Terms,
   takerTerms: Terms,
   minimumBufferSeconds: bigint,
-): {minimumGapSeconds: bigint} {
+): {
+  minimumGapSeconds: bigint
+} {
   // the six interleaved timestamps, in schedule order
   const sequence: readonly [string, bigint][] = [
     ['proposer.commitmentDeadline', proposerTerms.commitmentDeadline],
@@ -94,10 +96,12 @@ export function checkScheduleBuffers(
   ]
 
   let minimumGapSeconds: bigint | undefined
+
   for (let i = 1; i < sequence.length; i++) {
     const [prevName, prev] = sequence[i - 1] as [string, bigint]
     const [nextName, next] = sequence[i] as [string, bigint]
     const gap = next - prev
+
     if (gap < minimumBufferSeconds) {
       throw new QuipSwapError({
         code: 'INSUFFICIENT_BUFFER',
@@ -106,11 +110,21 @@ export function checkScheduleBuffers(
           `minimum of ${minimumBufferSeconds}s. Every adjacent gap — especially the taker's post-reveal ` +
           'reaction buffer (proposer.reclaimRelease - proposer.claimDeadline) — must cover finality, reorg ' +
           'risk, RPC outages, congestion, and relayer latency',
-        details: {prevName, prev, nextName, next, gap, minimumBufferSeconds},
+        details: {
+          prevName,
+          prev,
+          nextName,
+          next,
+          gap,
+          minimumBufferSeconds
+        },
       })
     }
-    if (minimumGapSeconds === undefined || gap < minimumGapSeconds) minimumGapSeconds = gap
+    if (minimumGapSeconds === undefined || gap < minimumGapSeconds)
+      minimumGapSeconds = gap
   }
 
-  return {minimumGapSeconds: minimumGapSeconds ?? 0n}
+  return {
+    minimumGapSeconds: minimumGapSeconds ?? 0n
+  }
 }

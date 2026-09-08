@@ -29,7 +29,9 @@ describe('prototype CLI surface', () => {
       party: 'alice',
       sequence: 4,
       tradeId: `0x${'11'.repeat(32)}`,
-      result: {stage: 'alice-final'},
+      result: {
+        stage: 'alice-final'
+      },
     })
     const failure = cliFailure({
       command: 'submit-bob-commit',
@@ -38,12 +40,27 @@ describe('prototype CLI surface', () => {
       code: 'BOB_COMMIT_DISABLED',
       message: 'Alice commit is not final',
     })
-    expect(success).toMatchObject({schema: CLI_SCHEMA_VERSION, ok: true, mutatesState: false, warnings: []})
-    expect(failure).toMatchObject({schema: CLI_SCHEMA_VERSION, ok: false, mutatesState: true})
+
+    expect(success).toMatchObject({
+      schema: CLI_SCHEMA_VERSION,
+      ok: true,
+      mutatesState: false,
+      warnings: []
+    })
+    expect(failure).toMatchObject({
+      schema: CLI_SCHEMA_VERSION,
+      ok: false,
+      mutatesState: true
+    })
     expect(JSON.parse(JSON.stringify(success))).toEqual(success)
     expect(JSON.parse(JSON.stringify(failure))).toEqual(failure)
     expect(() =>
-      cliSuccess({command: 'submit-bob-commit', party: 'alice', sequence: 1, result: {}}),
+      cliSuccess({
+        command: 'submit-bob-commit',
+        party: 'alice',
+        sequence: 1,
+        result: {}
+      }),
     ).toThrow('submit-bob-commit is not available to alice')
   })
 })

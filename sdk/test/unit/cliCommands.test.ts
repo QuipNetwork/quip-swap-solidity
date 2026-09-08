@@ -19,51 +19,162 @@ const BOB = '0x2222222222222222222222222222222222222222' as Address
 const EXECUTOR = '0x3333333333333333333333333333333333333333' as Address
 const VERIFIER = '0x4444444444444444444444444444444444444444' as Address
 const WRAPPER = '0x5555555555555555555555555555555555555555' as Address
-const hexN = (n: number) => `0x${n.toString(16).padStart(64, '0')}` as Hex32
-const policy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31337n, counterpartyChainId: 31338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
-const side = (party: boolean): Omit<SideTerms, 'commitLock' | 'sideNonce'> => ({chainId: party ? 31337n : 31338n, assets: [{assetType: AssetType.Native, target: ZERO, id: 0n, amount: 1n}], principal: party ? ALICE : BOB, authorizationMode: AuthorizationMode.QuipWallet, principalKeyVersion: 0n, reclaimRecipient: party ? ALICE : BOB, recipient: party ? BOB : ALICE, commitmentDeadline: party ? 100n : 200n, claimDeadline: party ? 350n : 300n, reclaimRelease: 500n, delegationPolicy: party ? DelegationPolicy.NotAllowed : DelegationPolicy.Permissionless, delegate: ZERO, delegateKeyVersion: 0n})
+const hexN = (
+  n: number) => `0x${n.toString(16).padStart(64, '0')}` as Hex32
+const policy: TimingPolicy = {
+  policyVersion: 1n,
+  mode: WrapperMode.CrossChain,
+  partyChainId: 31337n,
+  counterpartyChainId: 31338n,
+  partyToCounterpartyDelay: 10n,
+  counterpartyToPartyDelay: 10n
+}
+const side = (
+  party: boolean): Omit<SideTerms, 'commitLock' | 'sideNonce'> => ({
+    chainId: party ? 31337n : 31338n,
+    assets: [{
+      assetType: AssetType.Native,
+      target: ZERO,
+      id: 0n,
+      amount: 1n
+    }],
+    principal: party ? ALICE : BOB,
+    authorizationMode: AuthorizationMode.QuipWallet,
+    principalKeyVersion: 0n,
+    reclaimRecipient: party ? ALICE : BOB,
+    recipient: party ? BOB : ALICE,
+    commitmentDeadline: party ? 100n : 200n,
+    claimDeadline: party ? 350n : 300n,
+    reclaimRelease: 500n,
+    delegationPolicy: party ? DelegationPolicy.NotAllowed : DelegationPolicy.Permissionless,
+    delegate: ZERO,
+    delegateKeyVersion: 0n
+  })
 function prepared() {
   let n = 1
-  return prepareTradeCommand({workflow: {policy, partySide: side(true), counterpartySide: side(false), partyVerifier: VERIFIER, counterpartyVerifier: VERIFIER, partyWrapper: WRAPPER, counterpartyWrapper: WRAPPER, partyExpiry: 90n, counterpartyExpiry: 190n, requiredConfirmations: 3n, selectedBobSubmitter: EXECUTOR, randomHex32: () => hexN(n++)}, finalClaimExecutors: [EXECUTOR], secretMode: 'unsafe-demo'})
+
+  return prepareTradeCommand({
+    workflow: {
+      policy,
+      partySide: side(true),
+      counterpartySide: side(false),
+      partyVerifier: VERIFIER,
+      counterpartyVerifier: VERIFIER,
+      partyWrapper: WRAPPER,
+      counterpartyWrapper: WRAPPER,
+      partyExpiry: 90n,
+      counterpartyExpiry: 190n,
+      requiredConfirmations: 3n,
+      selectedBobSubmitter: EXECUTOR,
+      randomHex32: () => hexN(n++)
+    },
+    finalClaimExecutors: [EXECUTOR],
+    secretMode: 'unsafe-demo'
+  })
 }
-const inclusion = {transactionHash: hexN(20), blockNumber: '10', blockHash: hexN(21)}
+const inclusion = {
+  transactionHash: hexN(20),
+  blockNumber: '10',
+  blockHash: hexN(21)
+}
 
 describe('trusted workflow CLI commands', () => {
   it('wires the complete party-separated transition sequence', () => {
     const initial = prepared()
-    let alice = applyPartyCommand(initial.alice.publicState, initial.alice.secretState, {command: 'mark-alice-pending'})
-    alice = applyPartyCommand(alice.publicState, alice.secretState, {command: 'mark-alice-included-non-final', inclusion})
-    alice = applyPartyCommand(alice.publicState, alice.secretState, {command: 'mark-alice-final', inclusion})
+    let alice = applyPartyCommand(initial.alice.publicState, initial.alice.secretState, {
+      command: 'mark-alice-pending'
+    })
+
+    alice = applyPartyCommand(alice.publicState, alice.secretState, {
+      command: 'mark-alice-included-non-final',
+      inclusion
+    })
+    alice = applyPartyCommand(alice.publicState, alice.secretState, {
+      command: 'mark-alice-final',
+      inclusion
+    })
+
     expect(alice.publicState.stage).toBe('bob-enabled')
-    if (alice.publicState.party !== 'alice') throw new Error('test requires Alice state')
+    if (alice.publicState.party !== 'alice')
+      throw new Error('test requires Alice state')
     expect(alice.publicState.progression.published).toBe(true)
 
-    let bob = applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-final', inclusion, bobCommitSecret: initial.alice.secretState.bobCommitSecret})
-    if (bob.publicState.party !== 'bob') throw new Error('test requires Bob state')
+    let bob = applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {
+      command: 'mark-alice-final',
+      inclusion,
+      bobCommitSecret: initial.alice.secretState.bobCommitSecret
+    })
+
+    if (bob.publicState.party !== 'bob')
+      throw new Error('test requires Bob state')
     expect(bob.publicState.progression.observed).toBe(true)
-    bob = applyPartyCommand(bob.publicState, bob.secretState, {command: 'mark-bob-commit-pending'})
-    bob = applyPartyCommand(bob.publicState, bob.secretState, {command: 'mark-bob-committed'})
-    bob = applyPartyCommand(bob.publicState, bob.secretState, {command: 'observe-reveal', settlementSecret: initial.alice.secretState.settlementSecret, inclusion})
-    bob = applyPartyCommand(bob.publicState, bob.secretState, {command: 'handoff-final-claim', executor: EXECUTOR, transactionHash: hexN(23)})
-    bob = applyPartyCommand(bob.publicState, bob.secretState, {command: 'mark-complete'})
+
+    bob = applyPartyCommand(bob.publicState, bob.secretState, {
+      command: 'mark-bob-commit-pending'
+    })
+    bob = applyPartyCommand(bob.publicState, bob.secretState, {
+      command: 'mark-bob-committed'
+    })
+    bob = applyPartyCommand(bob.publicState, bob.secretState, {
+      command: 'observe-reveal',
+      settlementSecret: initial.alice.secretState.settlementSecret,
+      inclusion
+    })
+    bob = applyPartyCommand(bob.publicState, bob.secretState, {
+      command: 'handoff-final-claim',
+      executor: EXECUTOR,
+      transactionHash: hexN(23)
+    })
+    bob = applyPartyCommand(bob.publicState, bob.secretState, {
+      command: 'mark-complete'
+    })
+
     expect(bob.publicState.stage).toBe('complete')
     expect(bob.publicState.generation).toBe(7)
   })
 
   it('rejects missing or incorrect on-chain progression and premature reveal', () => {
     const initial = prepared()
-    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-final', inclusion})).toThrow('lacks the on-chain')
-    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-final', inclusion, bobCommitSecret: hexN(99)})).toThrow('does not match')
-    expect(applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'mark-alice-pending'}).publicState.aliceCommit.status).toBe('pending')
-    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {command: 'observe-reveal', settlementSecret: initial.alice.secretState.settlementSecret, inclusion})).toThrow('not committed')
+
+    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {
+      command: 'mark-alice-final',
+      inclusion
+    })).toThrow('lacks the on-chain')
+    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {
+      command: 'mark-alice-final',
+      inclusion,
+      bobCommitSecret: hexN(99)
+    })).toThrow('does not match')
+    expect(applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {
+      command: 'mark-alice-pending'
+    }).publicState.aliceCommit.status).toBe('pending')
+    expect(() => applyPartyCommand(initial.bob.publicState, initial.bob.secretState, {
+      command: 'observe-reveal',
+      settlementSecret: initial.alice.secretState.settlementSecret,
+      inclusion
+    })).toThrow('not committed')
   })
 
   it('keeps status read-only and supports party-local recovery', () => {
     const initial = prepared()
-    const status = applyPartyCommand(initial.alice.publicState, initial.alice.secretState, {command: 'status'})
+    const status = applyPartyCommand(initial.alice.publicState, initial.alice.secretState, {
+      command: 'status'
+    })
+
     expect(status.publicState).toBe(initial.alice.publicState)
-    const recovery = applyPartyCommand(status.publicState, status.secretState, {command: 'enter-recovery', reason: 'RPC disagreement'})
-    expect(recovery.publicState).toMatchObject({stage: 'recovery', recovery: {active: true, reason: 'RPC disagreement'}})
+
+    const recovery = applyPartyCommand(status.publicState, status.secretState, {
+      command: 'enter-recovery',
+      reason: 'RPC disagreement'
+    })
+
+    expect(recovery.publicState).toMatchObject({
+      stage: 'recovery',
+      recovery: {
+        active: true,
+        reason: 'RPC disagreement'
+      }
+    })
   })
 
   it('keeps internal reducer commands separate from the public console surface', () => {

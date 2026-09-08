@@ -27,28 +27,45 @@ export interface NegativeControlArtifact {
   readonly records: readonly NegativeControlRecord[]
 }
 
+/**
+ * Records an expected rejection only when its exact error name matches and the supplied before/after
+ * snapshots agree. The caller chooses snapshot coverage and must prevent unrelated chain activity from
+ * changing it. A callback that resolves to a reverted receipt must throw explicitly to count as failure.
+ */
 export class NegativeControlRecorder {
   readonly #records: NegativeControlRecord[] = []
 
-  async execute(input: {
-    readonly scenario: NegativeControlScenario
-    readonly snapshot: () => Promise<CrossChainSettlementSnapshot>
-    readonly attempt: () => Promise<unknown>
-    readonly errorName?: (error: unknown) => string | undefined
-  }): Promise<NegativeControlRecord> {
+  async execute(
+    input: {
+      readonly scenario: NegativeControlScenario
+      readonly snapshot: () => Promise<CrossChainSettlementSnapshot>
+      readonly attempt: () => Promise<unknown>
+      readonly errorName?: (
+        error: unknown) => string | undefined
+    }): Promise<NegativeControlRecord> {
     const before = await input.snapshot()
     let failure: unknown
+
     try {
       await input.attempt()
-    } catch (error) {
+    }
+    catch (error) {
       failure = error
     }
-    if (failure === undefined) throw new Error(`negative control unexpectedly succeeded: ${input.scenario}`)
+
+    if (failure === undefined)
+      throw new Error(`negative control unexpectedly succeeded: ${input.scenario}`)
+
     const errorName = (input.errorName ?? extractContractErrorName)(failure)
     const expected = negativeControlErrors[input.scenario]
-    if (errorName !== expected) throw new Error(`negative control reverted with ${errorName ?? 'an unknown error'}; expected ${expected}`)
+
+    if (errorName !== expected)
+      throw new Error(`negative control reverted with ${errorName ?? 'an unknown error'}; expected ${expected}`)
     const after = await input.snapshot()
-    if (stableSnapshot(before) !== stableSnapshot(after)) throw new Error(`negative control changed state: ${input.scenario}`)
+
+    if (stableSnapshot(before) !== stableSnapshot(after))
+      throw new Error(`negative control changed state: ${input.scenario}`)
+
     const record: NegativeControlRecord = {
       sequence: this.#records.length + 1,
       scenario: input.scenario,
@@ -58,25 +75,41 @@ export class NegativeControlRecorder {
       before,
       after,
     }
+
     this.#records.push(record)
+
     return record
   }
 
-  artifact(options: {readonly requireAll?: boolean} = {}): NegativeControlArtifact {
+  /** Optionally require every named scenario; this checks coverage, not independent replay of the attempts. */
+  artifact(
+    options: {
+      readonly requireAll?: boolean
+    } = {}): NegativeControlArtifact {
     if (options.requireAll === true) {
       const recorded = new Set(this.#records.map(record => record.scenario))
+
       for (const scenario of Object.keys(negativeControlErrors) as NegativeControlScenario[]) {
-        if (!recorded.has(scenario)) throw new Error(`missing negative control: ${scenario}`)
+        if (!recorded.has(scenario))
+          throw new Error(`missing negative control: ${scenario}`)
       }
     }
-    return {schema: NEGATIVE_CONTROL_SCHEMA, records: this.#records.map(record => ({...record}))}
+
+    return {
+      schema: NEGATIVE_CONTROL_SCHEMA,
+      records: this.#records.map(record => ({
+...record
+      }))
+    }
   }
 }
 
-function stableSnapshot(snapshot: CrossChainSettlementSnapshot): string {
+function stableSnapshot(
+  snapshot: CrossChainSettlementSnapshot): string {
   return JSON.stringify(snapshot)
 }
 
-export function serializeNegativeControls(artifact: NegativeControlArtifact): string {
+export function serializeNegativeControls(
+  artifact: NegativeControlArtifact): string {
   return `${JSON.stringify(artifact, null, 2)}\n`
 }

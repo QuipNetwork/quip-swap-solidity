@@ -21,12 +21,18 @@ console.log('[same-chain demo] Building Solidity artifacts')
 const build = spawnSync(
   'forge',
   ['build', '--root', repoRoot],
-  {cwd: repoRoot, stdio: 'inherit'},
+  {
+    cwd: repoRoot,
+    stdio: 'inherit'
+  },
 )
-if (build.status !== 0) process.exit(build.status ?? 1)
+if (build.status !== 0)
+  process.exit(build.status ?? 1)
 
 console.log(`[same-chain demo] Starting local chain ${SAME_CHAIN_DEMO_CHAIN_ID}`)
-const anvil = await startAnvil({chainId: SAME_CHAIN_DEMO_CHAIN_ID})
+const anvil = await startAnvil({
+  chainId: SAME_CHAIN_DEMO_CHAIN_ID
+})
 try {
   let step = 0
   const execution = await runSameChainDemoFoundation(
@@ -35,10 +41,19 @@ try {
     message => console.log(`\x1b[32m[same-chain demo ${String(++step).padStart(2, '0')}] ${message}\x1b[0m`),
   )
   const artifact = buildSameChainDemoArtifact(execution)
+
   validateSameChainDemoArtifact(artifact)
   assertSameChainArtifactValidator(artifact)
-  mkdirSync(dirname(output), {recursive: true})
-  writeFileSync(output, serializeSameChainDemoArtifact(artifact), {encoding: 'utf8', mode: 0o600})
+
+  mkdirSync(dirname(output), {
+    recursive: true
+  })
+
+  writeFileSync(output, serializeSameChainDemoArtifact(artifact), {
+    encoding: 'utf8',
+    mode: 0o600
+  })
+
   console.log(JSON.stringify({
     schema: artifact.schema,
     mockVerifier: artifact.mockVerifier,

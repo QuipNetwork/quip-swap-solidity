@@ -21,20 +21,38 @@ const base = aliceTerms(CHAIN_A, [nativeAsset(10n), erc20Asset(TOKEN, 100n)])
 
 describe('digestTerms', () => {
   it('is deterministic: same input, same digest', () => {
-    expect(digestTerms(base)).toBe(digestTerms({...base, assets: [...base.assets]}))
+    expect(digestTerms(base)).toBe(digestTerms({
+...base,
+      assets: [...base.assets]
+    }))
   })
 
   it('every one of the seven Terms fields affects the digest', () => {
     const variants: Partial<Terms>[] = [
-      {chainId: base.chainId + 1n},
-      {reclaimRecipient: BOB},
-      {recipient: BOB},
-      {commitmentDeadline: base.commitmentDeadline + 1n},
-      {claimDeadline: base.claimDeadline + 1n},
-      {reclaimRelease: base.reclaimRelease + 1n},
-      {assets: [nativeAsset(10n)]},
+      {
+        chainId: base.chainId + 1n
+      },
+      {
+        reclaimRecipient: BOB
+      },
+      {
+        recipient: BOB
+      },
+      {
+        commitmentDeadline: base.commitmentDeadline + 1n
+      },
+      {
+        claimDeadline: base.claimDeadline + 1n
+      },
+      {
+        reclaimRelease: base.reclaimRelease + 1n
+      },
+      {
+        assets: [nativeAsset(10n)]
+      },
     ]
     const baseline = digestTerms(base)
+
     for (const overrides of variants) {
       expect(digestTerms(withOverrides(base, overrides)), JSON.stringify(Object.keys(overrides))).not.toBe(baseline)
     }
@@ -43,23 +61,44 @@ describe('digestTerms', () => {
   it('asset target, id, and amount each affect the digest', () => {
     const baseline = digestTerms(base)
     const otherToken = '0x2000000000000000000000000000000000000002' as const
-    expect(digestTerms(withOverrides(base, {assets: [nativeAsset(10n), erc20Asset(otherToken, 100n)]}))).not.toBe(
+
+    expect(digestTerms(withOverrides(base, {
+      assets: [nativeAsset(10n), erc20Asset(otherToken, 100n)]
+    }))).not.toBe(
       baseline,
     )
-    expect(digestTerms(withOverrides(base, {assets: [nativeAsset(10n), erc20Asset(TOKEN, 101n)]}))).not.toBe(baseline)
+    expect(digestTerms(withOverrides(base, {
+      assets: [nativeAsset(10n), erc20Asset(TOKEN, 101n)]
+    }))).not.toBe(baseline)
     // id sensitivity via ERC-1155-style raw asset (builders pin ERC-20 id to 0)
     const withId = withOverrides(base, {
-      assets: [nativeAsset(10n), {assetType: 3, target: TOKEN, id: 1n, amount: 100n}],
+      assets: [nativeAsset(10n), {
+        assetType: 3,
+        target: TOKEN,
+        id: 1n,
+        amount: 100n
+      }],
     })
     const withOtherId = withOverrides(base, {
-      assets: [nativeAsset(10n), {assetType: 3, target: TOKEN, id: 2n, amount: 100n}],
+      assets: [nativeAsset(10n), {
+        assetType: 3,
+        target: TOKEN,
+        id: 2n,
+        amount: 100n
+      }],
     })
+
     expect(digestTerms(withId)).not.toBe(digestTerms(withOtherId))
   })
 
   it('asset ORDER affects the single-side digest', () => {
-    const forward = withOverrides(base, {assets: [nativeAsset(10n), erc20Asset(TOKEN, 100n)]})
-    const reversed = withOverrides(base, {assets: [erc20Asset(TOKEN, 100n), nativeAsset(10n)]})
+    const forward = withOverrides(base, {
+      assets: [nativeAsset(10n), erc20Asset(TOKEN, 100n)]
+    })
+    const reversed = withOverrides(base, {
+      assets: [erc20Asset(TOKEN, 100n), nativeAsset(10n)]
+    })
+
     expect(digestTerms(forward)).not.toBe(digestTerms(reversed))
   })
 })
@@ -74,14 +113,20 @@ describe('digestTermsCanonically', () => {
 
   it('differs from the single-side digests', () => {
     const canonical = digestTermsCanonically(alice, bob)
+
     expect(canonical).not.toBe(digestTerms(alice))
     expect(canonical).not.toBe(digestTerms(bob))
   })
 
   it('changes when either side changes', () => {
     const baseline = digestTermsCanonically(alice, bob)
-    expect(digestTermsCanonically(withOverrides(alice, {chainId: alice.chainId + 1n}), bob)).not.toBe(baseline)
-    expect(digestTermsCanonically(alice, withOverrides(bob, {chainId: bob.chainId + 1n}))).not.toBe(baseline)
+
+    expect(digestTermsCanonically(withOverrides(alice, {
+      chainId: alice.chainId + 1n
+    }), bob)).not.toBe(baseline)
+    expect(digestTermsCanonically(alice, withOverrides(bob, {
+      chainId: bob.chainId + 1n
+    }))).not.toBe(baseline)
   })
 })
 

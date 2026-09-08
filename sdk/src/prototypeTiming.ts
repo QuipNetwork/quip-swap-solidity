@@ -6,7 +6,9 @@ export const OP_SEPOLIA_CHAIN_ID = 11_155_420n
 // Example budget only: review route assumptions and both deployed FINAL_CLAIM_DELAY values before signing.
 export const PROTOTYPE_FINAL_CLAIM_DELAY = 30n * 60n
 
-function policy(partyChainId: bigint, counterpartyChainId: bigint): TimingPolicy {
+function policy(
+  partyChainId: bigint,
+  counterpartyChainId: bigint): TimingPolicy {
   return {
     policyVersion: 1n,
     mode: WrapperMode.CrossChain,

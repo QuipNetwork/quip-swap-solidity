@@ -8,7 +8,8 @@ import {
   sameChainDemoPolicy,
 } from '../../scripts/demo/same-chain/demo.js'
 
-const address = (suffix: string) => getAddress(`0x${suffix.padStart(40, '0')}`)
+const address = (
+  suffix: string) => getAddress(`0x${suffix.padStart(40, '0')}`)
 const ZERO32 = ('0x' + '00'.repeat(32)) as Hex
 
 function terms() {
@@ -26,6 +27,7 @@ describe('current-protocol same-chain demo foundation', () => {
   it('builds canonical independent same-chain terms', () => {
     const value = terms()
     const policy = sameChainDemoPolicy(BigInt(SAME_CHAIN_DEMO_CHAIN_ID))
+
     expect(() => validateProtocolTerms(value, policy)).not.toThrow()
     expect(wrapperMode(value)).toBe(WrapperMode.SameChain)
     expect(value.partySide.chainId).toBe(value.counterpartySide.chainId)
@@ -41,7 +43,14 @@ describe('current-protocol same-chain demo foundation', () => {
     const value = terms()
     const secret = `0x${'00'.repeat(31)}01` as const
     const id = tradeId(value)
+
     expect(settlementLock(id, secret)).not.toBe(ZERO32)
-    expect(tradeId({...value, partySide: {...value.partySide, sideNonce: `0x${'00'.repeat(31)}09`}})).not.toBe(id)
+    expect(tradeId({
+...value,
+      partySide: {
+...value.partySide,
+        sideNonce: `0x${'00'.repeat(31)}09`
+      }
+    })).not.toBe(id)
   })
 })

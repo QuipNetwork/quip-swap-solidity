@@ -22,10 +22,16 @@ const generatedContracts = [
   ['Omnibus', omnibusAbi],
 ] as const
 
-function artifactAbi(contract: string): unknown[] {
+function artifactAbi(
+  contract: string): unknown[] {
   const path = join(repoRoot, 'out', `${contract}.sol`, `${contract}.json`)
-  const artifact = JSON.parse(readFileSync(path, 'utf8')) as {abi?: unknown}
-  if (!Array.isArray(artifact.abi)) throw new Error(`Artifact does not contain an ABI: ${path}`)
+  const artifact = JSON.parse(readFileSync(path, 'utf8')) as {
+    abi?: unknown
+  }
+
+  if (!Array.isArray(artifact.abi))
+    throw new Error(`Artifact does not contain an ABI: ${path}`)
+
   return artifact.abi
 }
 
@@ -38,7 +44,11 @@ describe('generated ABI conformance', () => {
 
   it('wrapper ABIs expose the disabled-renunciation custom error', () => {
     for (const abi of [crossChainWrapperAbi, sameChainWrapperAbi]) {
-      expect(abi).toContainEqual({type: 'error', name: 'RenounceDisabled', inputs: []})
+      expect(abi).toContainEqual({
+        type: 'error',
+        name: 'RenounceDisabled',
+        inputs: []
+      })
     }
   })
 })

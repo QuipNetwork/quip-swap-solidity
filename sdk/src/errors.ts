@@ -109,12 +109,17 @@ export class QuipSwapError extends Error implements QuipSwapErrorDetails {
   override readonly cause?: unknown
   readonly details?: unknown
 
-  constructor(args: QuipSwapErrorDetails) {
+  constructor(
+    args: QuipSwapErrorDetails) {
     super(args.message)
     this.code = args.code
-    if (args.contractErrorName !== undefined) this.contractErrorName = args.contractErrorName
-    if (args.cause !== undefined) this.cause = args.cause
-    if (args.details !== undefined) this.details = args.details
+
+    if (args.contractErrorName !== undefined)
+      this.contractErrorName = args.contractErrorName
+    if (args.cause !== undefined)
+      this.cause = args.cause
+    if (args.details !== undefined)
+      this.details = args.details
   }
 }
 
@@ -130,13 +135,16 @@ export class QuipSwapError extends Error implements QuipSwapErrorDetails {
  * @returns The custom error name, or `undefined` when the revert could not
  *   be decoded (e.g. an out-of-ABI token error with no registered ABI).
  */
-export function extractContractErrorName(error: unknown): string | undefined {
+export function extractContractErrorName(
+  error: unknown): string | undefined {
   if (error instanceof BaseError) {
     const revert = error.walk(e => e instanceof ContractFunctionRevertedError)
+
     if (revert instanceof ContractFunctionRevertedError) {
       return revert.data?.errorName ?? revert.signature
     }
   }
+
   return undefined
 }
 
@@ -150,13 +158,18 @@ export function extractContractErrorName(error: unknown): string | undefined {
  * @param context - Short description of the operation that failed.
  * @returns A `QuipSwapError` wrapping the original error.
  */
-export function wrapContractError(error: unknown, context: string): QuipSwapError {
+export function wrapContractError(
+  error: unknown,
+  context: string): QuipSwapError {
   const contractErrorName = extractContractErrorName(error)
   const suffix = contractErrorName !== undefined ? ` (contract error: ${contractErrorName})` : ''
+
   return new QuipSwapError({
     code: 'CONTRACT_REVERT',
     message: `${context} reverted${suffix}`,
-    ...(contractErrorName !== undefined ? {contractErrorName} : {}),
+    ...(contractErrorName !== undefined ? {
+      contractErrorName
+    } : {}),
     cause: error,
   })
 }

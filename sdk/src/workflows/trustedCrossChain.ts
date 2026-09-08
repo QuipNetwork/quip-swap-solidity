@@ -1,4 +1,3 @@
-
 import type {Address, Hex} from 'viem'
 import {DelegationPolicy, ExpectedSourceState, commitPayloadHash, deriveCommitLock, gateContextId, settlementLock, tradeId, validateProtocolTerms} from '../protocol.js'
 import type {CommitPayloadArgs, ProtocolTerms, SideTerms, TimingPolicy} from '../protocol.js'
@@ -16,19 +15,44 @@ export interface ProtocolRandomness {
   readonly counterpartyActionNonce: Hex32
 }
 export interface WorkflowArgs {
-  policy: TimingPolicy; partySide: SideTermsTemplate; counterpartySide: SideTermsTemplate
-  partyVerifier: Address; counterpartyVerifier: Address; partyWrapper: Address; counterpartyWrapper: Address
-  partyExpiry: bigint; counterpartyExpiry: bigint; requiredConfirmations: bigint
+  policy: TimingPolicy;
+  partySide: SideTermsTemplate;
+  counterpartySide: SideTermsTemplate
+  partyVerifier: Address;
+  counterpartyVerifier: Address;
+  partyWrapper: Address;
+  counterpartyWrapper: Address
+  partyExpiry: bigint;
+  counterpartyExpiry: bigint;
+  requiredConfirmations: bigint
   selectedBobSubmitter: Address
   /** Explicit named injection for the unsafe deterministic local demo. */
   randomness?: ProtocolRandomness
   /** Low-level test hook retained for existing SDK tests; prefer `randomness`. */
   randomHex32?: () => Hex32
 }
-export interface PreparedAuthorization {payload: CommitPayloadArgs; payloadHash: Hex32}
-export interface Inclusion {transactionHash: Hex; blockNumber: bigint; blockHash: Hex32}
-export interface FinalClaimExecutor {funded: boolean; submit: (secret: Hex32) => Promise<Hex>}
-export interface WorkflowStatus {stage: WorkflowStage; aliceCommit: AliceCommitStatus; warning?: string; bobCommitEnabled: boolean; reclaimRecommended: boolean}
+export interface PreparedAuthorization {
+  payload: CommitPayloadArgs;
+  payloadHash: Hex32
+}
+export interface Inclusion {
+  transactionHash: Hex;
+  blockNumber: bigint;
+  blockHash: Hex32
+}
+/** Caller-attested funding and submission capability; neither balance nor receipt is checked here. */
+export interface FinalClaimExecutor {
+  funded: boolean;
+  submit: (
+    secret: Hex32) => Promise<Hex>
+}
+export interface WorkflowStatus {
+  stage: WorkflowStage;
+  aliceCommit: AliceCommitStatus;
+  warning?: string;
+  bobCommitEnabled: boolean;
+  reclaimRecommended: boolean
+}
 export interface WorkflowLifecycle {
   readonly stage: WorkflowStage
   readonly aliceCommit: AliceCommitStatus
@@ -37,16 +61,39 @@ export interface WorkflowLifecycle {
   readonly unsafeReorg: boolean
 }
 export type WorkflowEvent =
-  | {readonly type: 'alice-pending'}
-  | {readonly type: 'alice-observed'; readonly inclusion: Inclusion; readonly final: boolean}
-  | {readonly type: 'alice-rollback'; readonly blockHash: Hex32}
-  | {readonly type: 'bob-submission-enabled'}
-  | {readonly type: 'bob-commit-pending'}
-  | {readonly type: 'bob-committed'}
-  | {readonly type: 'reveal-final'}
-  | {readonly type: 'final-claim'}
-  | {readonly type: 'complete'}
-  | {readonly type: 'recovery'}
+  | {
+    readonly type: 'alice-pending'
+  }
+  | {
+    readonly type: 'alice-observed';
+    readonly inclusion: Inclusion;
+    readonly final: boolean
+  }
+  | {
+    readonly type: 'alice-rollback';
+    readonly blockHash: Hex32
+  }
+  | {
+    readonly type: 'bob-submission-enabled'
+  }
+  | {
+    readonly type: 'bob-commit-pending'
+  }
+  | {
+    readonly type: 'bob-committed'
+  }
+  | {
+    readonly type: 'reveal-final'
+  }
+  | {
+    readonly type: 'final-claim'
+  }
+  | {
+    readonly type: 'complete'
+  }
+  | {
+    readonly type: 'recovery'
+  }
 
 export const INITIAL_WORKFLOW_LIFECYCLE: WorkflowLifecycle = {
   stage: 'prepared',
@@ -55,13 +102,26 @@ export const INITIAL_WORKFLOW_LIFECYCLE: WorkflowLifecycle = {
   unsafeReorg: false,
 }
 
-export function transitionWorkflow(state: WorkflowLifecycle, event: WorkflowEvent): WorkflowLifecycle {
+/**
+ * Applies client lifecycle guards to already verified observations. This reducer performs no RPC reads,
+ * receipt decoding, or payout verification; observation and completion events are caller assertions.
+ */
+export function transitionWorkflow(
+  state: WorkflowLifecycle,
+  event: WorkflowEvent): WorkflowLifecycle {
   switch (event.type) {
     case 'alice-pending':
-      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
-      return {...state, stage: 'alice-commit', aliceCommit: 'pending', inclusion: undefined}
+      if (state.bobSubmissionEnabled)
+        throw new Error('Bob submission already enabled')
+      return {
+...state,
+        stage: 'alice-commit',
+        aliceCommit: 'pending',
+        inclusion: undefined
+      }
     case 'alice-observed':
-      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
+      if (state.bobSubmissionEnabled)
+        throw new Error('Bob submission already enabled')
       return {
         ...state,
         stage: event.final ? 'bob-enabled' : 'alice-commit',
@@ -69,36 +129,80 @@ export function transitionWorkflow(state: WorkflowLifecycle, event: WorkflowEven
         inclusion: event.inclusion,
       }
     case 'alice-rollback':
-      if (state.inclusion?.blockHash !== event.blockHash) return state
+      if (state.inclusion?.blockHash !== event.blockHash)
+        return state
+      // A rollback after Bob was enabled is no longer an ordinary pending
+      // state: progression may already have escaped, so recovery is mandatory.
       return state.bobSubmissionEnabled
-        ? {...state, stage: 'recovery', aliceCommit: 'pending', inclusion: undefined, unsafeReorg: true}
-        : {...state, stage: 'alice-commit', aliceCommit: 'pending', inclusion: undefined}
+        ? {
+...state,
+          stage: 'recovery',
+          aliceCommit: 'pending',
+          inclusion: undefined,
+          unsafeReorg: true
+        }
+        : {
+...state,
+          stage: 'alice-commit',
+          aliceCommit: 'pending',
+          inclusion: undefined
+        }
     case 'bob-submission-enabled':
-      if (state.aliceCommit !== 'final') throw new Error('Alice commit is not final')
-      if (state.bobSubmissionEnabled) throw new Error('Bob submission already enabled')
-      return {...state, stage: 'bob-commit-pending', bobSubmissionEnabled: true}
+      if (state.aliceCommit !== 'final')
+        throw new Error('Alice commit is not final')
+      if (state.bobSubmissionEnabled)
+        throw new Error('Bob submission already enabled')
+      return {
+...state,
+        stage: 'bob-commit-pending',
+        bobSubmissionEnabled: true
+      }
     case 'bob-commit-pending':
       if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(state.stage)) {
         throw new Error('Bob commit is not enabled')
       }
-      if (state.aliceCommit !== 'final') throw new Error('Alice commit is not final')
-      return {...state, stage: 'bob-commit-pending', bobSubmissionEnabled: true}
+      if (state.aliceCommit !== 'final')
+        throw new Error('Alice commit is not final')
+      return {
+...state,
+        stage: 'bob-commit-pending',
+        bobSubmissionEnabled: true
+      }
     case 'bob-committed':
-      if (state.unsafeReorg) throw new Error('Alice commit was reorganized after Bob submission was enabled')
+      if (state.unsafeReorg)
+        throw new Error('Alice commit was reorganized after Bob submission was enabled')
       if (!['bob-enabled', 'bob-commit-pending', 'bob-committed'].includes(state.stage)) {
         throw new Error('Bob commit is not pending')
       }
-      return {...state, stage: 'bob-committed', bobSubmissionEnabled: true}
+      return {
+...state,
+        stage: 'bob-committed',
+        bobSubmissionEnabled: true
+      }
     case 'reveal-final':
-      if (state.stage !== 'bob-committed') throw new Error('Bob is not committed')
-      return {...state, stage: 'reveal-final'}
+      if (state.stage !== 'bob-committed')
+        throw new Error('Bob is not committed')
+      return {
+...state,
+        stage: 'reveal-final'
+      }
     case 'final-claim':
-      if (state.stage !== 'reveal-final') throw new Error('revealing claim is not final')
-      return {...state, stage: 'final-claim'}
+      if (state.stage !== 'reveal-final')
+        throw new Error('revealing claim is not final')
+      return {
+...state,
+        stage: 'final-claim'
+      }
     case 'complete':
-      return {...state, stage: 'complete'}
+      return {
+...state,
+        stage: 'complete'
+      }
     case 'recovery':
-      return {...state, stage: 'recovery'}
+      return {
+...state,
+        stage: 'recovery'
+      }
   }
 }
 export interface PreparedTrustedWorkflow {
@@ -106,55 +210,154 @@ export interface PreparedTrustedWorkflow {
   readonly settlementSecret: Hex32
   readonly bobCommitSecret: Hex32
 }
+/** Samples a nonzero 32-byte value using Web Crypto; callers must keep generated preimages private. */
 export function randomProtocolValue(): Hex32 {
   let value: Hex32
-  do { const bytes = new Uint8Array(32); globalThis.crypto.getRandomValues(bytes); value = ('0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')) as Hex32 } while (value === ZERO)
+
+  do {
+    const bytes = new Uint8Array(32);
+
+    globalThis.crypto.getRandomValues(bytes);
+    value = ('0x' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')) as Hex32
+  } while (value === ZERO)
+
   return value
 }
 /** Creates a workflow while returning its initial secret material to its owning client boundary. */
-export function prepareTrustedCrossChainWorkflow(args: WorkflowArgs): PreparedTrustedWorkflow {
+export function prepareTrustedCrossChainWorkflow(
+  args: WorkflowArgs): PreparedTrustedWorkflow {
   if (args.randomness !== undefined) {
     const workflow = new TrustedCrossChainWorkflow(args)
-    return {workflow, settlementSecret: args.randomness.settlementSecret, bobCommitSecret: args.randomness.bobCommitSecret}
+
+    return {
+      workflow,
+      settlementSecret: args.randomness.settlementSecret,
+      bobCommitSecret: args.randomness.bobCommitSecret
+    }
   }
+
   const random = args.randomHex32 ?? randomProtocolValue
   const randomness: ProtocolRandomness = {
-    settlementSecret: random(), bobCommitSecret: random(), partySideNonce: random(),
-    counterpartySideNonce: random(), partyActionNonce: random(), counterpartyActionNonce: random(),
+    settlementSecret: random(),
+    bobCommitSecret: random(),
+    partySideNonce: random(),
+    counterpartySideNonce: random(),
+    partyActionNonce: random(),
+    counterpartyActionNonce: random(),
   }
   const {randomHex32: _randomHex32, ...baseArgs} = args
-  const workflow = new TrustedCrossChainWorkflow({...baseArgs, randomness})
-  return {workflow, settlementSecret: randomness.settlementSecret, bobCommitSecret: randomness.bobCommitSecret}
+  const workflow = new TrustedCrossChainWorkflow({
+...baseArgs,
+    randomness
+  })
+
+  return {
+    workflow,
+    settlementSecret: randomness.settlementSecret,
+    bobCommitSecret: randomness.bobCommitSecret
+  }
 }
-/** Finality-aware coordinator. Neither secret is present in status or logging surfaces. */
+/**
+ * Coordinates locally verified observations and prepared authorizations; it does not observe chains itself.
+ * Neither secret appears in status. Explicit secret-returning methods and executor callbacks are private
+ * application boundaries; callers must not log or publish their values before the intended reveal.
+ */
 export class TrustedCrossChainWorkflow {
-  readonly terms: ProtocolTerms; readonly tradeId: Hex32; readonly lock: Hex32
-  readonly partyAuthorization: PreparedAuthorization; readonly counterpartyAuthorization: PreparedAuthorization
-  readonly #secret: Hex32; readonly #bobSecret: Hex32; private readonly confirmations: bigint
-  private readonly selected: Address; private lifecycle: WorkflowLifecycle = INITIAL_WORKFLOW_LIFECYCLE
-  constructor(args: WorkflowArgs) {
-    if (args.requiredConfirmations < 1n) throw new Error('requiredConfirmations must be positive')
-    if (args.randomness !== undefined && args.randomHex32 !== undefined) throw new Error('choose named randomness or randomHex32, not both')
+  readonly terms: ProtocolTerms;
+  readonly tradeId: Hex32;
+  readonly lock: Hex32
+  readonly partyAuthorization: PreparedAuthorization;
+  readonly counterpartyAuthorization: PreparedAuthorization
+  readonly #secret: Hex32;
+  readonly #bobSecret: Hex32;
+  private readonly confirmations: bigint
+  private readonly selected: Address;
+  private lifecycle: WorkflowLifecycle = INITIAL_WORKFLOW_LIFECYCLE
+  constructor(
+    args: WorkflowArgs) {
+    if (args.requiredConfirmations < 1n)
+      throw new Error('requiredConfirmations must be positive')
+    if (args.randomness !== undefined && args.randomHex32 !== undefined)
+      throw new Error('choose named randomness or randomHex32, not both')
+
     const random = args.randomHex32 ?? randomProtocolValue
     const values = args.randomness === undefined
       ? [random(), random(), random(), random(), random(), random()] as const
       : [args.randomness.settlementSecret, args.randomness.bobCommitSecret, args.randomness.partySideNonce,
-          args.randomness.counterpartySideNonce, args.randomness.partyActionNonce,
-          args.randomness.counterpartyActionNonce] as const
-    if (values.some(value => value === ZERO)) throw new Error('protocol randomness must be nonzero')
-    if (new Set(values).size !== values.length) throw new Error('protocol randomness must be independent')
+      args.randomness.counterpartySideNonce, args.randomness.partyActionNonce,
+      args.randomness.counterpartyActionNonce] as const
+
+    if (values.some(value => value === ZERO))
+      throw new Error('protocol randomness must be nonzero')
+    if (new Set(values).size !== values.length)
+      throw new Error('protocol randomness must be independent')
+
     const [secret, bobSecret, partyNonce, counterNonce, partyActionNonce, counterActionNonce] = values
-    this.#secret = secret; this.#bobSecret = bobSecret; this.confirmations = args.requiredConfirmations; this.selected = args.selectedBobSubmitter
-    const gate: ProtocolTerms = {partySide: {...args.partySide, commitLock: ZERO, sideNonce: partyNonce}, counterpartySide: {...args.counterpartySide, commitLock: ZERO, sideNonce: counterNonce}}
-    this.terms = {...gate, counterpartySide: {...gate.counterpartySide, commitLock: deriveCommitLock(gateContextId(gate), bobSecret)}}
-    validateProtocolTerms(this.terms, args.policy); this.assertSelected()
-    this.tradeId = tradeId(this.terms); this.lock = settlementLock(this.tradeId, secret)
-    const party: CommitPayloadArgs = {terms: this.terms, party: true, authorizationVerifier: args.partyVerifier, swapAddress: args.partyWrapper, lock: this.lock, expectedSourceState: ExpectedSourceState.Unused, actionNonce: partyActionNonce, expiry: args.partyExpiry}
-    const counter: CommitPayloadArgs = {terms: this.terms, party: false, authorizationVerifier: args.counterpartyVerifier, swapAddress: args.counterpartyWrapper, lock: this.lock, expectedSourceState: ExpectedSourceState.Unused, actionNonce: counterActionNonce, expiry: args.counterpartyExpiry}
-    this.partyAuthorization = {payload: party, payloadHash: commitPayloadHash(party)}
-    this.counterpartyAuthorization = {payload: counter, payloadHash: commitPayloadHash(counter)}
+
+    this.#secret = secret;
+    this.#bobSecret = bobSecret;
+    this.confirmations = args.requiredConfirmations;
+    this.selected = args.selectedBobSubmitter
+
+    const gate: ProtocolTerms = {
+      partySide: {
+...args.partySide,
+        commitLock: ZERO,
+        sideNonce: partyNonce
+      },
+      counterpartySide: {
+...args.counterpartySide,
+        commitLock: ZERO,
+        sideNonce: counterNonce
+      }
+    }
+
+    this.terms = {
+...gate,
+      counterpartySide: {
+...gate.counterpartySide,
+        commitLock: deriveCommitLock(gateContextId(gate), bobSecret)
+      }
+    }
+
+    validateProtocolTerms(this.terms, args.policy);
+    this.assertSelected()
+
+    this.tradeId = tradeId(this.terms);
+    this.lock = settlementLock(this.tradeId, secret)
+
+    const party: CommitPayloadArgs = {
+      terms: this.terms,
+      party: true,
+      authorizationVerifier: args.partyVerifier,
+      swapAddress: args.partyWrapper,
+      lock: this.lock,
+      expectedSourceState: ExpectedSourceState.Unused,
+      actionNonce: partyActionNonce,
+      expiry: args.partyExpiry
+    }
+    const counter: CommitPayloadArgs = {
+      terms: this.terms,
+      party: false,
+      authorizationVerifier: args.counterpartyVerifier,
+      swapAddress: args.counterpartyWrapper,
+      lock: this.lock,
+      expectedSourceState: ExpectedSourceState.Unused,
+      actionNonce: counterActionNonce,
+      expiry: args.counterpartyExpiry
+    }
+
+    this.partyAuthorization = {
+      payload: party,
+      payloadHash: commitPayloadHash(party)
+    }
+    this.counterpartyAuthorization = {
+      payload: counter,
+      payloadHash: commitPayloadHash(counter)
+    }
   }
-  status(now?: bigint): WorkflowStatus {
+  status(
+    now?: bigint): WorkflowStatus {
     const {stage, aliceCommit, bobSubmissionEnabled, unsafeReorg} = this.lifecycle
     const warning = unsafeReorg
       ? 'Alice commit reorganized after Bob submission was enabled; stop submission and recover if possible.'
@@ -165,64 +368,152 @@ export class TrustedCrossChainWorkflow {
           : aliceCommit === 'included-non-final'
             ? 'Alice commit is not final; its published preimage is not enabled for Bob yet and the commit may be reorganized.'
             : undefined
+
     return {
       stage,
       aliceCommit,
-      ...(warning ? {warning} : {}),
+      ...(warning ? {
+        warning
+      } : {}),
       bobCommitEnabled: aliceCommit === 'final' && !bobSubmissionEnabled,
       reclaimRecommended: now !== undefined && now >= this.terms.partySide.reclaimRelease && stage !== 'complete',
     }
   }
   markAlicePending(): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-pending'})
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'alice-pending'
+    })
   }
-  observeAlice(inclusion: Inclusion, head: bigint): void {
-    if (head < inclusion.blockNumber) throw new Error('head precedes inclusion')
+  /**
+   * Counts the inclusion block as confirmation one. The caller must first verify the exact commitment
+   * and canonical block hash; a numeric threshold is a configured finality assumption, not a proof.
+   */
+  observeAlice(
+    inclusion: Inclusion,
+    head: bigint): void {
+    if (head < inclusion.blockNumber)
+      throw new Error('head precedes inclusion')
+
     const final = head - inclusion.blockNumber + 1n >= this.confirmations
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-observed', inclusion, final})
+
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'alice-observed',
+      inclusion,
+      final
+    })
   }
-  rollbackAlice(blockHash: Hex32): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'alice-rollback', blockHash})
+  rollbackAlice(
+    blockHash: Hex32): void {
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'alice-rollback',
+      blockHash
+    })
   }
-  enableBobCommit(submitter: Address): Hex32 {
-    if (this.lifecycle.aliceCommit !== 'final') throw new Error('Alice commit is not final')
-    if (submitter.toLowerCase() !== this.selected.toLowerCase()) throw new Error('submitter not selected')
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'bob-submission-enabled'})
+  /**
+   * Enables the selected transport once and returns the progression preimage. This is a client gate;
+   * the preimage is already public in Alice's commit and other actors are not constrained by this object.
+   */
+  enableBobCommit(
+    submitter: Address): Hex32 {
+    if (this.lifecycle.aliceCommit !== 'final')
+      throw new Error('Alice commit is not final')
+    if (submitter.toLowerCase() !== this.selected.toLowerCase())
+      throw new Error('submitter not selected')
+
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'bob-submission-enabled'
+    })
+
     return this.#bobSecret
   }
+  /** Record a caller-verified exact Bob commitment; this method does not fetch its receipt. */
   markBobCommitted(): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'bob-committed'})
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'bob-committed'
+    })
   }
+  /** Record a caller-verified, sufficiently confirmed counterparty-side revealing claim. */
   observeFinalReveal(): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'reveal-final'})
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'reveal-final'
+    })
   }
-  async handoffFinalClaim(executors: readonly FinalClaimExecutor[]): Promise<Hex> {
-    if (this.lifecycle.stage !== 'reveal-final') throw new Error('revealing claim is not final')
+  /**
+   * Submits concurrently through all caller-attested funded executors and returns the first successful
+   * submission hash. Other submissions are not cancelled. Verify inclusion and payout before completion;
+   * if all promises reject, the stage stays unchanged even if an executor broadcast before rejecting.
+   */
+  async handoffFinalClaim(
+    executors: readonly FinalClaimExecutor[]): Promise<Hex> {
+    if (this.lifecycle.stage !== 'reveal-final')
+      throw new Error('revealing claim is not final')
+
     const funded = executors.filter(executor => executor.funded)
-    if (funded.length === 0) throw new Error('no funded final-claim executor')
+
+    if (funded.length === 0)
+      throw new Error('no funded final-claim executor')
+
+    // Race independent executors to reduce censorship risk. Losing submissions
+    // may still land, so callers must reconcile every resulting receipt.
     const transactionHash = await Promise.any(funded.map(executor => executor.submit(this.#secret)))
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'final-claim'})
+
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'final-claim'
+    })
+
     return transactionHash
   }
+  /** Mark completion only after the caller verifies both terminal states and their expected payouts. */
   markComplete(): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'complete'})
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'complete'
+    })
   }
   enterRecovery(): void {
-    this.lifecycle = transitionWorkflow(this.lifecycle, {type: 'recovery'})
+    this.lifecycle = transitionWorkflow(this.lifecycle, {
+      type: 'recovery'
+    })
   }
   private assertSelected(): void {
-    const side = this.terms.counterpartySide; const selected = this.selected.toLowerCase()
-    if (side.delegationPolicy === DelegationPolicy.NotAllowed && selected !== side.principal.toLowerCase()) throw new Error('selected submitter must be Bob')
+    const side = this.terms.counterpartySide;
+    const selected = this.selected.toLowerCase()
+
+    if (side.delegationPolicy === DelegationPolicy.NotAllowed && selected !== side.principal.toLowerCase())
+      throw new Error('selected submitter must be Bob')
     if (side.delegationPolicy === DelegationPolicy.SpecificDelegate &&
-        selected !== side.principal.toLowerCase() && selected !== side.delegate.toLowerCase()) {
+      selected !== side.principal.toLowerCase() && selected !== side.delegate.toLowerCase()) {
       throw new Error('selected submitter must be Bob or the delegate')
     }
   }
 }
-export interface RetryPolicy {attempts: number; feeBump: (attempt: number) => bigint}
-export async function submitWithFeeBumps<T>(submit: (feeBump: bigint, attempt: number) => Promise<T>, policy: RetryPolicy): Promise<T> {
-  if (!Number.isInteger(policy.attempts) || policy.attempts < 1) throw new Error('attempts must be positive')
+export interface RetryPolicy {
+  attempts: number;
+  feeBump: (
+    attempt: number) => bigint
+}
+/**
+ * Retries every rejected callback immediately with a caller-defined fee value; this helper neither waits
+ * for receipts nor classifies errors. The callback owns nonce/replacement handling and must reconcile
+ * ambiguous broadcasts before retrying. A fulfilled submission is not confirmation of settlement.
+ */
+export async function submitWithFeeBumps<T>(
+  submit: (
+    feeBump: bigint,
+    attempt: number) => Promise<T>,
+  policy: RetryPolicy): Promise<T> {
+  if (!Number.isInteger(policy.attempts) || policy.attempts < 1)
+    throw new Error('attempts must be positive')
+
   let last: unknown
-  for (let attempt = 0; attempt < policy.attempts; attempt++) { try { return await submit(policy.feeBump(attempt), attempt) } catch (error) { last = error } }
+
+  for (let attempt = 0; attempt < policy.attempts; attempt++) {
+    try {
+      return await submit(policy.feeBump(attempt), attempt)
+    }
+    catch (error) {
+      last = error
+    }
+  }
+
   throw last
 }

@@ -32,7 +32,8 @@ import {erc20MockAbi} from '../../../test/helpers/mockAbis.js'
 import type {DemoChainDeployment} from '../shared/environment.js'
 
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
-const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
+const fixed = (
+  value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
 export const SAME_CHAIN_SETTLEMENT_SECRET = fixed(1)
 
 export interface SameChainAssetPosition {
@@ -54,13 +55,13 @@ export interface SameChainAssetPosition {
 
 export interface SameChainSnapshot {
   readonly state:
-    | 'Unused'
-    | 'PartyCommitted'
-    | 'BothCommitted'
-    | 'ClaimPending'
-    | 'ReclaimPending'
-    | 'Claimed'
-    | 'Reclaimed'
+  | 'Unused'
+  | 'PartyCommitted'
+  | 'BothCommitted'
+  | 'ClaimPending'
+  | 'ReclaimPending'
+  | 'Claimed'
+  | 'Reclaimed'
   readonly expectedSides: number
   readonly completedSides: number
   readonly assets: readonly [SameChainAssetPosition, SameChainAssetPosition]
@@ -68,12 +69,12 @@ export interface SameChainSnapshot {
 
 export interface SameChainActionTrace {
   readonly action:
-    | 'alice-commit'
-    | 'bob-commit'
-    | 'claim-selection'
-    | 'party-release'
-    | 'counterparty-release-failed'
-    | 'counterparty-release-retry'
+  | 'alice-commit'
+  | 'bob-commit'
+  | 'claim-selection'
+  | 'party-release'
+  | 'counterparty-release-failed'
+  | 'counterparty-release-retry'
   readonly receiptStatus: 'success' | 'reverted'
   readonly caller: Address
   readonly transactionHash: Hash
@@ -105,8 +106,16 @@ export interface SameChainSuccessTrace {
   readonly accruedFeesAfterSettlement: string
   readonly payoutsFixedByTerms: true
   readonly identities: {
-    readonly alice: {readonly active: true; readonly activeKeyVersion: '1'; readonly recoveryKeyVersion: '1'}
-    readonly bob: {readonly active: true; readonly activeKeyVersion: '1'; readonly recoveryKeyVersion: '1'}
+    readonly alice: {
+      readonly active: true;
+      readonly activeKeyVersion: '1';
+      readonly recoveryKeyVersion: '1'
+    }
+    readonly bob: {
+      readonly active: true;
+      readonly activeKeyVersion: '1';
+      readonly recoveryKeyVersion: '1'
+    }
   }
 }
 
@@ -121,13 +130,17 @@ export async function runSameChainSuccess(
   deployment: Omit<DemoChainDeployment, 'funding'>,
   terms: ProtocolTerms,
   lock: Hex32,
-  onProgress?: (message: string) => void,
+  onProgress?: (
+    message: string) => void,
 ): Promise<SameChainSuccessTrace> {
   const addresses = deployment.addresses
   const initial = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
-  if (initial.state !== 'Unused') throw new Error('same-chain success path did not start Unused')
+
+  if (initial.state !== 'Unused')
+    throw new Error('same-chain success path did not start Unused')
 
   onProgress?.("Submitting Alice's lazy-registration party commit")
+
   const aliceCommit = await submitSameChainLazyCommit({
     chain,
     deployment,
@@ -140,7 +153,9 @@ export async function runSameChainSuccess(
     recoverySeed: fixed(102),
   })
   const afterAlice = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+
   assertCommit(aliceCommit, afterAlice, 'PartyCommitted', terms.partySide.principal)
+
   const aliceTrace = trace(
     'alice-commit',
     chain.alice.address,
@@ -152,6 +167,7 @@ export async function runSameChainSuccess(
   )
 
   onProgress?.("Submitting Bob's lazy-registration counterparty commit")
+
   const bobCommit = await submitSameChainLazyCommit({
     chain,
     deployment,
@@ -164,7 +180,9 @@ export async function runSameChainSuccess(
     recoverySeed: fixed(104),
   })
   const afterBob = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+
   assertCommit(bobCommit, afterBob, 'BothCommitted', terms.counterpartySide.principal)
+
   const bobTrace = trace(
     'bob-commit',
     chain.bob.address,
@@ -181,6 +199,7 @@ export async function runSameChainSuccess(
   })
 
   onProgress?.('Selecting the permissionless claim outcome without moving assets')
+
   const claimant = createProtocolClient({
     addresses,
     publicClient: chain.publicClient,
@@ -191,9 +210,11 @@ export async function runSameChainSuccess(
     await claimant.selectSameChainClaim(terms, lock, SAME_CHAIN_SETTLEMENT_SECRET),
   )
   const selected = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+
   if (selected.state !== 'ClaimPending' || selected.expectedSides !== 3 || selected.completedSides !== 0) {
     throw new Error('claim selection did not establish an empty two-side completion bitmap')
   }
+
   const selectionTrace = trace(
     'claim-selection',
     chain.charlie.address,
@@ -205,6 +226,7 @@ export async function runSameChainSuccess(
   )
 
   onProgress?.('Releasing the party HTLC while keeping the claim pending')
+
   const partyHTLC = await claimant.getSameChainHTLC(terms, true, lock)
   const counterpartyHTLC = await claimant.getSameChainHTLC(terms, false, lock)
   const partyReceipt = await successfulReceipt(
@@ -212,6 +234,7 @@ export async function runSameChainSuccess(
     await claimant.executeSameChainSettlement(terms, lock, true, BigInt(terms.partySide.assets.length)),
   )
   const afterParty = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+
   if (
     afterParty.state !== 'ClaimPending'
     || afterParty.expectedSides !== 3
@@ -221,6 +244,7 @@ export async function runSameChainSuccess(
   ) {
     throw new Error('party release did not preserve the pending claim and mark only the party bit')
   }
+
   const partyTrace = trace(
     'party-release',
     chain.charlie.address,
@@ -232,6 +256,7 @@ export async function runSameChainSuccess(
   )
 
   onProgress?.('Submitting an intentionally under-gassed counterparty release')
+
   const beforeFailure = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
   const failedHash = await chain.charlie.walletClient.writeContract({
     address: addresses.sameChainWrapper,
@@ -242,12 +267,19 @@ export async function runSameChainSuccess(
     chain: chain.publicClient.chain ?? null,
     gas: 80_000n,
   })
-  const failedReceipt = await chain.publicClient.waitForTransactionReceipt({hash: failedHash})
-  if (failedReceipt.status !== 'reverted') throw new Error('counterparty failure transaction unexpectedly succeeded')
+  const failedReceipt = await chain.publicClient.waitForTransactionReceipt({
+    hash: failedHash
+  })
+
+  if (failedReceipt.status !== 'reverted')
+    throw new Error('counterparty failure transaction unexpectedly succeeded')
+
   const afterFailure = await readSameChainSnapshot(chain, addresses.sameChainWrapper, terms, lock)
+
   if (JSON.stringify(beforeFailure) !== JSON.stringify(afterFailure)) {
     throw new Error('failed counterparty release changed settlement progress or custody')
   }
+
   const failedTrace = trace(
     'counterparty-release-failed',
     chain.charlie.address,
@@ -260,6 +292,7 @@ export async function runSameChainSuccess(
   )
 
   onProgress?.('Retrying the counterparty release with normal gas estimation')
+
   const claimHash = await claimant.executeSameChainSettlement(
     terms,
     lock,
@@ -274,7 +307,9 @@ export async function runSameChainSuccess(
     abi: sameChainWrapperAbi,
     functionName: 'accruedFees',
   })
+
   assertFinalPayouts(finalSnapshot, terms)
+
   const claimTrace = trace(
     'counterparty-release-retry',
     chain.charlie.address,
@@ -299,6 +334,7 @@ export async function runSameChainSuccess(
       args: [terms.counterpartySide.principal],
     }),
   ])
+
   if (
     !aliceIdentity.active
     || aliceIdentity.activeKeyVersion !== 1n
@@ -318,25 +354,34 @@ export async function runSameChainSuccess(
     accruedFeesAfterSettlement: accruedFeesAfterSettlement.toString(),
     payoutsFixedByTerms: true,
     identities: {
-      alice: {active: true, activeKeyVersion: '1', recoveryKeyVersion: '1'},
-      bob: {active: true, activeKeyVersion: '1', recoveryKeyVersion: '1'},
+      alice: {
+        active: true,
+        activeKeyVersion: '1',
+        recoveryKeyVersion: '1'
+      },
+      bob: {
+        active: true,
+        activeKeyVersion: '1',
+        recoveryKeyVersion: '1'
+      },
     },
   }
 }
 
-export async function submitSameChainLazyCommit(input: {
-  readonly chain: ChainContext
-  readonly deployment: Omit<DemoChainDeployment, 'funding'>
-  readonly terms: ProtocolTerms
-  readonly lock: Hex32
-  readonly party: boolean
-  readonly actionNonce: Hex32
-  readonly operationNonce: Hex32
-  readonly activeSeed: Hex32
-  readonly recoverySeed: Hex32
-  readonly bobCommitSecret?: Hex32
-  readonly expiry?: bigint
-}): Promise<LazyCommitResult> {
+export async function submitSameChainLazyCommit(
+  input: {
+    readonly chain: ChainContext
+    readonly deployment: Omit<DemoChainDeployment, 'funding'>
+    readonly terms: ProtocolTerms
+    readonly lock: Hex32
+    readonly party: boolean
+    readonly actionNonce: Hex32
+    readonly operationNonce: Hex32
+    readonly activeSeed: Hex32
+    readonly recoverySeed: Hex32
+    readonly bobCommitSecret?: Hex32
+    readonly expiry?: bigint
+  }): Promise<LazyCommitResult> {
   const {chain, deployment, terms, lock, party, actionNonce, operationNonce} = input
   const addresses = deployment.addresses
   const side = party ? terms.partySide : terms.counterpartySide
@@ -403,20 +448,40 @@ export async function submitSameChainLazyCommit(input: {
     side.principalKeyVersion,
     actionNonce,
   ))
-  return {receipt, events, nonceKey}
+
+  return {
+    receipt,
+    events,
+    nonceKey
+  }
 }
 
-function prototypePQKey(verifier: Address, seed: Hex32): Hex {
+function prototypePQKey(
+  verifier: Address,
+  seed: Hex32): Hex {
   return concatHex([verifier, seed])
 }
 
-function pqSignature(key: Hex, digest: Hex32): Hex {
-  return encodeAbiParameters([{type: 'bytes'}, {type: 'bytes32'}], [sliceHex(key, 20), digest])
+function pqSignature(
+  key: Hex,
+  digest: Hex32): Hex {
+  return encodeAbiParameters([{
+    type: 'bytes'
+  }, {
+    type: 'bytes32'
+  }], [sliceHex(key, 20), digest])
 }
 
-async function successfulReceipt(chain: ChainContext, hash: Hash): Promise<TransactionReceipt> {
-  const receipt = await chain.publicClient.waitForTransactionReceipt({hash})
-  if (receipt.status !== 'success') throw new Error(`same-chain transaction reverted: ${hash}`)
+async function successfulReceipt(
+  chain: ChainContext,
+  hash: Hash): Promise<TransactionReceipt> {
+  const receipt = await chain.publicClient.waitForTransactionReceipt({
+    hash
+  })
+
+  if (receipt.status !== 'success')
+    throw new Error(`same-chain transaction reverted: ${hash}`)
+
   return receipt
 }
 
@@ -441,7 +506,10 @@ export async function readSameChainSnapshot(
     party: boolean,
   ): Promise<SameChainAssetPosition> => {
     const asset = side.assets[0]
-    if (asset === undefined) throw new Error(`${role} has no asset`)
+
+    if (asset === undefined)
+      throw new Error(`${role} has no asset`)
+
     const deployedHTLC = await client.getSameChainHTLC(terms, party, lock)
     const htlcDeployed = deployedHTLC !== zeroAddress
     const htlc = htlcDeployed
@@ -474,6 +542,7 @@ export async function readSameChainSnapshot(
         args: [side.principal, wrapper],
       }),
     ])
+
     return {
       role,
       principal: side.principal,
@@ -496,6 +565,7 @@ export async function readSameChainSnapshot(
     client.getSameChainSettlementProgress(terms, lock),
   ])
   const stateName = SameChainState[state]
+
   if (
     stateName !== 'Unused'
     && stateName !== 'PartyCommitted'
@@ -507,6 +577,7 @@ export async function readSameChainSnapshot(
   ) {
     throw new Error(`unknown same-chain state: ${state}`)
   }
+
   const snapshot: SameChainSnapshot = {
     state: stateName,
     expectedSides: progress.expectedSides,
@@ -516,7 +587,9 @@ export async function readSameChainSnapshot(
       position('bob-asset', terms.counterpartySide, false),
     ]),
   }
+
   validateHTLCLifecycle(snapshot)
+
   return snapshot
 }
 
@@ -526,20 +599,26 @@ function assertCommit(
   expectedState: SameChainSnapshot['state'],
   principal: Address,
 ): void {
-  if (after.state !== expectedState) throw new Error(`expected ${expectedState}, got ${after.state}`)
+  if (after.state !== expectedState)
+    throw new Error(`expected ${expectedState}, got ${after.state}`)
+
   const nonce = result.events.find(event =>
     event.source === 'directAuthorization'
     && event.eventName === 'AuthorizationNonceConsumed'
     && typeof event.args === 'object'
     && event.args !== null
-    && (event.args as {readonly nonceKey?: unknown}).nonceKey === result.nonceKey
+    && (event.args as {
+      readonly nonceKey?: unknown
+    }).nonceKey === result.nonceKey
   )
   const registered = result.events.find(event =>
     event.source === 'directAuthorization'
     && event.eventName === 'IdentityRegistered'
     && typeof event.args === 'object'
     && event.args !== null
-    && (event.args as {readonly eoa?: unknown}).eoa === principal
+    && (event.args as {
+      readonly eoa?: unknown
+    }).eoa === principal
   )
   const committed = result.events.find(event =>
     event.source === 'sameChainWrapper'
@@ -553,12 +632,14 @@ function assertCommit(
     event.source === 'swapHTLC'
     && event.eventName === 'Funded'
   )
+
   if (nonce === undefined || registered === undefined || committed === undefined || created === undefined || funded === undefined) {
     throw new Error('commit receipt lacks registration, nonce-consumption, or HTLC funding evidence')
   }
 }
 
-function validateHTLCLifecycle(snapshot: SameChainSnapshot): void {
+function validateHTLCLifecycle(
+  snapshot: SameChainSnapshot): void {
   const [party, counterparty] = snapshot.assets
   const expected = snapshot.state === 'Unused'
     ? [[false, false, false], [false, false, false]]
@@ -567,6 +648,7 @@ function validateHTLCLifecycle(snapshot: SameChainSnapshot): void {
       : snapshot.state === 'BothCommitted' || snapshot.state === 'ClaimPending' || snapshot.state === 'ReclaimPending'
         ? [[true, true, false], [true, true, false]]
         : [[true, true, true], [true, true, true]]
+
   if (snapshot.state === 'ClaimPending' || snapshot.state === 'ReclaimPending') {
     expected[0]![2] = (snapshot.completedSides & 1) !== 0
     expected[1]![2] = (snapshot.completedSides & 2) !== 0
@@ -574,18 +656,27 @@ function validateHTLCLifecycle(snapshot: SameChainSnapshot): void {
   if (snapshot.state === 'Reclaimed' && snapshot.expectedSides === 1) {
     expected[1] = [false, false, false]
   }
+
   for (const [index, asset] of [party, counterparty].entries()) {
     const [deployed, funded, released] = expected[index]!
+
     if (asset.htlcDeployed !== deployed || asset.htlcFunded !== funded || asset.htlcReleased !== released) {
       throw new Error(`${asset.role} HTLC lifecycle disagrees with ${snapshot.state}`)
     }
   }
 }
 
-function assertFinalPayouts(snapshotValue: SameChainSnapshot, terms: ProtocolTerms): void {
-  if (snapshotValue.state !== 'Claimed') throw new Error('same-chain claim did not reach Claimed')
+function assertFinalPayouts(
+  snapshotValue: SameChainSnapshot,
+  terms: ProtocolTerms): void {
+  if (snapshotValue.state !== 'Claimed')
+    throw new Error('same-chain claim did not reach Claimed')
+
   const expected = [terms.partySide.assets[0]!.amount, terms.counterpartySide.assets[0]!.amount]
-  snapshotValue.assets.forEach((asset, index) => {
+
+  snapshotValue.assets.forEach((
+    asset,
+    index) => {
     if (
       asset.principalBalance !== '0'
       || asset.recipientBalance !== expected[index]!.toString()
@@ -623,7 +714,9 @@ function trace(
       event.eventName === 'AuthorizationNonceConsumed'
       && typeof event.args === 'object'
       && event.args !== null
-      && (event.args as {readonly nonceKey?: unknown}).nonceKey === nonceKey
+      && (event.args as {
+        readonly nonceKey?: unknown
+      }).nonceKey === nonceKey
     ),
     progressionSecret: nonceKey === null ? null : ZERO32,
     custodyAfter: after.assets,
@@ -633,18 +726,19 @@ function trace(
   }
 }
 
-export async function submitSameChainDirectCommit(input: {
-  readonly chain: ChainContext
-  readonly deployment: Omit<DemoChainDeployment, 'funding'>
-  readonly terms: ProtocolTerms
-  readonly lock: Hex32
-  readonly party: boolean
-  readonly actionNonce: Hex32
-  readonly activeSeed: Hex32
-  readonly bobCommitSecret?: Hex32
-  readonly expiry?: bigint
-  readonly invalidSignature?: boolean
-}): Promise<LazyCommitResult> {
+export async function submitSameChainDirectCommit(
+  input: {
+    readonly chain: ChainContext
+    readonly deployment: Omit<DemoChainDeployment, 'funding'>
+    readonly terms: ProtocolTerms
+    readonly lock: Hex32
+    readonly party: boolean
+    readonly actionNonce: Hex32
+    readonly activeSeed: Hex32
+    readonly bobCommitSecret?: Hex32
+    readonly expiry?: bigint
+    readonly invalidSignature?: boolean
+  }): Promise<LazyCommitResult> {
   const {chain, deployment, terms, lock, party, actionNonce} = input
   const addresses = deployment.addresses
   const side = party ? terms.partySide : terms.counterpartySide
@@ -691,5 +785,10 @@ export async function submitSameChainDirectCommit(input: {
     side.principalKeyVersion,
     actionNonce,
   ))
-  return {receipt, events, nonceKey}
+
+  return {
+    receipt,
+    events,
+    nonceKey
+  }
 }

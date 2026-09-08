@@ -33,12 +33,16 @@ const LOCK_2 = generateLock(SECRET_2)
 
 describe('decodeCommitmentEvents (new event shape)', () => {
   /** Decoded event addresses come back checksummed — normalize the fixture. */
-  function checksummedTerms(party: ReturnType<typeof aliceTerms>) {
+  function checksummedTerms(
+    party: ReturnType<typeof aliceTerms>) {
     return {
       ...party,
       reclaimRecipient: getAddress(party.reclaimRecipient),
       recipient: getAddress(party.recipient),
-      assets: party.assets.map(a => ({...a, target: getAddress(a.target)})),
+      assets: party.assets.map(a => ({
+...a,
+        target: getAddress(a.target)
+      })),
     }
   }
 
@@ -47,9 +51,17 @@ describe('decodeCommitmentEvents (new event shape)', () => {
     // a keyed commit: the signer blob is verifier ‖ key (always > 20 bytes)
     const signer = concatHex([SENDER, '0x7913'])
     const [event] = decodeCommitmentEvents([
-      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer, party}),
+      commitmentLog({
+        address: OMNIBUS,
+        lock: FOUNDRY_LOCK,
+        sender: SENDER,
+        signer,
+        party
+      }),
     ])
-    if (event === undefined) throw new Error('expected one Commitment event')
+
+    if (event === undefined)
+      throw new Error('expected one Commitment event')
     expect(event.lock).toBe(FOUNDRY_LOCK)
     expect(event.sender).toBe(SENDER)
     expect(event.signer.toLowerCase()).toBe(signer.toLowerCase())
@@ -60,9 +72,17 @@ describe('decodeCommitmentEvents (new event shape)', () => {
     const party = aliceTerms(CHAIN_A)
     const keyedSigner = concatHex([OTHER, keccak256(toHex('pq-key-commitment'))])
     const [event] = decodeCommitmentEvents([
-      commitmentLog({address: OMNIBUS, lock: FOUNDRY_LOCK, sender: SENDER, signer: keyedSigner, party}),
+      commitmentLog({
+        address: OMNIBUS,
+        lock: FOUNDRY_LOCK,
+        sender: SENDER,
+        signer: keyedSigner,
+        party
+      }),
     ])
-    if (event === undefined) throw new Error('expected one Commitment event')
+
+    if (event === undefined)
+      throw new Error('expected one Commitment event')
     expect(event.signer.toLowerCase()).toBe(keyedSigner.toLowerCase())
     expect(event.sender).toBe(SENDER) // funding sender, distinct from the identity
   })
@@ -70,7 +90,13 @@ describe('decodeCommitmentEvents (new event shape)', () => {
 
 describe('extractRevealedSecret', () => {
   it('returns the real secret when lock matches and generateLock(secret) === lock', () => {
-    const logs = [claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT})]
+    const logs = [claimLog({
+      address: OMNIBUS,
+      lock: FOUNDRY_LOCK,
+      secret: FOUNDRY_SECRET,
+      recipient: RECIPIENT
+    })]
+
     expect(extractRevealedSecret(logs, FOUNDRY_LOCK)).toBe(FOUNDRY_SECRET)
   })
 
@@ -78,17 +104,36 @@ describe('extractRevealedSecret', () => {
     // attacker emits Claim(lock = FOUNDRY_LOCK, secret = SECRET_2); SECRET_2
     // hashes to LOCK_2, not FOUNDRY_LOCK, so it must be rejected
     expect(generateLock(SECRET_2)).not.toBe(FOUNDRY_LOCK)
-    const fake = [claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: SECRET_2, recipient: RECIPIENT})]
+
+    const fake = [claimLog({
+      address: OMNIBUS,
+      lock: FOUNDRY_LOCK,
+      secret: SECRET_2,
+      recipient: RECIPIENT
+    })]
+
     expect(extractRevealedSecret(fake, FOUNDRY_LOCK)).toBeUndefined()
   })
 
   it('is idempotent for duplicate valid claim logs', () => {
-    const one = claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT})
+    const one = claimLog({
+      address: OMNIBUS,
+      lock: FOUNDRY_LOCK,
+      secret: FOUNDRY_SECRET,
+      recipient: RECIPIENT
+    })
+
     expect(extractRevealedSecret([one, one], FOUNDRY_LOCK)).toBe(FOUNDRY_SECRET)
   })
 
   it('returns undefined when no Claim for the requested lock is present', () => {
-    const logs = [claimLog({address: OMNIBUS, lock: LOCK_2, secret: SECRET_2, recipient: RECIPIENT})]
+    const logs = [claimLog({
+      address: OMNIBUS,
+      lock: LOCK_2,
+      secret: SECRET_2,
+      recipient: RECIPIENT
+    })]
+
     expect(extractRevealedSecret(logs, FOUNDRY_LOCK)).toBeUndefined()
   })
 
@@ -96,7 +141,13 @@ describe('extractRevealedSecret', () => {
     // the function decodes by event shape only; OTHER-address logs are still
     // parsed. Address scoping is enforced upstream (waitForOmnibusReceipt /
     // get*Events), proven in receipts.test.ts — documented here on purpose.
-    const logs = [claimLog({address: OTHER, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT})]
+    const logs = [claimLog({
+      address: OTHER,
+      lock: FOUNDRY_LOCK,
+      secret: FOUNDRY_SECRET,
+      recipient: RECIPIENT
+    })]
+
     expect(decodeClaimEvents(logs)).toHaveLength(1)
     expect(extractRevealedSecret(logs, FOUNDRY_LOCK)).toBe(FOUNDRY_SECRET)
   })
@@ -105,23 +156,48 @@ describe('extractRevealedSecret', () => {
 describe('extractSecretFromClaims', () => {
   it('works on already-decoded claim events (the safe, scoped path)', () => {
     const claims = decodeClaimEvents([
-      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT}),
+      claimLog({
+        address: OMNIBUS,
+        lock: FOUNDRY_LOCK,
+        secret: FOUNDRY_SECRET,
+        recipient: RECIPIENT
+      }),
     ])
+
     expect(extractSecretFromClaims(claims, FOUNDRY_LOCK)).toBe(FOUNDRY_SECRET)
   })
 
   it('rejects a decoded fake whose secret does not open the lock', () => {
     const claims = decodeClaimEvents([
-      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: SECRET_2, recipient: RECIPIENT}),
+      claimLog({
+        address: OMNIBUS,
+        lock: FOUNDRY_LOCK,
+        secret: SECRET_2,
+        recipient: RECIPIENT
+      }),
     ])
+
     expect(extractSecretFromClaims(claims, FOUNDRY_LOCK)).toBeUndefined()
   })
 
   it('selects the matching lock among several decoded claims', () => {
     const claims = decodeClaimEvents([
-      claimLog({address: OMNIBUS, lock: LOCK_2, secret: SECRET_2, recipient: RECIPIENT, logIndex: 0}),
-      claimLog({address: OMNIBUS, lock: FOUNDRY_LOCK, secret: FOUNDRY_SECRET, recipient: RECIPIENT, logIndex: 1}),
+      claimLog({
+        address: OMNIBUS,
+        lock: LOCK_2,
+        secret: SECRET_2,
+        recipient: RECIPIENT,
+        logIndex: 0
+      }),
+      claimLog({
+        address: OMNIBUS,
+        lock: FOUNDRY_LOCK,
+        secret: FOUNDRY_SECRET,
+        recipient: RECIPIENT,
+        logIndex: 1
+      }),
     ])
+
     expect(extractSecretFromClaims(claims, FOUNDRY_LOCK)).toBe(FOUNDRY_SECRET)
     expect(extractSecretFromClaims(claims, LOCK_2)).toBe(SECRET_2)
   })

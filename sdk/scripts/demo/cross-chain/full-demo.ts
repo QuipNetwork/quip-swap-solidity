@@ -35,7 +35,8 @@ import type {ChainContext, FoundryArtifact} from '../../../test/helpers/chain.js
 export const FULL_DEMO_SCHEMA = 'quip-swap-full-demo.v1' as const
 const ZERO_ADDRESS = getAddress('0x0000000000000000000000000000000000000000')
 const ZERO32 = `0x${'00'.repeat(32)}` as Hex32
-const fixed = (value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
+const fixed = (
+  value: number): Hex32 => `0x${value.toString(16).padStart(64, '0')}` as Hex32
 
 export interface DemoClientTraceEntry {
   readonly sequence: number
@@ -51,7 +52,10 @@ export interface FullDemoArtifact {
   readonly tradeId: Hex32
   readonly terms: ClientState['terms']
   readonly lock: Hex32
-  readonly deterministicSecrets: {readonly settlementSecret: Hex32; readonly bobCommitSecret: Hex32}
+  readonly deterministicSecrets: {
+    readonly settlementSecret: Hex32;
+    readonly bobCommitSecret: Hex32
+  }
   readonly clientTrace: readonly DemoClientTraceEntry[]
   readonly authorizationTrace: AuthorizationTraceArtifact
   readonly settlementTrace: SettlementTraceArtifact
@@ -88,36 +92,99 @@ export interface FullDemoProgress {
 export async function runFullDemo(
   chainA: ChainContext,
   chainB: ChainContext,
-  load: (solFile: string, contract: string) => FoundryArtifact,
-  onProgress?: (progress: FullDemoProgress) => void,
+  load: (
+    solFile: string,
+    contract: string) => FoundryArtifact,
+  onProgress?: (
+    progress: FullDemoProgress) => void,
 ): Promise<FullDemoArtifact> {
   const total = 16
   let step = 0
-  const progress = (message: string) => onProgress?.({step: ++step, total, message})
+  const progress = (
+    message: string) => onProgress?.({
+      step: ++step,
+      total,
+      message
+    })
+
   progress('Deploying and funding both local protocol environments')
+
   const deployment = await bootstrapDemoEnvironment(chainA, chainB, load)
+
   await Promise.all([chainA.warpTo(4_000_000_000n), chainB.warpTo(4_000_000_000n)])
-  const localPolicy: TimingPolicy = {policyVersion: 1n, mode: WrapperMode.CrossChain, partyChainId: 31_337n, counterpartyChainId: 31_338n, partyToCounterpartyDelay: 10n, counterpartyToPartyDelay: 10n}
+
+  const localPolicy: TimingPolicy = {
+    policyVersion: 1n,
+    mode: WrapperMode.CrossChain,
+    partyChainId: 31_337n,
+    counterpartyChainId: 31_338n,
+    partyToCounterpartyDelay: 10n,
+    counterpartyToPartyDelay: 10n
+  }
   const now = await latestTime(chainA, chainB)
   const partySide = sideTemplate(chainA, chainB.bob.address, deployment.chains[0].funding.token, 10n * 10n ** 18n, now + 100n, now + 1_000n, now + 1_400n)
   const counterpartySide = sideTemplate(chainB, chainA.alice.address, deployment.chains[1].funding.token, 20n * 10n ** 18n, now + 200n, now + 900n, now + 1_300n)
-  const randomness: ProtocolRandomness = {settlementSecret: fixed(1), bobCommitSecret: fixed(2), partySideNonce: fixed(3), counterpartySideNonce: fixed(4), partyActionNonce: fixed(5), counterpartyActionNonce: fixed(6)}
+  const randomness: ProtocolRandomness = {
+    settlementSecret: fixed(1),
+    bobCommitSecret: fixed(2),
+    partySideNonce: fixed(3),
+    counterpartySideNonce: fixed(4),
+    partyActionNonce: fixed(5),
+    counterpartyActionNonce: fixed(6)
+  }
+
   progress('Preparing terms, secrets, locks, and exact commit authorizations')
-  const prepared = prepareTradeCommand({workflow: {policy: localPolicy, partySide, counterpartySide, partyVerifier: deployment.chains[0].addresses.directAuthorization, counterpartyVerifier: deployment.chains[1].addresses.directAuthorization, partyWrapper: deployment.chains[0].addresses.crossChainWrapper, counterpartyWrapper: deployment.chains[1].addresses.crossChainWrapper, partyExpiry: now + 500n, counterpartyExpiry: now + 600n, requiredConfirmations: 3n, selectedBobSubmitter: chainB.bob.address, randomness}, finalClaimExecutors: [chainA.charlie.address], secretMode: 'unsafe-demo'})
+
+  const prepared = prepareTradeCommand({
+    workflow: {
+      policy: localPolicy,
+      partySide,
+      counterpartySide,
+      partyVerifier: deployment.chains[0].addresses.directAuthorization,
+      counterpartyVerifier: deployment.chains[1].addresses.directAuthorization,
+      partyWrapper: deployment.chains[0].addresses.crossChainWrapper,
+      counterpartyWrapper: deployment.chains[1].addresses.crossChainWrapper,
+      partyExpiry: now + 500n,
+      counterpartyExpiry: now + 600n,
+      requiredConfirmations: 3n,
+      selectedBobSubmitter: chainB.bob.address,
+      randomness
+    },
+    finalClaimExecutors: [chainA.charlie.address],
+    secretMode: 'unsafe-demo'
+  })
   let alice = prepared.alice
   let bob = prepared.bob
   const terms = restoreTerms(alice.publicState)
   const lock = alice.publicState.derived.settlementLock
   const clientTrace: DemoClientTraceEntry[] = []
-  const recordClient = (step: string, state: ClientState) => clientTrace.push({sequence: clientTrace.length + 1, step, party: state.party, status: trustedClientStatus(state)})
-  recordClient('prepare', alice.publicState); recordClient('prepare', bob.publicState)
+  const recordClient = (
+    step: string,
+    state: ClientState) => clientTrace.push({
+      sequence: clientTrace.length + 1,
+      step,
+      party: state.party,
+      status: trustedClientStatus(state)
+    })
+
+  recordClient('prepare', alice.publicState);
+  recordClient('prepare', bob.publicState)
+
   const authorization = new AuthorizationTraceRecorder()
   const settlement = new SettlementTraceRecorder()
   const negatives = new NegativeControlRecorder()
   const addressesA = deployment.chains[0].addresses
   const addressesB = deployment.chains[1].addresses
-  const clientA = createProtocolClient({addresses: addressesA, publicClient: chainA.publicClient, walletClient: chainA.alice.walletClient})
-  const clientB = createProtocolClient({addresses: addressesB, publicClient: chainB.publicClient, walletClient: chainB.bob.walletClient})
+  const clientA = createProtocolClient({
+    addresses: addressesA,
+    publicClient: chainA.publicClient,
+    walletClient: chainA.alice.walletClient
+  })
+  const clientB = createProtocolClient({
+    addresses: addressesB,
+    publicClient: chainB.publicClient,
+    walletClient: chainB.bob.walletClient
+  })
   const alicePrepared = preparedAuthorization(terms, true, addressesA.directAuthorization, addressesA.crossChainWrapper, lock, randomness.partyActionNonce, now + 500n)
   const bobPrepared = preparedAuthorization(terms, false, addressesB.directAuthorization, addressesB.crossChainWrapper, lock, randomness.counterpartyActionNonce, now + 600n)
   const aliceKey = pqKey(deployment.chains[0].trustedVerifier, fixed(101))
@@ -125,13 +192,23 @@ export async function runFullDemo(
   const bobKey = pqKey(deployment.chains[1].trustedVerifier, fixed(103))
   const bobRecovery = pqKey(deployment.chains[1].trustedVerifier, fixed(104))
   const configuredFees = [3_000_000_000_000n, 7_000_000_000_000n] as const
+
   for (const [chain, wrapper, fee] of [
     [chainA, addressesA.crossChainWrapper, configuredFees[0]],
     [chainB, addressesB.crossChainWrapper, configuredFees[1]],
   ] as const) {
-    const hash = await chain.deployer.walletClient.writeContract({address: wrapper, abi: crossChainWrapperAbi, functionName: 'setCommitmentFee', args: [fee], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
+    const hash = await chain.deployer.walletClient.writeContract({
+      address: wrapper,
+      abi: crossChainWrapperAbi,
+      functionName: 'setCommitmentFee',
+      args: [fee],
+      chain: chain.publicClient.chain ?? null,
+      account: chain.deployer.account
+    })
+
     await receipt(chain, hash)
   }
+
   const [aliceQuote, bobQuote] = await Promise.all([
     clientA.getCommitValueQuote(request(alicePrepared, randomness.bobCommitSecret)),
     clientB.getCommitValueQuote(request(bobPrepared, randomness.bobCommitSecret)),
@@ -142,47 +219,135 @@ export async function runFullDemo(
   ])
   const holdingsA = tracked(deployment.chains[0].funding.token, chainA.alice.address, chainB.bob.address, htlcA)
   const holdingsB = tracked(deployment.chains[1].funding.token, chainB.bob.address, chainA.alice.address, htlcB)
-  const snapshotA = () => readCrossChainSettlementSnapshot({publicClient: chainA.publicClient, chainId: 31_337, wrapper: addressesA.crossChainWrapper, terms, party: true, lock, holdings: holdingsA})
-  const snapshotB = () => readCrossChainSettlementSnapshot({publicClient: chainB.publicClient, chainId: 31_338, wrapper: addressesB.crossChainWrapper, terms, party: false, lock, holdings: holdingsB})
+  const snapshotA = () => readCrossChainSettlementSnapshot({
+    publicClient: chainA.publicClient,
+    chainId: 31_337,
+    wrapper: addressesA.crossChainWrapper,
+    terms,
+    party: true,
+    lock,
+    holdings: holdingsA
+  })
+  const snapshotB = () => readCrossChainSettlementSnapshot({
+    publicClient: chainB.publicClient,
+    chainId: 31_338,
+    wrapper: addressesB.crossChainWrapper,
+    terms,
+    party: false,
+    lock,
+    holdings: holdingsB
+  })
 
   progress('Submitting and recording Alice commit on chain 31337')
+
   const aliceBefore = await snapshotA()
   const aliceRequest = request(alicePrepared, randomness.bobCommitSecret)
   const aliceSignature = pqSignature(aliceKey, alicePrepared.payloadHash)
   const aliceHash = await lazyCommit(chainA, clientA, deployment.chains[0], aliceRequest, alicePrepared.payloadHash, aliceKey, aliceRecovery, fixed(201), now + 500n, aliceSignature)
   const aliceReceipt = await receipt(chainA, aliceHash)
   const aliceAfter = await snapshotA()
-  authorization.record({side: 'alice', prepared: alicePrepared, signatureVerifier: deployment.chains[0].trustedVerifier, authenticatedSubmitter: chainA.alice.address}, {status: 'accepted', transactionHash: aliceHash})
-  settlement.record({action: 'alice-commit', receipt: aliceReceipt, addresses: addressesA, before: aliceBefore, after: aliceAfter, progressionGate: 'bob-secret-published'})
+
+  authorization.record({
+    side: 'alice',
+    prepared: alicePrepared,
+    signatureVerifier: deployment.chains[0].trustedVerifier,
+    authenticatedSubmitter: chainA.alice.address
+  }, {
+    status: 'accepted',
+    transactionHash: aliceHash
+  })
+  settlement.record({
+    action: 'alice-commit',
+    receipt: aliceReceipt,
+    addresses: addressesA,
+    before: aliceBefore,
+    after: aliceAfter,
+    progressionGate: 'bob-secret-published'
+  })
 
   progress('Recording Alice commit as pending; Bob remains disabled')
-  alice = applied(alice, {command: 'mark-alice-pending'}); recordClient('pending', alice.publicState)
+  alice = applied(alice, {
+    command: 'mark-alice-pending'
+  });
+  recordClient('pending', alice.publicState)
   progress('Recording Alice commit as included but non-final')
+
   const aliceInclusion = inclusion(aliceReceipt)
-  alice = applied(alice, {command: 'mark-alice-included-non-final', inclusion: aliceInclusion}); recordClient('included-non-final', alice.publicState)
+
+  alice = applied(alice, {
+    command: 'mark-alice-included-non-final',
+    inclusion: aliceInclusion
+  });
+  recordClient('included-non-final', alice.publicState)
   progress('Mining the required confirmations and marking Alice commit final')
-  await chainA.testClient.mine({blocks: 2})
-  alice = applied(alice, {command: 'mark-alice-final', inclusion: aliceInclusion}); recordClient('final', alice.publicState)
+  await chainA.testClient.mine({
+    blocks: 2
+  })
+  alice = applied(alice, {
+    command: 'mark-alice-final',
+    inclusion: aliceInclusion
+  });
+  recordClient('final', alice.publicState)
   progress("Extracting BobCommitSecret from Alice's finalized on-chain commit")
+
   const publications = decodeProtocolEvents(aliceReceipt.logs, addressesA).filter(event => event.source === 'crossChainWrapper' && event.eventName === 'BobCommitSecretPublished' && event.transactionHash === aliceHash)
-  if (publications.length !== 1 || typeof publications[0]!.args !== 'object' || publications[0]!.args === null) throw new Error('Alice commit did not publish exactly one BobCommitSecret')
-  const published = (publications[0]!.args as {readonly bobCommitSecret?: unknown}).bobCommitSecret
-  if (typeof published !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(published)) throw new Error('Alice commit published a malformed BobCommitSecret')
+
+  if (publications.length !== 1 || typeof publications[0]!.args !== 'object' || publications[0]!.args === null)
+    throw new Error('Alice commit did not publish exactly one BobCommitSecret')
+
+  const published = (publications[0]!.args as {
+    readonly bobCommitSecret?: unknown
+  }).bobCommitSecret
+
+  if (typeof published !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(published))
+    throw new Error('Alice commit published a malformed BobCommitSecret')
+
   const observedBobCommitSecret = published as Hex32
-  if (deriveCommitLock(gateContextId(terms), observedBobCommitSecret) !== terms.counterpartySide.commitLock) throw new Error('Alice commit published the wrong BobCommitSecret')
-  bob = applied(bob, {command: 'mark-alice-final', inclusion: aliceInclusion, bobCommitSecret: observedBobCommitSecret}); recordClient('on-chain-secret-observed', bob.publicState)
+
+  if (deriveCommitLock(gateContextId(terms), observedBobCommitSecret) !== terms.counterpartySide.commitLock)
+    throw new Error('Alice commit published the wrong BobCommitSecret')
+
+  bob = applied(bob, {
+    command: 'mark-alice-final',
+    inclusion: aliceInclusion,
+    bobCommitSecret: observedBobCommitSecret
+  });
+  recordClient('on-chain-secret-observed', bob.publicState)
 
   progress("Submitting Bob's PQ-authorized, secret-gated commit on chain 31338")
+
   const bobBefore = await snapshotB()
   const bobRequest = request(bobPrepared, observedBobCommitSecret)
   const bobSignature = pqSignature(bobKey, bobPrepared.payloadHash)
   const bobHash = await lazyCommit(chainB, clientB, deployment.chains[1], bobRequest, bobPrepared.payloadHash, bobKey, bobRecovery, fixed(202), now + 600n, bobSignature)
   const bobReceipt = await receipt(chainB, bobHash)
   const bobAfter = await snapshotB()
-  authorization.record({side: 'bob', prepared: bobPrepared, signatureVerifier: deployment.chains[1].trustedVerifier, authenticatedSubmitter: chainB.bob.address}, {status: 'accepted', transactionHash: bobHash})
-  settlement.record({action: 'bob-commit', receipt: bobReceipt, addresses: addressesB, before: bobBefore, after: bobAfter, progressionGate: 'bob-secret-accepted'})
-  bob = applied(bob, {command: 'mark-bob-commit-pending'})
-  bob = applied(bob, {command: 'mark-bob-committed'}); recordClient('bob-commit', bob.publicState)
+
+  authorization.record({
+    side: 'bob',
+    prepared: bobPrepared,
+    signatureVerifier: deployment.chains[1].trustedVerifier,
+    authenticatedSubmitter: chainB.bob.address
+  }, {
+    status: 'accepted',
+    transactionHash: bobHash
+  })
+  settlement.record({
+    action: 'bob-commit',
+    receipt: bobReceipt,
+    addresses: addressesB,
+    before: bobBefore,
+    after: bobAfter,
+    progressionGate: 'bob-secret-accepted'
+  })
+  bob = applied(bob, {
+    command: 'mark-bob-commit-pending'
+  })
+  bob = applied(bob, {
+    command: 'mark-bob-committed'
+  });
+  recordClient('bob-commit', bob.publicState)
+
   const accruedAfterCommits = await Promise.all([
     readFee(chainA, addressesA.crossChainWrapper, 'accruedFees'),
     readFee(chainB, addressesB.crossChainWrapper, 'accruedFees'),
@@ -196,36 +361,103 @@ export async function runFullDemo(
   await runBobNegative(negatives, 'bob-commit-wrong-secret', chainB, addressesB, snapshotB, terms, lock, fixed(9), fixed(99), bobKey, chainB.bob.address, now + 700n)
 
   progress("Submitting Alice's revealing claim on Bob's chain")
+
   const revealBefore = await snapshotB()
-  const aliceOnB = createProtocolClient({addresses: addressesB, publicClient: chainB.publicClient, walletClient: chainB.alice.walletClient})
+  const aliceOnB = createProtocolClient({
+    addresses: addressesB,
+    publicClient: chainB.publicClient,
+    walletClient: chainB.alice.walletClient
+  })
   const revealHash = await aliceOnB.claimCrossChain(terms, false, lock, randomness.settlementSecret)
   const revealReceipt = await receipt(chainB, revealHash)
-  settlement.record({action: 'revealing-claim', receipt: revealReceipt, addresses: addressesB, before: revealBefore, after: await snapshotB(), progressionGate: 'not-applicable'})
+
+  settlement.record({
+    action: 'revealing-claim',
+    receipt: revealReceipt,
+    addresses: addressesB,
+    before: revealBefore,
+    after: await snapshotB(),
+    progressionGate: 'not-applicable'
+  })
   progress("Finalizing the revealing claim and handing Secret to Bob's client")
-  await chainB.testClient.mine({blocks: 2})
-  bob = applied(bob, {command: 'observe-reveal', settlementSecret: randomness.settlementSecret, inclusion: inclusion(revealReceipt)}); recordClient('revealing-claim-final', bob.publicState)
+  await chainB.testClient.mine({
+    blocks: 2
+  })
+  bob = applied(bob, {
+    command: 'observe-reveal',
+    settlementSecret: randomness.settlementSecret,
+    inclusion: inclusion(revealReceipt)
+  });
+  recordClient('revealing-claim-final', bob.publicState)
 
   progress('Negative control: rejecting the final claim with the wrong Secret')
-  await negatives.execute({scenario: 'final-claim-wrong-secret', snapshot: snapshotA, attempt: async () => { await chainA.publicClient.simulateContract({address: addressesA.crossChainWrapper, abi: crossChainWrapperAbi, functionName: 'claim', args: [terms, true, lock, fixed(100)], account: chainA.charlie.address}) }})
+  await negatives.execute({
+    scenario: 'final-claim-wrong-secret',
+    snapshot: snapshotA,
+    attempt: async () => {
+      await chainA.publicClient.simulateContract({
+        address: addressesA.crossChainWrapper,
+        abi: crossChainWrapperAbi,
+        functionName: 'claim',
+        args: [terms, true, lock, fixed(100)],
+        account: chainA.charlie.address
+      })
+    }
+  })
   progress("Submitting the permissionless final claim on Alice's chain")
+
   const finalBefore = await snapshotA()
-  const executor = createProtocolClient({addresses: addressesA, publicClient: chainA.publicClient, walletClient: chainA.charlie.walletClient})
+  const executor = createProtocolClient({
+    addresses: addressesA,
+    publicClient: chainA.publicClient,
+    walletClient: chainA.charlie.walletClient
+  })
   const finalHash = await executor.claimCrossChain(terms, true, lock, randomness.settlementSecret)
   const finalReceipt = await receipt(chainA, finalHash)
-  settlement.record({action: 'final-claim', receipt: finalReceipt, addresses: addressesA, before: finalBefore, after: await snapshotA(), progressionGate: 'not-applicable'})
-  bob = applied(bob, {command: 'handoff-final-claim', executor: chainA.charlie.address, transactionHash: finalHash}); recordClient('final-claim-handoff', bob.publicState)
+
+  settlement.record({
+    action: 'final-claim',
+    receipt: finalReceipt,
+    addresses: addressesA,
+    before: finalBefore,
+    after: await snapshotA(),
+    progressionGate: 'not-applicable'
+  })
+  bob = applied(bob, {
+    command: 'handoff-final-claim',
+    executor: chainA.charlie.address,
+    transactionHash: finalHash
+  });
+  recordClient('final-claim-handoff', bob.publicState)
   progress('Marking both clients complete and validating final custody and payouts')
-  alice = applied(alice, {command: 'mark-complete'}); bob = applied(bob, {command: 'mark-complete'}); recordClient('completion', alice.publicState); recordClient('completion', bob.publicState)
+  alice = applied(alice, {
+    command: 'mark-complete'
+  });
+  bob = applied(bob, {
+    command: 'mark-complete'
+  });
+  recordClient('completion', alice.publicState);
+  recordClient('completion', bob.publicState)
 
   const accruedAfterSettlement = await Promise.all([
     readFee(chainA, addressesA.crossChainWrapper, 'accruedFees'),
     readFee(chainB, addressesB.crossChainWrapper, 'accruedFees'),
   ])
   const withdrawals: DemoFeeWithdrawal[] = []
+
   for (const [chain, wrapper] of [[chainA, addressesA.crossChainWrapper], [chainB, addressesB.crossChainWrapper]] as const) {
-    const hash = await chain.deployer.walletClient.writeContract({address: wrapper, abi: crossChainWrapperAbi, functionName: 'withdrawFees', args: [chain.deployer.address], chain: chain.publicClient.chain ?? null, account: chain.deployer.account})
+    const hash = await chain.deployer.walletClient.writeContract({
+      address: wrapper,
+      abi: crossChainWrapperAbi,
+      functionName: 'withdrawFees',
+      args: [chain.deployer.address],
+      chain: chain.publicClient.chain ?? null,
+      account: chain.deployer.account
+    })
+
     withdrawals.push(observedWithdrawal(await receipt(chain, hash), wrapper))
   }
+
   const accruedAfterWithdrawal = await Promise.all([
     readFee(chainA, addressesA.crossChainWrapper, 'accruedFees'),
     readFee(chainB, addressesB.crossChainWrapper, 'accruedFees'),
@@ -239,69 +471,390 @@ export async function runFullDemo(
     accruedAfterWithdrawal: [accruedAfterWithdrawal[0].toString() as '0', accruedAfterWithdrawal[1].toString() as '0'],
     gasIncludedInProtocolRevenue: false,
   }
-  const artifact: FullDemoArtifact = {schema: FULL_DEMO_SCHEMA, publicTestSecrets: true, deployment, tradeId: alice.publicState.tradeId, terms: alice.publicState.terms, lock, deterministicSecrets: {settlementSecret: randomness.settlementSecret, bobCommitSecret: randomness.bobCommitSecret}, clientTrace, authorizationTrace: authorization.artifact(), settlementTrace: settlement.artifact(), negativeControls: negatives.artifact({requireAll: true}), feeFlow}
+  const artifact: FullDemoArtifact = {
+    schema: FULL_DEMO_SCHEMA,
+    publicTestSecrets: true,
+    deployment,
+    tradeId: alice.publicState.tradeId,
+    terms: alice.publicState.terms,
+    lock,
+    deterministicSecrets: {
+      settlementSecret: randomness.settlementSecret,
+      bobCommitSecret: randomness.bobCommitSecret
+    },
+    clientTrace,
+    authorizationTrace: authorization.artifact(),
+    settlementTrace: settlement.artifact(),
+    negativeControls: negatives.artifact({
+      requireAll: true
+    }),
+    feeFlow
+  }
+
   validateFullDemoArtifact(artifact)
+
   return artifact
 }
 
-function sideTemplate(ctx: ChainContext, recipient: Address, token: Address, amount: bigint, commitmentDeadline: bigint, claimDeadline: bigint, reclaimRelease: bigint): SideTermsTemplate {
-  return {chainId: BigInt(ctx.chainId), assets: [{assetType: AssetType.ERC20, target: token, id: 0n, amount}], principal: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n, reclaimRecipient: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, recipient, commitmentDeadline, claimDeadline, reclaimRelease, delegationPolicy: DelegationPolicy.NotAllowed, delegate: ZERO_ADDRESS, delegateKeyVersion: 0n}
-}
-function restoreTerms(state: {readonly terms: ClientState['terms']}) { return {partySide: restoreSide(state.terms.partySide), counterpartySide: restoreSide(state.terms.counterpartySide)} }
-function restoreSide(side: ClientState['terms']['partySide']) { return {...side, chainId: BigInt(side.chainId), principalKeyVersion: BigInt(side.principalKeyVersion), commitmentDeadline: BigInt(side.commitmentDeadline), claimDeadline: BigInt(side.claimDeadline), reclaimRelease: BigInt(side.reclaimRelease), delegateKeyVersion: BigInt(side.delegateKeyVersion), assets: side.assets.map(asset => ({...asset, id: BigInt(asset.id), amount: BigInt(asset.amount)}))} }
-function preparedAuthorization(terms: ReturnType<typeof restoreTerms>, party: boolean, authorizationVerifier: Address, swapAddress: Address, lock: Hex32, actionNonce: Hex32, expiry: bigint) { const payload = {terms, party, authorizationVerifier, swapAddress, lock, expectedSourceState: 0, actionNonce, expiry} as const; return {payload, payloadHash: commitPayloadHash(payload)} }
-function request(prepared: ReturnType<typeof preparedAuthorization>, bobCommitSecret: Hex32): CommitAuthorizationRequest { return {receiver: prepared.payload.swapAddress, terms: prepared.payload.terms, party: prepared.payload.party, lock: prepared.payload.lock, actionNonce: prepared.payload.actionNonce, bobCommitSecret, expiry: prepared.payload.expiry, commitData: '0x'} }
-function pqKey(verifier: Address, seed: Hex32): Hex { return concatHex([verifier, seed]) }
-function pqSignature(key: Hex, digest: Hex32): Hex { return encodeAbiParameters([{type: 'bytes'}, {type: 'bytes32'}], [sliceHex(key, 20), digest]) }
-function demoFeeQuote(side: DemoFeeQuote['side'], quote: Awaited<ReturnType<ReturnType<typeof createProtocolClient>['getCommitValueQuote']>>): DemoFeeQuote { return {side, nativeEscrow: quote.nativeEscrow.toString(), commitmentFee: quote.commitmentFee.toString(), totalValue: quote.totalValue.toString()} }
-function observedWithdrawal(receipt: TransactionReceipt, wrapper: Address): DemoFeeWithdrawal {
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== wrapper.toLowerCase()) continue
-    try {
-      const decoded = decodeEventLog({abi: crossChainWrapperAbi, data: log.data, topics: log.topics})
-      if (decoded.eventName === 'FeesWithdrawn') return {recipient: decoded.args.to, amount: decoded.args.amount.toString(), transactionHash: receipt.transactionHash}
-    } catch {}
+function sideTemplate(
+  ctx: ChainContext,
+  recipient: Address,
+  token: Address,
+  amount: bigint,
+  commitmentDeadline: bigint,
+  claimDeadline: bigint,
+  reclaimRelease: bigint): SideTermsTemplate {
+  return {
+    chainId: BigInt(ctx.chainId),
+    assets: [{
+      assetType: AssetType.ERC20,
+      target: token,
+      id: 0n,
+      amount
+    }],
+    principal: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address,
+    authorizationMode: AuthorizationMode.RegisteredDirect,
+    principalKeyVersion: 1n,
+    reclaimRecipient: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address,
+    recipient,
+    commitmentDeadline,
+    claimDeadline,
+    reclaimRelease,
+    delegationPolicy: DelegationPolicy.NotAllowed,
+    delegate: ZERO_ADDRESS,
+    delegateKeyVersion: 0n
   }
+}
+function restoreTerms(
+  state: {
+    readonly terms: ClientState['terms']
+  }) {
+  return {
+    partySide: restoreSide(state.terms.partySide),
+    counterpartySide: restoreSide(state.terms.counterpartySide)
+  }
+}
+function restoreSide(
+  side: ClientState['terms']['partySide']) {
+  return {
+...side,
+    chainId: BigInt(side.chainId),
+    principalKeyVersion: BigInt(side.principalKeyVersion),
+    commitmentDeadline: BigInt(side.commitmentDeadline),
+    claimDeadline: BigInt(side.claimDeadline),
+    reclaimRelease: BigInt(side.reclaimRelease),
+    delegateKeyVersion: BigInt(side.delegateKeyVersion),
+    assets: side.assets.map(asset => ({
+...asset,
+      id: BigInt(asset.id),
+      amount: BigInt(asset.amount)
+    }))
+  }
+}
+function preparedAuthorization(
+  terms: ReturnType<typeof restoreTerms>,
+  party: boolean,
+  authorizationVerifier: Address,
+  swapAddress: Address,
+  lock: Hex32,
+  actionNonce: Hex32,
+  expiry: bigint) {
+  const payload = {
+    terms,
+    party,
+    authorizationVerifier,
+    swapAddress,
+    lock,
+    expectedSourceState: 0,
+    actionNonce,
+    expiry
+  } as const;
+
+  return {
+    payload,
+    payloadHash: commitPayloadHash(payload)
+  }
+}
+function request(
+  prepared: ReturnType<typeof preparedAuthorization>,
+  bobCommitSecret: Hex32): CommitAuthorizationRequest {
+  return {
+    receiver: prepared.payload.swapAddress,
+    terms: prepared.payload.terms,
+    party: prepared.payload.party,
+    lock: prepared.payload.lock,
+    actionNonce: prepared.payload.actionNonce,
+    bobCommitSecret,
+    expiry: prepared.payload.expiry,
+    commitData: '0x'
+  }
+}
+function pqKey(
+  verifier: Address,
+  seed: Hex32): Hex {
+  return concatHex([verifier, seed])
+}
+function pqSignature(
+  key: Hex,
+  digest: Hex32): Hex {
+  return encodeAbiParameters([{
+    type: 'bytes'
+  }, {
+    type: 'bytes32'
+  }], [sliceHex(key, 20), digest])
+}
+function demoFeeQuote(
+  side: DemoFeeQuote['side'],
+  quote: Awaited<ReturnType<ReturnType<typeof createProtocolClient>['getCommitValueQuote']>>): DemoFeeQuote {
+  return {
+    side,
+    nativeEscrow: quote.nativeEscrow.toString(),
+    commitmentFee: quote.commitmentFee.toString(),
+    totalValue: quote.totalValue.toString()
+  }
+}
+function observedWithdrawal(
+  receipt: TransactionReceipt,
+  wrapper: Address): DemoFeeWithdrawal {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== wrapper.toLowerCase())
+      continue
+
+    try {
+      const decoded = decodeEventLog({
+        abi: crossChainWrapperAbi,
+        data: log.data,
+        topics: log.topics
+      })
+
+      if (decoded.eventName === 'FeesWithdrawn')
+        return {
+          recipient: decoded.args.to,
+          amount: decoded.args.amount.toString(),
+          transactionHash: receipt.transactionHash
+        }
+    }
+    catch {}
+  }
+
   throw new Error(`fee withdrawal receipt lacks FeesWithdrawn: ${receipt.transactionHash}`)
 }
-async function readFee(ctx: ChainContext, wrapper: Address, functionName: 'accruedFees' | 'commitmentFee'): Promise<bigint> { return await ctx.publicClient.readContract({address: wrapper, abi: crossChainWrapperAbi, functionName}) }
-async function lazyCommit(ctx: ChainContext, client: ReturnType<typeof createProtocolClient>, deployment: DemoDeploymentArtifact['chains'][number], commitRequest: CommitAuthorizationRequest, payloadHash: Hex32, activeKey: Hex, recoveryKey: Hex, operationNonce: Hex32, expiry: bigint, commitSignature: Hex): Promise<Hash> { const registration: InitialRegistration = {eoa: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address, activePQKey: activeKey, recoveryPQKey: recoveryKey, commitTarget: deployment.addresses.directAuthorization, commitPayloadHash: payloadHash, operationNonce, expiry}; const digest = registrationDigest(BigInt(ctx.chainId), deployment.addresses.directAuthorization, registration); const call = encodeFunctionData({abi: directAuthorizationAbi, functionName: 'authorizeCommit', args: [commitRequest, commitSignature]}); return client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), commitRequest) }
-async function receipt(ctx: ChainContext, hash: Hash): Promise<TransactionReceipt> { const value = await ctx.publicClient.waitForTransactionReceipt({hash}); if (value.status !== 'success') throw new Error(`demo transaction reverted: ${hash}`); return value }
-function inclusion(receipt: TransactionReceipt) { if (receipt.blockHash === null) throw new Error('receipt lacks block hash'); return {transactionHash: receipt.transactionHash, blockNumber: receipt.blockNumber.toString(), blockHash: receipt.blockHash as Hex32} }
-function applied<P extends {publicState: ClientState; secretState: PartySecretState}>(pair: P, command: Parameters<typeof applyPartyCommand>[2]): P { const value = applyPartyCommand(pair.publicState, pair.secretState, command); return {publicState: value.publicState, secretState: value.secretState} as P }
-function tracked(token: Address, principal: Address, recipient: Address, wrapper: Address): readonly TrackedHolding[] { return [{assetType: 'erc20', token, account: principal}, {assetType: 'erc20', token, account: recipient}, {assetType: 'erc20', token, account: wrapper}] }
-async function latestTime(a: ChainContext, b: ChainContext): Promise<bigint> { const [left, right] = await Promise.all([a.now(), b.now()]); return (left > right ? left : right) + 10n }
-async function runBobNegative(recorder: NegativeControlRecorder, scenario: NegativeControlScenario, ctx: ChainContext, addresses: DemoDeploymentArtifact['chains'][number]['addresses'], snapshot: () => Promise<CrossChainSettlementSnapshot>, terms: ReturnType<typeof restoreTerms>, lock: Hex32, actionNonce: Hex32, bobCommitSecret: Hex32, key: Hex, caller: Address, expiry: bigint): Promise<void> { const prepared = preparedAuthorization(terms, false, addresses.directAuthorization, addresses.crossChainWrapper, lock, actionNonce, expiry); const req = request(prepared, bobCommitSecret); const signature = pqSignature(key, prepared.payloadHash); await recorder.execute({scenario, snapshot, attempt: async () => { await ctx.publicClient.simulateContract({address: addresses.directAuthorization, abi: [...directAuthorizationAbi, ...crossChainWrapperAbi], functionName: 'authorizeCommit', args: [req, signature], account: caller} as never) }}) }
-export function validateFullDemoArtifact(artifact: FullDemoArtifact): void {
+async function readFee(
+  ctx: ChainContext,
+  wrapper: Address,
+  functionName: 'accruedFees' | 'commitmentFee'): Promise<bigint> {
+  return await ctx.publicClient.readContract({
+    address: wrapper,
+    abi: crossChainWrapperAbi,
+    functionName
+  })
+}
+async function lazyCommit(
+  ctx: ChainContext,
+  client: ReturnType<typeof createProtocolClient>,
+  deployment: DemoDeploymentArtifact['chains'][number],
+  commitRequest: CommitAuthorizationRequest,
+  payloadHash: Hex32,
+  activeKey: Hex,
+  recoveryKey: Hex,
+  operationNonce: Hex32,
+  expiry: bigint,
+  commitSignature: Hex): Promise<Hash> {
+  const registration: InitialRegistration = {
+    eoa: ctx.chainId === 31_337 ? ctx.alice.address : ctx.bob.address,
+    activePQKey: activeKey,
+    recoveryPQKey: recoveryKey,
+    commitTarget: deployment.addresses.directAuthorization,
+    commitPayloadHash: payloadHash,
+    operationNonce,
+    expiry
+  };
+  const digest = registrationDigest(BigInt(ctx.chainId), deployment.addresses.directAuthorization, registration);
+  const call = encodeFunctionData({
+    abi: directAuthorizationAbi,
+    functionName: 'authorizeCommit',
+    args: [commitRequest, commitSignature]
+  });
+
+  return client.registerAndCommit(registration, '0x', pqSignature(activeKey, keyPossessionDigest(digest, KeyRole.Active, activeKey)), pqSignature(recoveryKey, keyPossessionDigest(digest, KeyRole.Recovery, recoveryKey)), sliceHex(call, 4), commitRequest)
+}
+async function receipt(
+  ctx: ChainContext,
+  hash: Hash): Promise<TransactionReceipt> {
+  const value = await ctx.publicClient.waitForTransactionReceipt({
+    hash
+  });
+
+  if (value.status !== 'success')
+    throw new Error(`demo transaction reverted: ${hash}`);
+
+  return value
+}
+function inclusion(
+  receipt: TransactionReceipt) {
+  if (receipt.blockHash === null)
+    throw new Error('receipt lacks block hash');
+
+  return {
+    transactionHash: receipt.transactionHash,
+    blockNumber: receipt.blockNumber.toString(),
+    blockHash: receipt.blockHash as Hex32
+  }
+}
+function applied<P extends {
+  publicState: ClientState;
+  secretState: PartySecretState
+}>(
+  pair: P,
+  command: Parameters<typeof applyPartyCommand>[2]): P {
+  const value = applyPartyCommand(pair.publicState, pair.secretState, command);
+
+  return {
+    publicState: value.publicState,
+    secretState: value.secretState
+  } as P
+}
+function tracked(
+  token: Address,
+  principal: Address,
+  recipient: Address,
+  wrapper: Address): readonly TrackedHolding[] {
+  return [{
+    assetType: 'erc20',
+    token,
+    account: principal
+  }, {
+    assetType: 'erc20',
+    token,
+    account: recipient
+  }, {
+    assetType: 'erc20',
+    token,
+    account: wrapper
+  }]
+}
+async function latestTime(
+  a: ChainContext,
+  b: ChainContext): Promise<bigint> {
+  const [left, right] = await Promise.all([a.now(), b.now()]);
+
+  return (left > right ? left : right) + 10n
+}
+async function runBobNegative(
+  recorder: NegativeControlRecorder,
+  scenario: NegativeControlScenario,
+  ctx: ChainContext,
+  addresses: DemoDeploymentArtifact['chains'][number]['addresses'],
+  snapshot: () => Promise<CrossChainSettlementSnapshot>,
+  terms: ReturnType<typeof restoreTerms>,
+  lock: Hex32,
+  actionNonce: Hex32,
+  bobCommitSecret: Hex32,
+  key: Hex,
+  caller: Address,
+  expiry: bigint): Promise<void> {
+  const prepared = preparedAuthorization(terms, false, addresses.directAuthorization, addresses.crossChainWrapper, lock, actionNonce, expiry);
+  const req = request(prepared, bobCommitSecret);
+  const signature = pqSignature(key, prepared.payloadHash);
+
+  await recorder.execute({
+    scenario,
+    snapshot,
+    attempt: async () => {
+      await ctx.publicClient.simulateContract({
+        address: addresses.directAuthorization,
+        abi: [...directAuthorizationAbi, ...crossChainWrapperAbi],
+        functionName: 'authorizeCommit',
+        args: [req, signature],
+        account: caller
+      } as never)
+    }
+  })
+}
+export function validateFullDemoArtifact(
+  artifact: FullDemoArtifact): void {
   const expectedSteps = ['prepare:alice', 'prepare:bob', 'pending:alice', 'included-non-final:alice', 'final:alice', 'on-chain-secret-observed:bob', 'bob-commit:bob', 'revealing-claim-final:bob', 'final-claim-handoff:bob', 'completion:alice', 'completion:bob']
   const expectedActions = ['alice-commit', 'bob-commit', 'revealing-claim', 'final-claim']
   const expectedNegative = ['commit-disallowed-submitter', 'bob-commit-missing-secret', 'bob-commit-wrong-secret', 'final-claim-wrong-secret']
-  const terms = restoreTerms({terms: artifact.terms})
-  if (artifact.schema !== FULL_DEMO_SCHEMA || artifact.publicTestSecrets !== true || artifact.deployment.chains.map(chain => chain.chainId).join(',') !== '31337,31338') throw new Error('invalid full demo envelope')
-  if (tradeIdentity(terms) !== artifact.tradeId || settlementIdentity(artifact.tradeId, artifact.deterministicSecrets.settlementSecret) !== artifact.lock) throw new Error('full demo terms or secret binding mismatch')
-  if (artifact.clientTrace.map(entry => `${entry.step}:${entry.party}`).join('|') !== expectedSteps.join('|') || artifact.clientTrace.at(-1)?.status.workflowStage !== 'complete') throw new Error('full demo client trace is incomplete')
-  if (JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.settlementSecret) || JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.bobCommitSecret)) throw new Error('full demo operator trace exposes secrets')
-  if (artifact.authorizationTrace.records.map(record => `${record.side}:${record.status}`).join('|') !== 'alice:accepted|bob:accepted') throw new Error('full demo authorization trace is incomplete')
-  if (artifact.settlementTrace.transactions.map(record => record.action).join('|') !== expectedActions.join('|')) throw new Error('full demo settlement trace is incomplete')
-  if (artifact.negativeControls.records.map(record => record.scenario).join('|') !== expectedNegative.join('|') || artifact.negativeControls.records.some(record => !record.reverted || !record.stateUnchanged || JSON.stringify(record.before) !== JSON.stringify(record.after))) throw new Error('full demo negative controls are incomplete')
-  if (artifact.feeFlow.gasIncludedInProtocolRevenue !== false || artifact.feeFlow.quotes.map(quote => quote.commitmentFee).join(',') !== '3000000000000,7000000000000' || artifact.feeFlow.accruedAfterCommits.join(',') !== artifact.feeFlow.accruedAfterSettlement.join(',') || artifact.feeFlow.accruedAfterSettlement.join(',') !== artifact.feeFlow.withdrawals.map(withdrawal => withdrawal.amount).join(',') || artifact.feeFlow.withdrawals.some(withdrawal => withdrawal.recipient.toLowerCase() !== artifact.deployment.owner.toLowerCase() || !/^0x[0-9a-fA-F]{64}$/.test(withdrawal.transactionHash)) || artifact.feeFlow.accruedAfterWithdrawal.join(',') !== '0,0') throw new Error('full demo fee flow is incomplete')
+  const terms = restoreTerms({
+    terms: artifact.terms
+  })
+
+  if (artifact.schema !== FULL_DEMO_SCHEMA || artifact.publicTestSecrets !== true || artifact.deployment.chains.map(chain => chain.chainId).join(',') !== '31337,31338')
+    throw new Error('invalid full demo envelope')
+  if (tradeIdentity(terms) !== artifact.tradeId || settlementIdentity(artifact.tradeId, artifact.deterministicSecrets.settlementSecret) !== artifact.lock)
+    throw new Error('full demo terms or secret binding mismatch')
+  if (artifact.clientTrace.map(entry => `${entry.step}:${entry.party}`).join('|') !== expectedSteps.join('|') || artifact.clientTrace.at(-1)?.status.workflowStage !== 'complete')
+    throw new Error('full demo client trace is incomplete')
+  if (JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.settlementSecret) || JSON.stringify(artifact.clientTrace).includes(artifact.deterministicSecrets.bobCommitSecret))
+    throw new Error('full demo operator trace exposes secrets')
+  if (artifact.authorizationTrace.records.map(record => `${record.side}:${record.status}`).join('|') !== 'alice:accepted|bob:accepted')
+    throw new Error('full demo authorization trace is incomplete')
+  if (artifact.settlementTrace.transactions.map(record => record.action).join('|') !== expectedActions.join('|'))
+    throw new Error('full demo settlement trace is incomplete')
+  if (artifact.negativeControls.records.map(record => record.scenario).join('|') !== expectedNegative.join('|') || artifact.negativeControls.records.some(record => !record.reverted || !record.stateUnchanged || JSON.stringify(record.before) !== JSON.stringify(record.after)))
+    throw new Error('full demo negative controls are incomplete')
+  if (artifact.feeFlow.gasIncludedInProtocolRevenue !== false || artifact.feeFlow.quotes.map(quote => quote.commitmentFee).join(',') !== '3000000000000,7000000000000' || artifact.feeFlow.accruedAfterCommits.join(',') !== artifact.feeFlow.accruedAfterSettlement.join(',') || artifact.feeFlow.accruedAfterSettlement.join(',') !== artifact.feeFlow.withdrawals.map(withdrawal => withdrawal.amount).join(',') || artifact.feeFlow.withdrawals.some(withdrawal => withdrawal.recipient.toLowerCase() !== artifact.deployment.owner.toLowerCase() || !/^0x[0-9a-fA-F]{64}$/.test(withdrawal.transactionHash)) || artifact.feeFlow.accruedAfterWithdrawal.join(',') !== '0,0')
+    throw new Error('full demo fee flow is incomplete')
+
   const [left, right] = artifact.settlementTrace.finalSnapshots
-  const balances = (snapshot: CrossChainSettlementSnapshot | undefined) => snapshot?.holdings.map(holding => 'balance' in holding ? holding.balance : null)
-  if (left?.state !== 'Claimed' || right?.state !== 'Claimed' || JSON.stringify(balances(left)) !== JSON.stringify(['0', (10n * 10n ** 18n).toString(), '0']) || JSON.stringify(balances(right)) !== JSON.stringify(['0', (20n * 10n ** 18n).toString(), '0'])) throw new Error('full demo final state or balances mismatch')
+  const balances = (
+    snapshot: CrossChainSettlementSnapshot | undefined) => snapshot?.holdings.map(holding => 'balance' in holding ? holding.balance : null)
+
+  if (left?.state !== 'Claimed' || right?.state !== 'Claimed' || JSON.stringify(balances(left)) !== JSON.stringify(['0', (10n * 10n ** 18n).toString(), '0']) || JSON.stringify(balances(right)) !== JSON.stringify(['0', (20n * 10n ** 18n).toString(), '0']))
+    throw new Error('full demo final state or balances mismatch')
 }
 
-export function fullDemoLogicalFingerprint(artifact: FullDemoArtifact): Hex32 {
+export function fullDemoLogicalFingerprint(
+  artifact: FullDemoArtifact): Hex32 {
   validateFullDemoArtifact(artifact)
+
   const logical = {
-    client: artifact.clientTrace.map(entry => ({step: entry.step, party: entry.party, stage: entry.status.workflowStage, aliceCommit: entry.status.aliceCommitStatus, bobEnabled: entry.status.bobCommitEnabled})),
-    authorization: artifact.authorizationTrace.records.map(record => ({side: record.side, mode: record.authorizationMode, status: record.status})),
-    settlement: artifact.settlementTrace.transactions.map(record => ({action: record.action, chainId: record.chainId, gate: record.progressionGate, before: record.before.state, after: record.after.state, events: record.events.map(event => event.eventName)})),
-    negatives: artifact.negativeControls.records.map(record => ({scenario: record.scenario, errorName: record.errorName, unchanged: record.stateUnchanged})),
-    final: artifact.settlementTrace.finalSnapshots.map(snapshot => ({chainId: snapshot.chainId, state: snapshot.state, holdings: snapshot.holdings.map(holding => 'balance' in holding ? holding.balance : 'owner' in holding ? holding.owner : null)})),
+    client: artifact.clientTrace.map(entry => ({
+      step: entry.step,
+      party: entry.party,
+      stage: entry.status.workflowStage,
+      aliceCommit: entry.status.aliceCommitStatus,
+      bobEnabled: entry.status.bobCommitEnabled
+    })),
+    authorization: artifact.authorizationTrace.records.map(record => ({
+      side: record.side,
+      mode: record.authorizationMode,
+      status: record.status
+    })),
+    settlement: artifact.settlementTrace.transactions.map(record => ({
+      action: record.action,
+      chainId: record.chainId,
+      gate: record.progressionGate,
+      before: record.before.state,
+      after: record.after.state,
+      events: record.events.map(event => event.eventName)
+    })),
+    negatives: artifact.negativeControls.records.map(record => ({
+      scenario: record.scenario,
+      errorName: record.errorName,
+      unchanged: record.stateUnchanged
+    })),
+    final: artifact.settlementTrace.finalSnapshots.map(snapshot => ({
+      chainId: snapshot.chainId,
+      state: snapshot.state,
+      holdings: snapshot.holdings.map(holding => 'balance' in holding ? holding.balance : 'owner' in holding ? holding.owner : null)
+    })),
   }
+
   return keccak256(stringToHex(JSON.stringify(logical)))
 }
 
-function tradeIdentity(terms: ReturnType<typeof restoreTerms>): Hex32 { return importedTradeId(terms) }
-function settlementIdentity(trade: Hex32, secret: Hex32): Hex32 { return importedSettlementLock(trade, secret) }
-export function serializeFullDemo(artifact: FullDemoArtifact): string { return `${JSON.stringify(artifact, null, 2)}\n` }
+function tradeIdentity(
+  terms: ReturnType<typeof restoreTerms>): Hex32 {
+  return importedTradeId(terms)
+}
+function settlementIdentity(
+  trade: Hex32,
+  secret: Hex32): Hex32 {
+  return importedSettlementLock(trade, secret)
+}
+export function serializeFullDemo(
+  artifact: FullDemoArtifact): string {
+  return `${JSON.stringify(artifact, null, 2)}\n`
+}

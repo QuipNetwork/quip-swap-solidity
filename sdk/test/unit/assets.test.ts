@@ -19,20 +19,30 @@ import type {Asset} from '../../src/types.js'
 
 const TOKEN: Address = '0x1000000000000000000000000000000000000001'
 
-function codeOf(fn: () => unknown): string {
+function codeOf(
+  fn: () => unknown): string {
   try {
     fn()
-  } catch (error) {
-    if (error instanceof QuipSwapError) return error.code
+  }
+  catch (error) {
+    if (error instanceof QuipSwapError)
+      return error.code
     throw error
   }
+
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
 describe('nativeAsset', () => {
   it('produces canonical fields: zero target, id 0', () => {
     const asset = nativeAsset(5n)
-    expect(asset).toEqual({assetType: AssetType.Native, target: zeroAddress, id: 0n, amount: 5n})
+
+    expect(asset).toEqual({
+      assetType: AssetType.Native,
+      target: zeroAddress,
+      id: 0n,
+      amount: 5n
+    })
   })
 
   it('rejects zero amount (contract: ZeroAmount)', () => {
@@ -41,6 +51,7 @@ describe('nativeAsset', () => {
 
   it('returns a frozen object', () => {
     const asset = nativeAsset(1n)
+
     expect(Object.isFrozen(asset)).toBe(true)
   })
 })
@@ -48,7 +59,13 @@ describe('nativeAsset', () => {
 describe('erc20Asset', () => {
   it('produces canonical fields: id MUST be 0n', () => {
     const asset = erc20Asset(TOKEN, 100n)
-    expect(asset).toEqual({assetType: AssetType.ERC20, target: TOKEN, id: 0n, amount: 100n})
+
+    expect(asset).toEqual({
+      assetType: AssetType.ERC20,
+      target: TOKEN,
+      id: 0n,
+      amount: 100n
+    })
   })
 
   it('rejects zero amount', () => {
@@ -66,6 +83,7 @@ describe('erc721Asset', () => {
     // the digest while the transfer always moves exactly one NFT — the SDK
     // pins it to 1n like the repo's AssetHelper.makeERC721
     const asset = erc721Asset(TOKEN, 7n)
+
     expect(asset.amount).toBe(1n)
   })
 
@@ -82,7 +100,13 @@ describe('erc721Asset', () => {
 describe('erc1155Asset', () => {
   it('produces canonical fields', () => {
     const asset = erc1155Asset(TOKEN, 3n, 25n)
-    expect(asset).toEqual({assetType: AssetType.ERC1155, target: TOKEN, id: 3n, amount: 25n})
+
+    expect(asset).toEqual({
+      assetType: AssetType.ERC1155,
+      target: TOKEN,
+      id: 3n,
+      amount: 25n
+    })
   })
 
   it('ACCEPTS token id zero', () => {
@@ -103,41 +127,82 @@ describe('validateAsset (external objects)', () => {
     // the universal on-chain rule: amount > 0 regardless of type
     for (const assetType of [AssetType.Native, AssetType.ERC20, AssetType.ERC721, AssetType.ERC1155]) {
       const target = assetType === AssetType.Native ? zeroAddress : TOKEN
-      expect(codeOf(() => validateAsset({assetType, target, id: 0n, amount: 0n}))).toBe('ZERO_AMOUNT')
+
+      expect(codeOf(() => validateAsset({
+        assetType,
+        target,
+        id: 0n,
+        amount: 0n
+      }))).toBe('ZERO_AMOUNT')
     }
   })
 
   it('rejects native with non-zero target or non-zero id (contract: InvalidNativeAsset)', () => {
-    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({
+      assetType: AssetType.Native,
+      target: TOKEN,
+      id: 0n,
+      amount: 1n
+    }))).toBe(
       'INVALID_NATIVE_ASSET',
     )
-    expect(codeOf(() => validateAsset({assetType: AssetType.Native, target: zeroAddress, id: 1n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({
+      assetType: AssetType.Native,
+      target: zeroAddress,
+      id: 1n,
+      amount: 1n
+    }))).toBe(
       'INVALID_NATIVE_ASSET',
     )
   })
 
   it('rejects non-zero id for ERC-20 (contract: InvalidERC20Asset)', () => {
-    expect(codeOf(() => validateAsset({assetType: AssetType.ERC20, target: TOKEN, id: 1n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({
+      assetType: AssetType.ERC20,
+      target: TOKEN,
+      id: 1n,
+      amount: 1n
+    }))).toBe(
       'INVALID_ERC20_ASSET',
     )
   })
 
   it('accepts a contract-valid ERC-721 with amount != 1 (validation mirrors the contract, not the builder)', () => {
-    expect(() => validateAsset({assetType: AssetType.ERC721, target: TOKEN, id: 1n, amount: 5n})).not.toThrow()
+    expect(() => validateAsset({
+      assetType: AssetType.ERC721,
+      target: TOKEN,
+      id: 1n,
+      amount: 5n
+    })).not.toThrow()
   })
 
   it('rejects invalid enum values', () => {
-    expect(codeOf(() => validateAsset({assetType: 4 as AssetType, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({
+      assetType: 4 as AssetType,
+      target: TOKEN,
+      id: 0n,
+      amount: 1n
+    }))).toBe(
       'INVALID_ASSET_TYPE',
     )
-    expect(codeOf(() => validateAsset({assetType: -1 as AssetType, target: TOKEN, id: 0n, amount: 1n}))).toBe(
+    expect(codeOf(() => validateAsset({
+      assetType: -1 as AssetType,
+      target: TOKEN,
+      id: 0n,
+      amount: 1n
+    }))).toBe(
       'INVALID_ASSET_TYPE',
     )
   })
 
   it('rejects malformed target strings', () => {
     expect(
-      codeOf(() => validateAsset({assetType: AssetType.ERC20, target: 'not-an-address' as Address, id: 0n, amount: 1n})),
+      codeOf(() => validateAsset({
+        assetType: AssetType.ERC20,
+        target: 'not-an-address' as Address,
+        id: 0n,
+        amount: 1n
+      })),
     ).toBe('INVALID_ERC20_ASSET')
   })
 })
@@ -146,19 +211,28 @@ describe('totalNative', () => {
   const erc20 = erc20Asset(TOKEN, 100n)
 
   it('returns 0n with no native assets', () => {
-    expect(totalNative({assets: [erc20]})).toBe(0n)
+    expect(totalNative({
+      assets: [erc20]
+    })).toBe(0n)
   })
 
   it('returns the single native amount', () => {
-    expect(totalNative({assets: [nativeAsset(7n)]})).toBe(7n)
+    expect(totalNative({
+      assets: [nativeAsset(7n)]
+    })).toBe(7n)
   })
 
   it('sums multiple native assets', () => {
-    expect(totalNative({assets: [nativeAsset(7n), nativeAsset(3n)]})).toBe(10n)
+    expect(totalNative({
+      assets: [nativeAsset(7n), nativeAsset(3n)]
+    })).toBe(10n)
   })
 
   it('ignores non-native assets in a mixed list', () => {
     const assets: Asset[] = [nativeAsset(7n), erc20, erc721Asset(TOKEN, 1n), erc1155Asset(TOKEN, 1n, 5n), nativeAsset(1n)]
-    expect(totalNative({assets})).toBe(8n)
+
+    expect(totalNative({
+      assets
+    })).toBe(8n)
   })
 })

@@ -37,17 +37,24 @@ export interface AnvilInstance {
  *   if the port is taken and the runner surfaces the error.)
  */
 export function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((
+    resolve,
+    reject) => {
     const server = createServer()
+
     server.once('error', reject)
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
+
       if (address === null || typeof address === 'string') {
         server.close()
         reject(new Error('could not determine a free port'))
+
         return
       }
+
       const {port} = address
+
       server.close(() => resolve(port))
     })
   })
@@ -61,18 +68,25 @@ export function getFreePort(): Promise<number> {
  * @returns The running {@link AnvilInstance}.
  * @throws Error when Anvil exits early or does not become ready in time.
  */
-export async function startAnvil(options: {chainId: number; port?: number}): Promise<AnvilInstance> {
+export async function startAnvil(
+  options: {
+    chainId: number;
+    port?: number
+  }): Promise<AnvilInstance> {
   const port = options.port ?? (await getFreePort())
   const rpcUrl = `http://127.0.0.1:${port}`
 
   const child: ChildProcess = spawn(
     'anvil',
     ['--port', String(port), '--chain-id', String(options.chainId), '--silent'],
-    {stdio: ['ignore', 'pipe', 'pipe']},
+    {
+      stdio: ['ignore', 'pipe', 'pipe']
+    },
   )
 
   let exited = false
   let stderr = ''
+
   child.stderr?.on('data', chunk => {
     stderr += String(chunk)
   })
@@ -81,34 +95,58 @@ export async function startAnvil(options: {chainId: number; port?: number}): Pro
   })
 
   const stop = (): void => {
-    if (!exited) child.kill('SIGTERM')
+    if (!exited)
+      child.kill('SIGTERM')
   }
 
   // readiness wait: poll eth_chainId until the node answers
   const deadline = Date.now() + 30_000
-  for (;;) {
+
+  for (; ;) {
     if (exited) {
       throw new Error(`anvil exited during startup (port ${port}): ${stderr}`)
     }
+
     try {
       const response = await fetch(rpcUrl, {
         method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: []}),
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_chainId',
+          params: []
+        }),
       })
+
       if (response.ok) {
-        const body = (await response.json()) as {result?: string}
-        if (body.result !== undefined) break
+        const body = (await response.json()) as {
+          result?: string
+        }
+
+        if (body.result !== undefined)
+          break
       }
-    } catch {
+    }
+    catch {
       // not up yet — keep polling
     }
+
     if (Date.now() > deadline) {
       stop()
+
       throw new Error(`anvil did not become ready on port ${port} within 30s`)
     }
+
     await new Promise(resolve => setTimeout(resolve, 100))
   }
 
-  return {rpcUrl, port, chainId: options.chainId, stop}
+  return {
+    rpcUrl,
+    port,
+    chainId: options.chainId,
+    stop
+  }
 }

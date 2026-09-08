@@ -77,8 +77,10 @@ export interface ReclaimedEvent {
 }
 
 /** Narrow a decoded uint8 to the {@link AssetType} enum, rejecting out-of-range values. */
-function toAssetType(value: number): AssetType {
-  if (value === 0 || value === 1 || value === 2 || value === 3) return value as AssetType
+function toAssetType(
+  value: number): AssetType {
+  if (value === 0 || value === 1 || value === 2 || value === 3)
+    return value as AssetType
   throw new QuipSwapError({
     code: 'INVALID_ASSET_TYPE',
     message: `Decoded asset type ${value} is out of range`,
@@ -102,7 +104,8 @@ interface DecodedTermsTuple {
 }
 
 /** Convert a viem-decoded Terms tuple into the SDK's typed, frozen {@link Terms}. */
-function toTerms(decoded: DecodedTermsTuple): Terms {
+function toTerms(
+  decoded: DecodedTermsTuple): Terms {
   return Object.freeze({
     chainId: decoded.chainId,
     reclaimRecipient: decoded.reclaimRecipient,
@@ -112,7 +115,12 @@ function toTerms(decoded: DecodedTermsTuple): Terms {
     reclaimRelease: decoded.reclaimRelease,
     assets: Object.freeze(
       decoded.assets.map(a =>
-        Object.freeze({assetType: toAssetType(a.assetType), target: a.target, id: a.id, amount: a.amount}),
+        Object.freeze({
+          assetType: toAssetType(a.assetType),
+          target: a.target,
+          id: a.id,
+          amount: a.amount
+        }),
       ),
     ),
   })
@@ -146,8 +154,15 @@ function toTerms(decoded: DecodedTermsTuple): Terms {
  * const [commitment] = decodeCommitmentEvents(scoped)
  * ```
  */
-export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] {
-  const parsed = parseEventLogs({abi: omnibusAbi, eventName: 'Commitment', logs: logs as Log[], strict: true})
+export function decodeCommitmentEvents(
+  logs: readonly Log[]): CommitmentEvent[] {
+  const parsed = parseEventLogs({
+    abi: omnibusAbi,
+    eventName: 'Commitment',
+    logs: logs as Log[],
+    strict: true
+  })
+
   return parsed.map(log => ({
     lock: log.args.lock,
     party: toTerms(log.args.party),
@@ -189,8 +204,15 @@ export function decodeCommitmentEvents(logs: readonly Log[]): CommitmentEvent[] 
  * const someClaim = decodeClaimEvents(scoped)[0]?.secret // now public on-chain
  * ```
  */
-export function decodeClaimEvents(logs: readonly Log[]): ClaimEvent[] {
-  const parsed = parseEventLogs({abi: omnibusAbi, eventName: 'Claim', logs: logs as Log[], strict: true})
+export function decodeClaimEvents(
+  logs: readonly Log[]): ClaimEvent[] {
+  const parsed = parseEventLogs({
+    abi: omnibusAbi,
+    eventName: 'Claim',
+    logs: logs as Log[],
+    strict: true
+  })
+
   return parsed.map(log => ({
     recipient: log.args.recipient,
     lock: log.args.lock,
@@ -234,7 +256,9 @@ export function decodeClaimEvents(logs: readonly Log[]): ClaimEvent[] {
  * if (secret) await chainAClient.claim({secret, party: bobTerms, counterparty: aliceTerms})
  * ```
  */
-export function extractRevealedSecret(logs: readonly Log[], lock: Hex32): Hex32 | undefined {
+export function extractRevealedSecret(
+  logs: readonly Log[],
+  lock: Hex32): Hex32 | undefined {
   return extractSecretFromClaims(decodeClaimEvents(logs), lock)
 }
 
@@ -258,14 +282,21 @@ export function extractRevealedSecret(logs: readonly Log[], lock: Hex32): Hex32 
  * const secret = extractSecretFromClaims(receipt.claims, lock)
  * ```
  */
-export function extractSecretFromClaims(claims: readonly ClaimEvent[], lock: Hex32): Hex32 | undefined {
+export function extractSecretFromClaims(
+  claims: readonly ClaimEvent[],
+  lock: Hex32): Hex32 | undefined {
   const lockLower = lock.toLowerCase()
+
   for (const event of claims) {
-    if (event.lock.toLowerCase() !== lockLower) continue
+    if (event.lock.toLowerCase() !== lockLower)
+      continue
     // verify the secret actually opens the lock — rejects a same-shaped fake
-    if (generateLock(event.secret).toLowerCase() !== lockLower) continue
+    if (generateLock(event.secret).toLowerCase() !== lockLower)
+      continue
+
     return event.secret
   }
+
   return undefined
 }
 
@@ -285,8 +316,15 @@ export function extractSecretFromClaims(claims: readonly ClaimEvent[], lock: Hex
  * @returns All decoded `Reclaimed` events, in log order.
  * @see IOmnibus.Reclaimed, Omnibus.reclaim
  */
-export function decodeReclaimedEvents(logs: readonly Log[]): ReclaimedEvent[] {
-  const parsed = parseEventLogs({abi: omnibusAbi, eventName: 'Reclaimed', logs: logs as Log[], strict: true})
+export function decodeReclaimedEvents(
+  logs: readonly Log[]): ReclaimedEvent[] {
+  const parsed = parseEventLogs({
+    abi: omnibusAbi,
+    eventName: 'Reclaimed',
+    logs: logs as Log[],
+    strict: true
+  })
+
   return parsed.map(log => ({
     caller: log.args.caller,
     lock: log.args.lock,
@@ -325,8 +363,10 @@ export interface EventQueryArgs {
  * const history = await getCommitmentEvents({publicClient, address, lock})
  * ```
  */
-export async function getCommitmentEvents(args: EventQueryArgs): Promise<CommitmentEvent[]> {
+export async function getCommitmentEvents(
+  args: EventQueryArgs): Promise<CommitmentEvent[]> {
   const logs = await getOmnibusLogs(args, 'Commitment')
+
   return decodeCommitmentEvents(logs)
 }
 
@@ -337,8 +377,10 @@ export async function getCommitmentEvents(args: EventQueryArgs): Promise<Commitm
  * @returns Decoded events in chain order. Apply your confirmation policy
  *   before treating a revealed secret's claim as settled.
  */
-export async function getClaimEvents(args: EventQueryArgs): Promise<ClaimEvent[]> {
+export async function getClaimEvents(
+  args: EventQueryArgs): Promise<ClaimEvent[]> {
   const logs = await getOmnibusLogs(args, 'Claim')
+
   return decodeClaimEvents(logs)
 }
 
@@ -348,8 +390,10 @@ export async function getClaimEvents(args: EventQueryArgs): Promise<ClaimEvent[]
  * @param args - See {@link EventQueryArgs}.
  * @returns Decoded events in chain order (possibly two per transaction).
  */
-export async function getReclaimedEvents(args: EventQueryArgs): Promise<ReclaimedEvent[]> {
+export async function getReclaimedEvents(
+  args: EventQueryArgs): Promise<ReclaimedEvent[]> {
   const logs = await getOmnibusLogs(args, 'Reclaimed')
+
   return decodeReclaimedEvents(logs)
 }
 
@@ -359,19 +403,34 @@ async function getOmnibusLogs(
   eventName: 'Commitment' | 'Claim' | 'Reclaimed',
 ): Promise<Log[]> {
   const event = omnibusAbi.find(
-    (entry): entry is Extract<(typeof omnibusAbi)[number], {type: 'event'}> =>
+    (
+      entry): entry is Extract<(typeof omnibusAbi)[number], {
+        type: 'event'
+      }> =>
       entry.type === 'event' && entry.name === eventName,
   )
   /* v8 ignore next 3 -- the generated ABI always contains all three events */
   if (event === undefined) {
-    throw new QuipSwapError({code: 'EVENT_NOT_FOUND', message: `Event ${eventName} missing from generated ABI`})
+    throw new QuipSwapError({
+      code: 'EVENT_NOT_FOUND',
+      message: `Event ${eventName} missing from generated ABI`
+    })
   }
+
   return (await args.publicClient.getLogs({
     address: args.address,
     event,
-    ...(args.lock !== undefined ? {args: {lock: args.lock}} : {}),
-    ...(args.fromBlock !== undefined ? {fromBlock: args.fromBlock} : {}),
-    ...(args.toBlock !== undefined ? {toBlock: args.toBlock} : {}),
+    ...(args.lock !== undefined ? {
+      args: {
+        lock: args.lock
+      }
+    } : {}),
+    ...(args.fromBlock !== undefined ? {
+      fromBlock: args.fromBlock
+    } : {}),
+    ...(args.toBlock !== undefined ? {
+      toBlock: args.toBlock
+    } : {}),
   } as Parameters<PublicClient['getLogs']>[0])) as Log[]
 }
 
@@ -393,15 +452,23 @@ async function getOmnibusLogs(
  * ```
  */
 export function watchClaimEvents(
-  args: Omit<EventQueryArgs, 'fromBlock' | 'toBlock'> & {readonly onClaim: (event: ClaimEvent) => void},
+  args: Omit<EventQueryArgs, 'fromBlock' | 'toBlock'> & {
+    readonly onClaim: (
+      event: ClaimEvent) => void
+  },
 ): () => void {
   return args.publicClient.watchContractEvent({
     address: args.address,
     abi: omnibusAbi,
     eventName: 'Claim',
-    ...(args.lock !== undefined ? {args: {lock: args.lock}} : {}),
+    ...(args.lock !== undefined ? {
+      args: {
+        lock: args.lock
+      }
+    } : {}),
     onLogs: logs => {
-      for (const event of decodeClaimEvents(logs as Log[])) args.onClaim(event)
+      for (const event of decodeClaimEvents(logs as Log[]))
+        args.onClaim(event)
     },
   })
 }

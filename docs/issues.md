@@ -8,7 +8,7 @@ Status meanings: **open** requires an implementation or specification change;
 **partially mitigated** has safeguards but retains material residual risk;
 **production gap** is intentionally outside the local prototype.
 
-## A: Known Issues from v1
+## KI: Known Issues from v1
 
 ### KI01 - Settlement-secret disclosure can break cross-chain atomicity — partially mitigated
 
@@ -184,9 +184,7 @@ Solidity and SDK tests consume the same checked-in values.
 
 ### PG10 - QuipWallet cannot receive standard NFT safe transfers — open
 
-[`QuipWallet`](../src/authorization/wallet/QuipWallet.sol) implements neither
-ERC-721 nor ERC-1155 receiver callbacks. Reproduction tests confirmed that
-standard safe transfers of both token types to the wallet revert.
+`QuipWallet` implements neither ERC-721 nor ERC-1155 receiver callbacks. Reproduction tests confirmed that standard safe transfers of both token types to the wallet revert.
 
 This prevents normal ERC-1155 funding and NFT payouts to the wallet. An ERC-721
 deposited through an unsafe transfer can subsequently be committed, but
@@ -238,10 +236,16 @@ Terms have no contract-level asset-count bound. Funding still processes a
 side's complete list in one commit, and a very large list may exceed block gas.
 Same-chain payout execution is now bounded by caller-selected `maxAssets` and
 resumable, so the complete list no longer has to settle in one transaction.
-Large lists still increase the number and total cost of required calls.
+Cross-chain claim and reclaim still call `SwapHTLC.release` for the complete
+local-side bundle in one transaction. A bundle may therefore fit within the
+commit gas limit but exceed the later cross-chain settlement gas limit, leaving
+that HTLC unable to claim or reclaim. Even where batching is available, large
+lists increase the number and total cost of required calls.
 
-Required: enforce a conservative term asset-count bound for commits and define
-per-chain execution policy for settlement batch sizes.
+Required: enforce a conservative term asset-count bound for commits, make
+cross-chain release resumable or prove an admission bound sufficient for both
+commit and payout, and define per-chain execution policy for settlement batch
+sizes.
 
 
 ### AS05 - Mutable admission is conflated with structural term validity — open specification mismatch
@@ -256,3 +260,22 @@ existing escrow.
 Required: define a pure `StructurallyValidTerms` predicate and separate mutable
 `CommitAssetSupported` admission. A committed binding should imply prior
 structural validity; claims and reclaims must not reconsult mutable admission.
+
+
+### AS06 - Forced native balance has no accounting or recovery path — design limitation
+
+The wrappers have no payable `receive` or `fallback`, so an ordinary native
+transfer outside a commit is rejected. Native currency can nevertheless be
+forced into a wrapper, for example through a protocol mechanism that does not
+execute the recipient. This value is not an accepted commitment fee and is not
+recorded in `accruedFees`.
+
+`withdrawFees` deliberately transfers only the recorded `accruedFees`
+snapshot, preventing the owner from sweeping escrow or unrelated balance.
+Consequently, forced or otherwise unaccounted native balance remains in the
+wrapper permanently under the current interface.
+
+Required: either retain this behavior as an explicit non-recoverability policy,
+or add a narrowly scoped excess-balance recovery function that can withdraw no
+more than `address(this).balance - accruedFees` and cannot affect HTLC-held
+escrow.

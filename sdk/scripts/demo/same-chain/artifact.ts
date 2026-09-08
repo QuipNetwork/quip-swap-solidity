@@ -105,13 +105,25 @@ export interface RedactedSameChainArtifact {
   }
 }
 
-export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): RedactedSameChainArtifact {
+/**
+ * Projects the controlled live demo into its public artifact schema, computing each custody delta from
+ * the previous action. It includes selected evidence rather than copying the execution object wholesale,
+ * so raw signatures and preimages remain outside the exported structure.
+ */
+export function buildSameChainDemoArtifact(
+  execution: SameChainDemoFoundation): RedactedSameChainArtifact {
   let previous = initialCustody(execution.setup)
-  const transitions = execution.success.actions.map((action, index) => {
-    const balanceDeltas = action.custodyAfter.map((asset, assetIndex) =>
+  const transitions = execution.success.actions.map((
+    action,
+    index) => {
+    const balanceDeltas = action.custodyAfter.map((
+      asset,
+      assetIndex) =>
       assetDelta(previous[assetIndex]!, asset)
     )
+
     previous = action.custodyAfter
+
     return {
       sequence: index + 1,
       action: action.action,
@@ -165,10 +177,12 @@ export function buildSameChainDemoArtifact(execution: SameChainDemoFoundation): 
     },
   }
   const serialized = serializeSameChainDemoArtifact(artifact)
+
   if (serialized.includes(execution.success.settlementSecret)) {
     throw new Error('redacted same-chain artifact contains the settlement preimage')
   }
   validateSameChainDemoArtifact(JSON.parse(serialized))
+
   return artifact
 }
 
@@ -179,9 +193,11 @@ function authorizationDecision(
 ): RedactedSameChainArtifact['authorizationDecisions'][number] {
   const participant = execution.setup[role]
   const action = execution.success.actions[actionIndex]
+
   if (action.authorizationNonceKey === null || action.authorizationNonceConsumed !== true) {
     throw new Error(`${role} accepted authorization lacks nonce-consumption evidence`)
   }
+
   return {
     role,
     mode: participant.authorization.mode,
@@ -194,7 +210,8 @@ function authorizationDecision(
   }
 }
 
-function initialCustody(setup: SameChainDemoFoundation['setup']): readonly [SameChainAssetPosition, SameChainAssetPosition] {
+function initialCustody(
+  setup: SameChainDemoFoundation['setup']): readonly [SameChainAssetPosition, SameChainAssetPosition] {
   return [initialPosition(setup.alice, 'alice-asset'), initialPosition(setup.bob, 'bob-asset')]
 }
 
@@ -220,8 +237,12 @@ function initialPosition(
   }
 }
 
-function assetDelta(before: SameChainAssetPosition, after: SameChainAssetPosition): Record<string, string> {
-  if (before.role !== after.role || before.token !== after.token || before.htlc !== after.htlc) throw new Error('custody order changed')
+function assetDelta(
+  before: SameChainAssetPosition,
+  after: SameChainAssetPosition): Record<string, string> {
+  if (before.role !== after.role || before.token !== after.token || before.htlc !== after.htlc)
+    throw new Error('custody order changed')
+
   return {
     role: after.role,
     principalBalance: delta(before.principalBalance, after.principalBalance),
@@ -231,46 +252,78 @@ function assetDelta(before: SameChainAssetPosition, after: SameChainAssetPositio
   }
 }
 
-function delta(before: string, after: string): string {
+function delta(
+  before: string,
+  after: string): string {
   return (BigInt(after) - BigInt(before)).toString()
 }
 
-function jsonValue(value: unknown): unknown {
-  return JSON.parse(JSON.stringify(value, (_, item: unknown) => typeof item === 'bigint' ? item.toString() : item))
+function jsonValue(
+  value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value, (
+    _,
+    item: unknown) => typeof item === 'bigint' ? item.toString() : item))
 }
 
-export function serializeSameChainDemoArtifact(artifact: RedactedSameChainArtifact): string {
+export function serializeSameChainDemoArtifact(
+  artifact: RedactedSameChainArtifact): string {
   return `${JSON.stringify(artifact, null, 2)}\n`
 }
 
-export function validateSameChainDemoArtifact(value: unknown): asserts value is RedactedSameChainArtifact {
+/**
+ * Validates the offline, fixed same-chain demo narrative: terms-derived TradeID, ordered transitions,
+ * expected event names, custody accounting, recovery masks, and final payout state. It has no RPC access
+ * and does not authenticate receipts, event logs, or mock-verifier signatures. Internally consistent JSON
+ * can pass without proving an actual execution; this is a regression artifact check, not a chain proof.
+ */
+export function validateSameChainDemoArtifact(
+  value: unknown): asserts value is RedactedSameChainArtifact {
   const root = record(value, 'artifact')
+
   equal(root.schema, SAME_CHAIN_ARTIFACT_SCHEMA, 'schema')
   equal(root.mockVerifier, true, 'mockVerifier')
+
   const deployment = record(root.deployment, 'deployment')
-  if (!Number.isInteger(deployment.chainId) || deployment.chainId !== 31_337) fail('deployment.chainId')
+
+  if (!Number.isInteger(deployment.chainId) || deployment.chainId !== 31_337)
+    fail('deployment.chainId')
+
   const addresses = record(deployment.addresses, 'deployment.addresses')
+
   address(addresses.sameChainWrapper, 'deployment.addresses.sameChainWrapper')
   address(addresses.directAuthorization, 'deployment.addresses.directAuthorization')
   address(deployment.trustedVerifier, 'deployment.trustedVerifier')
   address(deployment.protocolOwner, 'deployment.protocolOwner')
   bytes32(root.tradeId, 'tradeId')
   bytes32(root.lock, 'lock')
-  if (root.lock === `0x${'00'.repeat(32)}`) fail('lock')
+
+  if (root.lock === `0x${'00'.repeat(32)}`)
+    fail('lock')
 
   const terms = hydrateTerms(root.terms)
+
   equal(tradeId(terms), root.tradeId, 'tradeId')
-  if (terms.partySide.chainId !== 31_337n || terms.counterpartySide.chainId !== 31_337n) fail('terms.chainId')
+
+  if (terms.partySide.chainId !== 31_337n || terms.counterpartySide.chainId !== 31_337n)
+    fail('terms.chainId')
 
   const initial = array(root.initialCustody, 'initialCustody')
-  if (initial.length !== 2) fail('initialCustody.length')
+
+  if (initial.length !== 2)
+    fail('initialCustody.length')
   validateCustody(initial, 'initialCustody')
   validateLifecycle(initial, [[false, false, false], [false, false, false]], 'initialCustody')
   const feeFlow = record(root.feeFlow, 'feeFlow')
   const feeQuotes = array(feeFlow.quotes, 'feeFlow.quotes')
-  if (feeQuotes.length !== 2) fail('feeFlow.quotes.length')
-  feeQuotes.forEach((item, index) => {
+
+  if (feeQuotes.length !== 2)
+    fail('feeFlow.quotes.length')
+
+  feeQuotes.forEach((
+    item,
+    index) => {
     const quote = record(item, `feeFlow.quotes[${index}]`)
+
     equal(quote.side, index === 0 ? 'alice' : 'bob', `feeFlow.quotes[${index}].side`)
     equal(quote.nativeEscrow, '0', `feeFlow.quotes[${index}].nativeEscrow`)
     equal(quote.commitmentFee, '5000000000000', `feeFlow.quotes[${index}].commitmentFee`)
@@ -278,16 +331,25 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   })
   equal(feeFlow.accruedAfterCommits, '10000000000000', 'feeFlow.accruedAfterCommits')
   equal(feeFlow.accruedAfterSettlement, feeFlow.accruedAfterCommits, 'feeFlow.accruedAfterSettlement')
+
   const withdrawal = record(feeFlow.withdrawal, 'feeFlow.withdrawal')
+
   equal(withdrawal.recipient, deployment.protocolOwner, 'feeFlow.withdrawal.recipient')
   equal(withdrawal.amount, feeFlow.accruedAfterSettlement, 'feeFlow.withdrawal.amount')
   hash(withdrawal.transactionHash, 'feeFlow.withdrawal.transactionHash')
   equal(feeFlow.accruedAfterWithdrawal, '0', 'feeFlow.accruedAfterWithdrawal')
   equal(feeFlow.gasIncludedInProtocolRevenue, false, 'feeFlow.gasIncludedInProtocolRevenue')
+
   const decisions = array(root.authorizationDecisions, 'authorizationDecisions')
-  if (decisions.length !== 2) fail('authorizationDecisions.length')
-  decisions.forEach((item, index) => {
+
+  if (decisions.length !== 2)
+    fail('authorizationDecisions.length')
+
+  decisions.forEach((
+    item,
+    index) => {
     const decision = record(item, `authorizationDecisions[${index}]`)
+
     equal(decision.role, index === 0 ? 'alice' : 'bob', `authorizationDecisions[${index}].role`)
     equal(decision.status, 'accepted', `authorizationDecisions[${index}].status`)
     equal(decision.authorizationNonceConsumed, true, `authorizationDecisions[${index}].authorizationNonceConsumed`)
@@ -297,10 +359,16 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   })
 
   const transitions = array(root.transitions, 'transitions')
-  if (transitions.length !== actionOrder.length) fail('transitions.length')
+
+  if (transitions.length !== actionOrder.length)
+    fail('transitions.length')
+
   let previousCustody = initial
-  transitions.forEach((item, index) => {
+  transitions.forEach((
+    item,
+    index) => {
     const transition = record(item, `transitions[${index}]`)
+
     equal(transition.sequence, index + 1, `transitions[${index}].sequence`)
     equal(transition.action, actionOrder[index], `transitions[${index}].action`)
     equal(transition.stateBefore, stateBeforeOrder[index], `transitions[${index}].stateBefore`)
@@ -313,10 +381,15 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
       index === 4 ? 'insufficient-gas' : null,
       `transitions[${index}].failureReason`,
     )
+
     const receipt = record(transition.receipt, `transitions[${index}].receipt`)
+
     hash(receipt.transactionHash, `transitions[${index}].receipt.transactionHash`)
     equal(receipt.status, receiptStatusOrder[index], `transitions[${index}].receipt.status`)
-    if (!/^[0-9]+$/.test(String(receipt.blockNumber))) fail(`transitions[${index}].receipt.blockNumber`)
+
+    if (!/^[0-9]+$/.test(String(receipt.blockNumber)))
+      fail(`transitions[${index}].receipt.blockNumber`)
+
     const events = array(receipt.events, 'transition events ' + index)
     const requiredEvent = index < 2
       ? 'sameChainWrapper.Committed'
@@ -325,20 +398,26 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
         : index === 3 || index === 5
           ? 'sameChainWrapper.SettlementBatchExecuted'
           : undefined
-    if (requiredEvent !== undefined && !events.includes(requiredEvent)) fail('transition event ' + index)
+
+    if (requiredEvent !== undefined && !events.includes(requiredEvent))
+      fail('transition event ' + index)
     if (index < 2 && (!events.includes('sameChainWrapper.HTLCCreated') || !events.includes('swapHTLC.Funded'))) {
       fail('HTLC funding events ' + index)
     }
     if ((index === 3 || index === 5) && !events.includes('swapHTLC.Released')) {
       fail('HTLC release event ' + index)
     }
-    if (index === 5 && !events.includes('sameChainWrapper.Claimed')) fail('terminal claim event')
+    if (index === 5 && !events.includes('sameChainWrapper.Claimed'))
+      fail('terminal claim event')
     if (index === 4 && events.length !== 0) {
       fail('reverted execution events')
     }
+
     const custody = array(transition.custodyAfter, `transitions[${index}].custodyAfter`)
     const deltas = array(transition.balanceDeltas, `transitions[${index}].balanceDeltas`)
-    if (custody.length !== 2 || deltas.length !== 2) fail(`transitions[${index}].custody`)
+
+    if (custody.length !== 2 || deltas.length !== 2)
+      fail(`transitions[${index}].custody`)
     validateCustodyDeltas(previousCustody, custody, deltas, 'transitions[' + index + ']')
     validateLifecycle(
       custody,
@@ -352,15 +431,22 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
       `transitions[${index}].custodyAfter`,
     )
     validateSettlementCustody(custody, terms, index, `transitions[${index}].custodyAfter`)
+
     previousCustody = custody
   })
   equal(record(decisions[0], 'alice decision').transactionHash, record(record(transitions[0], 'transition 0').receipt, 'receipt 0').transactionHash, 'alice transaction')
   equal(record(decisions[1], 'bob decision').transactionHash, record(record(transitions[1], 'transition 1').receipt, 'receipt 1').transactionHash, 'bob transaction')
 
   const negatives = array(root.negativeControls, 'negativeControls')
-  if (negatives.length !== negativeOrder.length) fail('negativeControls.length')
-  negatives.forEach((item, index) => {
+
+  if (negatives.length !== negativeOrder.length)
+    fail('negativeControls.length')
+
+  negatives.forEach((
+    item,
+    index) => {
     const control = record(item, `negativeControls[${index}]`)
+
     equal(control.scenario, negativeOrder[index], `negativeControls[${index}].scenario`)
     equal(control.reverted, true, `negativeControls[${index}].reverted`)
     equal(control.stateAndCustodyUnchanged, true, `negativeControls[${index}].stateAndCustodyUnchanged`)
@@ -368,16 +454,23 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   })
 
   const recoveries = array(root.recoveries, 'recoveries')
-  if (recoveries.length !== 2) fail('recoveries.length')
+
+  if (recoveries.length !== 2)
+    fail('recoveries.length')
+
   equal(record(recoveries[0], 'recoveries[0]').outcome, 'party-only-reclaim', 'recoveries[0].outcome')
   equal(record(recoveries[1], 'recoveries[1]').outcome, 'both-reclaim', 'recoveries[1].outcome')
+
   for (const [index, recovery] of recoveries.entries()) {
     const item = record(recovery, `recoveries[${index}]`)
+
     equal(item.stateAfter, 'Reclaimed', `recoveries[${index}].stateAfter`)
     equal(item.fixedReclaimRecipients, true, `recoveries[${index}].fixedReclaimRecipients`)
     equal(item.expectedSides, index === 0 ? 1 : 3, `recoveries[${index}].expectedSides`)
     equal(item.completedSides, index === 0 ? 1 : 3, `recoveries[${index}].completedSides`)
+
     const custody = array(item.custodyAfter, `recoveries[${index}].custodyAfter`)
+
     validateCustody(custody, `recoveries[${index}].custodyAfter`)
     validateLifecycle(
       custody,
@@ -386,10 +479,14 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
         : [[true, true, true], [true, true, true]],
       `recoveries[${index}].custodyAfter`,
     )
-    custody.forEach((assetValue, sideIndex) => {
+
+    custody.forEach((
+      assetValue,
+      sideIndex) => {
       const asset = record(assetValue, `recoveries[${index}].custodyAfter[${sideIndex}]`)
       const side = sideIndex === 0 ? terms.partySide : terms.counterpartySide
       const required = index === 1 || sideIndex === 0
+
       equal(
         asset.nextAssetIndex,
         required ? side.assets.length.toString() : '0',
@@ -400,6 +497,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
         required ? side.reclaimRecipient : '0x0000000000000000000000000000000000000000',
         `recoveries[${index}].custodyAfter[${sideIndex}].payoutRecipient`,
       )
+
       if (required) {
         equal(
           asset.principalBalance,
@@ -412,6 +510,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   }
 
   const failure = record(root.resumableFailure, 'resumableFailure')
+
   equal(failure.stateBefore, 'BothCommitted', 'resumableFailure.stateBefore')
   equal(failure.stateAfter, 'ReclaimPending', 'resumableFailure.stateAfter')
   equal(failure.outcomeSelectionPreserved, true, 'resumableFailure.outcomeSelectionPreserved')
@@ -421,6 +520,7 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   equal(failure.trigger, 'counterparty-htlc-deficit', 'resumableFailure.trigger')
 
   const permanent = record(root.permanentAssetFailure, 'permanentAssetFailure')
+
   equal(permanent.failureMode, 'token-reverts', 'permanentAssetFailure.failureMode')
   equal(permanent.failingSide, 'counterparty', 'permanentAssetFailure.failingSide')
   equal(permanent.attempts, 2, 'permanentAssetFailure.attempts')
@@ -447,27 +547,40 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
     terms.counterpartySide.assets[0]!.amount.toString(),
     'permanentAssetFailure.failingBalance',
   )
+
   const failureHashes = array(permanent.transactionHashes, 'permanentAssetFailure.transactionHashes')
+
   if (failureHashes.length !== 2 || failureHashes[0] === failureHashes[1]) {
     fail('permanentAssetFailure.transactionHashes')
   }
-  failureHashes.forEach((value, index) => hash(value, `permanentAssetFailure.transactionHashes[${index}]`))
+
+  failureHashes.forEach((
+    value,
+    index) => hash(value, `permanentAssetFailure.transactionHashes[${index}]`))
 
   const terminal = record(root.terminalOutcome, 'terminalOutcome')
+
   equal(terminal.state, 'Claimed', 'terminalOutcome.state')
   equal(terminal.expectedSides, 3, 'terminalOutcome.expectedSides')
   equal(terminal.completedSides, 3, 'terminalOutcome.completedSides')
   equal(terminal.payoutsFixedByTerms, true, 'terminalOutcome.payoutsFixedByTerms')
+
   const terminalCustody = array(terminal.custody, 'terminalOutcome.custody')
   const lastIndex = transitions.length - 1
   const lastCustody = array(
     record(transitions[lastIndex], `transitions[${lastIndex}]`).custodyAfter,
     `transitions[${lastIndex}].custodyAfter`,
   )
-  if (JSON.stringify(terminalCustody) !== JSON.stringify(lastCustody)) fail('terminalOutcome.custody')
-  terminalCustody.forEach((item, index) => {
+
+  if (JSON.stringify(terminalCustody) !== JSON.stringify(lastCustody))
+    fail('terminalOutcome.custody')
+
+  terminalCustody.forEach((
+    item,
+    index) => {
     const asset = record(item, `terminalOutcome.custody[${index}]`)
     const side = index === 0 ? terms.partySide : terms.counterpartySide
+
     equal(asset.principal, side.principal, 'terminal principal ' + index)
     equal(asset.recipient, side.recipient, 'terminal recipient ' + index)
     equal(asset.token, side.assets[0]?.target, 'terminal token ' + index)
@@ -480,39 +593,66 @@ export function validateSameChainDemoArtifact(value: unknown): asserts value is 
   rejectSensitiveFields(root)
 }
 
-export function assertSameChainArtifactValidator(artifact: RedactedSameChainArtifact): void {
-  const corruptions: readonly ((value: Record<string, unknown>) => void)[] = [
-    value => { delete value.transitions },
-    value => { (value.transitions as unknown[]).reverse() },
-    value => { value.tradeId = `0x${'11'.repeat(32)}` },
-    value => { (value.terminalOutcome as Record<string, unknown>).state = 'BothCommitted' },
-    value => { (value.permanentAssetFailure as Record<string, unknown>).completedSides = 3 },
-  ]
+/** Deliberately corrupts representative fields to ensure the validator rejects those regressions. */
+export function assertSameChainArtifactValidator(
+  artifact: RedactedSameChainArtifact): void {
+  const corruptions: readonly ((
+    value: Record<string, unknown>) => void)[] = [
+      value => {
+        delete value.transitions
+      },
+      value => {
+        (value.transitions as unknown[]).reverse()
+      },
+      value => {
+        value.tradeId = `0x${'11'.repeat(32)}`
+      },
+      value => {
+        (value.terminalOutcome as Record<string, unknown>).state = 'BothCommitted'
+      },
+      value => {
+        (value.permanentAssetFailure as Record<string, unknown>).completedSides = 3
+      },
+    ]
+
   for (const mutate of corruptions) {
     const copy = JSON.parse(JSON.stringify(artifact)) as Record<string, unknown>
+
     mutate(copy)
+
     let rejected = false
+
     try {
       validateSameChainDemoArtifact(copy)
-    } catch {
+    }
+    catch {
       rejected = true
     }
-    if (!rejected) throw new Error('same-chain artifact validator accepted corrupted data')
+
+    if (!rejected)
+      throw new Error('same-chain artifact validator accepted corrupted data')
   }
 }
 
-function hydrateTerms(value: unknown): ProtocolTerms {
+function hydrateTerms(
+  value: unknown): ProtocolTerms {
   const root = record(value, 'terms')
+
   return {
     partySide: hydrateSide(root.partySide, 'terms.partySide'),
     counterpartySide: hydrateSide(root.counterpartySide, 'terms.counterpartySide'),
   }
 }
 
-function hydrateSide(value: unknown, path: string): ProtocolTerms['partySide'] {
+function hydrateSide(
+  value: unknown,
+  path: string): ProtocolTerms['partySide'] {
   const side = record(value, path)
-  const assets = array(side.assets, `${path}.assets`).map((item, index) => {
+  const assets = array(side.assets, `${path}.assets`).map((
+    item,
+    index) => {
     const asset = record(item, `${path}.assets[${index}]`)
+
     return {
       assetType: Number(asset.assetType),
       target: address(asset.target, `${path}.assets[${index}].target`),
@@ -520,6 +660,7 @@ function hydrateSide(value: unknown, path: string): ProtocolTerms['partySide'] {
       amount: BigInt(String(asset.amount)),
     }
   })
+
   return {
     chainId: BigInt(String(side.chainId)),
     assets,
@@ -539,64 +680,104 @@ function hydrateSide(value: unknown, path: string): ProtocolTerms['partySide'] {
   }
 }
 
-function rejectSensitiveFields(value: unknown, path = 'artifact'): void {
+function rejectSensitiveFields(
+  value: unknown,
+  path = 'artifact'): void {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => rejectSensitiveFields(item, `${path}[${index}]`))
+    value.forEach((
+      item,
+      index) => rejectSensitiveFields(item, `${path}[${index}]`))
+
     return
   }
-  if (value === null || typeof value !== 'object') return
+  if (value === null || typeof value !== 'object')
+    return
+
   for (const [key, item] of Object.entries(value)) {
     if (/secret|signature|privatekey|activepqkey|recoverykey/i.test(key)) {
       throw new Error(`same-chain artifact contains sensitive field: ${path}.${key}`)
     }
+
     rejectSensitiveFields(item, `${path}.${key}`)
   }
 }
 
-function record(value: unknown, path: string): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) fail(path)
+function record(
+  value: unknown,
+  path: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    fail(path)
+
   return value as Record<string, unknown>
 }
 
-function array(value: unknown, path: string): unknown[] {
-  if (!Array.isArray(value)) fail(path)
+function array(
+  value: unknown,
+  path: string): unknown[] {
+  if (!Array.isArray(value))
+    fail(path)
+
   return value
 }
 
-function equal(actual: unknown, expected: unknown, path: string): void {
-  if (actual !== expected) fail(path)
+function equal(
+  actual: unknown,
+  expected: unknown,
+  path: string): void {
+  if (actual !== expected)
+    fail(path)
 }
 
-function address(value: unknown, path: string): `0x${string}` {
-  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(value)) fail(path)
+function address(
+  value: unknown,
+  path: string): `0x${string}` {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(value))
+    fail(path)
+
   return value as `0x${string}`
 }
 
-function bytes32(value: unknown, path: string): Hex32 {
-  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(value)) fail(path)
+function bytes32(
+  value: unknown,
+  path: string): Hex32 {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(value))
+    fail(path)
+
   return value as Hex32
 }
 
-function hash(value: unknown, path: string): void {
+function hash(
+  value: unknown,
+  path: string): void {
   bytes32(value, path)
 }
 
-function fail(path: string): never {
+function fail(
+  path: string): never {
   throw new Error(`invalid same-chain demo artifact: ${path}`)
 }
 
-function validateCustody(items: unknown[], path: string): void {
-  items.forEach((item, index) => {
+function validateCustody(
+  items: unknown[],
+  path: string): void {
+  items.forEach((
+    item,
+    index) => {
     const asset = record(item, path + '[' + index + ']')
+
     equal(asset.role, index === 0 ? 'alice-asset' : 'bob-asset', path + '[' + index + '].role')
     address(asset.principal, path + '[' + index + '].principal')
     address(asset.recipient, path + '[' + index + '].recipient')
     address(asset.token, path + '[' + index + '].token')
     address(asset.htlc, path + '[' + index + '].htlc')
+
     for (const field of ['htlcDeployed', 'htlcFunded', 'htlcReleased'] as const) {
-      if (typeof asset[field] !== 'boolean') fail(path + '[' + index + '].' + field)
+      if (typeof asset[field] !== 'boolean')
+        fail(path + '[' + index + '].' + field)
     }
+
     address(asset.payoutRecipient, path + '[' + index + '].payoutRecipient')
+
     for (const field of [
       'principalBalance',
       'recipientBalance',
@@ -604,7 +785,8 @@ function validateCustody(items: unknown[], path: string): void {
       'allowance',
       'nextAssetIndex',
     ] as const) {
-      if (!/^[0-9]+$/.test(String(asset[field]))) fail(path + '[' + index + '].' + field)
+      if (!/^[0-9]+$/.test(String(asset[field])))
+        fail(path + '[' + index + '].' + field)
     }
   })
 }
@@ -615,10 +797,13 @@ function validateSettlementCustody(
   transitionIndex: number,
   path: string,
 ): void {
-  items.forEach((item, index) => {
+  items.forEach((
+    item,
+    index) => {
     const asset = record(item, `${path}[${index}]`)
     const released = transitionIndex >= (index === 0 ? 3 : 5)
     const side = index === 0 ? terms.partySide : terms.counterpartySide
+
     equal(asset.nextAssetIndex, released ? side.assets.length.toString() : '0', `${path}[${index}].nextAssetIndex`)
     equal(
       asset.payoutRecipient,
@@ -633,10 +818,15 @@ function validateLifecycle(
   expected: readonly (readonly [boolean, boolean, boolean])[],
   path: string,
 ): void {
-  items.forEach((item, index) => {
+  items.forEach((
+    item,
+    index) => {
     const asset = record(item, `${path}[${index}]`)
     const lifecycle = expected[index]
-    if (lifecycle === undefined) fail(`${path}[${index}]`)
+
+    if (lifecycle === undefined)
+      fail(`${path}[${index}]`)
+
     equal(asset.htlcDeployed, lifecycle[0], `${path}[${index}].htlcDeployed`)
     equal(asset.htlcFunded, lifecycle[1], `${path}[${index}].htlcFunded`)
     equal(asset.htlcReleased, lifecycle[2], `${path}[${index}].htlcReleased`)
@@ -650,16 +840,22 @@ function validateCustodyDeltas(
   path: string,
 ): void {
   validateCustody(after, path + '.custodyAfter')
-  after.forEach((item, index) => {
+
+  after.forEach((
+    item,
+    index) => {
     const previous = record(before[index], path + '.before[' + index + ']')
     const current = record(item, path + '.custodyAfter[' + index + ']')
     const change = record(deltas[index], path + '.balanceDeltas[' + index + ']')
+
     equal(change.role, current.role, path + '.balanceDeltas[' + index + '].role')
     equal(current.role, previous.role, path + '.custodyAfter[' + index + '].role')
     equal(current.token, previous.token, path + '.custodyAfter[' + index + '].token')
     equal(current.htlc, previous.htlc, path + '.custodyAfter[' + index + '].htlc')
+
     for (const field of ['principalBalance', 'recipientBalance', 'htlcBalance', 'allowance'] as const) {
       const expected = (BigInt(String(current[field])) - BigInt(String(previous[field]))).toString()
+
       equal(change[field], expected, path + '.balanceDeltas[' + index + '].' + field)
     }
   })

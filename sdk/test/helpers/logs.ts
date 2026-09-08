@@ -19,7 +19,11 @@ const BLOCK_HASH = `0x${'bb'.repeat(32)}` as Hex
 const TX_HASH = `0x${'cc'.repeat(32)}` as Hex
 
 /** Common positional fields viem's decoders/`parseEventLogs` read off a log. */
-function baseLog(address: Address, topics: readonly (Hex | Hex[] | null)[], data: Hex, logIndex: number): Log {
+function baseLog(
+  address: Address,
+  topics: readonly (Hex | Hex[] | null)[],
+  data: Hex,
+  logIndex: number): Log {
   return {
     address,
     topics: topics as [Hex, ...Hex[]],
@@ -34,7 +38,8 @@ function baseLog(address: Address, topics: readonly (Hex | Hex[] | null)[], data
 }
 
 /** The mutable tuple shape viem encodes for the `Terms` struct. */
-function toTuple(terms: Terms) {
+function toTuple(
+  terms: Terms) {
   return {
     chainId: terms.chainId,
     reclaimRecipient: terms.reclaimRecipient,
@@ -42,65 +47,100 @@ function toTuple(terms: Terms) {
     commitmentDeadline: terms.commitmentDeadline,
     claimDeadline: terms.claimDeadline,
     reclaimRelease: terms.reclaimRelease,
-    assets: terms.assets.map(a => ({assetType: a.assetType, target: a.target, id: a.id, amount: a.amount})),
+    assets: terms.assets.map(a => ({
+      assetType: a.assetType,
+      target: a.target,
+      id: a.id,
+      amount: a.amount
+    })),
   }
 }
 
 /** Builds a `Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender)` log. */
-export function commitmentLog(args: {
-  address: Address
-  lock: Hex32
-  sender: Address
-  /** The committing identity blob (defaults to the bare sender address). */
-  signer?: Hex
-  party: Terms
-  logIndex?: number
-}): Log {
+export function commitmentLog(
+  args: {
+    address: Address
+    lock: Hex32
+    sender: Address
+    /** The committing identity blob (defaults to the bare sender address). */
+    signer?: Hex
+    party: Terms
+    logIndex?: number
+  }): Log {
   const topics = encodeEventTopics({
     abi: omnibusAbi,
     eventName: 'Commitment',
-    args: {lock: args.lock, sender: args.sender},
+    args: {
+      lock: args.lock,
+      sender: args.sender
+    },
   })
   // non-indexed data: (Terms party, bytes signer)
   const data = encodeAbiParameters(
-    [termsAbiParameter, {name: 'signer', type: 'bytes'}],
+    [termsAbiParameter, {
+      name: 'signer',
+      type: 'bytes'
+    }],
     [toTuple(args.party), args.signer ?? args.sender],
   )
+
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }
 
 /** Builds a `Claim(address recipient, bytes32 indexed lock, bytes32 secret)` log. */
-export function claimLog(args: {
-  address: Address
-  lock: Hex32
-  secret: Hex32
-  recipient: Address
-  logIndex?: number
-}): Log {
-  const topics = encodeEventTopics({abi: omnibusAbi, eventName: 'Claim', args: {lock: args.lock}})
+export function claimLog(
+  args: {
+    address: Address
+    lock: Hex32
+    secret: Hex32
+    recipient: Address
+    logIndex?: number
+  }): Log {
+  const topics = encodeEventTopics({
+    abi: omnibusAbi,
+    eventName: 'Claim',
+    args: {
+      lock: args.lock
+    }
+  })
   const data = encodeAbiParameters(
     [
-      {name: 'recipient', type: 'address'},
-      {name: 'secret', type: 'bytes32'},
+      {
+        name: 'recipient',
+        type: 'address'
+      },
+      {
+        name: 'secret',
+        type: 'bytes32'
+      },
     ],
     [args.recipient, args.secret],
   )
+
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }
 
 /** Builds a `Reclaimed(address caller, bytes32 indexed lock, address indexed recipient)` log. */
-export function reclaimedLog(args: {
-  address: Address
-  lock: Hex32
-  caller: Address
-  recipient: Address
-  logIndex?: number
-}): Log {
+export function reclaimedLog(
+  args: {
+    address: Address
+    lock: Hex32
+    caller: Address
+    recipient: Address
+    logIndex?: number
+  }): Log {
   const topics = encodeEventTopics({
     abi: omnibusAbi,
     eventName: 'Reclaimed',
-    args: {lock: args.lock, recipient: args.recipient},
+    args: {
+      lock: args.lock,
+      recipient: args.recipient
+    },
   })
-  const data = encodeAbiParameters([{name: 'caller', type: 'address'}], [args.caller])
+  const data = encodeAbiParameters([{
+    name: 'caller',
+    type: 'address'
+  }], [args.caller])
+
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }

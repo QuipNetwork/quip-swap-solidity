@@ -86,7 +86,8 @@ interface PrototypeDeployment {
   readonly verifier: Address
 }
 
-async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> {
+async function deployPrototype(
+  ctx: ChainContext): Promise<PrototypeDeployment> {
   const verifier = await ctx.deploy(loadArtifact('KeyBoundVerifierMock.sol', 'KeyBoundVerifierMock'))
   const assetSupportRegistry = await ctx.deploy(loadArtifact('AssetSupportRegistry.sol', 'AssetSupportRegistry'), [
     ctx.deployer.address,
@@ -106,6 +107,7 @@ async function deployPrototype(ctx: ChainContext): Promise<PrototypeDeployment> 
     swapHTLC,
     ctx.deployer.address,
   ])
+
   return {
     verifier,
     assetSupportRegistry,
@@ -126,9 +128,18 @@ let bobOnA: OmnibusClient
 let bobOnB: OmnibusClient
 
 let secretCounter = 1000
-function nextSecret(): {secret: Hex32; lock: Hex32} {
-  const secret = keccak256(toHex(++secretCounter, {size: 32}))
-  return {secret, lock: generateLock(secret)}
+function nextSecret(): {
+  secret: Hex32;
+  lock: Hex32
+} {
+  const secret = keccak256(toHex(++secretCounter, {
+    size: 32
+  }))
+
+  return {
+    secret,
+    lock: generateLock(secret)
+  }
 }
 
 /** One shared schedule across BOTH chains, plus per-action warp anchors. */
@@ -141,14 +152,17 @@ interface SharedSchedule {
     proposerReclaim: bigint
     takerReclaim: bigint
   }
-  aliceTerms(assets: readonly Asset[]): Terms
-  bobTerms(assets: readonly Asset[]): Terms
+  aliceTerms(
+    assets: readonly Asset[]): Terms
+  bobTerms(
+    assets: readonly Asset[]): Terms
 }
 
 /** Builds one schedule from the LATER of the two chains' clocks so warps are always forward. */
 async function sharedSchedule(): Promise<SharedSchedule> {
   const [nowA, nowB] = await Promise.all([chainA.now(), chainB.now()])
   const base = (nowA > nowB ? nowA : nowB) + 10n
+
   return {
     anchors: {
       proposerCommit: base + 500n,
@@ -180,16 +194,19 @@ async function sharedSchedule(): Promise<SharedSchedule> {
 }
 
 /** Warps BOTH chains to the same instant, keeping the shared schedule coordinated. */
-async function warpBoth(timestamp: bigint): Promise<void> {
+async function warpBoth(
+  timestamp: bigint): Promise<void> {
   await Promise.all([chainA.warpTo(timestamp), chainB.warpTo(timestamp)])
 }
 
 beforeAll(async () => {
   chainA = connectChain(RPC_A, CHAIN_A_ID)
   chainB = connectChain(RPC_B, CHAIN_B_ID)
-  ;[deploymentA, deploymentB] = await Promise.all([deployPrototype(chainA), deployPrototype(chainB)])
+    ;
+  [deploymentA, deploymentB] = await Promise.all([deployPrototype(chainA), deployPrototype(chainB)])
   demoDeployment = await bootstrapDemoEnvironment(chainA, chainB, loadArtifact)
-  ;[fixtureA, fixtureB] = await Promise.all([deployFixture(chainA), deployFixture(chainB)])
+    ;
+  [fixtureA, fixtureB] = await Promise.all([deployFixture(chainA), deployFixture(chainB)])
 
   aliceOnA = createOmnibusClient({
     address: fixtureA.omnibus,
@@ -225,7 +242,10 @@ beforeAll(async () => {
       chain: ctx.publicClient.chain ?? null,
       account: actor.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
     hash = await actor.walletClient.writeContract({
       address: fixture.erc20,
       abi: erc20MockAbi,
@@ -234,20 +254,25 @@ beforeAll(async () => {
       chain: ctx.publicClient.chain ?? null,
       account: actor.account,
     })
-    await ctx.publicClient.waitForTransactionReceipt({hash})
+    await ctx.publicClient.waitForTransactionReceipt({
+      hash
+    })
   }
 })
 
 describe('v1.1 deployment smoke', () => {
   it('runs the complete deterministic v1.1 demo and emits one combined artifact', async () => {
     const artifact = await runFullDemo(chainA, chainB, loadArtifact)
+
     expect(() => validateFullDemoArtifact(artifact)).not.toThrow()
     expect(artifact.settlementTrace.finalSnapshots.map(snapshot => snapshot.state)).toEqual(['Claimed', 'Claimed'])
     expect(artifact.authorizationTrace.records).toHaveLength(2)
     expect(artifact.negativeControls.records).toHaveLength(4)
     expect(artifact.clientTrace.at(-1)?.status.workflowStage).toBe('complete')
     expect(artifact.negativeControls.records.every(record => record.stateUnchanged && record.reverted)).toBe(true)
+
     const operatorTrace = JSON.stringify(artifact.clientTrace)
+
     expect(operatorTrace).not.toContain(artifact.deterministicSecrets.settlementSecret)
     expect(operatorTrace).not.toContain(artifact.deterministicSecrets.bobCommitSecret)
 
@@ -255,29 +280,45 @@ describe('v1.1 deployment smoke', () => {
       ...artifact,
       authorizationTrace: {
         ...artifact.authorizationTrace,
-        records: artifact.authorizationTrace.records.map((record, index) =>
-          index === 0 ? {...record, transactionHash: `0x${'11'.repeat(32)}` as const} : record,
+        records: artifact.authorizationTrace.records.map((
+          record,
+          index) =>
+          index === 0 ? {
+...record,
+            transactionHash: `0x${'11'.repeat(32)}` as const
+          } : record,
         ),
       },
       settlementTrace: {
         ...artifact.settlementTrace,
-        transactions: artifact.settlementTrace.transactions.map((record, index) =>
-          index === 0 ? {...record, transactionHash: `0x${'22'.repeat(32)}` as const} : record,
+        transactions: artifact.settlementTrace.transactions.map((
+          record,
+          index) =>
+          index === 0 ? {
+...record,
+            transactionHash: `0x${'22'.repeat(32)}` as const
+          } : record,
         ),
       },
     }
+
     expect(fullDemoLogicalFingerprint(replay)).toBe(fullDemoLogicalFingerprint(artifact))
 
     const incomplete = {
       ...artifact,
-      settlementTrace: {...artifact.settlementTrace, transactions: artifact.settlementTrace.transactions.slice(0, -1)},
+      settlementTrace: {
+...artifact.settlementTrace,
+        transactions: artifact.settlementTrace.transactions.slice(0, -1)
+      },
     }
+
     expect(() => validateFullDemoArtifact(incomplete)).toThrow('settlement trace is incomplete')
     expect(serializeFullDemo(artifact)).toContain('quip-swap-full-demo.v1')
   })
 
   it('runs live two-chain recovery and terminal-race branches', async () => {
     const artifact = await runCrossChainRecoveryDemo(chainA, chainB, loadArtifact)
+
     expect(() => validateCrossChainRecoveryArtifact(artifact)).not.toThrow()
     expect(artifact.outcomes.map(outcome => outcome.finalStates.map(state => state.state))).toEqual([
       ['Reclaimed', 'Reclaimed'],
@@ -335,23 +376,88 @@ describe('v1.1 deployment smoke', () => {
     const zero32 = `0x${'00'.repeat(32)}` as Hex32
     const terms: ProtocolTerms = {
       partySide: {
-        chainId: 31337n, assets: [{assetType: AssetType.ERC20, target: demoDeployment.chains[0].funding.token, id: 0n, amount: DEMO_ALICE_AMOUNT}],
-        principal: chainA.alice.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n,
-        reclaimRecipient: chainA.alice.address, recipient: chainB.bob.address, commitmentDeadline: 100n, claimDeadline: 200n, reclaimRelease: 300n,
-        commitLock: zero32, delegationPolicy: DelegationPolicy.NotAllowed, delegate: zeroAddress, delegateKeyVersion: 0n, sideNonce: `0x${'22'.repeat(32)}` as Hex32,
+        chainId: 31337n,
+        assets: [{
+          assetType: AssetType.ERC20,
+          target: demoDeployment.chains[0].funding.token,
+          id: 0n,
+          amount: DEMO_ALICE_AMOUNT
+        }],
+        principal: chainA.alice.address,
+        authorizationMode: AuthorizationMode.RegisteredDirect,
+        principalKeyVersion: 1n,
+        reclaimRecipient: chainA.alice.address,
+        recipient: chainB.bob.address,
+        commitmentDeadline: 100n,
+        claimDeadline: 200n,
+        reclaimRelease: 300n,
+        commitLock: zero32,
+        delegationPolicy: DelegationPolicy.NotAllowed,
+        delegate: zeroAddress,
+        delegateKeyVersion: 0n,
+        sideNonce: `0x${'22'.repeat(32)}` as Hex32,
       },
       counterpartySide: {
-        chainId: 31338n, assets: [{assetType: AssetType.ERC20, target: demoDeployment.chains[1].funding.token, id: 0n, amount: DEMO_BOB_AMOUNT}],
-        principal: chainB.bob.address, authorizationMode: AuthorizationMode.RegisteredDirect, principalKeyVersion: 1n,
-        reclaimRecipient: chainB.bob.address, recipient: chainA.alice.address, commitmentDeadline: 150n, claimDeadline: 250n, reclaimRelease: 350n,
-        commitLock: `0x${'33'.repeat(32)}` as Hex32, delegationPolicy: DelegationPolicy.NotAllowed, delegate: zeroAddress, delegateKeyVersion: 0n, sideNonce: `0x${'44'.repeat(32)}` as Hex32,
+        chainId: 31338n,
+        assets: [{
+          assetType: AssetType.ERC20,
+          target: demoDeployment.chains[1].funding.token,
+          id: 0n,
+          amount: DEMO_BOB_AMOUNT
+        }],
+        principal: chainB.bob.address,
+        authorizationMode: AuthorizationMode.RegisteredDirect,
+        principalKeyVersion: 1n,
+        reclaimRecipient: chainB.bob.address,
+        recipient: chainA.alice.address,
+        commitmentDeadline: 150n,
+        claimDeadline: 250n,
+        reclaimRelease: 350n,
+        commitLock: `0x${'33'.repeat(32)}` as Hex32,
+        delegationPolicy: DelegationPolicy.NotAllowed,
+        delegate: zeroAddress,
+        delegateKeyVersion: 0n,
+        sideNonce: `0x${'44'.repeat(32)}` as Hex32,
       },
     }
     const lock = `0x${'55'.repeat(32)}` as Hex32
     const [alice, bob] = await Promise.all([
-      readCrossChainSettlementSnapshot({publicClient: chainA.publicClient, chainId: 31337, wrapper: demoDeployment.chains[0].addresses.crossChainWrapper, terms, party: true, lock, holdings: [{assetType: 'erc20', token: demoDeployment.chains[0].funding.token, account: chainA.alice.address}, {assetType: 'erc20', token: demoDeployment.chains[0].funding.token, account: demoDeployment.chains[0].addresses.crossChainWrapper}]}),
-      readCrossChainSettlementSnapshot({publicClient: chainB.publicClient, chainId: 31338, wrapper: demoDeployment.chains[1].addresses.crossChainWrapper, terms, party: false, lock, holdings: [{assetType: 'erc20', token: demoDeployment.chains[1].funding.token, account: chainB.bob.address}, {assetType: 'erc20', token: demoDeployment.chains[1].funding.token, account: demoDeployment.chains[1].addresses.crossChainWrapper}]}),
+      readCrossChainSettlementSnapshot({
+        publicClient: chainA.publicClient,
+        chainId: 31337,
+        wrapper: demoDeployment.chains[0].addresses.crossChainWrapper,
+        terms,
+        party: true,
+        lock,
+        holdings: [{
+          assetType: 'erc20',
+          token: demoDeployment.chains[0].funding.token,
+          account: chainA.alice.address
+        }, {
+          assetType: 'erc20',
+          token: demoDeployment.chains[0].funding.token,
+          account: demoDeployment.chains[0].addresses.crossChainWrapper
+        }]
+      }),
+      readCrossChainSettlementSnapshot({
+        publicClient: chainB.publicClient,
+        chainId: 31338,
+        wrapper: demoDeployment.chains[1].addresses.crossChainWrapper,
+        terms,
+        party: false,
+        lock,
+        holdings: [{
+          assetType: 'erc20',
+          token: demoDeployment.chains[1].funding.token,
+          account: chainB.bob.address
+        }, {
+          assetType: 'erc20',
+          token: demoDeployment.chains[1].funding.token,
+          account: demoDeployment.chains[1].addresses.crossChainWrapper
+        }]
+      }),
     ])
+
     expect([alice.state, bob.state]).toEqual(['Unused', 'Unused'])
     expect(alice.holdings.map(holding => 'balance' in holding ? holding.balance : null)).toEqual([DEMO_ALICE_AMOUNT.toString(), '0'])
     expect(bob.holdings.map(holding => 'balance' in holding ? holding.balance : null)).toEqual([DEMO_BOB_AMOUNT.toString(), '0'])
@@ -359,6 +465,7 @@ describe('v1.1 deployment smoke', () => {
 
   it('reproduces the same address graph and immutable configuration on both chains', async () => {
     expect(deploymentB).toEqual(deploymentA)
+
     for (const [ctx, deployment] of [
       [chainA, deploymentA],
       [chainB, deploymentB],
@@ -396,42 +503,71 @@ describe('cross-chain happy path', () => {
       takerTerms: bob,
       minimumBufferSeconds: 500n,
     })
+
     expect(schedule.reactionBufferSeconds).toBe(2000n) // alice.reclaimRelease - alice.claimDeadline
 
     // 1-2. Alice (proposer, secret holder) commits her leg ON CHAIN A.
     // cross-chain commit: Unused -> Committed directly (no Free state)
     await warpBoth(s.anchors.proposerCommit)
     // Chain A receipt decoded against Chain A's Omnibus (aliceOnA is bound to it)
-    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(fixtureA, chainA.alice.address)}))
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(fixtureA, chainA.alice.address)
+    }))
+
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Unused) // B untouched
 
     // 3. Bob's MANDATORY off-chain verification of Alice's remote commitment
     // (the chain B contract cannot do this for him)
     const remote = await verifyRemoteCommitment(bobOnA, lock, alice, bob)
-    expect(remote).toMatchObject({committed: true, lockState: LockState.Committed, termsHashMatches: true})
+
+    expect(remote).toMatchObject({
+      committed: true,
+      lockState: LockState.Committed,
+      termsHashMatches: true
+    })
 
     // ...then Bob commits his leg ON CHAIN B inside the taker window.
     // Decoded against Chain B's Omnibus (bobOnB is bound to it), NOT Chain A.
     await warpBoth(s.anchors.takerCommit)
-    await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(fixtureB, chainB.bob.address)}))
+    await bobOnB.waitForReceipt(await bobOnB.commit({
+      lock,
+      party: bob,
+      counterparty: alice,
+      auth: keyedAuth(fixtureB, chainB.bob.address)
+    }))
+
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Committed)
 
     // 4. Alice claims Bob's leg ON CHAIN B in the proposer-claim window —
     // this transaction publicly REVEALS the secret on chain B. The receipt
     // is decoded against Chain B's Omnibus via aliceOnB.
     await warpBoth(s.anchors.proposerClaim)
-    const aliceRecipientNativeBefore = await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})
-    const claimB = await aliceOnB.waitForReceipt(await aliceOnB.claim({secret, party: alice, counterparty: bob}))
+
+    const aliceRecipientNativeBefore = await chainB.publicClient.getBalance({
+      address: ALICE_RECIPIENT
+    })
+    const claimB = await aliceOnB.waitForReceipt(await aliceOnB.claim({
+      secret,
+      party: alice,
+      counterparty: bob
+    }))
+
     expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
     // bob's native (counterparty leg) went to ALICE's recipient on chain B
-    expect(await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})).toBe(
+    expect(await chainB.publicClient.getBalance({
+      address: ALICE_RECIPIENT
+    })).toBe(
       aliceRecipientNativeBefore + NATIVE,
     )
 
     // 5. Bob (or a relayer) extracts the revealed secret from the chain B
     // Claim event — from the address-SCOPED decoded claims, not raw logs.
     const revealed = extractSecretFromClaims(claimB.claims, lock)
+
     expect(revealed).toBe(secret)
 
     // duplicate Claim-event processing is idempotent: feeding the same scoped
@@ -439,8 +575,11 @@ describe('cross-chain happy path', () => {
     expect(extractSecretFromClaims([...claimB.claims, ...claimB.claims], lock)).toBe(secret)
 
     // 6. Bob claims Alice's leg ON CHAIN A in the taker-claim window
-    if (revealed === undefined) throw new Error('secret must have been revealed')
+    if (revealed === undefined)
+      throw new Error('secret must have been revealed')
+
     await warpBoth(s.anchors.takerClaim)
+
     const bobRecipientTokensBefore = await chainA.publicClient.readContract({
       address: fixtureA.erc20,
       abi: erc20MockAbi,
@@ -448,7 +587,11 @@ describe('cross-chain happy path', () => {
       args: [BOB_RECIPIENT],
     })
     // Chain A receipt decoded against Chain A's Omnibus via bobOnA
-    await bobOnA.waitForReceipt(await bobOnA.claim({secret: revealed, party: bob, counterparty: alice}))
+    await bobOnA.waitForReceipt(await bobOnA.claim({
+      secret: revealed,
+      party: bob,
+      counterparty: alice
+    }))
 
     // 7. both locks Spent; final balances verified on both chains
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
@@ -469,12 +612,19 @@ describe('cross-chain validator guards', () => {
     const s = await sharedSchedule()
     const alice = s.aliceTerms([erc20Asset(fixtureA.erc20, 1n)])
     const bob = s.bobTerms([nativeAsset(1n)])
+
     try {
       // claiming bob's (later) leg holds the secret here — exactly the
       // configuration CrossChainFreeOption.t.sol attacks
-      validateCrossChainSchedule({proposerTerms: bob, takerTerms: alice, minimumBufferSeconds: 1n})
+      validateCrossChainSchedule({
+        proposerTerms: bob,
+        takerTerms: alice,
+        minimumBufferSeconds: 1n
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('SECRET_HOLDER_NOT_PROPOSER')
     }
   })
@@ -490,14 +640,22 @@ describe('cross-chain validator guards', () => {
       claimDeadline: alice.reclaimRelease + 2000n,
       reclaimRelease: alice.reclaimRelease + 3000n,
     }
+
     try {
-      validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1n})
+      validateCrossChainSchedule({
+        proposerTerms: alice,
+        takerTerms: bob,
+        minimumBufferSeconds: 1n
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('DISORDERED_DEADLINES')
     }
     // the contract agrees on chain A (raw call bypassing SDK preflight)
     await warpBoth(s.anchors.proposerCommit)
+
     try {
       await chainA.publicClient.simulateContract({
         address: fixtureA.omnibus,
@@ -505,15 +663,26 @@ describe('cross-chain validator guards', () => {
         functionName: 'commit',
         args: [
           lock,
-          {...alice, assets: alice.assets.map(a => ({...a}))},
-          {...bob, assets: bob.assets.map(a => ({...a}))},
+          {
+...alice,
+            assets: alice.assets.map(a => ({
+...a
+            }))
+          },
+          {
+...bob,
+            assets: bob.assets.map(a => ({
+...a
+            }))
+          },
           keyedAuth(fixtureA, chainA.alice.address),
         ],
         value: 0n,
         account: chainA.alice.account,
       })
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect(extractContractErrorName(error)).toBe('DisordedDeadlines')
     }
   })
@@ -522,11 +691,18 @@ describe('cross-chain validator guards', () => {
     const s = await sharedSchedule()
     const alice = s.aliceTerms([erc20Asset(fixtureA.erc20, 1n)])
     const bob = s.bobTerms([nativeAsset(1n)])
+
     try {
       // every adjacent gap is 1000s; demand more
-      validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1001n})
+      validateCrossChainSchedule({
+        proposerTerms: alice,
+        takerTerms: bob,
+        minimumBufferSeconds: 1001n
+      })
+
       expect.unreachable()
-    } catch (error) {
+    }
+    catch (error) {
       expect((error as QuipSwapError).code).toBe('INSUFFICIENT_BUFFER')
     }
   })
@@ -541,20 +717,32 @@ describe('cross-chain unhappy path', () => {
     const bob = s.bobTerms([nativeAsset(10n)])
 
     await warpBoth(s.anchors.proposerCommit)
-    await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(fixtureA, chainA.alice.address)}))
+    await aliceOnA.waitForReceipt(await aliceOnA.commit({
+      lock,
+      party: alice,
+      counterparty: bob,
+      auth: keyedAuth(fixtureA, chainA.alice.address)
+    }))
+
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
 
     // bob never commits. alice reclaims HER leg on chain A after HER release.
     // the counterparty (bob) leg is NOT local to chain A, so only one leg
     // returns and exactly one Reclaimed event is emitted
     await warpBoth(s.anchors.proposerReclaim)
+
     const reclaimTokensBefore = await chainA.publicClient.readContract({
       address: fixtureA.erc20,
       abi: erc20MockAbi,
       functionName: 'balanceOf',
       args: [ALICE_RECLAIM],
     })
-    const result = await aliceOnA.waitForReceipt(await aliceOnA.reclaim({lock, party: alice, counterparty: bob}))
+    const result = await aliceOnA.waitForReceipt(await aliceOnA.reclaim({
+      lock,
+      party: alice,
+      counterparty: bob
+    }))
+
     expect(result.reclaims).toHaveLength(1)
     expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
     expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)

@@ -40,25 +40,55 @@ export interface PrototypeDeploymentManifest {
   readonly vectorHash: Hex32
 }
 
-export function prototypeDeploymentSalt(deployer: Address, index: number): Hex32 {
-  const entropy = keccak256(concat([stringToHex(`QUIP:Swap:${PROTOTYPE_DEPLOYMENT_VERSION}:`), toHex(index, {size: 1})]))
+/**
+ * Mirrors Solidity's packed salt: 20-byte authorized deployer, one 0x00 guard flag, and 11 bytes of
+ * version/component entropy. The caller must use the corresponding prototypeComponents index.
+ */
+export function prototypeDeploymentSalt(
+  deployer: Address,
+  index: number): Hex32 {
+  const entropy = keccak256(concat([stringToHex(`QUIP:Swap:${PROTOTYPE_DEPLOYMENT_VERSION}:`), toHex(index, {
+    size: 1
+  })]))
     .slice(2, 24) as string
+
   return concat([deployer, '0x00', `0x${entropy}`]) as Hex32
 }
 
+/**
+ * Predicts CREATE3 addresses without RPC access. Factory, deployer, version, and component determine
+ * addresses; chain ID and constructor arguments do not. Prediction does not verify code or immutables.
+ */
 export function predictPrototypeAddresses(
   deployer: Address,
   createX: Address = CANONICAL_CREATEX,
 ): PrototypeDeploymentAddresses {
-  const entries = prototypeComponents.map((component, index) => {
+  const entries = prototypeComponents.map((
+    component,
+    index) => {
     const rawSalt = prototypeDeploymentSalt(deployer, index)
-    const guardedSalt = keccak256(concat([pad(deployer, {size: 32}), rawSalt]))
-    const proxy = getCreate2Address({from: createX, salt: guardedSalt, bytecodeHash: CREATE3_PROXY_INITCODE_HASH})
-    return [component, getContractAddress({from: proxy, nonce: 1n})] as const
+    const guardedSalt = keccak256(concat([pad(deployer, {
+      size: 32
+    }), rawSalt]))
+    const proxy = getCreate2Address({
+      from: createX,
+      salt: guardedSalt,
+      bytecodeHash: CREATE3_PROXY_INITCODE_HASH
+    })
+
+    return [component, getContractAddress({
+      from: proxy,
+      nonce: 1n
+    })] as const
   })
+
   return Object.fromEntries(entries) as unknown as PrototypeDeploymentAddresses
 }
 
+/**
+ * Hashes the expected chain and constructor configuration in stable component order. This is an offline
+ * manifest integrity value, not an on-chain attestation that those dependencies or timing values exist.
+ */
 export function prototypeDeploymentVectorHash(
   chainId: bigint,
   createX: Address,
@@ -71,14 +101,30 @@ export function prototypeDeploymentVectorHash(
   return keccak256(
     encodeAbiParameters(
       [
-        {type: 'string'},
-        {type: 'uint256'},
-        {type: 'address'},
-        {type: 'address'},
-        {type: 'address'},
-        {type: 'address'},
-        {type: 'address[5]'},
-        {type: 'uint256'},
+        {
+          type: 'string'
+        },
+        {
+          type: 'uint256'
+        },
+        {
+          type: 'address'
+        },
+        {
+          type: 'address'
+        },
+        {
+          type: 'address'
+        },
+        {
+          type: 'address'
+        },
+        {
+          type: 'address[5]'
+        },
+        {
+          type: 'uint256'
+        },
       ],
       [
         PROTOTYPE_DEPLOYMENT_VERSION,
@@ -100,17 +146,25 @@ export function prototypeDeploymentVectorHash(
   )
 }
 
-export function buildPrototypeDeploymentManifest(args: {
-  readonly chainId: bigint
-  readonly deployer: Address
-  readonly owner: Address
-  readonly finalClaimDelay: bigint
-  readonly trustedVerifier: Address
-  readonly createX?: Address
-}): PrototypeDeploymentManifest {
-  if (args.finalClaimDelay <= 0n) throw new Error('finalClaimDelay must be positive')
+/**
+ * Builds an expected deployment manifest and rejects a zero timing budget. Release verification must
+ * independently compare runtime code, ownership, dependencies, and FINAL_CLAIM_DELAY on each chain.
+ */
+export function buildPrototypeDeploymentManifest(
+  args: {
+    readonly chainId: bigint
+    readonly deployer: Address
+    readonly owner: Address
+    readonly finalClaimDelay: bigint
+    readonly trustedVerifier: Address
+    readonly createX?: Address
+  }): PrototypeDeploymentManifest {
+  if (args.finalClaimDelay <= 0n)
+    throw new Error('finalClaimDelay must be positive')
+
   const createX = args.createX ?? CANONICAL_CREATEX
   const addresses = predictPrototypeAddresses(args.deployer, createX)
+
   return {
     version: PROTOTYPE_DEPLOYMENT_VERSION,
     chainId: args.chainId,
