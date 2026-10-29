@@ -147,8 +147,8 @@ contract Omnibus_CrossChainFreeOption is Test {
     omnibusA.claim(SECRET, bob, alice); // Alice's tokenA -> BOB_RECIPIENT
     assertEq(tokenA.balanceOf(BOB_RECIPIENT), AMOUNT_A);
 
-    assertEq(uint8(omnibusA.lockState(lock)), uint8(LockState.Spent));
-    assertEq(uint8(omnibusB.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibusA.lockState(omnibusA.swapId(lock, alice, bob))), uint8(LockState.Spent));
+    assertEq(uint8(omnibusB.lockState(omnibusB.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 
   // ============ Taker negligence: proposer ends with both legs ============
@@ -182,8 +182,8 @@ contract Omnibus_CrossChainFreeOption is Test {
     assertEq(tokenA.balanceOf(ALICE), AMOUNT_A);
     assertEq(tokenB.balanceOf(ALICE_RECIPIENT), AMOUNT_B);
     assertEq(tokenA.balanceOf(BOB_RECIPIENT), 0);
-    assertEq(uint8(omnibusA.lockState(lock)), uint8(LockState.Spent));
-    assertEq(uint8(omnibusB.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibusA.lockState(omnibusA.swapId(lock, alice, bob))), uint8(LockState.Spent));
+    assertEq(uint8(omnibusB.lockState(omnibusB.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 
   // ============ Mis-ordering is now rejected at commit ============

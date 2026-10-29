@@ -27,7 +27,7 @@ import {beforeAll, describe, expect, it} from 'vitest'
 import {totalNative} from '../../src/assets.js'
 import {buildKeyedSigner, computeCommitDigest} from '../../src/commitAuth.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {digestTerms, digestTermsCanonically, generateLock, swapId} from '../../src/hashing.js'
 import {validateTermPairing} from '../../src/terms.js'
 import {AssetType} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
@@ -263,6 +263,36 @@ describe('generateLock parity (oracle: OmnibusHarness.exposed_generateLock)', ()
         secret,
       ])
       expect(generateLock(secret)).toBe(onChain)
+    }
+  })
+})
+
+describe('swapId parity (oracle: Omnibus.swapId)', () => {
+  it('matches in both argument orders on fixed and generated pairs', async () => {
+    const lock = generateLock(`0x${'ab'.repeat(32)}`)
+    const vectors = fixedVectors()
+    for (let i = 0; i + 1 < vectors.length; i += 2) {
+      const a = vectors[i] as Terms
+      const b = vectors[i + 1] as Terms
+      const onChain = await callHarness<Hex32>(fixture.omnibusHarness, omnibusHarnessAbi, 'swapId', [
+        lock,
+        abiTerms(a),
+        abiTerms(b),
+      ])
+      expect(swapId(lock, a, b)).toBe(onChain)
+      expect(swapId(lock, b, a)).toBe(onChain)
+    }
+
+    const rng = seededRng(0x51a9d1n)
+    for (let i = 0; i < 10; i++) {
+      const a = rndTerms(rng)
+      const b = rndTerms(rng)
+      const onChain = await callHarness<Hex32>(fixture.omnibusHarness, omnibusHarnessAbi, 'swapId', [
+        lock,
+        abiTerms(a),
+        abiTerms(b),
+      ])
+      expect(swapId(lock, a, b), `pair ${i}`).toBe(onChain)
     }
   })
 })

@@ -76,6 +76,11 @@ contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
     TermsLib.transferAssetsNoNative(terms, from, to);
   }
 
+  /// @notice exposes transferAssetsClamped
+  function exposed_transferAssetsClamped(Terms calldata terms, address to) external {
+    TermsLib.transferAssetsClamped(terms, to);
+  }
+
   /// @notice exposes totalNative
   function exposed_totalNative(Terms calldata terms) external pure returns (uint256) {
     return TermsLib.totalNative(terms);

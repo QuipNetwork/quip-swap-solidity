@@ -26,7 +26,7 @@ import type {OmnibusClient} from '../../src/client.js'
 import {QuipSwapError, extractContractErrorName} from '../../src/errors.js'
 import {extractSecretFromClaims} from '../../src/events.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
-import {generateLock} from '../../src/hashing.js'
+import {generateLock, swapId} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {validateCrossChainSchedule, verifyRemoteCommitment} from '../../src/workflows/crossChain.js'
@@ -195,8 +195,8 @@ describe('cross-chain happy path', () => {
     await warpBoth(s.anchors.proposerCommit)
     // Chain A receipt decoded against Chain A's Omnibus (aliceOnA is bound to it)
     await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(fixtureA, chainA.alice.address)}))
-    expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
-    expect(await bobOnB.getLockState(lock)).toBe(LockState.Unused) // B untouched
+    expect(await aliceOnA.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
+    expect(await bobOnB.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused) // B untouched
 
     // 3. Bob's MANDATORY off-chain verification of Alice's remote commitment
     // (the chain B contract cannot do this for him)
@@ -207,7 +207,7 @@ describe('cross-chain happy path', () => {
     // Decoded against Chain B's Omnibus (bobOnB is bound to it), NOT Chain A.
     await warpBoth(s.anchors.takerCommit)
     await bobOnB.waitForReceipt(await bobOnB.commit({lock, party: bob, counterparty: alice, auth: keyedAuth(fixtureB, chainB.bob.address)}))
-    expect(await bobOnB.getLockState(lock)).toBe(LockState.Committed)
+    expect(await bobOnB.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
 
     // 4. Alice claims Bob's leg ON CHAIN B in the proposer-claim window —
     // this transaction publicly REVEALS the secret on chain B. The receipt
@@ -215,7 +215,7 @@ describe('cross-chain happy path', () => {
     await warpBoth(s.anchors.proposerClaim)
     const aliceRecipientNativeBefore = await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})
     const claimB = await aliceOnB.waitForReceipt(await aliceOnB.claim({secret, party: alice, counterparty: bob}))
-    expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
+    expect(await bobOnB.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     // bob's native (counterparty leg) went to ALICE's recipient on chain B
     expect(await chainB.publicClient.getBalance({address: ALICE_RECIPIENT})).toBe(
       aliceRecipientNativeBefore + NATIVE,
@@ -243,8 +243,8 @@ describe('cross-chain happy path', () => {
     await bobOnA.waitForReceipt(await bobOnA.claim({secret: revealed, party: bob, counterparty: alice}))
 
     // 7. both locks Spent; final balances verified on both chains
-    expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
-    expect(await bobOnB.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceOnA.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
+    expect(await bobOnB.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     expect(
       await chainA.publicClient.readContract({
         address: fixtureA.erc20,
@@ -334,7 +334,7 @@ describe('cross-chain unhappy path', () => {
 
     await warpBoth(s.anchors.proposerCommit)
     await aliceOnA.waitForReceipt(await aliceOnA.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(fixtureA, chainA.alice.address)}))
-    expect(await aliceOnA.getLockState(lock)).toBe(LockState.Committed)
+    expect(await aliceOnA.getLockState(swapId(lock, alice, bob))).toBe(LockState.Committed)
 
     // bob never commits. alice reclaims HER leg on chain A after HER release.
     // the counterparty (bob) leg is NOT local to chain A, so only one leg
@@ -349,7 +349,7 @@ describe('cross-chain unhappy path', () => {
     const result = await aliceOnA.waitForReceipt(await aliceOnA.reclaim({lock, party: alice, counterparty: bob}))
     expect(result.reclaims).toHaveLength(1)
     expect(result.reclaims[0]?.recipient.toLowerCase()).toBe(ALICE_RECLAIM.toLowerCase())
-    expect(await aliceOnA.getLockState(lock)).toBe(LockState.Spent)
+    expect(await aliceOnA.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
     expect(
       await chainA.publicClient.readContract({
         address: fixtureA.erc20,
@@ -359,6 +359,6 @@ describe('cross-chain unhappy path', () => {
       }),
     ).toBe(reclaimTokensBefore + TOKENS)
     // chain B never saw the lock
-    expect(await bobOnB.getLockState(lock)).toBe(LockState.Unused)
+    expect(await bobOnB.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
   })
 })

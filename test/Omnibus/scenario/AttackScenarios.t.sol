@@ -90,6 +90,10 @@ contract Omnibus_AttackScenarios is Test {
     vm.deal(ATTACKER, 100 ether);
   }
 
+  function _swapIdFor(bytes32 _lock, Terms memory a, Terms memory b) internal view returns (bytes32) {
+    return omnibus.swapId(_lock, a, b);
+  }
+
   // ============ Terms Builders ============
 
   function _alice(uint256 chainId, Asset[] memory assets) internal view returns (Terms memory) {
@@ -115,7 +119,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.prank(BOB);
     omnibus.commit{value: amount}(lock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifier), BOB));
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Committed));
   }
 
   // ============ Attack 1: Double-Spend Same Chain ============
@@ -127,7 +131,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.warp(AT_PROPOSER_CLAIM);
     vm.prank(CHARLIE);
     omnibus.claim(SECRET, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Spent));
 
     // attacker tries to claim AGAIN within the same window
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
@@ -150,6 +154,7 @@ contract Omnibus_AttackScenarios is Test {
 
     Terms memory aliceTerms = _alice(CHAIN_A, AssetHelper.makeERC20(address(tokenA), tokenAAmount).toArray());
     Terms memory bobTerms = _bob(CHAIN_B, AssetHelper.makeERC20(address(tokenB), tokenBAmount).toArray());
+    bytes32 crossSwapId = omnibusA.swapId(crossLock, aliceTerms, bobTerms);
 
     // commits on each chain
     vm.chainId(CHAIN_A);
@@ -158,8 +163,8 @@ contract Omnibus_AttackScenarios is Test {
     tokenA.approve(address(omnibusA), tokenAAmount);
     omnibusA.commit(crossLock, aliceTerms, bobTerms, AuthHelper.keyedAuth(address(verifier), ALICE));
     vm.stopPrank();
-    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed));
-    assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Unused)); // independent
+    assertEq(uint8(omnibusA.lockState(crossSwapId)), uint8(LockState.Committed));
+    assertEq(uint8(omnibusB.lockState(crossSwapId)), uint8(LockState.Unused)); // independent
 
     vm.chainId(CHAIN_B);
     vm.warp(AT_TAKER_COMMIT);
@@ -167,15 +172,15 @@ contract Omnibus_AttackScenarios is Test {
     tokenB.approve(address(omnibusB), tokenBAmount);
     omnibusB.commit(crossLock, bobTerms, aliceTerms, AuthHelper.keyedAuth(address(verifier), BOB));
     vm.stopPrank();
-    assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Committed));
-    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed)); // unchanged
+    assertEq(uint8(omnibusB.lockState(crossSwapId)), uint8(LockState.Committed));
+    assertEq(uint8(omnibusA.lockState(crossSwapId)), uint8(LockState.Committed)); // unchanged
 
     // proposer reveals on Chain B (proposer-claim window), settling Bob's leg
     vm.chainId(CHAIN_B);
     vm.warp(AT_PROPOSER_CLAIM);
     omnibusB.claim(secret, aliceTerms, bobTerms);
-    assertEq(uint8(omnibusB.lockState(crossLock)), uint8(LockState.Spent));
-    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Committed)); // still independent
+    assertEq(uint8(omnibusB.lockState(crossSwapId)), uint8(LockState.Spent));
+    assertEq(uint8(omnibusA.lockState(crossSwapId)), uint8(LockState.Committed)); // still independent
 
     // replay on Chain B reverts
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
@@ -185,7 +190,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.chainId(CHAIN_A);
     vm.warp(AT_TAKER_CLAIM);
     omnibusA.claim(secret, bobTerms, aliceTerms);
-    assertEq(uint8(omnibusA.lockState(crossLock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibusA.lockState(crossSwapId)), uint8(LockState.Spent));
 
     // replay on Chain A reverts
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
@@ -203,14 +208,18 @@ contract Omnibus_AttackScenarios is Test {
   function test_attack_griefingCommitNoClaim_victimCanReclaim() public {
     (Terms memory aliceTerms, Terms memory bobTerms) = _commitBothSameChainNative(1 ether);
 
-    vm.warp(AT_PROPOSER_RECLAIM);
     uint256 aliceBalBefore = ALICE.balance;
     uint256 bobBalBefore = BOB.balance;
 
+    // each party independently reclaims their own leg after their own release
+    vm.warp(AT_PROPOSER_RECLAIM);
     vm.prank(ALICE);
     omnibus.reclaim(lock, aliceTerms, bobTerms);
+    vm.warp(B_RECLAIM + 500);
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bobTerms, aliceTerms);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Spent));
     assertEq(ALICE.balance - aliceBalBefore, 1 ether);
     assertEq(BOB.balance - bobBalBefore, 1 ether);
     assertEq(address(omnibus).balance, 0);
@@ -229,7 +238,7 @@ contract Omnibus_AttackScenarios is Test {
     vm.prank(ATTACKER);
     omnibus.claim(wrongSecret, aliceTerms, bobTerms);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Committed));
   }
 
   // ============ Attack 5: Terms Modification After Commit ============
@@ -246,19 +255,19 @@ contract Omnibus_AttackScenarios is Test {
     vm.prank(ATTACKER);
     omnibus.claim(SECRET, modifiedAlice, bobTerms);
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Committed));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Committed));
   }
 
   // ============ Attack 6: Replay - Reuse Spent Lock ============
 
   /// @notice a settled (Spent) lock is terminal: re-committing it with fresh, later-scheduled
-  ///         terms reverts at the state machine
-  function test_attack_replay_spentLockCannotBeReused() public {
+  ///         terms lands in its own isolated swap and cannot touch the settled one
+  function test_attack_replay_spentLockReuseIsIsolated() public {
     (Terms memory aliceTerms, Terms memory bobTerms) = _commitBothSameChainNative(1 ether);
 
     vm.warp(AT_PROPOSER_CLAIM);
     omnibus.claim(SECRET, aliceTerms, bobTerms);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Spent));
 
     // attacker builds a valid, later-scheduled pairing reusing the SAME (spent) lock
     Terms memory replayParty = TermsHelper.makeTerms(
@@ -269,10 +278,13 @@ contract Omnibus_AttackScenarios is Test {
     );
 
     vm.warp(9000); // inside the replay party's commit window [0, 10_000)
-    vm.expectRevert(IOmnibus.InvalidLockAdvancement.selector);
     vm.prank(ATTACKER);
     omnibus.commit{value: 1 ether}(lock, replayParty, replayCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER));
 
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    // state is swap-scoped: the replay pairing lives under its OWN swap id (and its
+    // hashlock secret is already public, so the attacker gains nothing); the settled
+    // swap's state is untouched and remains terminal
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, replayParty, replayCounter))), uint8(LockState.Free));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, aliceTerms, bobTerms))), uint8(LockState.Spent));
   }
 }

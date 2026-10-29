@@ -50,7 +50,7 @@ contract Omnibus_setVerifierActivity is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
     _commitFor(ALICE, lock, alice, bob); // keyed via verifierA
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     // deactivate A mid-swap: NEW A-keyed commits fail closed...
     omnibus.setVerifierActivity(address(verifierA), false);
@@ -75,7 +75,7 @@ contract Omnibus_setVerifierActivity is OmnibusTest {
     _warpToProposerClaim();
     vm.prank(ALICE);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), DEFAULT_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, DEFAULT_AMOUNT);
   }

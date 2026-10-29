@@ -152,6 +152,17 @@ contract Omnibus_withdrawFees is OmnibusTest {
     omnibus.withdrawFees(TREASURY);
   }
 
+  /// @notice a zero `to` reverts instead of burning the accrued balance, and leaves it intact
+  function test_withdrawFees_revertsWhen_toIsZeroAddress() public {
+    uint256 fee = _commitAliceOn(lock);
+
+    vm.expectRevert(IOmnibus.ZeroFeeRecipient.selector);
+    omnibus.withdrawFees(address(0));
+
+    // the revert must precede clearing accruedFees — nothing is lost
+    assertEq(omnibus.accruedFees(), fee);
+  }
+
   function test_withdrawFees_revertsWhen_transferFails() public {
     _commitAliceOn(lock);
 

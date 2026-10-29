@@ -56,13 +56,16 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   uint256 public accruedFees;
 
   /// @inheritdoc IOmnibus
-  mapping(bytes32 lock => LockState state) public lockState;
+  mapping(bytes32 swapId => LockState state) public lockState;
 
   /// @inheritdoc IOmnibus
-  mapping(bytes32 lock => bytes32 canonicalDigest) public termsHash;
+  mapping(bytes32 swapId => bytes32 canonicalDigest) public termsHash;
 
   /// @inheritdoc IOmnibus
-  mapping(bytes32 lock => mapping(bytes32 termsDigest => bool isPosted)) public posted;
+  mapping(bytes32 swapId => mapping(bytes32 termsDigest => bool isPosted)) public posted;
+
+  /// @inheritdoc IOmnibus
+  mapping(bytes32 swapId => mapping(bytes32 sideDigest => bool isReclaimed)) public reclaimed;
 
   /// @inheritdoc IOmnibus
   mapping(address verifier => bool active) public verifierActive;
@@ -87,8 +90,17 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
   }
 
-  /// @notice allows this contract to receive native currency
-  receive() external payable {}
+  /// @notice reject bare native transfers: native is only accepted via `commit`,
+  /// where it is accounted. Stray ETH would otherwise be permanently unrecoverable
+  /// (no sweep exists). Cannot stop a `selfdestruct` force-send, which needs no receive.
+  receive() external payable {
+    revert NativeNotAccepted();
+  }
+
+  /// @inheritdoc IOmnibus
+  function swapId(bytes32 lock, Terms calldata party, Terms calldata counterparty) external pure returns (bytes32) {
+    return _swapId(lock, TermsLib.digestTermsCanonically(party, counterparty));
+  }
 
   /// @inheritdoc IOmnibus
   function commitDigest(
@@ -133,36 +145,37 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     _enforceCorrectNative(party.totalNative() + commitmentFee);
 
     bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 swapId = _swapId(lock, canonicalDigest);
     bytes32 partyDigest = party.digestTerms();
 
     // single digest code path — same fn the commitDigest view uses (no inline re-derivation)
     _enforceCommitAuthorized(auth, _commitDigest(lock, partyDigest, counterparty.digestTerms(), keccak256(auth.signer)));
 
-    LockState current = lockState[lock];
+    LockState current = lockState[swapId];
     LockState target;
 
     // invalid states (committed, spent) will revert at _advanceLockTo since is either `Free` or `Committed`
     // and no valid advancement from committed => free.committed or spent => free/committed
     if (current == LockState.Unused) {
-      termsHash[lock] = canonicalDigest;
+      termsHash[swapId] = canonicalDigest;
       target = party.chainId == counterparty.chainId ? LockState.Free : LockState.Committed;
     }
     // no need to check sameness of chain; only way that current == LockState.Free
     // is if the terms had same chain in the previous `commit` call
     if (current == LockState.Free) {
-      _enforceSameTerms(termsHash[lock], canonicalDigest);
+      _enforceSameTerms(termsHash[swapId], canonicalDigest);
       // second same-chain commit must post the other side, not re-post the same one
-      if (posted[lock][partyDigest]) revert TermsAlreadyPosted();
+      if (posted[swapId][partyDigest]) revert TermsAlreadyPosted();
       target = LockState.Committed;
     }
 
-    _advanceLockTo(lock, current, target);
+    _advanceLockTo(swapId, current, target);
 
     // accrue the fee; the rest of msg.value is escrowed native owed back to reclaimRecipients
     accruedFees += commitmentFee;
 
     // record the side this commit posts
-    posted[lock][partyDigest] = true;
+    posted[swapId][partyDigest] = true;
 
     // transfer non-native assets
     party.transferAssetsNoNative(msg.sender, address(this));
@@ -177,55 +190,63 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     bytes32 lock = _generateLock(secret);
 
     // verify terms and state
-    _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
+    bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 swapId = _swapId(lock, canonicalDigest);
+    _enforceSameTerms(termsHash[swapId], canonicalDigest);
 
-    // counterparty terms _MUST_ be on same chainId
-    // so that the party may receive the assets
-    // party terms _MAY_ be on same chainId
+    // counterparty terms _MUST_ be on this chainId so that the party may
+    // receive the assets; party terms _MAY_ be on this chainId
     counterparty.enforceChainId(block.chainid);
 
-    // validate claim is happening in the correct window
-    if (TermsLib.proposedByParty(party, counterparty)) {
-      // party is the proposer which means the counterparty must have committed
-      // commitment check in a cross-chain swap is not on-chain enforceable so
-      // only deadlines are checked
-      // in same-chain swap, the lock checks for commitment of counterparty
-      TermsLib.enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp);
+    // terms validated at outset, so roles derive from terms themselves via deadline
+    // ordering
+    bool isPartyProposer = TermsLib.proposedByParty(party, counterparty);
+    Terms calldata proposer = isPartyProposer ? party : counterparty;
+    Terms calldata taker = isPartyProposer ? counterparty : party;
+
+
+    // proposer (secret holder) always claims first
+    // proposer's claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
+    //
+    // same-chain swaps are settled atomically for both parties, therefore 
+    // the only window to consider is the proposers claim window
+    //
+    // cross-chain has a proposer claim leg and taker claim leg
+    // proposer claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
+    // taker claim window is: [proposer.claimDeadline, proposer.reclaimRelease]
+    // 
+    // NB: taker's chainId is the chain on which proposer claims
+    if (taker.chainId == block.chainid) {
+      TermsLib.enforceWithin(taker.commitmentDeadline, proposer.claimDeadline, block.timestamp);
     } else {
-      // counterparty is proposer which means the counterparty has revealed the secret
-      // claim only after the claim deadline of the counterparty
-      // NB: this path is only reachable in the following:
-      // 1. during a cross-chain swap because otherwise the lock state is spent
-      //    since claiming occurs for both parties in this call
-      // 2. during a same-chain swap if the taker has the secret and calls
-      //    claim first - should never occur
-      //
-      // in both cases, the claim settles correctly
-      TermsLib.enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp);
+      TermsLib.enforceWithin(proposer.claimDeadline, proposer.reclaimRelease, block.timestamp);
     }
 
-    LockState current = lockState[lock];
+    // spend lock
+    LockState current = lockState[swapId];
     _enforceCommittedLock(current);
 
-    // mark as spent
-    _advanceLockTo(lock, current, LockState.Spent);
+    // marking as spent before any transfer blocks reentrant claims
+    _advanceLockTo(swapId, current, LockState.Spent);
 
-    // counterParty's side must have been posted for this lock
-    _enforcePosted(lock, counterparty.digestTerms());
+    // counterparty's side must have been posted for this lock
+    _enforcePosted(swapId, counterparty.digestTerms());
 
     // counterparty's assets to party's recipient
     counterparty.transferAssets(address(this), party.recipient);
+    emit Claim(lock, party.recipient, secret);
 
-    // if counterparty is on chainId, prevent double-spend by executing on counterparty
-    // terms
-    if (party.chainId == block.chainid) {
-      // counterparty's side must have been posted for this lock
-      _enforcePosted(lock, party.digestTerms());
+    bool isSameChain = party.chainId == counterparty.chainId;
+
+    // same-chain settles both legs atomically: either both transfers succeed or the whole
+    // claim reverts, so no one can take their incoming leg without delivering the outgoing one
+    if (isSameChain) {
+      // party's side must have been posted for this lock
+      _enforcePosted(swapId, party.digestTerms());
       // party's assets to counterparty's recipient
       party.transferAssets(address(this), counterparty.recipient);
+      emit Claim(lock, counterparty.recipient, secret);
     }
-
-    emit Claim(msg.sender, lock, secret);
   }
 
   /// @inheritdoc IOmnibus
@@ -239,42 +260,31 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     // if the counterparty is the proposer, then the party's reclaimRelease must have elapsed
     TermsLib.enforceWithin(party.reclaimRelease, type(uint256).max, block.timestamp);
 
-    _enforceSameTerms(termsHash[lock], TermsLib.digestTermsCanonically(party, counterparty));
+    bytes32 canonicalDigest = TermsLib.digestTermsCanonically(party, counterparty);
+    bytes32 swapId = _swapId(lock, canonicalDigest);
+    _enforceSameTerms(termsHash[swapId], canonicalDigest);
     // party's side must have been posted for this lock; checked after the terms are
     // proven genuine so the more specific reverts surface first
-    _enforcePosted(lock, party.digestTerms());
+    _enforcePosted(swapId, party.digestTerms());
 
-    LockState current = lockState[lock];
+    // reclaim returns ONLY the party's own leg to the party's own reclaimRecipient. each
+    // side reclaims independently, so a hostile counterparty recipient can never block the
+    // party's recovery, and no one can ever receive the counterparty's assets here
+    bytes32 partyDigest = party.digestTerms();
+    if (reclaimed[swapId][partyDigest]) revert AlreadyReclaimed();
 
-    bool reclaimCounterparty = counterparty.chainId == block.chainid && current == LockState.Committed;
-
-    // reclaim counterparty if on this chain and the current lock state is committed
-    // meaning counterparty has committed their assets
-    if (reclaimCounterparty) {
-      // lock is advanced here to ensure that reentrant calls fail since
-      // lock will be spent:
-      //
-      // reclaim allowed on free or committed only
-      // marking as spent enforces only free or committed as previous state
-      // will revert if lock state is unused or spent
-      // ie if claim has completed successfully
-      _advanceLockTo(lock, current, LockState.Spent);
-
-      // return everything to counterparty's recipient
-      // counterparty's side must have been posted for this lock
-      _enforcePosted(lock, counterparty.digestTerms());
-      counterparty.transferAssets(address(this), counterparty.reclaimRecipient);
-
-      emit Reclaimed(msg.sender, lock, counterparty.reclaimRecipient);
+    LockState current = lockState[swapId];
+    if (current == LockState.Spent) {
+      // a spent lock is reclaimable only mid-reclaim (the counterparty side already reclaimed);
+      // a claim-settled lock is spent with no reclaimed flag set, and must not be reclaimable
+      if (!reclaimed[swapId][counterparty.digestTerms()]) revert InvalidLockState();
+    } else {
+      // first reclaim of this swap: Committed or Free -> Spent (reverts on Unused/Spent)
+      _advanceLockTo(swapId, current, LockState.Spent);
     }
 
-    // must advance lock if it will not be updated by counterparty reclaim
-    if (!reclaimCounterparty) {
-      _advanceLockTo(lock, current, LockState.Spent);
-    }
-
-    // return everything to party's recipient
-    party.transferAssets(address(this), party.reclaimRecipient);
+    reclaimed[swapId][partyDigest] = true;
+    party.transferAssetsClamped(party.reclaimRecipient);
 
     emit Reclaimed(msg.sender, lock, party.reclaimRecipient);
   }
@@ -323,11 +333,22 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function withdrawFees(address to) external onlyOwner {
+    if (to == address(0)) revert ZeroFeeRecipient();
     // only accrued fees are withdrawable; escrowed native stays owed to reclaimRecipients
     uint256 amount = accruedFees;
     delete accruedFees;
     SafeTransferLib.safeTransferETH(to, amount);
     emit FeesWithdrawn(to, amount);
+  }
+
+  /// @notice renouncing ownership is permanently disabled
+  /// @dev overrides {Ownable-renounceOwnership} to always revert. Omnibus has no
+  /// ownerless mode: an owner of address(0) would permanently brick every
+  /// owner-only function (setCommitmentFee, setVerifierActivity, withdrawFees)
+  /// and strand any fees accrued up to that point, with no path left to move
+  /// them. Ownership can still be TRANSFERRED via the Ownable2Step two-step flow.
+  function renounceOwnership() public pure override {
+    revert RenounceDisabled();
   }
 
   /// @notice the ONE digest code path — commit and the public commitDigest view both call this
@@ -436,4 +457,9 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function _generateLock(bytes32 secret) internal pure returns (bytes32 lock) {
     lock = EfficientHashLib.hash(secret);
   }
+
+  function _swapId(bytes32 lock, bytes32 canonicalDigest) internal pure returns (bytes32 swapId) {
+    swapId = EfficientHashLib.hash(lock, canonicalDigest);
+  }
+
 }
