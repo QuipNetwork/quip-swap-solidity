@@ -933,7 +933,7 @@ export const omnibusAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1518,6 +1518,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "NativeNotAccepted",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotQuipWallet",
     "inputs": []
   },
@@ -1542,6 +1547,11 @@ export const omnibusAbi = [
         "internalType": "address"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "RenounceDisabled",
+    "inputs": []
   },
   {
     "type": "error",

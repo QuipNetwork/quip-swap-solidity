@@ -92,6 +92,12 @@ interface IOmnibus {
   /// @notice thrown when a side attempts to reclaim its leg twice
   error AlreadyReclaimed();
 
+  /// @notice thrown by renounceOwnership: Omnibus has no ownerless mode
+  error RenounceDisabled();
+
+  /// @notice thrown by receive: bare native transfers are rejected; native must flow through commit
+  error NativeNotAccepted();
+
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
   /// @param newFee the new fee
@@ -170,6 +176,15 @@ interface IOmnibus {
   function verifierActive(address verifier) external view returns (bool active);
 
   /// @notice sets the activity status of an ERC-7913 verifier (owner only)
+  /// @dev takes effect immediately (no grace window); commit reads it live on every
+  /// keyed-route call. Deactivating a verifier mid-swap STALLS any keyed leg already
+  /// escrowed under it: a same-chain swap needs two commits and nothing binds the
+  /// second to the verifier state that admitted the first, so once it is deactivated
+  /// the counterparty can no longer complete the keyed route and the first leg stays
+  /// escrowed until that party reaches its own reclaimRelease (the commitmentFee is
+  /// forfeited either way). The wallet route never reads this mapping, so a
+  /// factory-wallet counterparty can still settle. Off-chain clients should avoid
+  /// deactivating a verifier while swaps under it are in flight, or warn affected users.
   /// @param verifier the verifier address (non-zero)
   /// @param active the new activity status
   function setVerifierActivity(address verifier, bool active) external;
