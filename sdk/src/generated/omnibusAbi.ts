@@ -933,7 +933,7 @@ export const omnibusAbi = [
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -1201,16 +1201,16 @@ export const omnibusAbi = [
     "name": "Claim",
     "inputs": [
       {
-        "name": "recipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "lock",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       },
       {
         "name": "secret",
@@ -1438,6 +1438,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "AssetTypeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },
@@ -1503,7 +1508,17 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidReclaimRelease",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "MalformedSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NativeNotAccepted",
     "inputs": []
   },
   {
@@ -1535,6 +1550,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "RenounceDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TermsAlreadyPosted",
     "inputs": []
   },
@@ -1546,6 +1566,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "TermsNotPosted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyAssets",
     "inputs": []
   },
   {
@@ -1586,6 +1611,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroFactory",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroFeeRecipient",
     "inputs": []
   },
   {

@@ -77,14 +77,12 @@ export function claimLog(args: {
   recipient: Address
   logIndex?: number
 }): Log {
-  const topics = encodeEventTopics({abi: omnibusAbi, eventName: 'Claim', args: {lock: args.lock}})
-  const data = encodeAbiParameters(
-    [
-      {name: 'recipient', type: 'address'},
-      {name: 'secret', type: 'bytes32'},
-    ],
-    [args.recipient, args.secret],
-  )
+  const topics = encodeEventTopics({
+    abi: omnibusAbi,
+    eventName: 'Claim',
+    args: {lock: args.lock, recipient: args.recipient},
+  })
+  const data = encodeAbiParameters([{name: 'secret', type: 'bytes32'}], [args.secret])
   return baseLog(args.address, topics, data, args.logIndex ?? 0)
 }
 

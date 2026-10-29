@@ -10,6 +10,22 @@ import {validateAsset} from './assets.js'
 import {QuipSwapError} from './errors.js'
 import type {Asset, Terms} from './types.js'
 
+/**
+ * Maximum assets permitted in a single side's terms — mirrors
+ * `TermsLib.MAX_ASSETS_PER_SIDE`. Bounds the per-side `assets` array so that
+ * settling both legs together (same-chain `claim`) always fits the block gas
+ * limit; without it a padded leg could commit yet make every claim/reclaim
+ * exceed the limit forever (a freeze, and cross-chain a theft).
+ */
+export const MAX_ASSETS_PER_SIDE = 20
+
+/**
+ * `2^256 - 1` — the forbidden `reclaimRelease`. It is the reclaim window's synthetic upper
+ * bound, so a `reclaimRelease` equal to it degenerates the window. Defined locally (not
+ * imported from windows.ts) to avoid a terms↔windows import cycle.
+ */
+const MAX_UINT256 = (1n << 256n) - 1n
+
 /** Input shape for {@link createTerms}; identical to {@link Terms}. */
 export interface CreateTermsArgs {
   /** Chain id where this side's assets live; must be `> 0n`. */
@@ -75,6 +91,7 @@ export function createTerms(args: CreateTermsArgs): Terms {
  *
  * ```solidity
  * if (terms.assets.length == 0) revert EmptyAssets();
+ * if (terms.assets.length > MAX_ASSETS_PER_SIDE) revert TooManyAssets();
  * if (reclaimRecipient == 0 || recipient == 0) revert ZeroAddressRecipient();
  * if (terms.commitmentDeadline == 0) revert ZeroDeadline();
  * if (!(commitmentDeadline < claimDeadline && claimDeadline < reclaimRelease))
@@ -90,9 +107,9 @@ export function createTerms(args: CreateTermsArgs): Terms {
  * reject the proposer's already-elapsed deadline during the taker's commit.
  *
  * @param terms - The terms to validate (e.g. parsed from JSON or an API).
- * @throws QuipSwapError `EMPTY_ASSETS` | `ZERO_ADDRESS_RECIPIENT` |
- *   `ZERO_DEADLINE` | `DISORDERED_DEADLINES` | `ZERO_CHAIN_ID`, plus every
- *   asset-level code from {@link validateAsset}.
+ * @throws QuipSwapError `EMPTY_ASSETS` | `TOO_MANY_ASSETS` |
+ *   `ZERO_ADDRESS_RECIPIENT` | `ZERO_DEADLINE` | `DISORDERED_DEADLINES` |
+ *   `ZERO_CHAIN_ID`, plus every asset-level code from {@link validateAsset}.
  * @see TermsLib.validateTerms
  * @example
  * ```ts
@@ -104,6 +121,15 @@ export function validateTerms(terms: Terms): void {
     throw new QuipSwapError({
       code: 'EMPTY_ASSETS',
       message: 'Terms must contain at least one asset (contract: EmptyAssets)',
+    })
+  }
+  if (terms.assets.length > MAX_ASSETS_PER_SIDE) {
+    throw new QuipSwapError({
+      code: 'TOO_MANY_ASSETS',
+      message:
+        `Terms may carry at most ${MAX_ASSETS_PER_SIDE} assets per side; got ${terms.assets.length} ` +
+        '(contract: TooManyAssets)',
+      details: {count: terms.assets.length, max: MAX_ASSETS_PER_SIDE},
     })
   }
   if (!isRecipientAddress(terms.reclaimRecipient) || !isRecipientAddress(terms.recipient)) {
@@ -132,6 +158,19 @@ export function validateTerms(terms: Terms): void {
         claimDeadline: terms.claimDeadline,
         reclaimRelease: terms.reclaimRelease,
       },
+    })
+  }
+  // reclaim's window is [reclaimRelease, 2^256-1); the max value makes it degenerate and
+  // reclaim would revert forever. Only the exact max is rejected — a near-max reclaimRelease
+  // is well-formed and the SDK's schedule validator is where unreachably-distant values are
+  // caught (reasonableness, not well-formedness).
+  if (terms.reclaimRelease === MAX_UINT256) {
+    throw new QuipSwapError({
+      code: 'INVALID_RECLAIM_RELEASE',
+      message:
+        'reclaimRelease must be strictly below 2^256-1, which would make the reclaim window degenerate ' +
+        '(contract: InvalidReclaimRelease)',
+      details: {reclaimRelease: terms.reclaimRelease},
     })
   }
   if (terms.chainId <= 0n) {

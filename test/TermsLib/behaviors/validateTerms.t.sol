@@ -30,6 +30,26 @@ contract TermsLib_validateTerms is TermsLibTest {
     );
   }
 
+  /// @dev builds `count` valid one-wei native assets (the padding attack's shape)
+  function _nativeAssets(uint256 count) internal pure returns (Asset[] memory assets) {
+    assets = new Asset[](count);
+    for (uint256 i; i < count; ++i) {
+      assets[i] = Asset({assetType: AssetType.Native, target: address(0), id: 0, amount: 1});
+    }
+  }
+
+  function _termsWithAssets(Asset[] memory assets) internal view returns (Terms memory) {
+    return TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
+      assets
+    );
+  }
+
   // ============ Success Cases ============
 
   function test_validateTerms_validTerms() public view {
@@ -72,7 +92,20 @@ contract TermsLib_validateTerms is TermsLibTest {
     harness.exposed_validateTerms(terms);
   }
 
+  function test_validateTerms_succeedsWhen_exactlyMaxAssets() public view {
+    // the boundary is inclusive: exactly MAX_ASSETS_PER_SIDE is allowed
+    harness.exposed_validateTerms(_termsWithAssets(_nativeAssets(TermsLib.MAX_ASSETS_PER_SIDE)));
+  }
+
   // ============ Revert Cases ============
+
+  function test_validateTerms_revertsWhen_tooManyAssets() public {
+    // one over the cap: the padded leg is rejected at validation, so it can never
+    // commit and can never freeze/steal at settlement
+    Terms memory terms = _termsWithAssets(_nativeAssets(TermsLib.MAX_ASSETS_PER_SIDE + 1));
+    vm.expectRevert(TermsLib.TooManyAssets.selector);
+    harness.exposed_validateTerms(terms);
+  }
 
   function test_validateTerms_revertsWhen_emptyAssets() public {
     Asset[] memory emptyAssets = new Asset[](0);
@@ -181,6 +214,41 @@ contract TermsLib_validateTerms is TermsLibTest {
 
     vm.expectRevert(TermsLib.DisordedDeadlines.selector);
     harness.exposed_validateTerms(terms);
+  }
+
+  /// @notice reclaimRelease == type(uint256).max makes the reclaim window
+  /// [reclaimRelease, type(uint256).max) degenerate (lower == upper), so it is rejected
+  /// at commit — otherwise reclaim would revert InvalidRange forever, stranding the leg
+  function test_validateTerms_revertsWhen_reclaimReleaseIsMax() public {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      type(uint256).max, // degenerate reclaim window
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    vm.expectRevert(TermsLib.InvalidReclaimRelease.selector);
+    harness.exposed_validateTerms(terms);
+  }
+
+  /// @notice only the exact max is rejected: a near-max reclaimRelease is well-formed and
+  /// ACCEPTED. Its (un)reachability is an SDK/vetting concern, not the contract's — this
+  /// is the well-formedness vs reasonableness boundary
+  function test_validateTerms_succeedsWhen_reclaimReleaseNearMax() public view {
+    Terms memory terms = TermsHelper.makeTerms(
+      block.chainid,
+      ALICE,
+      ALICE_RECIPIENT,
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      type(uint256).max - 1, // well-formed window [max-1, max); accepted
+      _makeNativeAsset(1 ether).toArray()
+    );
+
+    harness.exposed_validateTerms(terms); // does not revert
   }
 
   // ============ Deadline Non-Zero ============

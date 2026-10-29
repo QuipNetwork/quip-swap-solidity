@@ -13,7 +13,7 @@
  * Run via `bun run test:integration` (the runner starts Anvil, builds
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex} from 'viem'
+import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex, zeroAddress} from 'viem'
 import type {Address, Hash} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
@@ -28,6 +28,7 @@ import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
 import {digestTerms, digestTermsCanonically, generateLock, swapId} from '../../src/hashing.js'
 import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import type {OmnibusReceipt} from '../../src/receipts.js'
+import {MAX_ASSETS_PER_SIDE} from '../../src/terms.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
 import {keyedAuth as keyedAuthFor, deregisterWallet, registerWallet, walletAuth} from '../helpers/auth.js'
@@ -301,6 +302,77 @@ describe('commit authorization', () => {
     )
   })
 
+  it('a leg padded past MAX_ASSETS_PER_SIDE rejects TOO_MANY_ASSETS in preflight; the contract agrees (TooManyAssets)', async () => {
+    // the gas-griefing padded leg (thousands of one-wei native entries) is bounded so
+    // settling both legs together can never exceed the block gas limit
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const padded = Array.from({length: MAX_ASSETS_PER_SIDE + 1}, () => nativeAsset(1n))
+    const alice = s.aliceTerms(padded)
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('TOO_MANY_ASSETS')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract enforces the same cap (raw call bypassing preflight)
+    await expectContractError(
+      rawCommit(ctx.alice, lock, alice, bob, BigInt(MAX_ASSETS_PER_SIDE + 1)),
+      'TooManyAssets',
+    )
+  })
+
+  it('an ERC20-declared leg pointing at an ERC721 rejects ASSET_TYPE_MISMATCH in preflight; the contract agrees (AssetTypeMismatch)', async () => {
+    // the selector-collision trap: declared ERC20 but the target is a real ERC721. The
+    // guard/probe both fire before any token movement, so no mint or approval is needed.
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([erc20Asset(fixture.erc721, 1n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('ASSET_TYPE_MISMATCH')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract rejects it at deposit too (raw call bypassing preflight); msg.value is
+    // exactly totalNative (0) + fee (0 in this suite)
+    await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 0n), 'AssetTypeMismatch')
+  })
+
+  it('a leg with reclaimRelease == 2^256-1 rejects INVALID_RECLAIM_RELEASE in preflight; the contract agrees (InvalidReclaimRelease)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    // the taker (counterparty) leg carries the degenerate reclaimRelease; validateTerms runs
+    // on both legs, so the proposer's own commit is rejected before the swap can start
+    const bob = {...s.bobTerms([erc20Asset(fixture.erc20, 10n)]), reclaimRelease: (1n << 256n) - 1n}
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: keyedAuth(ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('INVALID_RECLAIM_RELEASE')
+    }
+    expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Unused)
+
+    // the contract rejects it too (raw call bypassing preflight)
+    await expectContractError(rawCommit(ctx.alice, lock, alice, bob, 10n), 'InvalidReclaimRelease')
+  })
+
   it('a keyed signer whose verifier was never activated reverts on-chain (VerifierNotActive)', async () => {
     const {lock} = nextSecret()
     const s = await freshSchedule()
@@ -393,7 +465,9 @@ describe('commit authorization', () => {
     await ctx.warpTo(s.anchors.proposerClaim)
     const hash = await charlieClient.claim({secret, party: alice, counterparty: bob})
     const result = await confirmReceipt(hash)
-    expect(result.claims).toHaveLength(1)
+    // same-chain claim emits one Claim per leg; neither recipient is charlie (the caller)
+    expect(result.claims).toHaveLength(2)
+    expect(result.claims.map(c => c.recipient.toLowerCase())).not.toContain(ctx.charlie.address.toLowerCase())
     expect(await aliceClient.getLockState(swapId(lock, alice, bob))).toBe(LockState.Spent)
   })
 })
@@ -447,6 +521,10 @@ describe('native commits and fee handling', () => {
 
   it('setCommitmentFee above MAX_FEE reverts FeeExceedsMax', async () => {
     await expectContractError(ownerClient.admin.setCommitmentFee(10n ** 16n + 1n), 'FeeExceedsMax')
+  })
+
+  it('withdrawFees to the zero address reverts ZeroFeeRecipient', async () => {
+    await expectContractError(ownerClient.admin.withdrawFees(zeroAddress), 'ZeroFeeRecipient')
   })
 })
 
@@ -719,10 +797,14 @@ describe('same-chain happy path', () => {
     expect(await erc20Balance(fixture.erc20, ALICE_RECIPIENT)).toBe(aliceRecipientTokensBefore + TOKENS)
     expect(await ctx.publicClient.getBalance({address: BOB_RECIPIENT})).toBe(bobRecipientNativeBefore + NATIVE)
 
-    // the Claim event reveals the ORIGINAL secret
-    expect(claim.claims).toHaveLength(1)
-    expect(claim.claims[0]?.secret).toBe(secret)
-    expect(claim.claims[0]?.lock).toBe(lock)
+    // a same-chain claim emits one Claim per payout leg, each naming its terms-pinned
+    // recipient (NOT the caller) and revealing the ORIGINAL secret
+    expect(claim.claims).toHaveLength(2)
+    expect(claim.claims.every(c => c.secret === secret && c.lock === lock)).toBe(true)
+    const recipients = claim.claims.map(c => c.recipient.toLowerCase()).sort()
+    expect(recipients).toEqual([ALICE_RECIPIENT.toLowerCase(), BOB_RECIPIENT.toLowerCase()].sort())
+    // the caller (aliceClient's sender) is NOT among the emitted recipients
+    expect(recipients).not.toContain(ctx.alice.address.toLowerCase())
   })
 })
 

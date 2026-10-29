@@ -90,8 +90,12 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     DOMAIN_SEPARATOR = keccak256(abi.encode(COMMIT_DIGEST_TAG, block.chainid, address(this)));
   }
 
-  /// @notice allows this contract to receive native currency
-  receive() external payable {}
+  /// @notice reject bare native transfers: native is only accepted via `commit`,
+  /// where it is accounted. Stray ETH would otherwise be permanently unrecoverable
+  /// (no sweep exists). Cannot stop a `selfdestruct` force-send, which needs no receive.
+  receive() external payable {
+    revert NativeNotAccepted();
+  }
 
   /// @inheritdoc IOmnibus
   function swapId(bytes32 lock, Terms calldata party, Terms calldata counterparty) external pure returns (bytes32) {
@@ -230,6 +234,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
     // counterparty's assets to party's recipient
     counterparty.transferAssets(address(this), party.recipient);
+    emit Claim(lock, party.recipient, secret);
 
     bool isSameChain = party.chainId == counterparty.chainId;
 
@@ -240,9 +245,8 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
       _enforcePosted(swapId, party.digestTerms());
       // party's assets to counterparty's recipient
       party.transferAssets(address(this), counterparty.recipient);
+      emit Claim(lock, counterparty.recipient, secret);
     }
-
-    emit Claim(msg.sender, lock, secret);
   }
 
   /// @inheritdoc IOmnibus
@@ -329,11 +333,22 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
 
   /// @inheritdoc IOmnibus
   function withdrawFees(address to) external onlyOwner {
+    if (to == address(0)) revert ZeroFeeRecipient();
     // only accrued fees are withdrawable; escrowed native stays owed to reclaimRecipients
     uint256 amount = accruedFees;
     delete accruedFees;
     SafeTransferLib.safeTransferETH(to, amount);
     emit FeesWithdrawn(to, amount);
+  }
+
+  /// @notice renouncing ownership is permanently disabled
+  /// @dev overrides {Ownable-renounceOwnership} to always revert. Omnibus has no
+  /// ownerless mode: an owner of address(0) would permanently brick every
+  /// owner-only function (setCommitmentFee, setVerifierActivity, withdrawFees)
+  /// and strand any fees accrued up to that point, with no path left to move
+  /// them. Ownership can still be TRANSFERRED via the Ownable2Step two-step flow.
+  function renounceOwnership() public pure override {
+    revert RenounceDisabled();
   }
 
   /// @notice the ONE digest code path — commit and the public commitDigest view both call this

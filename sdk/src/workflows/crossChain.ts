@@ -66,6 +66,32 @@ export interface ValidateCrossChainScheduleArgs {
    * understand your chains' finality.
    */
   readonly minimumBufferSeconds?: bigint
+  /**
+   * The maximum plausible CLOCK SKEW, in SECONDS, between the two chains'
+   * block timestamps — the amount by which the taker's chain may lag (or
+   * the proposer's chain may run ahead of) wall-clock relative to each other.
+   *
+   * Cross-chain, the six timestamps are NOT judged against one clock. Each
+   * side's windows are enforced against its own chain's `block.timestamp`,
+   * and the taker's reaction buffer is the ONE gap that straddles both: the
+   * secret is revealed when the proposer claims on the TAKER's chain, but the
+   * taker's own claim window CLOSES on the PROPOSER's chain at
+   * `proposer.reclaimRelease`. If the proposer's chain runs ahead, that close
+   * arrives early in wall-clock and eats into the reaction window — a large
+   * enough skew can shut it before the revealed secret is even usable, letting
+   * the proposer collect the taker's leg and reclaim its own. Sequencer-set L2
+   * timestamps can deviate from wall-clock, and no two chains share a clock.
+   *
+   * Optional, defaults to `0n` (no skew allowance — preserves prior behavior).
+   * When set, the taker's reaction buffer
+   * (`proposer.reclaimRelease - proposer.claimDeadline`) must exceed the
+   * operational buffer by AT LEAST this much, i.e. be at least
+   * `minimumBufferSeconds + maxClockSkewSeconds`; otherwise validation throws
+   * `INSUFFICIENT_REACTION_BUFFER`. Set it to the worst-case skew you are
+   * willing to tolerate for THIS chain pair — operational slack and skew are
+   * independent hazards that both consume the same reaction window.
+   */
+  readonly maxClockSkewSeconds?: bigint
 }
 
 /** The validated cross-chain schedule summary. */
@@ -101,6 +127,10 @@ export interface CrossChainSchedule {
  * 4. Every gap between adjacent timestamps in the interleaved schedule —
  *    including the reaction buffer — is at least `minimumBufferSeconds`
  *    (defaults to {@link DEFAULT_CROSS_CHAIN_BUFFER_SECONDS} when omitted).
+ * 5. The taker's reaction buffer additionally covers the chain pair's clock
+ *    skew: it is at least `minimumBufferSeconds + maxClockSkewSeconds` (the
+ *    reaction buffer is the only gap judged across both chains' clocks). With
+ *    the default `maxClockSkewSeconds` of `0n` this adds no constraint.
  *
  * This validates the SCHEDULE only (interleaving, roles, buffers) and reads
  * no chain — it is NOT proof that any party has committed. A taker must
@@ -113,7 +143,9 @@ export interface CrossChainSchedule {
  * @throws QuipSwapError - structural codes; `DISORDERED_DEADLINES`;
  *   `SECRET_HOLDER_NOT_PROPOSER` when the roles are inverted;
  *   `CHAIN_ID_MISMATCH` when both legs share a chain;
- *   `INSUFFICIENT_BUFFER` when any adjacent gap is below the minimum.
+ *   `INSUFFICIENT_BUFFER` when any adjacent gap is below the minimum;
+ *   `INSUFFICIENT_REACTION_BUFFER` when the taker's reaction buffer does not
+ *   also cover `maxClockSkewSeconds` on top of the operational buffer.
  * @see TermsLib.validateTermPairing, test/attack/CrossChainFreeOption.t.sol
  * @example
  * ```ts
@@ -128,6 +160,7 @@ export interface CrossChainSchedule {
 export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs): CrossChainSchedule {
   const {proposerTerms, takerTerms} = args
   const minimumBufferSeconds = args.minimumBufferSeconds ?? DEFAULT_CROSS_CHAIN_BUFFER_SECONDS
+  const maxClockSkewSeconds = args.maxClockSkewSeconds ?? 0n
   validateTerms(proposerTerms)
   validateTerms(takerTerms)
   validateTermPairing(proposerTerms, takerTerms)
@@ -160,11 +193,39 @@ export function validateCrossChainSchedule(args: ValidateCrossChainScheduleArgs)
   // same-chain validator); throws INSUFFICIENT_BUFFER on a too-tight gap
   const {minimumGapSeconds} = checkScheduleBuffers(proposerTerms, takerTerms, minimumBufferSeconds)
 
+  // CLOCK SKEW: the taker's reaction buffer is the ONE gap judged across both
+  // chains' clocks — it opens on the taker chain (the proposer's reveal) and
+  // closes on the proposer chain (`proposer.reclaimRelease`). checkScheduleBuffers
+  // already guaranteed it covers `minimumBufferSeconds`; require it to ALSO
+  // absorb the chain pair's clock skew on top (both hazards consume the same
+  // window). With the default maxClockSkewSeconds of 0n this is a no-op.
+  const reactionBufferSeconds = proposerTerms.reclaimRelease - proposerTerms.claimDeadline
+  const requiredReactionBufferSeconds = minimumBufferSeconds + maxClockSkewSeconds
+  if (reactionBufferSeconds < requiredReactionBufferSeconds) {
+    throw new QuipSwapError({
+      code: 'INSUFFICIENT_REACTION_BUFFER',
+      message:
+        "The taker's post-reveal reaction buffer (proposer.reclaimRelease - proposer.claimDeadline) is " +
+        `${reactionBufferSeconds}s, below the required ${requiredReactionBufferSeconds}s ` +
+        `(minimumBufferSeconds ${minimumBufferSeconds}s + maxClockSkewSeconds ${maxClockSkewSeconds}s). ` +
+        "This is the only gap judged across BOTH chains' clocks — the secret reveals on the taker's chain " +
+        "but the taker's claim window closes on the proposer's chain — so it must exceed the operational " +
+        "buffer by at least the chain pair's clock skew, or a proposer-chain clock running ahead can shut " +
+        'the window before the revealed secret is usable',
+      details: {
+        reactionBufferSeconds,
+        requiredReactionBufferSeconds,
+        minimumBufferSeconds,
+        maxClockSkewSeconds,
+      },
+    })
+  }
+
   return {
     proposerTerms,
     takerTerms,
     // reactionBuffer = proposer.reclaimRelease - proposer.claimDeadline
-    reactionBufferSeconds: proposerTerms.reclaimRelease - proposerTerms.claimDeadline,
+    reactionBufferSeconds,
     minimumGapSeconds,
   }
 }

@@ -31,6 +31,14 @@ contract Omnibus_commit is OmnibusTest {
     );
   }
 
+  /// @dev `count` valid one-wei native assets — the gas-griefing padding shape
+  function _nativeAssetsOfCount(uint256 count) internal pure returns (Asset[] memory assets) {
+    assets = new Asset[](count);
+    for (uint256 i; i < count; ++i) {
+      assets[i] = AssetHelper.makeNative(1);
+    }
+  }
+
   // ============ Success Cases ============
 
   function test_commit_sameChainFirstCommit() public {
@@ -286,6 +294,44 @@ contract Omnibus_commit is OmnibusTest {
 
     vm.warp(AT_PROPOSER_COMMIT);
     vm.expectRevert(TermsLib.ChainIdMismatch.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
+  }
+
+  /// @notice a leg declared ERC20 but pointing at a stock ERC721 is rejected at commit.
+  /// ALICE owns token 1 and has approved the omnibus, so absent the guard this commits
+  /// (transferFrom moves the token, the balanceOf delta reads 1 == amount) and then
+  /// freezes every payout — cross-chain, the attacker's bait leg. Blocked at deposit.
+  function test_commit_revertsWhen_erc20LegIsActuallyERC721() public {
+    Asset memory trap = Asset({assetType: AssetType.ERC20, target: address(mockERC721), id: 0, amount: 1});
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, trap.toArray());
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    uint256 value = _totalNativeForCommit(alice) + omnibus.commitmentFee();
+    vm.expectRevert(TermsLib.AssetTypeMismatch.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: value}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
+  }
+
+  /// @notice a counterparty (taker) leg carrying reclaimRelease == type(uint256).max is the
+  /// realistic finding scenario (the taker's is the last/largest deadline). validateTerms runs
+  /// on BOTH legs at commit, so the proposer's own commit reverts InvalidReclaimRelease and the
+  /// swap can never start — nobody can escrow into a leg whose reclaim would be permanently bricked
+  function test_commit_revertsWhen_counterpartyReclaimReleaseIsMax() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      BOB,
+      BOB_RECIPIENT,
+      BOB_COMMIT_DEADLINE,
+      BOB_CLAIM_DEADLINE,
+      type(uint256).max,
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.InvalidReclaimRelease.selector);
     vm.prank(ALICE);
     omnibus.commit{value: DEFAULT_AMOUNT}(lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE));
   }
@@ -555,6 +601,49 @@ contract Omnibus_commit is OmnibusTest {
     omnibus.commit{value: _totalNativeForCommit(alice)}(
       lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
     );
+  }
+
+  function test_commit_revertsWhen_tooManyPartyAssets() public {
+    // a party leg padded past the cap is rejected at commit — it can never enter escrow, so
+    // it can never make claim/reclaim exceed the block gas limit (freeze / cross-chain theft)
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE + 1));
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.TooManyAssets.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+  }
+
+  function test_commit_revertsWhen_tooManyCounterpartyAssets() public {
+    // commit validates BOTH sides, so a padded COUNTERPARTY leg is rejected too — the victim
+    // cannot be tricked into committing against an over-capped counterparty leg
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTermsOn(block.chainid, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE + 1));
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.expectRevert(TermsLib.TooManyAssets.selector);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+  }
+
+  function test_commit_succeedsWhen_exactlyMaxAssets() public {
+    // the cap boundary is inclusive: a leg with exactly MAX_ASSETS_PER_SIDE commits through the
+    // real path (not just the exposed validator)
+    Terms memory alice = _proposerSide(ALICE, ALICE_RECIPIENT, _nativeAssetsOfCount(TermsLib.MAX_ASSETS_PER_SIDE));
+    Terms memory bob = _bobTerms();
+
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.prank(ALICE);
+    omnibus.commit{value: _totalNativeForCommit(alice)}(
+      lock, alice, bob, AuthHelper.keyedAuth(address(verifierA), ALICE)
+    );
+
+    _assertSwapState(lock, alice, bob, LockState.Free);
   }
 
   // ============ Fee Tests ============

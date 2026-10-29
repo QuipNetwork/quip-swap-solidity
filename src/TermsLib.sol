@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
 import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
+import {ERC165Checker} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/ERC165Checker.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
@@ -45,6 +46,19 @@ struct Terms {
 }
 
 library TermsLib {
+  // ============ Constants ============
+
+  /// @notice the maximum number of assets permitted in a single side's terms
+  /// @dev bounds the per-side `assets` array so the combined cost of settling BOTH
+  /// sides together (same-chain `claim`, which moves both legs in one call) always
+  /// fits well within the block gas limit of every chain Omnibus is deployed to.
+  /// Without this cap a leg could be padded (e.g. thousands of one-wei native
+  /// entries) to commit within one block yet make every subsequent claim/reclaim
+  /// exceed the block gas limit forever — a permanent freeze, and cross-chain a
+  /// theft (the padded leg's chain can never settle while the healthy leg pays out).
+  /// A low-tens bound is ample for any realistic basket swap.
+  uint256 internal constant MAX_ASSETS_PER_SIDE = 20;
+
   // ============ Errors ============
 
   /// @notice thrown when an asset has zero amount
@@ -74,11 +88,23 @@ library TermsLib {
   /// @notice thrown when terms have no assets
   error EmptyAssets();
 
+  /// @notice thrown when a side's terms carry more than MAX_ASSETS_PER_SIDE assets
+  error TooManyAssets();
+
   /// @notice thrown when a lifecycle deadline is zero
   error ZeroDeadline();
 
+  /// @notice thrown when reclaimRelease is type(uint256).max, which would make the reclaim
+  /// window [reclaimRelease, type(uint256).max) degenerate and revert on every reclaim
+  error InvalidReclaimRelease();
+
   /// @notice thrown when a pulled fungible asset delivers less than its declared amount
   error UnexpectedAmountReceived();
+
+  /// @notice thrown at deposit when an ERC20-declared target also answers as an ERC721
+  /// (ERC165). ERC20 transferFrom/balanceOf share selectors with ERC721, so a stock NFT
+  /// passes the deposit reconciliation but every payout via transfer() reverts forever.
+  error AssetTypeMismatch();
 
   /// @notice thrown when the current timestamp falls outside an action's window
   /// (before its lower bound or at/after its upper bound)
@@ -166,6 +192,9 @@ library TermsLib {
   /// @param terms the terms to validate
   function validateTerms(Terms calldata terms) internal pure {
     if (terms.assets.length == 0) revert EmptyAssets();
+    // cap the per-side asset count so settling both legs together always fits the
+    // block gas limit (see MAX_ASSETS_PER_SIDE) — blocks the gas-griefing padded leg
+    if (terms.assets.length > MAX_ASSETS_PER_SIDE) revert TooManyAssets();
     if (terms.reclaimRecipient == address(0) || terms.recipient == address(0)) {
       revert ZeroAddressRecipient();
     }
@@ -180,6 +209,9 @@ library TermsLib {
     if (!(terms.commitmentDeadline < terms.claimDeadline && terms.claimDeadline < terms.reclaimRelease)) {
       revert DisordedDeadlines();
     }
+    // reclaim's window is [reclaimRelease, type(uint256).max); a reclaimRelease of max makes it
+    // degenerate otherwise
+    if (terms.reclaimRelease == type(uint256).max) revert InvalidReclaimRelease();
     enforceNonZeroChainId(terms);
     validateAssets(terms);
   }
@@ -269,6 +301,19 @@ library TermsLib {
         // a single specific token; no fungible amount to reconcile
         transferAsset(asset, from, to);
         continue;
+      }
+      // an ERC20-declared target that also answers as an ERC721 is a selector-collision
+      // trap: transferFrom/balanceOf collide, so the deposit reconciles as a 1-unit ERC20,
+      // but every payout settles via transfer(address,uint256) — which no ERC721 implements —
+      // and reverts forever (same-chain freeze, cross-chain theft). reject it at deposit,
+      // on the chain where the token actually lives. A custom contract that lies on ERC165
+      // still slips through: that is the "malicious token is UNSUPPORTED — vet the counter-leg"
+      // case documented on commit, not something an on-chain probe can settle.
+      if (
+        asset.assetType == AssetType.ERC20
+          && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
+      ) {
+        revert AssetTypeMismatch();
       }
       // ERC20 / ERC1155: require exactly `amount` to be received
       uint256 balanceBefore = heldBalance(asset, to);

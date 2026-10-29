@@ -26,7 +26,7 @@ export type {QuipSwapErrorCode, QuipSwapErrorDetails} from './errors.js'
 export {nativeAsset, erc20Asset, erc721Asset, erc1155Asset, validateAsset, totalNative} from './assets.js'
 
 // terms + pairing
-export {createTerms, validateTerms, validateTermPairing, proposedBy} from './terms.js'
+export {createTerms, validateTerms, validateTermPairing, proposedBy, MAX_ASSETS_PER_SIDE} from './terms.js'
 export type {CreateTermsArgs} from './terms.js'
 
 // windows
@@ -79,7 +79,7 @@ export {
 export type {TxOptions, FeeOverrides, PrepareTxArgs, PrepareTxContractParams, PreparedTx} from './gas.js'
 
 // client
-export {createOmnibusClient} from './client.js'
+export {createOmnibusClient, MAX_RECLAIM_HORIZON_SECONDS} from './client.js'
 export type {
   CreateOmnibusClientArgs,
   OmnibusClient,

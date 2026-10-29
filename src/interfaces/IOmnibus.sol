@@ -67,6 +67,9 @@ interface IOmnibus {
   /// @notice thrown when a verifier address is zero
   error ZeroVerifier();
 
+  /// @notice thrown when the fee-withdrawal recipient address is zero
+  error ZeroFeeRecipient();
+
   /// @notice thrown at construction when the wallet factory address is zero
   error ZeroFactory();
 
@@ -88,6 +91,12 @@ interface IOmnibus {
 
   /// @notice thrown when a side attempts to reclaim its leg twice
   error AlreadyReclaimed();
+
+  /// @notice thrown by renounceOwnership: Omnibus has no ownerless mode
+  error RenounceDisabled();
+
+  /// @notice thrown by receive: bare native transfers are rejected; native must flow through commit
+  error NativeNotAccepted();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -111,11 +120,14 @@ interface IOmnibus {
   /// @param sender the address that submitted and FUNDED the commit
   event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
 
-  /// @notice emitted when a swap is executed
-  /// @param recipient address receiving assets of claim
+  /// @notice emitted once for each leg paid out by claim: once for a cross-chain claim
+  ///   (the counterparty's assets to party.recipient), twice for a same-chain claim
+  ///   (additionally the party's assets to counterparty.recipient). The submitting
+  ///   caller is intentionally not a field — it is the transaction sender.
   /// @param lock the hashlock identifier
+  /// @param recipient the terms-pinned address that received this leg's assets
   /// @param secret the preimage that unlocked the swap
-  event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
+  event Claim(bytes32 indexed lock, address indexed recipient, bytes32 secret);
 
   /// @notice emitted when a party reclaims their assets
   /// @param caller address which initiated reclaim
@@ -164,6 +176,15 @@ interface IOmnibus {
   function verifierActive(address verifier) external view returns (bool active);
 
   /// @notice sets the activity status of an ERC-7913 verifier (owner only)
+  /// @dev takes effect immediately (no grace window); commit reads it live on every
+  /// keyed-route call. Deactivating a verifier mid-swap STALLS any keyed leg already
+  /// escrowed under it: a same-chain swap needs two commits and nothing binds the
+  /// second to the verifier state that admitted the first, so once it is deactivated
+  /// the counterparty can no longer complete the keyed route and the first leg stays
+  /// escrowed until that party reaches its own reclaimRelease (the commitmentFee is
+  /// forfeited either way). The wallet route never reads this mapping, so a
+  /// factory-wallet counterparty can still settle. Off-chain clients should avoid
+  /// deactivating a verifier while swaps under it are in flight, or warn affected users.
   /// @param verifier the verifier address (non-zero)
   /// @param active the new activity status
   function setVerifierActivity(address verifier, bool active) external;
@@ -229,6 +250,26 @@ interface IOmnibus {
   /// the contract with no recovery path, and a token that blocks transfers can
   /// freeze every asset escrowed in the same terms. Escrow the non-rebasing
   /// wrapper instead (e.g. wstETH, not stETH)
+  ///
+  /// Deposits are reconciled but PAYOUTS are not: claim and reclaim trust that a
+  /// successful transfer moved exactly the declared amount. A token whose transfer
+  /// behavior is address-dependent or otherwise dishonest — honest at deposit, then
+  /// returning success while delivering nothing (or over-debiting this contract) on
+  /// the way out — is UNSUPPORTED. A party can only be harmed by an asset they
+  /// AGREED to receive as the counter-leg, so vet the counterparty's asset contract
+  /// before committing; the protocol guarantees atomicity, not that the counter-leg
+  /// is well-behaved. This cannot be enforced on-chain for cross-chain swaps: the
+  /// legs settle independently on separate chains, so there is no atomic point at
+  /// which under-delivery of one leg can undo receipt of the other — you trust the
+  /// counter-leg's value
+  ///
+  /// ERC721 has no deposit reconciliation (unlike ERC20/ERC1155, whose balance
+  /// delta is checked): safeTransferFrom returns nothing, and a custody (ownerOf)
+  /// probe would be defeated by the same dishonest-contract case above (a token
+  /// that lies about ownership lies about its transfer too). There is no honest
+  /// lossy ERC721 behavior to catch (unlike fee-on-transfer for fungibles), so an
+  /// NFT contract that no-ops its transfer or lies about ownerOf falls under the
+  /// same UNSUPPORTED / vet-the-counter-leg rule — it is not separately checked
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
@@ -312,6 +353,7 @@ interface IOmnibus {
   function setCommitmentFee(uint256 newFee) external;
 
   /// @notice withdraws accumulated fees to recipient (owner only)
-  /// @param to the recipient address
+  /// @param to the recipient address (must be non-zero; a zero `to` reverts ZeroFeeRecipient
+  ///   rather than irrecoverably burning the accrued balance)
   function withdrawFees(address to) external;
 }
