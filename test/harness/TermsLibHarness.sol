@@ -1,91 +1,92 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, PartyTerms, QuipTerms, TermsLib} from '../../src/TermsLib.sol';
+import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
 import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
 import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
 
 /// @title TermsLib Harness
 /// @dev Wrapper contract to expose TermsLib library functions for testing
 contract TermsLibHarness is IERC721Receiver, IERC1155Receiver {
-  /// @notice Exposes validateAsset
+  /// @notice exposes validateAsset
   function exposed_validateAsset(Asset memory asset) external pure {
     TermsLib.validateAsset(asset);
   }
 
-  /// @notice Exposes digestPartyTerms
-  function exposed_digestPartyTerms(PartyTerms calldata terms) external pure returns (bytes32) {
-    return TermsLib.digestPartyTerms(terms);
+  /// @notice exposes digestTerms
+  function exposed_digestTerms(Terms calldata terms) external pure returns (bytes32) {
+    return TermsLib.digestTerms(terms);
   }
 
-  /// @notice Exposes digestTermsCanonically
-  function exposed_digestTermsCanonically(QuipTerms calldata terms) external pure returns (bytes32) {
-    return TermsLib.digestTermsCanonically(terms);
+  /// @notice exposes digestTermsCanonically
+  function exposed_digestTermsCanonically(
+    Terms calldata party,
+    Terms calldata counterparty
+  ) external pure returns (bytes32) {
+    return TermsLib.digestTermsCanonically(party, counterparty);
   }
 
-  /// @notice Exposes digestTermsCanonicallyMemory
-  function exposed_digestTermsCanonicallyMemory(QuipTerms memory terms) external pure returns (bytes32) {
-    return TermsLib.digestTermsCanonicallyMemory(terms);
+  /// @notice exposes validateTerms
+  function exposed_validateTerms(Terms calldata terms) external pure {
+    TermsLib.validateTerms(terms);
   }
 
-  /// @notice Exposes coupleTerms
-  function exposed_coupleTerms(
-    PartyTerms calldata party,
-    PartyTerms calldata counterparty
-  ) external pure returns (QuipTerms memory) {
-    return TermsLib.coupleTerms(party, counterparty);
+  /// @notice exposes validateAssets
+  function exposed_validateAssets(Terms calldata terms) external pure {
+    TermsLib.validateAssets(terms);
   }
 
-  /// @notice Exposes verifyTerms
-  function exposed_verifyTerms(bytes32 termsDigest, QuipTerms calldata terms) external pure {
-    TermsLib.verifyTerms(termsDigest, terms);
+  /// @notice exposes enforceNonZeroChainId
+  function exposed_enforceNonZeroChainId(Terms calldata terms) external pure {
+    TermsLib.enforceNonZeroChainId(terms);
   }
 
-  /// @notice Exposes transferAsset
+  /// @notice exposes enforceChainId
+  function exposed_enforceChainId(Terms calldata terms, uint256 chainId) external pure {
+    TermsLib.enforceChainId(terms, chainId);
+  }
+
+  /// @notice exposes enforceWithin
+  function exposed_enforceWithin(uint256 lower, uint256 upper, uint256 timestamp) external pure {
+    TermsLib.enforceWithin(lower, upper, timestamp);
+  }
+
+  /// @notice exposes validateTermPairing
+  function exposed_validateTermPairing(Terms calldata party, Terms calldata counterparty) external pure {
+    TermsLib.validateTermPairing(party, counterparty);
+  }
+
+  /// @notice exposes proposedByParty
+  function exposed_proposedByParty(Terms calldata party, Terms calldata counterparty) external pure returns (bool) {
+    return TermsLib.proposedByParty(party, counterparty);
+  }
+
+  /// @notice exposes transferAsset
   function exposed_transferAsset(Asset memory asset, address from, address to) external {
     TermsLib.transferAsset(asset, from, to);
   }
 
-  /// @notice Exposes transferAssets
-  function exposed_transferAssets(Asset[] memory assets, address from, address to) external {
-    TermsLib.transferAssets(assets, from, to);
+  /// @notice exposes transferAssets
+  function exposed_transferAssets(Terms calldata terms, address from, address to) external {
+    TermsLib.transferAssets(terms, from, to);
   }
 
-  /// @notice Exposes transferAssetsNoNative
-  function exposed_transferAssetsNoNative(Asset[] memory assets, address from, address to) external {
-    TermsLib.transferAssetsNoNative(assets, from, to);
+  /// @notice exposes transferAssetsNoNative
+  function exposed_transferAssetsNoNative(Terms calldata terms, address from, address to) external {
+    TermsLib.transferAssetsNoNative(terms, from, to);
   }
 
-  /// @notice Exposes executePartyCommitment
-  function exposed_executePartyCommitment(
-    address quip,
-    address counterpartyRecipient,
-    Asset[] calldata partyAssets
-  ) external {
-    TermsLib.executePartyCommitment(quip, counterpartyRecipient, partyAssets);
+  /// @notice exposes totalNative
+  function exposed_totalNative(Terms calldata terms) external pure returns (uint256) {
+    return TermsLib.totalNative(terms);
   }
 
-  /// @notice Exposes releasePartyCommitment
-  function exposed_releasePartyCommitment(address quip, address partyRecipient, Asset[] calldata partyAssets) external {
-    TermsLib.releasePartyCommitment(quip, partyRecipient, partyAssets);
+  /// @notice exposes heldBalance
+  function exposed_heldBalance(Asset memory asset, address account) external view returns (uint256) {
+    return TermsLib.heldBalance(asset, account);
   }
 
-  /// @notice Exposes totalNativeAmount
-  function exposed_totalNativeAmount(Asset[] memory assets) external pure returns (uint256) {
-    return TermsLib.totalNativeAmount(assets);
-  }
-
-  /// @notice Exposes enforceTermFreshness
-  function exposed_enforceTermFreshness(uint64 expiry) external view {
-    TermsLib.enforceTermFreshness(expiry);
-  }
-
-  /// @notice Exposes enforceTermStaleness
-  function exposed_enforceTermStaleness(uint64 expiry) external view {
-    TermsLib.enforceTermStaleness(expiry);
-  }
-
-  /// @notice Allows receiving native currency for transfer tests
+  /// @notice allows receiving native currency for transfer tests
   receive() external payable {}
 
   /// @notice ERC721 receiver hook

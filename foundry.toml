@@ -7,7 +7,6 @@ quote_style = 'single'
 number_underscore = 'thousands'
 multiline_func_header = 'params_first_multi'
 sort_imports = true
-ignored_warnings_from = ["dependencies/"]
 
 [profile.default]
 src = "src"
@@ -16,6 +15,24 @@ libs = ["lib", "dependencies"]
 solc_version = '0.8.33'
 evm_version = 'prague'
 optimizer_runs = 10_000
+ignored_warnings_from = ["dependencies/"]
+# The SHRINCS integration tests run hashsigs' test-side signing helpers (keygen +
+# stateful signing) in-EVM; they need far more gas/memory than the defaults, same
+# as hashsigs-solidity's own foundry.toml. On-chain contracts are unaffected.
+gas_limit = "18446744073709551615" # u64::MAX
+memory_limit = 268_435_456
+# Allow VerifyOmnibus.s.sol to read the SDK's canonical address file (default) and
+# any repo-relative ADDRESS_JSON override (read-only verify script).
+fs_permissions = [{access = "read", path = "./"}]
+# hashsigs-solidity compiles itself with via_ir (UXMSS.sol is stack-too-deep
+# without it). Restricting its implementation sources pins every compilation
+# unit that includes them (the SHRINCS integration suite) to the via-ir
+# profile; src/ only imports the dependency's interfaces and stays on the
+# default pipeline, so production artifacts are unchanged.
+additional_compiler_profiles = [{name = "via-ir", via_ir = true}]
+compilation_restrictions = [
+  {paths = "dependencies/@quip.network-hashsigs-solidity-0.2.0/contracts/UXMSS.sol", via_ir = true},
+]
 
 [lint]
 # Disable naming convention warnings (test functions use snake_case, constants use SCREAMING_SNAKE_CASE)
@@ -29,13 +46,19 @@ out = 'out-via-ir'
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
+# Temporary rev pin — hashsigs-solidity with the IERC7913TransientAttestation
+# registry (verifyAndAttest/wasVerified). Re-pin to the release tag once it
+# ships; keep the branch alive (or merge with a merge commit) until then — a
+# squash-merge + branch delete orphans this rev.
+"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "6f0fb103e026e19d056db8d5bf292f4a69e9935b" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 [rpc_endpoints]
-base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+base_sepolia = "${API_URL_BASE_SEPOLIA}"
+op_sepolia = "${API_URL_OP_SEPOLIA}"
 
 [etherscan]
-base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+op_sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia-optimistic.etherscan.io/api" }
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

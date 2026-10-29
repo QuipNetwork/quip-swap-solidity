@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {Test} from 'forge-std-1.14.0/Test.sol';
 
-import {Asset, PartyTerms, QuipTerms} from '../../src/TermsLib.sol';
+import {Asset, Terms} from '../../src/TermsLib.sol';
 import {TermsLibHarness} from '../harness/TermsLibHarness.sol';
 import {ERC1155Mock} from '../mocks/ERC1155Mock.sol';
 import {ERC20Mock} from '../mocks/ERC20Mock.sol';
@@ -33,7 +33,9 @@ contract TermsLibTest is Test {
 
   // ============ Constants ============
 
-  uint64 public constant DEFAULT_EXPIRY = 1_000_000;
+  uint256 public constant DEFAULT_COMMITMENT_DEADLINE = 1_000_000;
+  uint256 public constant DEFAULT_CLAIM_DEADLINE = 2_000_000;
+  uint256 public constant DEFAULT_RECLAIM_RELEASE = 3_000_000;
   uint256 public constant DEFAULT_AMOUNT = 10 ether;
 
   // ============ Setup ============
@@ -45,12 +47,12 @@ contract TermsLibTest is Test {
     mockERC721 = new ERC721Mock('MockNFT', 'MNFT');
     mockERC1155 = new ERC1155Mock('https://example.com/token/{id}.json');
 
-    // Fund accounts
+    // fund accounts
     vm.deal(ALICE, 100 ether);
     vm.deal(BOB, 100 ether);
     vm.deal(address(harness), 100 ether);
 
-    // Mint tokens
+    // mint tokens
     mockERC20.mint(ALICE, 1_000_000 ether);
     mockERC20.mint(BOB, 1_000_000 ether);
     mockERC20.mint(address(harness), 1_000_000 ether);
@@ -91,19 +93,14 @@ contract TermsLibTest is Test {
     return AssetHelper.makeERC1155(address(mockERC1155), tokenId, amount);
   }
 
-  function _defaultPartyTerms() internal view returns (PartyTerms memory) {
-    return TermsHelper.makePartyTerms(ALICE, ALICE_RECIPIENT, DEFAULT_EXPIRY, _makeNativeAsset(1 ether).toArray());
-  }
-
-  function _defaultQuipTerms() internal view returns (QuipTerms memory) {
-    return TermsHelper.makeQuipTerms(
+  function _defaultTerms() internal view returns (Terms memory) {
+    return TermsHelper.makeTerms(
+      block.chainid,
       ALICE,
       ALICE_RECIPIENT,
-      BOB,
-      BOB_RECIPIENT,
-      DEFAULT_EXPIRY,
-      DEFAULT_EXPIRY,
-      _makeNativeAsset(1 ether).toArray(),
+      DEFAULT_COMMITMENT_DEADLINE,
+      DEFAULT_CLAIM_DEADLINE,
+      DEFAULT_RECLAIM_RELEASE,
       _makeNativeAsset(1 ether).toArray()
     );
   }
