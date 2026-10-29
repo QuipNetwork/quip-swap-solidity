@@ -4,23 +4,23 @@
     {
       "chainId": 8453,
       "deployed": true,
-      "omnibus": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
-      "version": "QUIP:Omnibus:v1.0.0-alpha.2",
-      "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
+      "omnibus": "0xA7955981D5759a799267063110Be0F7AeCc26F8A",
+      "version": "QUIP:Omnibus:v1.0.0-beta.3",
+      "walletFactory": "0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8"
     },
     {
       "chainId": 84532,
       "deployed": true,
-      "omnibus": "0x378417D8bC75EacA6dE0a6A6Aa16e15a7B8Ad513",
-      "version": "QUIP:Omnibus:v1.0.0-alpha.3",
-      "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
+      "omnibus": "0xA7955981D5759a799267063110Be0F7AeCc26F8A",
+      "version": "QUIP:Omnibus:v1.0.0-beta.3",
+      "walletFactory": "0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8"
     },
     {
       "chainId": 11155420,
       "deployed": true,
-      "omnibus": "0x378417D8bC75EacA6dE0a6A6Aa16e15a7B8Ad513",
-      "version": "QUIP:Omnibus:v1.0.0-alpha.3",
-      "walletFactory": "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471"
+      "omnibus": "0xA7955981D5759a799267063110Be0F7AeCc26F8A",
+      "version": "QUIP:Omnibus:v1.0.0-beta.3",
+      "walletFactory": "0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8"
     }
   ]
 }

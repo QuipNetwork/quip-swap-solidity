@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSE
+// SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.8.33;
 
 import {Terms} from '../TermsLib.sol';
@@ -25,7 +25,7 @@ enum LockState {
 /// - non-empty: KEYED route — `signature` is verified over commitDigest by the
 ///   declared verifier
 /// - empty: WALLET route — msg.sender must be a wallet deployed by the quip
-///   WalletFactory (vaultIdOf(msg.sender) != 0). No signature is verified on
+///   WalletFactory (commitmentOf(msg.sender) != 0). No signature is verified on
 ///   this route: a vetted wallet implementation only reaches commit from its
 ///   PQ-authenticated execute flow, so factory membership stands in for the
 ///   endorsement. The declared identity is ATTRIBUTION ONLY here — it is NOT
@@ -134,7 +134,6 @@ interface IOmnibus {
   /// @param lock the hashlock identifier
   /// @param recipient the address that received the reclaim
   event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
-
 
   /// @notice returns the state of a swap
   /// @dev state is keyed by swap id, not by bare lock: swapId =
@@ -334,7 +333,6 @@ interface IOmnibus {
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
-
 
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei

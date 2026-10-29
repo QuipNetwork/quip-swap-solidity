@@ -70,7 +70,7 @@ contract SyncRegistry is Script {
         versionLabel,
         '",\n',
         '      "walletFactory": "',
-        vm.toString(DeployConstants.WALLET_FACTORY),
+        vm.toString(DeployConstants.walletFactoryFor(chainId)),
         '"\n',
         '    }'
       );
@@ -144,7 +144,7 @@ contract SyncRegistry is Script {
       return false;
     }
 
-    if (liveFactory != DeployConstants.WALLET_FACTORY) {
+    if (liveFactory != DeployConstants.walletFactoryFor(chainId)) {
       console.log('  WARNING: live WALLET_FACTORY does not match DeployConstants:', liveFactory);
       console.log('           recording not-deployed - this chain needs a redeploy.');
       return false;

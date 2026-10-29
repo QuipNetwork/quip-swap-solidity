@@ -13,11 +13,11 @@
  * Run via `bun run test:integration` (the runner starts Anvil, builds
  * artifacts, and sets QUIP_SDK_RPC_URL / QUIP_SDK_CHAIN_ID).
  */
-import {createWalletClient, getAddress, http, keccak256, stringToHex, toHex, zeroAddress} from 'viem'
+import {createWalletClient, getAddress, http, keccak256, parseAbi, stringToHex, toHex, zeroAddress} from 'viem'
 import type {Address, Hash} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import {beforeAll, describe, expect, it} from 'vitest'
-import {planApprovals, submitApproval} from '../../src/approvals.js'
+import {planApprovals, prepareApproval, submitApproval} from '../../src/approvals.js'
 import {erc1155Asset, erc20Asset, erc721Asset, nativeAsset, totalNative} from '../../src/assets.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
@@ -1480,5 +1480,177 @@ describe('gas and balance preflight', () => {
     expect(tx.gas).toBe(400_000n) // verbatim — no multiplier applied
     expect(tx.maxFeePerGas).toBe(5_000_000_000n)
     expect(tx.maxPriorityFeePerGas).toBe(1_000_000_000n)
+  })
+})
+
+describe('smart account: Calls planned for the ACCOUNT, executed BY the account', () => {
+  /**
+   * SmartAccountMock stands in for a quip wallet's `execute`: it runs a
+   * `{to, value, data}` from its own address and balance (no signature check —
+   * authorization is the real wallet's concern). What this proves: a Call the
+   * SDK plans with `account = smartAccount` lands with `msg.sender ==
+   * smartAccount`, spends the ACCOUNT's ETH and ERC-20, and passes the wallet
+   * route's factory-membership gate for the account — while the EOA that
+   * submits `execute` pays gas only.
+   */
+  const smartAccountAbi = parseAbi(['function execute(address to, uint256 value, bytes data) returns (bytes)'])
+  let smartAccount: Address
+  let readOnly: OmnibusClient
+
+  /** The deployer (an ordinary EOA) relays a Call through the smart account. */
+  async function executeAs(call: {to: Address; value: bigint; data: `0x${string}`}): Promise<Hash> {
+    return ctx.deployer.walletClient.writeContract({
+      address: smartAccount,
+      abi: smartAccountAbi,
+      functionName: 'execute',
+      args: [call.to, call.value, call.data],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+  }
+
+  beforeAll(async () => {
+    smartAccount = await ctx.deploy(loadArtifact('SmartAccountMock.sol', 'SmartAccountMock'))
+    readOnly = createOmnibusClient({address: fixture.omnibus, publicClient: ctx.publicClient})
+
+    // fund the ACCOUNT (not the relayer): 1 ether + 1000 MTK
+    let hash = await ctx.deployer.walletClient.sendTransaction({
+      to: smartAccount,
+      value: 10n ** 18n,
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash})
+    hash = await ctx.deployer.walletClient.writeContract({
+      address: fixture.erc20,
+      abi: erc20MockAbi,
+      functionName: 'mint',
+      args: [smartAccount, 1_000n],
+      chain: ctx.publicClient.chain ?? null,
+      account: ctx.deployer.account,
+    })
+    await ctx.publicClient.waitForTransactionReceipt({hash})
+
+    // make it a "factory-deployed quip wallet" in the registry double
+    await registerWallet(ctx, fixture, smartAccount)
+  })
+
+  it('prepareApproval: the account grants allowance(account, omnibus) by executing the planned Call', async () => {
+    const s = await freshSchedule()
+    const terms = s.aliceTerms([nativeAsset(10n), erc20Asset(fixture.erc20, 100n)])
+
+    const before = await planApprovals({
+      publicClient: ctx.publicClient,
+      omnibusAddress: fixture.omnibus,
+      committer: smartAccount,
+      terms,
+    })
+    expect(before.satisfied).toBe(false)
+    const unsatisfied = before.items.filter(i => !i.satisfied)
+    expect(unsatisfied).toHaveLength(1)
+
+    for (const item of unsatisfied) {
+      const call = prepareApproval({omnibusAddress: fixture.omnibus, item, erc20Mode: 'unlimited'})
+      expect(call.to.toLowerCase()).toBe(fixture.erc20.toLowerCase())
+      expect(call.value).toBe(0n)
+      await ctx.publicClient.waitForTransactionReceipt({hash: await executeAs(call)})
+    }
+
+    const after = await planApprovals({
+      publicClient: ctx.publicClient,
+      omnibusAddress: fixture.omnibus,
+      committer: smartAccount,
+      terms,
+    })
+    expect(after.satisfied).toBe(true)
+    // the allowance belongs to the ACCOUNT, not to the relayer
+    expect(
+      await ctx.publicClient.readContract({
+        address: fixture.erc20,
+        abi: erc20MockAbi,
+        functionName: 'allowance',
+        args: [ctx.deployer.address, fixture.omnibus],
+      }),
+    ).toBe(0n)
+  })
+
+  it('prepareCommit (wallet route): the account executes the Call; ETH + ERC-20 leave the ACCOUNT, msg.sender is the account', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const party = s.aliceTerms([nativeAsset(10n), erc20Asset(fixture.erc20, 100n)])
+    const counterparty = s.bobTerms([nativeAsset(20n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    const fee = await readOnly.getCommitmentFee()
+    const auth = walletAuth(fixture, smartAccount)
+    const call = await readOnly.prepareCommit({lock, party, counterparty, auth}, {account: smartAccount})
+    expect(call.to.toLowerCase()).toBe(fixture.omnibus.toLowerCase())
+    expect(call.value).toBe(10n + fee)
+
+    const ethBefore = await ctx.publicClient.getBalance({address: smartAccount})
+    const mtkBefore = await ctx.publicClient.readContract({
+      address: fixture.erc20,
+      abi: erc20MockAbi,
+      functionName: 'balanceOf',
+      args: [smartAccount],
+    })
+    const relayerMtkBefore = await ctx.publicClient.readContract({
+      address: fixture.erc20,
+      abi: erc20MockAbi,
+      functionName: 'balanceOf',
+      args: [ctx.deployer.address],
+    })
+
+    const receipt = await confirmReceipt(await executeAs(call))
+    expect(receipt.commitments).toHaveLength(1)
+    expect(receipt.commitments[0]?.sender.toLowerCase()).toBe(smartAccount.toLowerCase())
+    expect(receipt.commitments[0]?.signer.toLowerCase()).toBe(auth.signer.toLowerCase())
+
+    // funded by the account: exactly value (no gas — the relayer paid that)
+    expect(ethBefore - (await ctx.publicClient.getBalance({address: smartAccount}))).toBe(10n + fee)
+    expect(
+      mtkBefore -
+        (await ctx.publicClient.readContract({
+          address: fixture.erc20,
+          abi: erc20MockAbi,
+          functionName: 'balanceOf',
+          args: [smartAccount],
+        })),
+    ).toBe(100n)
+    expect(
+      await ctx.publicClient.readContract({
+        address: fixture.erc20,
+        abi: erc20MockAbi,
+        functionName: 'balanceOf',
+        args: [ctx.deployer.address],
+      }),
+    ).toBe(relayerMtkBefore)
+    expect(await readOnly.getLockState(swapId(lock, party, counterparty))).toBe(LockState.Free)
+  })
+
+  it('prepareCommit rejects NOT_QUIP_WALLET for an unregistered account and BALANCE_TOO_LOW for an unfunded one', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const party = s.aliceTerms([nativeAsset(10n)])
+    const counterparty = s.bobTerms([nativeAsset(20n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    // an EOA is not a factory wallet: membership is checked for the ACCOUNT passed, not the caller
+    const auth = walletAuth(fixture, ctx.alice.address)
+    const notWallet = await readOnly
+      .prepareCommit({lock, party, counterparty, auth}, {account: ctx.alice.address})
+      .catch((e: unknown) => e)
+    expect(notWallet).toBeInstanceOf(QuipSwapError)
+    expect((notWallet as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
+
+    // a registered but empty account fails the balance preflight on ITS balance
+    const broke = getAddress('0x00000000000000000000000000000000000c0ffe')
+    await registerWallet(ctx, fixture, broke)
+    const tooLow = await readOnly
+      .prepareCommit({lock, party, counterparty, auth: walletAuth(fixture, broke)}, {account: broke})
+      .catch((e: unknown) => e)
+    expect(tooLow).toBeInstanceOf(QuipSwapError)
+    expect((tooLow as QuipSwapError).code).toBe('BALANCE_TOO_LOW')
+    await deregisterWallet(ctx, fixture, broke)
   })
 })

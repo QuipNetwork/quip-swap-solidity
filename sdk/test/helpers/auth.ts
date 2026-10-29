@@ -20,8 +20,8 @@ import {walletFactoryMockAbi} from './mockAbis.js'
  */
 export const PLACEHOLDER_SIGNATURE = '0x656e76656c6f7065' as const
 
-/** The vaultId test wallets are registered under (any non-zero value works). */
-export const TEST_VAULT_ID: Hex32 = keccak256(toHex('sdk test vault id'))
+/** The commitment test wallets are registered under (any non-zero value works). */
+export const TEST_COMMITMENT: Hex32 = keccak256(toHex('sdk test commitment'))
 
 /**
  * Keyed ERC-7913 auth for `addr` via the fixture's AcceptAll VerifierMock
@@ -41,28 +41,28 @@ export function walletAuth(fixture: Fixture, addr: Address): CommitAuth {
 }
 
 /**
- * Registers `wallet` in the fixture's WalletFactoryMock under `vaultId`
- * ({@link TEST_VAULT_ID} by default) so it passes the wallet route's
- * membership check. Pass the zero vaultId to deregister.
+ * Registers `wallet` in the fixture's WalletFactoryMock under `commitment`
+ * ({@link TEST_COMMITMENT} by default) so it passes the wallet route's
+ * membership check. Pass the zero commitment to deregister.
  */
 export async function registerWallet(
   ctx: ChainContext,
   fixture: Fixture,
   wallet: Address,
-  vaultId: Hex32 = TEST_VAULT_ID,
+  commitment: Hex32 = TEST_COMMITMENT,
 ): Promise<void> {
   const hash = await ctx.deployer.walletClient.writeContract({
     address: fixture.walletFactory,
     abi: walletFactoryMockAbi,
     functionName: 'setWallet',
-    args: [wallet, vaultId],
+    args: [wallet, commitment],
     chain: ctx.publicClient.chain ?? null,
     account: ctx.deployer.account,
   })
   await ctx.publicClient.waitForTransactionReceipt({hash})
 }
 
-/** Deregisters `wallet` (sets its vaultId back to zero). */
+/** Deregisters `wallet` (sets its commitment back to zero). */
 export async function deregisterWallet(ctx: ChainContext, fixture: Fixture, wallet: Address): Promise<void> {
   await registerWallet(ctx, fixture, wallet, `0x${'00'.repeat(32)}` as Hex32)
 }

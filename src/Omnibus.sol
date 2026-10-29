@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSE
+// SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.8.33;
 
 import {Terms, TermsLib} from './TermsLib.sol';
@@ -204,17 +204,16 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     Terms calldata proposer = isPartyProposer ? party : counterparty;
     Terms calldata taker = isPartyProposer ? counterparty : party;
 
-
     // proposer (secret holder) always claims first
     // proposer's claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
     //
-    // same-chain swaps are settled atomically for both parties, therefore 
+    // same-chain swaps are settled atomically for both parties, therefore
     // the only window to consider is the proposers claim window
     //
     // cross-chain has a proposer claim leg and taker claim leg
     // proposer claim window is: [taker.commitmentDeadline, proposer.claimDeadline]
     // taker claim window is: [proposer.claimDeadline, proposer.reclaimRelease]
-    // 
+    //
     // NB: taker's chainId is the chain on which proposer claims
     if (taker.chainId == block.chainid) {
       TermsLib.enforceWithin(taker.commitmentDeadline, proposer.claimDeadline, block.timestamp);
@@ -383,7 +382,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   /// - non-empty signature (KEYED): the declared verifier must be
   ///   owner-activated and verify(key, digest, sig) must return its selector
   /// - empty signature (WALLET): msg.sender must be a wallet deployed by the
-  ///   quip WalletFactory (vaultIdOf is write-once, non-zero iff
+  ///   quip WalletFactory (commitmentOf is write-once, non-zero iff
   ///   factory-deployed). The digest is not re-verified here: a vetted wallet
   ///   only reaches commit from its PQ-authenticated execute flow. The signer
   ///   blob is shape-checked attribution only on this route — its verifier
@@ -397,7 +396,7 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
     if (signer.length <= 20) revert MalformedSigner();
 
     if (auth.signature.length == 0) {
-      if (WALLET_FACTORY.vaultIdOf(msg.sender) == bytes32(0)) revert NotQuipWallet();
+      if (WALLET_FACTORY.commitmentOf(msg.sender) == bytes32(0)) revert NotQuipWallet();
       return;
     }
 
@@ -461,5 +460,4 @@ contract Omnibus is IOmnibus, IERC721Receiver, IERC1155Receiver, Ownable2Step {
   function _swapId(bytes32 lock, bytes32 canonicalDigest) internal pure returns (bytes32 swapId) {
     swapId = EfficientHashLib.hash(lock, canonicalDigest);
   }
-
 }

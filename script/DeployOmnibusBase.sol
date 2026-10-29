@@ -67,7 +67,7 @@ abstract contract DeployOmnibusBase is Script {
 
     string memory versionLabel = label();
     bytes32 versionWord = DeployConstants.versionWord(versionLabel);
-    address walletFactory = DeployConstants.WALLET_FACTORY;
+    address walletFactory = DeployConstants.walletFactoryFor(block.chainid);
     bytes32 rawSalt = Constants.omnibusSalt(versionLabel);
     address expectedAddr = Constants.predictOmnibus(versionLabel);
 
@@ -118,15 +118,15 @@ abstract contract DeployOmnibusBase is Script {
     }
 
     // ── 5. Constructor args. WALLET_FACTORY is an immutable and the wallet route
-    //       calls vaultIdOf on it at runtime, so a wrong-but-nonempty address
+    //       calls commitmentOf on it at runtime, so a wrong-but-nonempty address
     //       bricks that route permanently — probe the ABI, not just the code.
     //       The address itself is compiled in; this proves it is really present
     //       and really a factory ON THIS CHAIN.
     require(omnibusOwner != address(0), 'DeployOmnibus: OMNIBUS_OWNER must be non-zero');
     require(walletFactory.code.length > 0, 'DeployOmnibus: WALLET_FACTORY has no code on this chain');
-    try IWalletFactory(walletFactory).vaultIdOf(address(0)) returns (bytes32) {}
+    try IWalletFactory(walletFactory).commitmentOf(address(0)) returns (bytes32) {}
     catch {
-      revert('DeployOmnibus: WALLET_FACTORY does not implement vaultIdOf');
+      revert('DeployOmnibus: WALLET_FACTORY does not implement commitmentOf');
     }
 
     // ── 6. Factory presence + derivation agreement. The only gate that consults

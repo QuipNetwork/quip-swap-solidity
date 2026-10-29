@@ -87,10 +87,12 @@ export type {
   CommitArgs,
   ClaimArgs,
   ReclaimArgs,
+  Call,
+  PrepareCallOptions,
 } from './client.js'
 
 // approvals
-export {planApprovals, submitApproval} from './approvals.js'
+export {planApprovals, prepareApproval, submitApproval} from './approvals.js'
 export type {
   ApprovalItem,
   ApprovalPlan,
@@ -99,6 +101,7 @@ export type {
   Erc1155ApprovalItem,
   Erc20ApprovalMode,
   PlanApprovalsArgs,
+  PrepareApprovalArgs,
   SubmitApprovalArgs,
 } from './approvals.js'
 

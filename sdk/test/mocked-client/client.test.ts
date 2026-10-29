@@ -15,7 +15,7 @@
  * (`as unknown as PublicClient`) — the minimum needed to satisfy Viem's
  * client types in a mock.
  */
-import {ContractFunctionRevertedError, InsufficientFundsError, encodeErrorResult} from 'viem'
+import {ContractFunctionRevertedError, InsufficientFundsError, decodeFunctionData, encodeErrorResult} from 'viem'
 import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
@@ -69,6 +69,10 @@ interface CallLog {
   readonly estimations: Record<string, unknown>[]
   /** Captured writeContract requests. */
   readonly writes: Record<string, unknown>[]
+  /** Addresses whose balance was read (in order). */
+  readonly balanceReads: Address[]
+  /** Addresses whose factory membership (`commitmentOf`) was read (in order). */
+  readonly membershipReads: Address[]
   /** Captured keys of lockState/termsHash/posted reads (the swap-scoped state). */
   readonly stateReads: {functionName: string; key: unknown}[]
 }
@@ -117,13 +121,14 @@ function setup(
   const erc721Targets = new Set((options.erc721Targets ?? []).map(a => a.toLowerCase()))
   const erc165AllTrueTargets = new Set((options.erc165AllTrueTargets ?? []).map(a => a.toLowerCase()))
 
-  const log: CallLog = {sequence: [], estimations: [], writes: [], stateReads: []}
+  const log: CallLog = {sequence: [], estimations: [], writes: [], stateReads: [], balanceReads: [], membershipReads: []}
 
   const publicClient = {
     getChainId: async () => Number(chainId),
     getBlock: async () => ({timestamp}),
-    getBalance: async () => {
+    getBalance: async (args: {address: Address}) => {
       log.sequence.push('read:balance')
+      log.balanceReads.push(args.address)
       return balance
     },
     // NOTE: no estimateFeesPerGas mock — prepareTx must never need fee data
@@ -144,8 +149,9 @@ function setup(
           return verifierIsActive
         case 'WALLET_FACTORY':
           return FACTORY
-        case 'vaultIdOf':
+        case 'commitmentOf':
           // the wallet-route membership read, dispatched to FACTORY
+          log.membershipReads.push(args.args?.[0] as Address)
           return senderIsQuipWallet ? `0x${'11'.repeat(32)}` : `0x${'00'.repeat(32)}`
         case 'commitDigest':
           return COMMIT_DIGEST
@@ -271,7 +277,7 @@ describe('commit orchestration', () => {
   it('keyed commits never consult the wallet factory', async () => {
     await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
     expect(mocks.log.sequence).not.toContain('read:WALLET_FACTORY')
-    expect(mocks.log.sequence).not.toContain('read:vaultIdOf')
+    expect(mocks.log.sequence).not.toContain('read:commitmentOf')
   })
 
   it('wallet route: an empty signature from a non-wallet sender rejects NOT_QUIP_WALLET before estimation', async () => {
@@ -280,7 +286,7 @@ describe('commit orchestration', () => {
     ).toBe('NOT_QUIP_WALLET')
     // membership WAS read; nothing was estimated or written
     expect(mocks.log.sequence).toContain('read:WALLET_FACTORY')
-    expect(mocks.log.sequence).toContain('read:vaultIdOf')
+    expect(mocks.log.sequence).toContain('read:commitmentOf')
     expect(mocks.log.sequence).not.toContain('estimate:commit')
     expect(mocks.log.writes).toHaveLength(0)
   })
@@ -293,7 +299,7 @@ describe('commit orchestration', () => {
     expect(est.args[3]).toEqual({signer: buildKeyedSigner(VERIFIER, SENDER), signature: '0x'})
   })
 
-  it('getWalletFactory returns the baked factory and isQuipWallet reflects vaultIdOf', async () => {
+  it('getWalletFactory returns the baked factory and isQuipWallet reflects commitmentOf', async () => {
     expect(await mocks.client.getWalletFactory()).toBe(FACTORY)
     expect(await mocks.client.isQuipWallet(SENDER)).toBe(false)
     expect(await setup({senderIsQuipWallet: true}).client.isQuipWallet(SENDER)).toBe(true)
@@ -985,5 +991,122 @@ describe('client.waitForReceipt (uses client.address for scoping)', () => {
     const result = await client.waitForReceipt(TX_HASH)
     expect(result.claims).toHaveLength(1)
     expect(result.claims[0]?.secret).toBe(FOUNDRY_SECRET)
+  })
+})
+
+describe('prepareCommit — planning a Call for an acting account (smart accounts)', () => {
+  /** A smart account (e.g. a quip wallet) that will be msg.sender; NOT the wallet client's EOA. */
+  const ACCOUNT: Address = '0x5550000000000000000000000000000000000555'
+
+  /** decodeFunctionData checksums addresses; the fixtures are lowercase. Compare case-insensitively. */
+  function lowercased<T>(value: T): T {
+    if (typeof value === 'string') return (value.startsWith('0x') ? value.toLowerCase() : value) as T
+    if (Array.isArray(value)) return value.map(v => lowercased(v)) as T
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, lowercased(v)])) as T
+    }
+    return value
+  }
+
+  it('returns {to: omnibus, value, data} for the account without a wallet client and without writing', async () => {
+    const mocks = setup({lockState: LockState.Unused, withWallet: false})
+    const call = await mocks.client.prepareCommit(
+      {lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH},
+      {account: ACCOUNT},
+    )
+    expect(call.to).toBe(OMNIBUS)
+    // exact value: totalNative(alice) = 1 ether + fee 25 wei
+    expect(call.value).toBe(10n ** 18n + 25n)
+    const decoded = decodeFunctionData({abi: omnibusAbi, data: call.data})
+    expect(decoded.functionName).toBe('commit')
+    const args = decoded.args as unknown as [unknown, unknown, unknown, unknown]
+    expect(args[0]).toBe(FOUNDRY_LOCK)
+    expectAbiTerms(lowercased(args[1]), alice)
+    expectAbiTerms(lowercased(args[2]), bob)
+    expect(lowercased(args[3])).toEqual(lowercased({signer: AUTH.signer, signature: AUTH.signature}))
+    expect(mocks.log.writes).toHaveLength(0)
+    expect(mocks.log.sequence).not.toContain('write')
+  })
+
+  it('runs the balance preflight and the revert simulation AGAINST THE ACCOUNT, not the EOA', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    await mocks.client.prepareCommit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}, {account: ACCOUNT})
+    expect(mocks.log.balanceReads).toEqual([ACCOUNT])
+    const est = mocks.log.estimations[0] as {account: Address; value: bigint}
+    expect(est.account).toBe(ACCOUNT)
+    expect(est.value).toBe(10n ** 18n + 25n)
+  })
+
+  it('rejects BALANCE_TOO_LOW on the account balance; skipPreflightChecks skips only that', async () => {
+    const poor = setup({lockState: LockState.Unused, balance: 0n})
+    expect(
+      await codeOf(
+        poor.client.prepareCommit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}, {account: ACCOUNT}),
+      ),
+    ).toBe('BALANCE_TOO_LOW')
+    expect(poor.log.sequence).not.toContain('estimate:commit')
+
+    const skipped = setup({lockState: LockState.Unused, balance: 0n})
+    const call = await skipped.client.prepareCommit(
+      {lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH},
+      {account: ACCOUNT, skipPreflightChecks: true},
+    )
+    expect(call.value).toBe(10n ** 18n + 25n)
+    expect(skipped.log.sequence).not.toContain('read:balance')
+    expect(skipped.log.sequence).toContain('estimate:commit')
+  })
+
+  it('wallet route: membership is checked for the ACCOUNT and rejects NOT_QUIP_WALLET before simulation', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    const error = await mocks.client
+      .prepareCommit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: WALLET_AUTH}, {account: ACCOUNT})
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(QuipSwapError)
+    expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
+    expect((error as QuipSwapError).details).toEqual({account: ACCOUNT})
+    expect(mocks.log.membershipReads).toEqual([ACCOUNT])
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+  })
+
+  it('wallet route: a registered account plans a Call carrying the empty signature', async () => {
+    const mocks = setup({lockState: LockState.Unused, senderIsQuipWallet: true})
+    const call = await mocks.client.prepareCommit(
+      {lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: WALLET_AUTH},
+      {account: ACCOUNT},
+    )
+    expect(mocks.log.membershipReads).toEqual([ACCOUNT])
+    const args = decodeFunctionData({abi: omnibusAbi, data: call.data}).args as unknown as [unknown, unknown, unknown, unknown]
+    expect(args[3]).toEqual({signer: WALLET_AUTH.signer, signature: '0x'})
+  })
+
+  it('a would-be revert surfaces as a decoded CONTRACT_REVERT from the simulation', async () => {
+    const mocks = setup({
+      lockState: LockState.Unused,
+      estimateError: new ContractFunctionRevertedError({
+        abi: omnibusAbi,
+        functionName: 'commit',
+        data: encodeErrorResult({abi: omnibusAbi, errorName: 'NotQuipWallet'}),
+      }),
+    })
+    const error = await mocks.client
+      .prepareCommit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH}, {account: ACCOUNT})
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(QuipSwapError)
+    expect((error as QuipSwapError).code).toBe('CONTRACT_REVERT')
+    expect((error as QuipSwapError).contractErrorName).toBe('NotQuipWallet')
+  })
+
+  it('commit and prepareCommit produce identical calldata and value for the same inputs', async () => {
+    const viaCommit = setup({lockState: LockState.Unused})
+    await viaCommit.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH})
+    const write = viaCommit.log.writes[0] as {args: readonly unknown[]; value: bigint}
+
+    const viaPrepare = setup({lockState: LockState.Unused})
+    const call = await viaPrepare.client.prepareCommit(
+      {lock: FOUNDRY_LOCK, party: alice, counterparty: bob, auth: AUTH},
+      {account: SENDER},
+    )
+    expect(lowercased(decodeFunctionData({abi: omnibusAbi, data: call.data}).args)).toEqual(lowercased(write.args))
+    expect(call.value).toBe(write.value)
   })
 })

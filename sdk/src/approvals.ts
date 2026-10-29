@@ -31,7 +31,9 @@
  * be defeated by the same dishonest contract, and NFTs have no honest lossy case
  * to catch — so a fake or non-compliant NFT contract falls under the same rule.
  */
-import type {Address, PublicClient, WalletClient} from 'viem'
+import {encodeFunctionData} from 'viem'
+import type {Address, Hex, PublicClient, WalletClient} from 'viem'
+import type {Call} from './client.js'
 import {QuipSwapError, wrapContractError} from './errors.js'
 import {AssetType} from './types.js'
 import type {Terms} from './types.js'
@@ -332,6 +334,83 @@ export interface SubmitApprovalArgs {
 
 const MAX_UINT256 = (1n << 256n) - 1n
 
+/** Arguments for {@link prepareApproval}. */
+export interface PrepareApprovalArgs {
+  /** The Omnibus address to approve as spender/operator. */
+  readonly omnibusAddress: Address
+  /** The unsatisfied plan item to fix. */
+  readonly item: ApprovalItem
+  /** REQUIRED for ERC-20 items: exact or unlimited (see {@link Erc20ApprovalMode}). */
+  readonly erc20Mode?: Erc20ApprovalMode
+  /**
+   * For ERC-721 items: `'token'` approves only the specific token id
+   * (default — least privilege); `'operator'` grants `setApprovalForAll`.
+   */
+  readonly erc721Mode?: 'token' | 'operator'
+}
+
+/** The contract call (ABI + function + args) that satisfies one approval item. */
+function approvalCallSpec(args: PrepareApprovalArgs): {
+  abi: typeof erc20Abi | typeof erc721Abi | typeof erc1155Abi
+  functionName: 'approve' | 'setApprovalForAll'
+  args: readonly [Address, bigint] | readonly [Address, boolean]
+} {
+  const {omnibusAddress, item} = args
+  if (item.kind === 'erc20') {
+    if (args.erc20Mode === undefined) {
+      throw new QuipSwapError({
+        code: 'INVALID_RANGE',
+        message:
+          "ERC-20 approvals require an explicit erc20Mode ('exact' or 'unlimited'); the SDK never defaults to unlimited",
+      })
+    }
+    const amount = args.erc20Mode === 'exact' ? item.requiredAllowance : MAX_UINT256
+    return {abi: erc20Abi, functionName: 'approve', args: [omnibusAddress, amount]}
+  }
+  if (item.kind === 'erc721') {
+    if ((args.erc721Mode ?? 'token') === 'token') {
+      return {abi: erc721Abi, functionName: 'approve', args: [omnibusAddress, item.tokenId]}
+    }
+    return {abi: erc721Abi, functionName: 'setApprovalForAll', args: [omnibusAddress, true]}
+  }
+  // erc1155: operator approval is the only mechanism the standard offers
+  return {abi: erc1155Abi, functionName: 'setApprovalForAll', args: [omnibusAddress, true]}
+}
+
+/**
+ * Builds the {@link Call} that satisfies one unsatisfied {@link ApprovalItem}
+ * WITHOUT sending it — for a smart account (e.g. a quip wallet) that must
+ * execute the approval itself, since the allowance has to be granted BY the
+ * account whose tokens the Omnibus will pull (`allowance(msg.sender, omnibus)`).
+ *
+ * Pure: no RPC, no simulation. Plan with {@link planApprovals} using the
+ * ACCOUNT address as `committer`, then hand each returned call to the
+ * account's tooling (`execute(to, value, data, …)`). `value` is always `0n`.
+ *
+ * @remarks A smart account with a finite signature budget pays one signature
+ * per executed call, so `erc20Mode: 'unlimited'` (or `erc721Mode:
+ * 'operator'`) amortises approvals to once per token instead of once per
+ * swap. The trade-off is unchanged (see {@link Erc20ApprovalMode}); the SDK
+ * still never defaults to unlimited.
+ *
+ * @throws QuipSwapError `INVALID_RANGE` when an ERC-20 item has no `erc20Mode`.
+ * @example
+ * ```ts
+ * const plan = await planApprovals({publicClient, omnibusAddress, committer: wallet, terms})
+ * for (const item of plan.items.filter(i => !i.satisfied)) {
+ *   const call = prepareApproval({omnibusAddress, item, erc20Mode: 'unlimited'})
+ *   await walletTooling.execute(call.to, call.value, call.data)
+ * }
+ * ```
+ */
+export function prepareApproval(args: PrepareApprovalArgs): Call {
+  const spec = approvalCallSpec(args)
+  const data: Hex = encodeFunctionData({abi: spec.abi, functionName: spec.functionName, args: spec.args} as Parameters<
+    typeof encodeFunctionData
+  >[0])
+  return {to: args.item.token, value: 0n, data}
+}
+
 /**
  * Simulates and submits the approval transaction that satisfies one
  * unsatisfied {@link ApprovalItem}.
@@ -366,55 +445,17 @@ export async function submitApproval(args: SubmitApprovalArgs): Promise<`0x${str
   }
 
   try {
-    if (item.kind === 'erc20') {
-      if (args.erc20Mode === undefined) {
-        throw new QuipSwapError({
-          code: 'INVALID_RANGE',
-          message:
-            "ERC-20 approvals require an explicit erc20Mode ('exact' or 'unlimited'); the SDK never defaults to unlimited",
-        })
-      }
-      const amount = args.erc20Mode === 'exact' ? item.requiredAllowance : MAX_UINT256
-      const {request} = await publicClient.simulateContract({
-        address: item.token,
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [omnibusAddress, amount],
-        account,
-      })
-      return await walletClient.writeContract(request)
-    }
-
-    if (item.kind === 'erc721') {
-      if ((args.erc721Mode ?? 'token') === 'token') {
-        const {request} = await publicClient.simulateContract({
-          address: item.token,
-          abi: erc721Abi,
-          functionName: 'approve',
-          args: [omnibusAddress, item.tokenId],
-          account,
-        })
-        return await walletClient.writeContract(request)
-      }
-      const {request} = await publicClient.simulateContract({
-        address: item.token,
-        abi: erc721Abi,
-        functionName: 'setApprovalForAll',
-        args: [omnibusAddress, true],
-        account,
-      })
-      return await walletClient.writeContract(request)
-    }
-
-    // erc1155: operator approval is the only mechanism the standard offers
+    const spec = approvalCallSpec(args)
     const {request} = await publicClient.simulateContract({
       address: item.token,
-      abi: erc1155Abi,
-      functionName: 'setApprovalForAll',
-      args: [omnibusAddress, true],
+      abi: spec.abi,
+      functionName: spec.functionName,
+      args: spec.args,
       account,
-    })
-    return await walletClient.writeContract(request)
+      // the (abi, functionName, args) triple is one of three fixed shapes
+      // selected at runtime; viem cannot narrow the union statically
+    } as unknown as Parameters<PublicClient['simulateContract']>[0])
+    return await walletClient.writeContract(request as unknown as Parameters<WalletClient['writeContract']>[0])
   } catch (error) {
     if (error instanceof QuipSwapError) throw error
     throw wrapContractError(error, `Approving ${item.kind} ${item.token}`)

@@ -58,7 +58,7 @@ export const erc20MockAbi = [
   },
 ] as const
 
-/** WalletFactoryMock surface: setWallet (register), vaultIdOf (membership read). */
+/** WalletFactoryMock surface: setWallet (register), commitmentOf (membership read). */
 export const walletFactoryMockAbi = [
   {
     type: 'function',
@@ -66,16 +66,16 @@ export const walletFactoryMockAbi = [
     stateMutability: 'nonpayable',
     inputs: [
       {name: 'wallet', type: 'address'},
-      {name: 'vaultId', type: 'bytes32'},
+      {name: 'commitment', type: 'bytes32'},
     ],
     outputs: [],
   },
   {
     type: 'function',
-    name: 'vaultIdOf',
+    name: 'commitmentOf',
     stateMutability: 'view',
     inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
+    outputs: [{name: 'commitment', type: 'bytes32'}],
   },
 ] as const
 

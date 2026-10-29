@@ -57,7 +57,7 @@ export interface OmnibusDeployment {
   readonly deployed?: boolean
   /**
    * The quip WalletFactory proxy baked into this Omnibus's immutables. Present
-   * on every registry row. The wallet commit route calls `vaultIdOf` on it, so
+   * on every registry row. The wallet commit route calls `commitmentOf` on it, so
    * a deployment wired to the wrong factory rejects otherwise-valid wallets
    * with `NotQuipWallet` — and cannot be repaired without a redeploy.
    */

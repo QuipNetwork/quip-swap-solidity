@@ -21,7 +21,7 @@ There is one deployable artifact. `TermsLib` is an all-`internal` library and in
 │         │   ┌────────────────────────┐      ┌────────────────────────────┐     │
 │         │   │ IERC7913SignatureVerif.│      │      IWalletFactory        │     │
 │         │   │  KEYED route           │      │  WALLET route              │     │
-│         │   │  (owner-activated)     │      │  (vaultIdOf != 0)          │     │
+│         │   │  (owner-activated)     │      │  (commitmentOf != 0)          │     │
 │         │   └────────────────────────┘      └────────────────────────────┘     │
 │         ▼                                                                      │
 │   escrowed assets: native / ERC-20 / ERC-721 / ERC-1155                        │
@@ -78,7 +78,7 @@ All functions `internal`. Owns terms validation, digesting, and asset movement:
 ### Interfaces
 
 - **`IOmnibus`** — the `LockState` enum, the `CommitAuth` struct, and all errors/events.
-- **`IWalletFactory`** — one method, `vaultIdOf(address wallet) returns (bytes32)`. Non-zero **iff** the address was deployed by the factory; written once and never revocable, so it is a durable membership discriminator.
+- **`IWalletFactory`** — one method, `commitmentOf(address wallet) returns (bytes32)`. Non-zero **iff** the address was deployed by the factory; written once and never revocable, so it is a durable membership discriminator.
 
 ---
 
@@ -171,7 +171,7 @@ A shared shape gate comes first: the only accepted identity is ERC-7913 keyed, `
 
 | | KEYED route (`signature` non-empty) | WALLET route (`signature` empty) |
 |---|---|---|
-| Check | Declared verifier must be owner-activated, and `verify(key, digest, sig)` must return its selector | `WALLET_FACTORY.vaultIdOf(msg.sender)` must be non-zero |
+| Check | Declared verifier must be owner-activated, and `verify(key, digest, sig)` must return its selector | `WALLET_FACTORY.commitmentOf(msg.sender)` must be non-zero |
 | Digest verified? | Yes | No — a vetted wallet only reaches `commit` from its PQ-authenticated execute flow, so factory membership stands in for the endorsement |
 | Signer blob | Cryptographically bound | **Attribution only.** Its verifier prefix is neither activity-checked nor consulted |
 | Sender model | Permissionless: anyone may fund | Collapses to `msg.sender == quip wallet` |

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSE
+// SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.8.33;
 
 import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
@@ -310,8 +310,7 @@ library TermsLib {
       // still slips through: that is the "malicious token is UNSUPPORTED — vet the counter-leg"
       // case documented on commit, not something an on-chain probe can settle.
       if (
-        asset.assetType == AssetType.ERC20
-          && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
+        asset.assetType == AssetType.ERC20 && ERC165Checker.supportsInterface(asset.target, type(IERC721).interfaceId)
       ) {
         revert AssetTypeMismatch();
       }

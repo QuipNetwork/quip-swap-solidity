@@ -107,7 +107,7 @@ library Deployments {
         deployed: false,
         omnibus: Constants.predictOmnibus(versionLabel),
         version: versionLabel,
-        walletFactory: DeployConstants.WALLET_FACTORY
+        walletFactory: DeployConstants.walletFactoryFor(chainId)
       });
     }
   }
@@ -133,7 +133,7 @@ library Deployments {
       );
       require(
         rows[i].walletFactory == want[i].walletFactory,
-        'Deployments: registry walletFactory does not match DeployConstants.WALLET_FACTORY'
+        'Deployments: registry walletFactory does not match DeployConstants.walletFactoryFor(chainId)'
       );
     }
   }

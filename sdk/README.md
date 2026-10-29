@@ -46,6 +46,16 @@ The public surface (`src/index.ts`) is three layers — import only what you nee
 
 See [`USAGE.md`](USAGE.md) for how to use each layer.
 
+### Smart accounts (quip wallets)
+
+The client's writes (`commit` / `claim` / `reclaim`, `submitApproval`) send from the **EOA** behind `walletClient`. A quip wallet is a smart account: on-chain it is `msg.sender`, so **its own** ETH funds `msg.value`, **its own** tokens are pulled (`transferFrom(wallet, …)`, so the allowance must be `allowance(wallet, omnibus)`), and the wallet commit route's factory-membership check is evaluated for **it**. The SDK therefore does not submit for a smart account; it plans the exact call and the wallet's tooling executes it:
+
+- `client.prepareCommit(args, {account: wallet})` → `Call {to, value, data}` — every `commit` preflight (balance, membership, revert simulation) runs against `account`; nothing is sent.
+- `planApprovals({committer: wallet, …})` + `prepareApproval({omnibusAddress, item, erc20Mode})` → `Call` per unsatisfied item.
+- Hand each `Call` to the wallet: `execute(call.to, call.value, call.data, …)`. The SDK never signs and knows nothing about the wallet's `execute`, its fee, or its signature budget.
+
+Notes: a `Call` is a snapshot — `value` embeds the `commitmentFee` read at planning time and the contract checks it for exact equality, so execute promptly. Each executed call costs the wallet one signature; prefer `erc20Mode: 'unlimited'` / `erc721Mode: 'operator'` so a token is approved once, not once per swap (the trade-off is the caller's, the SDK never defaults to unlimited).
+
 ## Running the tests
 
 The suites live under `sdk/test/`. Unit and mocked-client tests are pure (no chain); integration, cross-chain, and smoke need **Foundry** and **start/stop their own Anvil nodes** (no manual node startup). Vitest runs with `fileParallelism: false` because the on-chain suites warp a shared block clock forward.
@@ -95,9 +105,9 @@ sdk/
 │   ├── windows.ts          Half-open [lower,upper) window helpers + validators
 │   ├── hashing.ts          Solidity-exact digestTerms / digestTermsCanonically / generateLock
 │   ├── secrets.ts          generateSecret (CSPRNG), secretToPair
-│   ├── client.ts           createOmnibusClient — typed reads + preflighted writes + admin + waitForReceipt
+│   ├── client.ts           createOmnibusClient — typed reads + preflighted writes + prepareCommit (Call) + admin + waitForReceipt
 │   ├── gas.ts              Gas estimation, multiplier clamp, balance preflight, TxOptions
-│   ├── approvals.ts        planApprovals / submitApproval (ERC-20/721/1155)
+│   ├── approvals.ts        planApprovals / prepareApproval (Call) / submitApproval (ERC-20/721/1155)
 │   ├── receipts.ts         waitForOmnibusReceipt — address-scoped decoding (+ TRANSACTION_REVERTED)
 │   ├── events.ts           decode*/get*/watch event helpers
 │   ├── errors.ts           QuipSwapError + QuipSwapErrorCode

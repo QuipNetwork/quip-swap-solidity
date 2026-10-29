@@ -18,8 +18,8 @@
  *   (`admin.*`) are exposed on separate namespaces so they cannot be
  *   confused.
  */
-import {BaseError, InsufficientFundsError, size} from 'viem'
-import type {Address, Hash, PublicClient, WalletClient} from 'viem'
+import {BaseError, InsufficientFundsError, encodeFunctionData, size} from 'viem'
+import type {Address, Hash, Hex, PublicClient, WalletClient} from 'viem'
 import {totalNative} from './assets.js'
 import {assertSignerBlob} from './commitAuth.js'
 import type {CommitAuth} from './commitAuth.js'
@@ -85,6 +85,40 @@ export interface CommitArgs {
    * intentional, so this flag is the explicit opt-out. Default `false` (guard on).
    */
   readonly allowDistantReclaimRelease?: boolean
+}
+
+/**
+ * A single contract call in the ERC-5792 / ERC-4337 shape: the exact
+ * `{to, value, data}` a transaction (or a smart account's `execute`) must
+ * carry. Produced by {@link OmnibusClient.prepareCommit} and
+ * {@link prepareApproval}; the SDK never executes a `Call` on behalf of a
+ * smart account — that is the account's own tooling's job.
+ */
+export interface Call {
+  /** The contract to call. */
+  readonly to: Address
+  /** Native value to attach (wei). */
+  readonly value: bigint
+  /** ABI-encoded calldata. */
+  readonly data: Hex
+}
+
+/** Options for {@link OmnibusClient.prepareCommit}. */
+export interface PrepareCallOptions {
+  /**
+   * The account that will be `msg.sender` when the call executes — for a
+   * smart account (e.g. a quip wallet), the ACCOUNT CONTRACT's address, not
+   * the key that signs or the EOA that pays gas. Every account-dependent
+   * preflight (balance, factory membership, revert simulation) runs against
+   * this address, because on-chain the assets are pulled from `msg.sender`
+   * and `msg.value` is the account's own balance.
+   */
+  readonly account: Address
+  /**
+   * Skips ONLY the balance preflight (`getBalance(account) >= value`), never
+   * the protocol preflights. Default `false`.
+   */
+  readonly skipPreflightChecks?: boolean
 }
 
 /** Arguments for {@link OmnibusClient.claim}. */
@@ -256,12 +290,12 @@ export interface OmnibusClient {
    * Reads whether `account` is a wallet deployed by the contract's
    * WalletFactory — the wallet commit route's membership check. An
    * empty-signature commit succeeds only when the SENDER passes this check
-   * (`vaultIdOf(account) != 0`; the contract reverts `NotQuipWallet`
+   * (`commitmentOf(account) != 0`; the contract reverts `NotQuipWallet`
    * otherwise).
    *
    * @param account - The address to test for factory membership.
    * @returns `true` iff `account` was deployed by the wallet factory.
-   * @see IWalletFactory.vaultIdOf
+   * @see IWalletFactory.commitmentOf
    */
   isQuipWallet(account: Address): Promise<boolean>
   /**
@@ -285,11 +319,13 @@ export interface OmnibusClient {
    * Commits a side of a swap. PERMISSIONLESS and payable — the contract
    * authenticates the PAYLOAD (`args.auth`), not the caller.
    *
-   * FUNDING MODEL: the SENDER (the wallet client's account) funds the
+   * FUNDING MODEL: the SENDER (the wallet client's account, an EOA) funds the
    * party's leg + fee — assets are pulled from `msg.sender` and `msg.value`
-   * must cover `totalNative(party) + commitmentFee`. The identity in
-   * Funding is independent of authorization: the identity in `auth.signer`
-   * only endorses the payload, it never pays.
+   * must cover `totalNative(party) + commitmentFee`. Funding is independent
+   * of authorization: the identity in `auth.signer` only endorses the
+   * payload, it never pays. For a SMART ACCOUNT (e.g. a quip wallet) that
+   * must itself be `msg.sender`, use {@link prepareCommit} and execute the
+   * returned Call from the account.
    *
    * Preflight (in order, all before any transaction exists):
    * 1. Both terms structurally valid; 2. pairing strictly interleaves;
@@ -355,6 +391,47 @@ export interface OmnibusClient {
    * ```
    */
   commit(args: CommitArgs, opts?: TxOptions): Promise<Hash>
+
+  /**
+   * Plans a commit for `options.account` and returns the exact
+   * {@link Call} that account must execute — WITHOUT sending anything.
+   *
+   * This is the smart-account entry point. A quip wallet is `msg.sender` to
+   * the Omnibus, so its own ETH funds `value`, its own tokens are pulled, and
+   * the wallet route's factory-membership check is evaluated against it. The
+   * SDK cannot (and does not) submit for a smart account: hand the returned
+   * `Call` to the wallet's tooling, which signs and calls `execute(to, value,
+   * data, …)`. EOA callers should use {@link commit} instead.
+   *
+   * Runs every {@link commit} preflight, all against `options.account`:
+   * balance (`getBalance(account) >= value`; skip with
+   * `skipPreflightChecks`), wallet-route membership (`NOT_QUIP_WALLET` if
+   * `auth.signature` is empty and the account is not a factory wallet), and a
+   * node-side simulation `from: account` so a would-be revert surfaces here,
+   * decoded. Gas is NOT part of the result: the estimate covers the inner
+   * call only, and the outer transaction (or `execute`) is the executor's
+   * concern.
+   *
+   * @remarks The `Call` is a snapshot. `value` embeds the fee read at planning
+   * time and the contract checks it for EXACT equality; a fee change between
+   * planning and execution reverts `IncorrectNativeAmountReceived`, so
+   * execute promptly. A smart account must additionally hold whatever its own
+   * `execute` charges (e.g. a factory execute fee) — the SDK does not know
+   * about it.
+   *
+   * @param args - See {@link CommitArgs}.
+   * @param options - See {@link PrepareCallOptions}; `account` is required.
+   * @returns The `{to: omnibus, value, data}` to execute from `account`.
+   * @throws Every {@link commit} preflight code except `MISSING_WALLET_CLIENT`
+   *   / `MISSING_ACCOUNT` (no wallet client is needed to plan).
+   * @example
+   * ```ts
+   * // quip wallet: plan against the WALLET address, execute via the wallet
+   * const call = await client.prepareCommit({lock, party, counterparty, auth}, {account: wallet})
+   * await walletTooling.execute(call.to, call.value, call.data)
+   * ```
+   */
+  prepareCommit(args: CommitArgs, options: PrepareCallOptions): Promise<Call>
 
   /**
    * Claims a swap by revealing the secret. PERMISSIONLESS — the contract
@@ -452,6 +529,9 @@ export interface OmnibusClient {
 }
 
 /** Convert SDK Terms (readonly) into the mutable tuple shape viem encodes. */
+/** The ABI-typed argument tuple of `Omnibus.commit`. */
+type CommitAbiArgs = readonly [Hex32, ReturnType<typeof toAbiTerms>, ReturnType<typeof toAbiTerms>, {signer: Hex; signature: Hex}]
+
 function toAbiTerms(terms: Terms) {
   return {
     chainId: terms.chainId,
@@ -490,10 +570,10 @@ function lockStateName(state: LockState): string {
 const walletFactoryAbi = [
   {
     type: 'function',
-    name: 'vaultIdOf',
+    name: 'commitmentOf',
     stateMutability: 'view',
     inputs: [{name: 'wallet', type: 'address'}],
-    outputs: [{name: 'vaultId', type: 'bytes32'}],
+    outputs: [{name: 'commitment', type: 'bytes32'}],
   },
 ] as const
 
@@ -542,22 +622,22 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
   }
 
   /**
-   * The wallet commit route's membership check: `vaultIdOf(account) != 0` on
+   * The wallet commit route's membership check: `commitmentOf(account) != 0` on
    * the contract's baked WalletFactory (write-once registry, non-zero iff
    * factory-deployed).
    */
   async function isQuipWallet(account: Address): Promise<boolean> {
     const factory = await read<Address>('WALLET_FACTORY')
     try {
-      const vaultId = await publicClient.readContract({
+      const commitment = await publicClient.readContract({
         address: factory,
         abi: walletFactoryAbi,
-        functionName: 'vaultIdOf',
+        functionName: 'commitmentOf',
         args: [account],
       })
-      return BigInt(vaultId) !== 0n
+      return BigInt(commitment) !== 0n
     } catch (error) {
-      throw wrapContractError(error, 'Reading vaultIdOf on the wallet factory')
+      throw wrapContractError(error, 'Reading commitmentOf on the wallet factory')
     }
   }
 
@@ -918,6 +998,129 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
     },
   }
 
+  /**
+   * The commit preflights (steps 1-8 of {@link OmnibusClient.commit}) for a
+   * given acting account, shared by `commit` (account = the wallet client's
+   * EOA) and `prepareCommit` (account = whatever will be `msg.sender`, e.g. a
+   * quip wallet). Returns the ABI args and the exact `msg.value`.
+   */
+  async function planCommit(
+    {lock, party, counterparty, auth, verifyOnChainState = true, allowDistantReclaimRelease = false}: CommitArgs,
+    account: Address,
+  ): Promise<{abiArgs: CommitAbiArgs; value: bigint}> {
+    assertHex32(lock, 'lock')
+    // 1-2. structural + pairing validation (mirrors the contract's order)
+    validateTerms(party)
+    validateTerms(counterparty)
+    validateTermPairing(party, counterparty)
+
+    // 3. only the LOCAL side's chainId must match; the counterparty may be remote
+    const connectedChainId = BigInt(await publicClient.getChainId())
+    if (party.chainId !== connectedChainId) {
+      throw new QuipSwapError({
+        code: 'CHAIN_ID_MISMATCH',
+        message:
+          `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +
+          "commit must be sent on the chain holding the party's assets (contract: ChainIdMismatch)",
+        details: {partyChainId: party.chainId, connectedChainId},
+      })
+    }
+
+    // 3b. asset-type probe — reject an ERC20-declared leg whose target is really an
+    // ERC721 (selector-collision trap). Only the LOCAL party leg is probed, matching
+    // the contract's deposit-path guard; the counterparty leg is validated on its own
+    // chain. Runs before estimation so the failure is a clear ASSET_TYPE_MISMATCH
+    // rather than a decoded AssetTypeMismatch revert.
+    await assertNoErc20Erc721Collision(party)
+
+    // 4. signer-blob shape preflight — the contract reverts MalformedSigner
+    // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
+    // ERC-7913 verifier call: the
+    // SDK cannot know the route's semantics off-chain, and gas estimation
+    // surfaces a would-be InvalidCommitSignature as a decoded revert.
+    // NOTE the funding model: `account` (not auth.signer) funds the leg + fee.
+    assertSignerBlob(auth.signer)
+
+    // 4b. wallet-route preflight — an EMPTY signature selects the wallet
+    // route, where the contract requires the SENDER to be a factory-deployed
+    // quip wallet. Membership is a plain read, so catch it before estimation
+    if (size(auth.signature) === 0 && !(await isQuipWallet(account))) {
+      throw new QuipSwapError({
+        code: 'NOT_QUIP_WALLET',
+        message:
+          `An empty auth.signature selects the wallet commit route, but the account ${account} is not a wallet ` +
+          'deployed by the WalletFactory (contract: NotQuipWallet). Provide a signature over the commit digest ' +
+          'for the keyed route, or send from a quip wallet',
+        details: {account},
+      })
+    }
+
+    // 5. role-aware commit window; surfaces "taker too early" clearly
+    const timestamp = await chainTimestamp()
+
+    // 5b. reasonableness guard (SDK-only, no contract equivalent): a reclaimRelease far
+    // beyond now leaves an unrecoverable-until-then leg if the swap fails. Check BOTH legs
+    // (pure timestamp arithmetic, so the remote leg is fair game) so a distant value is
+    // caught at the first commit. Opt out per-call with allowDistantReclaimRelease.
+    if (!allowDistantReclaimRelease) {
+      const horizon = timestamp + MAX_RECLAIM_HORIZON_SECONDS
+      const distant = party.reclaimRelease > horizon ? party : counterparty.reclaimRelease > horizon ? counterparty : undefined
+      if (distant !== undefined) {
+        throw new QuipSwapError({
+          code: 'RECLAIM_RELEASE_TOO_DISTANT',
+          message:
+            `reclaimRelease ${distant.reclaimRelease} is more than ${MAX_RECLAIM_HORIZON_SECONDS}s ` +
+            `(~2 weeks) beyond the chain time ${timestamp}; a far-future reclaimRelease strands the leg ` +
+            'until then if the swap fails. Pass allowDistantReclaimRelease: true to commit anyway',
+          details: {reclaimRelease: distant.reclaimRelease, timestamp, horizon},
+        })
+      }
+    }
+
+    try {
+      validateCommitWindow(party, counterparty, timestamp)
+    } catch (error) {
+      if (
+        error instanceof QuipSwapError &&
+        error.code === 'WINDOW_VIOLATED' &&
+        proposedBy(party, counterparty) === 'counterparty' &&
+        timestamp < counterparty.commitmentDeadline
+      ) {
+        throw new QuipSwapError({
+          code: 'WINDOW_VIOLATED',
+          message:
+            `Taker commit window has not opened yet: it opens at the proposer's commitmentDeadline ` +
+            `(${counterparty.commitmentDeadline}) and the chain time is ${timestamp}. Wait for the proposer's ` +
+            'deadline to elapse before committing',
+          details: {opensAt: counterparty.commitmentDeadline, timestamp},
+          cause: error,
+        })
+      }
+      throw error
+    }
+
+    // 6. lock-state preflight (Spent/Committed cannot accept a commit;
+    // Free requires matching termsHash and an un-posted party side)
+    if (verifyOnChainState) {
+      await verifyCommitState(lock, party, counterparty)
+    }
+
+    // 7-8. SECURITY: re-read the fee immediately before estimating — the
+    // owner can change it, and the contract checks msg.value for EXACT
+    // equality (IncorrectNativeAmountReceived); a stale fee bricks the tx
+    // in either direction (under- AND overpayment revert)
+    const fee = await read<bigint>('commitmentFee')
+    const value = totalNative(party) + fee
+
+    const abiArgs: CommitAbiArgs = [
+      lock,
+      toAbiTerms(party),
+      toAbiTerms(counterparty),
+      {signer: auth.signer, signature: auth.signature},
+    ]
+    return {abiArgs, value}
+  }
+
   return {
     address,
     publicClient,
@@ -961,132 +1164,28 @@ export function createOmnibusClient(args: CreateOmnibusClientArgs): OmnibusClien
       waitForOmnibusReceipt(publicClient, hash, {...options, address}),
 
     // @audit-ok
-    async commit(
-      {lock, party, counterparty, auth, verifyOnChainState = true, allowDistantReclaimRelease = false}: CommitArgs,
-      opts?: TxOptions,
-    ): Promise<Hash> {
-      assertHex32(lock, 'lock')
+    async commit(args: CommitArgs, opts?: TxOptions): Promise<Hash> {
       const {wallet, sender} = requireWallet()
-
-      // 1-2. structural + pairing validation (mirrors the contract's order)
-      validateTerms(party)
-      validateTerms(counterparty)
-      validateTermPairing(party, counterparty)
-
-      // 3. only the LOCAL side's chainId must match; the counterparty may be remote
-      const connectedChainId = BigInt(await publicClient.getChainId())
-      if (party.chainId !== connectedChainId) {
-        throw new QuipSwapError({
-          code: 'CHAIN_ID_MISMATCH',
-          message:
-            `party.chainId (${party.chainId}) does not match the connected chain (${connectedChainId}); ` +
-            "commit must be sent on the chain holding the party's assets (contract: ChainIdMismatch)",
-          details: {partyChainId: party.chainId, connectedChainId},
-        })
-      }
-
-      // 3b. asset-type probe — reject an ERC20-declared leg whose target is really an
-      // ERC721 (selector-collision trap). Only the LOCAL party leg is probed, matching
-      // the contract's deposit-path guard; the counterparty leg is validated on its own
-      // chain. Runs before estimation so the failure is a clear ASSET_TYPE_MISMATCH
-      // rather than a decoded AssetTypeMismatch revert.
-      await assertNoErc20Erc721Collision(party)
-
-      // 4. signer-blob shape preflight — the contract reverts MalformedSigner
-      // at 20 bytes or fewer. Signature VALIDITY is left to the contract's
-      // ERC-7913 verifier call: the
-      // SDK cannot know the route's semantics off-chain, and gas estimation
-      // surfaces a would-be InvalidCommitSignature as a decoded revert.
-      // NOTE the funding model: `sender` (not auth.signer) funds the leg + fee.
-      assertSignerBlob(auth.signer)
-
-      // 4b. wallet-route preflight — an EMPTY signature selects the wallet
-      // route, where the contract requires the SENDER to be a factory-deployed
-      // quip wallet. Membership is a plain read, so catch it before estimation
-      if (size(auth.signature) === 0 && !(await isQuipWallet(sender))) {
-        throw new QuipSwapError({
-          code: 'NOT_QUIP_WALLET',
-          message:
-            `An empty auth.signature selects the wallet commit route, but the sender ${sender} is not a wallet ` +
-            'deployed by the WalletFactory (contract: NotQuipWallet). Provide a signature over the commit digest ' +
-            'for the keyed route, or send from a quip wallet',
-          details: {sender},
-        })
-      }
-
-      // 5. role-aware commit window; surfaces "taker too early" clearly
-      const timestamp = await chainTimestamp()
-
-      // 5b. reasonableness guard (SDK-only, no contract equivalent): a reclaimRelease far
-      // beyond now leaves an unrecoverable-until-then leg if the swap fails. Check BOTH legs
-      // (pure timestamp arithmetic, so the remote leg is fair game) so a distant value is
-      // caught at the first commit. Opt out per-call with allowDistantReclaimRelease.
-      if (!allowDistantReclaimRelease) {
-        const horizon = timestamp + MAX_RECLAIM_HORIZON_SECONDS
-        const distant = party.reclaimRelease > horizon ? party : counterparty.reclaimRelease > horizon ? counterparty : undefined
-        if (distant !== undefined) {
-          throw new QuipSwapError({
-            code: 'RECLAIM_RELEASE_TOO_DISTANT',
-            message:
-              `reclaimRelease ${distant.reclaimRelease} is more than ${MAX_RECLAIM_HORIZON_SECONDS}s ` +
-              `(~2 weeks) beyond the chain time ${timestamp}; a far-future reclaimRelease strands the leg ` +
-              'until then if the swap fails. Pass allowDistantReclaimRelease: true to commit anyway',
-            details: {reclaimRelease: distant.reclaimRelease, timestamp, horizon},
-          })
-        }
-      }
-
-      try {
-        validateCommitWindow(party, counterparty, timestamp)
-      } catch (error) {
-        if (
-          error instanceof QuipSwapError &&
-          error.code === 'WINDOW_VIOLATED' &&
-          proposedBy(party, counterparty) === 'counterparty' &&
-          timestamp < counterparty.commitmentDeadline
-        ) {
-          throw new QuipSwapError({
-            code: 'WINDOW_VIOLATED',
-            message:
-              `Taker commit window has not opened yet: it opens at the proposer's commitmentDeadline ` +
-              `(${counterparty.commitmentDeadline}) and the chain time is ${timestamp}. Wait for the proposer's ` +
-              'deadline to elapse before committing',
-            details: {opensAt: counterparty.commitmentDeadline, timestamp},
-            cause: error,
-          })
-        }
-        throw error
-      }
-
-      // 6. lock-state preflight (Spent/Committed cannot accept a commit;
-      // Free requires matching termsHash and an un-posted party side)
-      if (verifyOnChainState) {
-        await verifyCommitState(lock, party, counterparty)
-      }
-
-      // 7-8. SECURITY: re-read the fee immediately before estimating — the
-      // owner can change it, and the contract checks msg.value for EXACT
-      // equality (IncorrectNativeAmountReceived); a stale fee bricks the tx
-      // in either direction (under- AND overpayment revert)
-      const fee = await read<bigint>('commitmentFee')
-      const value = totalNative(party) + fee
-
+      const {abiArgs, value} = await planCommit(args, sender)
       // 9-11. balance preflight + estimate (revert check) + buffer + submit
-      return submitWrite({
-        wallet,
-        sender,
-        functionName: 'commit',
-        args: [
-          lock,
-          toAbiTerms(party),
-          toAbiTerms(counterparty),
-          {signer: auth.signer, signature: auth.signature},
-        ],
-        value,
-        opts,
-        context: 'commit',
-      })
+      return submitWrite({wallet, sender, functionName: 'commit', args: abiArgs, value, opts, context: 'commit'})
     },
+
+    async prepareCommit(args: CommitArgs, options: PrepareCallOptions): Promise<Call> {
+      const {account} = options
+      const {abiArgs, value} = await planCommit(args, account)
+      // 9-10. balance preflight + simulation FROM THE ACCOUNT — the same two
+      // gates commit runs before sending; the gas figure is discarded (it is
+      // the inner call's, not the executor's)
+      await prepareTx({
+        publicClient,
+        contractParams: {address, abi: omnibusAbi, functionName: 'commit', args: abiArgs, value, account},
+        totalValue: value,
+        ...(options.skipPreflightChecks === true ? {opts: {skipPreflightChecks: true}} : {}),
+      })
+      return {to: address, value, data: encodeFunctionData({abi: omnibusAbi, functionName: 'commit', args: abiArgs})}
+    },
+
 
     async claim(
       {secret, party, counterparty, verifyOnChainState = true}: ClaimArgs,

@@ -31,8 +31,15 @@ contract Omnibus_SettlementHostage is OmnibusTest {
   function test_hostage_reclaim_hostileCounterpartyRecipientCannotBlockParty() public {
     Terms memory alice = _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT)); // ALICE reclaimRecipient
     // Bob's reclaimRecipient is the rejecting contract
-    Terms memory bob =
-      _makeTerms(block.chainid, address(hostile), BOB_RECIPIENT, BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, _makeNativeAssets(DEFAULT_AMOUNT));
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      address(hostile),
+      BOB_RECIPIENT,
+      BOB_COMMIT_DEADLINE,
+      BOB_CLAIM_DEADLINE,
+      BOB_RECLAIM_RELEASE,
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
 
     _commitBothParties(lock, alice, bob);
 
@@ -54,8 +61,15 @@ contract Omnibus_SettlementHostage is OmnibusTest {
   function test_hostage_claim_vetoDefusedByIndependentReclaim() public {
     Terms memory alice = _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT));
     // Bob's recipient (claim payout destination) is the rejecting contract
-    Terms memory bob =
-      _makeTerms(block.chainid, BOB, address(hostile), BOB_COMMIT_DEADLINE, BOB_CLAIM_DEADLINE, BOB_RECLAIM_RELEASE, _makeNativeAssets(DEFAULT_AMOUNT));
+    Terms memory bob = _makeTerms(
+      block.chainid,
+      BOB,
+      address(hostile),
+      BOB_COMMIT_DEADLINE,
+      BOB_CLAIM_DEADLINE,
+      BOB_RECLAIM_RELEASE,
+      _makeNativeAssets(DEFAULT_AMOUNT)
+    );
 
     _commitBothParties(lock, alice, bob);
 
