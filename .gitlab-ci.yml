@@ -1,0 +1,89 @@
+stages:
+  - test
+
+# Run on MRs and on pushes to main; skip branch pipelines for branches that
+# already have an open MR so each push triggers one pipeline, not two.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+variables:
+  FOUNDRY_VERSION: v1.8.1
+  # sha256 of foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz from the GitHub release.
+  FOUNDRY_SHA256: 37b45855232e57624d90113b049ca54f0c92055bb5c1997fcbdc3076c7b89c10
+  BUN_VERSION: 1.3.5
+
+.soldeer-cache: &soldeer-cache
+  key:
+    files:
+      - soldeer.lock
+  paths:
+    - dependencies/
+
+.sdk-cache: &sdk-cache
+  key:
+    files:
+      - sdk/bun.lock
+  paths:
+    - sdk/node_modules/
+
+.soldeer-install:
+  script:
+    # hashsigs-solidity is pinned by SSH URL in foundry.toml; the job has no SSH
+    # key, but the repo is public, so fetch it over HTTPS instead.
+    - git config --global url."https://gitlab.com/".insteadOf "git@gitlab.com:"
+    - forge soldeer install
+
+forge-test:
+  stage: test
+  image:
+    name: ghcr.io/foundry-rs/foundry:$FOUNDRY_VERSION
+    # The image's default entrypoint is `sh -c`, which swallows the job script.
+    entrypoint: [""]
+    # The image runs as `foundry`, which cannot write `dependencies/`, `cache/`
+    # or `out/` into the runner-owned checkout.
+    docker:
+      user: root
+  cache:
+    - *soldeer-cache
+  script:
+    - !reference [.soldeer-install, script]
+    - forge test
+
+sdk-test:
+  stage: test
+  # vitest must run on Node: under the Bun runtime it runs 1 of 14 test files
+  # and still exits 0.
+  image: node:22-bookworm-slim
+  cache:
+    - *sdk-cache
+  before_script:
+    - npm install -g bun@$BUN_VERSION
+  script:
+    - cd sdk
+    - bun install --frozen-lockfile
+    - bun run test
+
+# Integration and cross-chain suites deploy real Foundry artifacts to local
+# Anvil nodes, so they need forge + anvil alongside Node and bun.
+sdk-integration-test:
+  stage: test
+  image: node:22-bookworm
+  cache:
+    - *soldeer-cache
+    - *sdk-cache
+  before_script:
+    - npm install -g bun@$BUN_VERSION
+    - curl -sSfLO "https://github.com/foundry-rs/foundry/releases/download/$FOUNDRY_VERSION/foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz"
+    - echo "$FOUNDRY_SHA256  foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz" | sha256sum -c -
+    - tar xzf "foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz" -C /usr/local/bin forge anvil
+    - rm "foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz"
+  script:
+    - !reference [.soldeer-install, script]
+    - cd sdk
+    - bun install --frozen-lockfile
+    - bun run test:integration
+    - bun run test:cross-chain
