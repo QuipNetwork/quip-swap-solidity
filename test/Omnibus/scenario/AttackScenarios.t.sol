@@ -8,6 +8,7 @@ import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.
 import {OmnibusHarness} from '../../harness/OmnibusHarness.sol';
 import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
 import {VerifierMock} from '../../mocks/VerifierMock.sol';
+import {WalletFactoryMock} from '../../mocks/WalletFactoryMock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
@@ -71,11 +72,12 @@ contract Omnibus_AttackScenarios is Test {
     // commit is permissionless; each committer authenticates with its own keyed
     // ERC-7913 identity through a shared accept-all mock verifier
     verifier = new VerifierMock();
-    omnibus = new OmnibusHarness(address(this));
+    WalletFactoryMock walletFactory = new WalletFactoryMock();
+    omnibus = new OmnibusHarness(address(this), address(walletFactory));
     omnibus.setVerifierActivity(address(verifier), true);
-    omnibusA = new OmnibusHarness(address(this));
+    omnibusA = new OmnibusHarness(address(this), address(walletFactory));
     omnibusA.setVerifierActivity(address(verifier), true);
-    omnibusB = new OmnibusHarness(address(this));
+    omnibusB = new OmnibusHarness(address(this), address(walletFactory));
     omnibusB.setVerifierActivity(address(verifier), true);
     tokenA = new ERC20Mock('TokenA', 'TKA', 18);
     tokenB = new ERC20Mock('TokenB', 'TKB', 18);

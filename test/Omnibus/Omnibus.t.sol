@@ -3,12 +3,17 @@ pragma solidity 0.8.33;
 
 import {Asset, AssetType, Terms} from '../../src/TermsLib.sol';
 import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
+import {IWalletFactory} from '../../src/interfaces/IWalletFactory.sol';
 import {OmnibusHarness} from '../harness/OmnibusHarness.sol';
 import {VerifierMock} from '../mocks/VerifierMock.sol';
+import {WalletFactoryMock} from '../mocks/WalletFactoryMock.sol';
 import {AssetHelper} from '../utils/AssetHelper.sol';
 import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
+import {
+  IERC7913SignatureVerifier
+} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus Base Test
@@ -56,6 +61,7 @@ contract OmnibusTest is TestBase {
   OmnibusHarness public omnibus;
   VerifierMock public verifierA;
   VerifierMock public verifierB;
+  WalletFactoryMock public walletFactory;
 
   // ============ Identities (ERC-7913 keyed — the only commit-auth route) ============
 
@@ -67,6 +73,7 @@ contract OmnibusTest is TestBase {
   // ============ Test Data ============
 
   bytes32 public constant SECRET = keccak256('secret');
+  bytes32 public constant VAULT_ID = keccak256('some vault id');
   bytes32 public lock;
 
   // ============ Setup ============
@@ -75,12 +82,13 @@ contract OmnibusTest is TestBase {
     super.setUp();
 
     // Deploy verification doubles: two ERC-7913 verifier instances (activity
-    // independence)
+    // independence) and the wallet-factory registry double
     verifierA = new VerifierMock();
     verifierB = new VerifierMock();
+    walletFactory = new WalletFactoryMock();
 
     // Deploy Omnibus harness; activate verifierA only (post-deploy owner action)
-    omnibus = new OmnibusHarness(address(this));
+    omnibus = new OmnibusHarness(address(this), address(walletFactory));
     omnibus.setVerifierActivity(address(verifierA), true);
 
     // Default identities: both keyed via the active verifierA
@@ -110,6 +118,7 @@ contract OmnibusTest is TestBase {
     assertEq(omnibus.VERSION(), 0);
     assertTrue(omnibus.verifierActive(address(verifierA)));
     assertFalse(omnibus.verifierActive(address(verifierB)));
+    assertEq(address(omnibus.WALLET_FACTORY()), address(walletFactory));
   }
 
   // ============ Internal Helpers ============
@@ -117,6 +126,56 @@ contract OmnibusTest is TestBase {
   /// @notice Approve omnibus harness to spend owner's tokens
   function _approveAllForOmnibus(address owner) internal {
     _approveAllFor(owner, address(omnibus));
+  }
+
+  // ============ Mock Helpers (verifierA / walletFactory doubles) ============
+
+  /// @notice registers `account` as a factory-deployed wallet under VAULT_ID —
+  /// the wallet route's whole authorization
+  function _registerWallet(address account) internal {
+    walletFactory.setWallet(account, VAULT_ID);
+  }
+
+  /// @dev verifierA returns `result` for ANY verify call (selector-prefix mock)
+  function _mockVerifierReturns(bytes4 result) internal {
+    vm.mockCall(
+      address(verifierA), abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector), abi.encode(result)
+    );
+  }
+
+  /// @dev baseline: verifierA rejects every verify call (returns wrong magic)
+  function _mockVerifierRejectsAll() internal {
+    _mockVerifierReturns(bytes4(0xffffffff));
+  }
+
+  /// @dev verifierA accepts EXACTLY (key, digest, signature) and rejects all
+  /// else: a reject-all prefix mock underneath, an exact-calldata accept on
+  /// top (specific mocks take precedence; registered second wins either way)
+  function _mockVerifierAcceptsOnly(bytes memory key, bytes32 digest, bytes memory signature) internal {
+    _mockVerifierRejectsAll();
+    vm.mockCall(
+      address(verifierA),
+      abi.encodeCall(IERC7913SignatureVerifier.verify, (key, digest, signature)),
+      abi.encode(IERC7913SignatureVerifier.verify.selector)
+    );
+  }
+
+  /// @dev verifierA reverts on ANY verify call with Error(`reason`)
+  function _mockVerifierReverts(string memory reason) internal {
+    vm.mockCallRevert(
+      address(verifierA),
+      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
+      abi.encodeWithSignature('Error(string)', reason)
+    );
+  }
+
+  /// @dev the factory reverts on ANY vaultIdOf call with Error(`reason`)
+  function _mockFactoryReverts(string memory reason) internal {
+    vm.mockCallRevert(
+      address(walletFactory),
+      abi.encodeWithSelector(IWalletFactory.vaultIdOf.selector),
+      abi.encodeWithSignature('Error(string)', reason)
+    );
   }
 
   // ============ CommitAuth Builders ============

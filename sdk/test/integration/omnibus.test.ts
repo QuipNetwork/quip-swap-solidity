@@ -30,6 +30,7 @@ import {waitForOmnibusReceipt} from '../../src/receipts.js'
 import type {OmnibusReceipt} from '../../src/receipts.js'
 import {LockState} from '../../src/types.js'
 import type {Asset, Hex32, Terms} from '../../src/types.js'
+import {keyedAuth as keyedAuthFor, deregisterWallet, registerWallet, walletAuth} from '../helpers/auth.js'
 import {connectChain, deployFixture} from '../helpers/chain.js'
 import type {ChainContext, Fixture, TestActor} from '../helpers/chain.js'
 import {erc1155MockAbi, erc20MockAbi, erc721MockAbi} from '../helpers/mockAbis.js'
@@ -174,12 +175,8 @@ function confirmReceipt(hash: Hash): Promise<OmnibusReceipt> {
   return waitForOmnibusReceipt(ctx.publicClient, hash, {address: fixture.omnibus})
 }
 
-/**
- * Keyed ERC-7913 auth for an actor: the fixture's AcceptAll VerifierMock is
- * the verifier and the actor's 20-byte address doubles as the key (40-byte
- * blob). The mock ignores signatures, so '0x' is fine.
- */
-const keyedAuth = (addr: Address): CommitAuth => ({signer: buildKeyedSigner(fixture.verifier, addr), signature: '0x'})
+/** Keyed ERC-7913 auth for an actor via the shared helper, bound to this suite's fixture. */
+const keyedAuth = (addr: Address): CommitAuth => keyedAuthFor(fixture, addr)
 
 beforeAll(async () => {
   ctx = connectChain(RPC_URL, CHAIN_ID)
@@ -310,11 +307,74 @@ describe('commit authorization', () => {
     const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
     await ctx.warpTo(s.anchors.proposerCommit)
     // well-formed 40-byte keyed blob, but the declared "verifier" (alice's
-    // EOA address) was never activated by the owner
+    // EOA address) was never activated by the owner. The signature must be
+    // NON-EMPTY: an empty one would select the wallet route, which never
+    // consults the verifier
     await expectContractError(
-      rawCommit(ctx.bob, lock, alice, bob, 10n, {signer: buildKeyedSigner(ctx.alice.address, ctx.alice.address), signature: '0x'}),
+      rawCommit(ctx.bob, lock, alice, bob, 10n, {
+        signer: buildKeyedSigner(ctx.alice.address, ctx.alice.address),
+        signature: '0x656e76656c6f7065',
+      }),
       'VerifierNotActive',
     )
+  })
+
+  it('wallet route: an empty signature commits iff the sender is registered in the wallet factory', async () => {
+    // register bob as a "factory-deployed quip wallet" in the settable
+    // registry mock; his identity blob rides along as attribution only
+    await registerWallet(ctx, fixture, ctx.bob.address)
+
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    const auth = walletAuth(fixture, ctx.bob.address)
+    const receipt = await confirmReceipt(
+      await bobClient.commit({lock, party: alice, counterparty: bob, auth}),
+    )
+    expect(receipt.commitments).toHaveLength(1)
+    expect(receipt.commitments[0]?.sender.toLowerCase()).toBe(ctx.bob.address.toLowerCase())
+    expect(receipt.commitments[0]?.signer.toLowerCase()).toBe(auth.signer.toLowerCase())
+
+    // deregister to restore the fixture invariant (no actor is a wallet)
+    await deregisterWallet(ctx, fixture, ctx.bob.address)
+  })
+
+  it('wallet route: an unregistered sender is rejected in preflight (NOT_QUIP_WALLET) and on-chain (NotQuipWallet)', async () => {
+    const {lock} = nextSecret()
+    const s = await freshSchedule()
+    const alice = s.aliceTerms([nativeAsset(10n)])
+    const bob = s.bobTerms([erc20Asset(fixture.erc20, 10n)])
+    await ctx.warpTo(s.anchors.proposerCommit)
+
+    // SDK preflight: rejected before any transaction exists
+    try {
+      await aliceClient.commit({lock, party: alice, counterparty: bob, auth: walletAuth(fixture, ctx.alice.address)})
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(QuipSwapError)
+      expect((error as QuipSwapError).code).toBe('NOT_QUIP_WALLET')
+    }
+    expect(await aliceClient.getLockState(lock)).toBe(LockState.Unused) // nothing reached the chain
+
+    // the contract enforces the same rule (raw call bypassing preflight):
+    // membership is checked against the actual sender, regardless of the
+    // declared identity
+    await expectContractError(
+      rawCommit(ctx.alice, lock, alice, bob, 10n, walletAuth(fixture, ctx.alice.address)),
+      'NotQuipWallet',
+    )
+  })
+
+  it('isQuipWallet and getWalletFactory read the factory surface', async () => {
+    expect((await aliceClient.getWalletFactory()).toLowerCase()).toBe(fixture.walletFactory.toLowerCase())
+    expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(false)
+    await registerWallet(ctx, fixture, ctx.alice.address)
+    expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(true)
+    await deregisterWallet(ctx, fixture, ctx.alice.address)
+    expect(await aliceClient.isQuipWallet(ctx.alice.address)).toBe(false)
   })
 
   it('claim and reclaim succeed from an arbitrary third-party account', async () => {
@@ -724,7 +784,7 @@ describe('keyed ERC-7913 commit authorization', () => {
         lock,
         party: alice,
         counterparty: bob,
-        auth: {signer: keyedSigner, signature: '0x'},
+        auth: {signer: keyedSigner, signature: '0x656e76656c6f7065'},
       }),
     )
     expect(await charlieClient.getLockState(lock)).toBe(LockState.Free)

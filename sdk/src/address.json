@@ -1,5 +1,5 @@
 {
-  "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical CREATE3 address derived from (Deployer contract, salt); 'chains' lists chain ids where it is VERIFIED-deployed (verify with `make verify-omnibus`). Empty/placeholder until a real deployment is confirmed; while empty, the SDK resolves no built-in address and requires an override.",
-  "omnibusAddress": "0xD113aaA0F40945136A11a832087E23A72b38CE00",
-  "chains": [84532, 11155420]
+  "_comment": "Verified Omnibus deployments. 'omnibusAddress' is the canonical CREATE3 address derived from (CreateX, deployer EOA, salt) — predicted by `make verify-omnibus`; 'chains' lists chain ids where it is VERIFIED-deployed. The address below is the wallet-route Omnibus (salt entropy QUIP:Omnibus:v1.0.0-alpha.2, two-argument constructor), confirmed on-chain on Base Sepolia (84532). Add further chain ids only after the deployment is confirmed on-chain for each.",
+  "omnibusAddress": "0xf780Fc9C066D824bFF85758E381A3919B1817f09",
+  "chains": [84532]
 }

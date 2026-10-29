@@ -15,6 +15,11 @@ export const omnibusAbi = [
         "name": "initialOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "walletFactory",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -71,6 +76,19 @@ export const omnibusAbi = [
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "WALLET_FACTORY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IWalletFactory"
       }
     ],
     "stateMutability": "view"
@@ -1309,6 +1327,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "NotQuipWallet",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "OwnableInvalidOwner",
     "inputs": [
       {
@@ -1377,6 +1400,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "ZeroDeadline",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroFactory",
     "inputs": []
   },
   {

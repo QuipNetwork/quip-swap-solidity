@@ -19,7 +19,7 @@ import {getAddress, keccak256, toHex} from 'viem'
 import type {Address} from 'viem'
 import {beforeAll, describe, expect, it} from 'vitest'
 import {erc20Asset, nativeAsset} from '../../src/assets.js'
-import {buildKeyedSigner} from '../../src/commitAuth.js'
+import {keyedAuth} from '../helpers/auth.js'
 import type {CommitAuth} from '../../src/commitAuth.js'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
@@ -53,15 +53,8 @@ let chainB: ChainContext
 let fixtureA: Fixture
 let fixtureB: Fixture
 
-/**
- * Keyed ERC-7913 auth via the given chain's AcceptAll VerifierMock — each
- * commit must use ITS OWN chain's fixture verifier (the address doubles as
- * the key; the mock ignores signatures).
- */
-const keyedAuth = (fixture: Fixture, addr: Address): CommitAuth => ({
-  signer: buildKeyedSigner(fixture.verifier, addr),
-  signature: '0x',
-})
+// keyedAuth comes from the shared helper — each commit must use ITS OWN
+// chain's fixture verifier, so every call site passes its chain's fixture
 /** Alice (proposer, secret holder) acts on chain A for commits; on B for her claim. */
 let aliceOnA: OmnibusClient
 let aliceOnB: OmnibusClient

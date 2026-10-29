@@ -9,6 +9,9 @@
  * NOT gate which identity may post a side. Where a client cares WHO posted
  * the counterpart side, it verifies the blob from the `Commitment` event
  * off-chain before revealing the secret / committing the second leg.
+ * CAUTION: on the WALLET route (empty signature — sender is a quip wallet)
+ * even that soft guard is absent: the emitted blob is unproven attribution,
+ * so do not treat it as an endorsement of the payload.
  *
  * FUNDING MODEL: the transaction SENDER funds the committed leg + fee
  * (`msg.sender` pays). Funding is independent of authorization —
@@ -30,11 +33,21 @@ import type {Hex32, Terms} from './types.js'
 /**
  * Auth data for one commit, mirroring the Solidity `struct CommitAuth`
  * field-for-field. Identities attribute, they don't gate.
+ *
+ * Two routes, discriminated by `signature`:
+ * - non-empty: KEYED route — `signature` is verified over the commit digest
+ *   by the declared verifier.
+ * - empty: WALLET route — the transaction sender must be a wallet deployed
+ *   by the quip WalletFactory (the contract checks
+ *   `WALLET_FACTORY.vaultIdOf(msg.sender) != 0`, reverting `NotQuipWallet`
+ *   otherwise). No signature is verified on this route; the declared
+ *   identity is ATTRIBUTION ONLY — it is not cryptographically proven to
+ *   have endorsed the payload.
  */
 export interface CommitAuth {
   /** The committing side's identity blob: `verifier(20) ‖ key` (see module docs). */
   readonly signer: Hex
-  /** Signature over {@link computeCommitDigest}, checked by the declared verifier. */
+  /** Signature over {@link computeCommitDigest}, checked by the declared verifier; EMPTY selects the wallet route. */
   readonly signature: Hex
 }
 

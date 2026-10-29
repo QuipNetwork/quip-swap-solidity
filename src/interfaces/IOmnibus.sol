@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {Terms} from '../TermsLib.sol';
+import {IWalletFactory} from './IWalletFactory.sol';
 
 /// @notice the lock state for Omnibus swaps
 enum LockState {
@@ -22,28 +23,23 @@ enum LockState {
 /// where a client wants them, happen off-chain against the Commitment event.
 /// Two routes, discriminated by `signature`:
 /// - non-empty: KEYED route — `signature` is verified over commitDigest by the
-///   declared verifier (`walletBinding` is ignored; set it to zero)
-/// - empty: ATTESTED route — the identity signed ONE composite envelope,
-///   keccak256(abi.encode(ENVELOPE_TYPEHASH, walletBinding, commitDigest)),
-///   which the declared verifier already verified EARLIER THIS TRANSACTION via
-///   verifyAndAttest; commit only checks wasVerified(msg.sender, keyHash,
-///   envelopeHash). Lets a smart wallet burn a single one-time leaf for its own
-///   execution AND this commit. The attestation binds account == msg.sender, so
-///   the permissionless-sender model collapses to sender == attesting wallet on
-///   this route
+///   declared verifier
+/// - empty: WALLET route — msg.sender must be a wallet deployed by the quip
+///   WalletFactory (vaultIdOf(msg.sender) != 0). No signature is verified on
+///   this route: a vetted wallet implementation only reaches commit from its
+///   PQ-authenticated execute flow, so factory membership stands in for the
+///   endorsement. The declared identity is ATTRIBUTION ONLY here — it is NOT
+///   cryptographically proven to have endorsed the payload. The
+///   permissionless-sender model collapses to sender == quip wallet on this
+///   route
 struct CommitAuth {
   /// @notice the committing side's identity blob
   /// @dev the ONLY accepted shape is an ERC-7913 keyed identity:
   /// verifier(20 bytes) ‖ key; length <= 20 reverts MalformedSigner
   bytes signer;
   /// @notice signature over commitDigest, verified by the declared verifier;
-  /// EMPTY selects the attested route
+  /// EMPTY selects the wallet route
   bytes signature;
-  /// @notice attested route only: the wallet's half of the signed envelope —
-  /// its own execution commitment (replay scope, target, calldata binding are
-  /// the WALLET's concern; opaque here). A wrong witness reconstructs a
-  /// different envelopeHash and fails the attestation lookup
-  bytes32 walletBinding;
 }
 
 interface IOmnibus {
@@ -71,6 +67,9 @@ interface IOmnibus {
   /// @notice thrown when a verifier address is zero
   error ZeroVerifier();
 
+  /// @notice thrown at construction when the wallet factory address is zero
+  error ZeroFactory();
+
   /// @notice thrown when a signer blob is not an ERC-7913 keyed identity (20 bytes or shorter)
   error MalformedSigner();
 
@@ -80,9 +79,9 @@ interface IOmnibus {
   /// @notice thrown when the verifier rejects the signature
   error InvalidCommitSignature();
 
-  /// @notice thrown on the attested route when the declared verifier has no
-  /// transaction-scoped attestation for (msg.sender, keyHash, envelopeHash)
-  error AttestationNotFound();
+  /// @notice thrown on the wallet route when msg.sender is not a wallet
+  /// deployed by the quip WalletFactory
+  error NotQuipWallet();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -153,12 +152,10 @@ interface IOmnibus {
   /// @return separator the domain separator
   function DOMAIN_SEPARATOR() external view returns (bytes32 separator);
 
-  /// @notice the typehash of the attested route's composite envelope, shared
-  /// byte-for-byte with the wallet-side signer:
-  /// keccak256('ShrincsEnvelope(bytes32 walletBinding,bytes32 downstreamDigest)')
-  /// where downstreamDigest is this contract's commitDigest
-  /// @return typehash the envelope typehash
-  function ENVELOPE_TYPEHASH() external view returns (bytes32 typehash);
+  /// @notice the quip WalletFactory whose deployments the wallet route trusts,
+  /// baked immutably at construction (the factory proxy address is permanent)
+  /// @return factory the wallet factory registry
+  function WALLET_FACTORY() external view returns (IWalletFactory factory);
 
   /// @notice computes the digest a committer's identity must sign
   /// @dev pure function of caller-known data; the SDK computes it locally and
@@ -181,9 +178,9 @@ interface IOmnibus {
   /// @dev permissionless: any sender may commit; the ERC-7913 keyed identity in
   /// `auth` AUTHENTICATES the payload while msg.sender FUNDS the leg + fee. With
   /// a non-empty auth.signature it is verified over commitDigest by the declared
-  /// verifier; with an empty auth.signature the declared verifier must hold a
-  /// same-transaction attestation for the composite envelope (see CommitAuth —
-  /// on that route msg.sender must be the attesting wallet)
+  /// verifier; with an empty auth.signature msg.sender must be a wallet deployed
+  /// by the quip WalletFactory (see CommitAuth — on that route the identity is
+  /// attribution only, not a proven endorsement)
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms

@@ -57,14 +57,15 @@ clean: ## Clean build artifacts
 	forge clean
 
 # ==============================================================================
-# Deployment (via the Deployer contract — env: DEPLOYER_PK, DEPLOYER_ADDRESS,
-# OMNIBUS_OWNER)
+# Deployment (via the canonical CreateX factory, pre-deployed on every chain —
+# no per-chain bootstrap. env: DEPLOYER_PK, OMNIBUS_OWNER, WALLET_FACTORY (the
+# quip WalletFactory proxy gating the wallet commit route); verify-omnibus also
+# needs DEPLOYER_ADDRESS = the EOA of DEPLOYER_PK, since the CreateX salt is
+# permissioned to it and the predicted address depends on it.)
 #
-# Per-chain deploy ORDER:
-#   1. Deployer         (DeployDeployer, done once per chain)
-#   2. Omnibus          (make deploy)
-# Verifier activation is separate: post-deploy, the owner calls
-# setVerifierActivity(verifier, true).
+# Per-chain deploy: Omnibus (make deploy). Verifier activation is separate:
+# post-deploy, the owner calls setVerifierActivity(verifier, true).
+# Local rehearsal: bare Anvil has no CreateX — use `make anvil-fork RPC=...`.
 # ==============================================================================
 
 .PHONY: anvil-fork
@@ -83,6 +84,13 @@ deploy: ## Deploy Omnibus + broadcast + verify (needs the canonical hashsigs ver
 deploy-dry: ## Dry run Omnibus deployment (no broadcast). Usage: make deploy-dry RPC=API_URL_BASE_SEPOLIA
 	forge script script/DeployOmnibus.s.sol \
 		--rpc-url $(RPC_URL)
+
+.PHONY: activate-verifier
+activate-verifier: ## Activate an ERC-7913 verifier on the deployed Omnibus (owner action; env: OMNIBUS_OWNER_PK, DEPLOYER_ADDRESS; Omnibus address is predicted). Usage: make activate-verifier RPC=API_URL_BASE_SEPOLIA VERIFIER=0x...
+	forge script script/ActivateVerifier.s.sol \
+		--sig 'run(address)' $(VERIFIER) \
+		--rpc-url $(RPC_URL) \
+		--broadcast
 
 # ── Per-chain convenience targets (map to foundry.toml [rpc_endpoints] aliases) ──
 .PHONY: deploy-base-sepolia
@@ -155,7 +163,7 @@ snapshot: ## Generate gas snapshot
 # usage:
 #   make verify-omnibus                      # uses sdk/src/address.json
 #   make verify-omnibus FILE=path/to/x.json  # uses a custom file
-verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (Deployer, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
+verify-omnibus: ## Compare an address.json against the CREATE3 address predicted from (CreateX, deployer EOA, salt) (no RPC; throws on ANY mismatch incl. the zero placeholder). Optional FILE=path overrides sdk/src/address.json.
 	$(if $(FILE),ADDRESS_JSON=$(FILE)) \
 	forge script script/VerifyOmnibus.s.sol:VerifyOmnibus -v
 

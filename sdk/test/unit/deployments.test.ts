@@ -2,11 +2,12 @@
  * Deployment-resolution unit tests.
  *
  * Two concerns:
- * - SHIPPED STATE (canonical address + Base Sepolia verified): the registry
- *   resolves the canonical Omnibus for chain 84532, while `resolveDeployment`
- *   still throws `UNKNOWN_DEPLOYMENT` for every other chain without an override;
- *   an override still resolves and still validates. This pins both the active
- *   deployment and the "no false defaults for unverified chains" guarantee.
+ * - SHIPPED STATE (canonical CreateX address + Base Sepolia verified): the
+ *   registry resolves the canonical wallet-route Omnibus for chain 84532,
+ *   while `resolveDeployment` still throws `UNKNOWN_DEPLOYMENT` for every
+ *   other chain without an override; an override still resolves and still
+ *   validates. This pins both the active deployment and the "no false
+ *   defaults for unverified chains" guarantee.
  * - MECHANISM (so enabling a chain later is safe): a LOCAL registry built the
  *   same way (canonical address + a verified-chain set) returns the canonical
  *   address for a listed chain and nothing for an unlisted one — exercised
@@ -31,20 +32,21 @@ function codeOf(fn: () => unknown): string {
   throw new Error('expected the call to throw a QuipSwapError')
 }
 
-// The canonical Omnibus address + verified chains shipped in src/address.json.
-const SHIPPED_OMNIBUS: Address = '0xD113aaA0F40945136A11a832087E23A72b38CE00'
-const BASE_SEPOLIA = 84532n
-const OP_SEPOLIA = 11_155_420n
+// The canonical Omnibus address + verified chains shipped in src/address.json:
+// the wallet-route Omnibus (salt entropy v1.0.0-alpha.2, CreateX CREATE3
+// deploy), verified on Base Sepolia.
+const SHIPPED_OMNIBUS: Address = '0xf780Fc9C066D824bFF85758E381A3919B1817f09'
+const BASE_SEPOLIA = 84_532n
 
-describe('resolveDeployment — shipped state (Base Sepolia + OP Sepolia verified)', () => {
-  it('ships the canonical address with Base Sepolia and OP Sepolia in the verified registry', () => {
+describe('resolveDeployment — shipped state (Base Sepolia verified)', () => {
+  it('ships the canonical address with Base Sepolia in the verified registry', () => {
     expect(OMNIBUS_CREATE3_ADDRESS).toBe(SHIPPED_OMNIBUS)
-    expect(knownDeployments.size).toBe(2)
+    expect(knownDeployments.size).toBe(1)
     expect(resolveDeployment(BASE_SEPOLIA)).toEqual({chainId: BASE_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
-    expect(resolveDeployment(OP_SEPOLIA)).toEqual({chainId: OP_SEPOLIA, omnibusAddress: SHIPPED_OMNIBUS})
   })
 
   it('throws UNKNOWN_DEPLOYMENT for any unverified chain without an override', () => {
+    expect(codeOf(() => resolveDeployment(11_155_420n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(8453n))).toBe('UNKNOWN_DEPLOYMENT')
     expect(codeOf(() => resolveDeployment(1n))).toBe('UNKNOWN_DEPLOYMENT')
   })

@@ -7,12 +7,6 @@ import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
-import {
-  IERC7913SignatureVerifier
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
-import {
-  IERC7913TransientAttestation
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913TransientAttestation.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus commit Tests
@@ -749,28 +743,6 @@ contract Omnibus_commit is OmnibusTest {
     return omnibus.commitDigest(lock, _aliceTerms(), _bobTerms(), keccak256(signer));
   }
 
-  /// @dev baseline: verifierA rejects every verify call (returns wrong magic).
-  /// Selector-prefix mock — matches ANY verify calldata
-  function _mockVerifierRejectsAll() internal {
-    vm.mockCall(
-      address(verifierA),
-      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
-      abi.encode(bytes4(0xffffffff))
-    );
-  }
-
-  /// @dev verifierA accepts EXACTLY (key, digest, signature) and rejects all
-  /// else: a reject-all prefix mock underneath, an exact-calldata accept on
-  /// top (specific mocks take precedence; registered second wins either way)
-  function _mockVerifierAcceptsOnly(bytes memory key, bytes32 digest, bytes memory signature) internal {
-    _mockVerifierRejectsAll();
-    vm.mockCall(
-      address(verifierA),
-      abi.encodeCall(IERC7913SignatureVerifier.verify, (key, digest, signature)),
-      abi.encode(IERC7913SignatureVerifier.verify.selector)
-    );
-  }
-
   function test_commit_revertsWhen_authFails() public {
     // the wiring branch: bad auth must stop a real commit
     Terms memory alice = _aliceTerms();
@@ -779,7 +751,7 @@ contract Omnibus_commit is OmnibusTest {
     vm.expectRevert(IOmnibus.MalformedSigner.selector);
     vm.prank(ALICE);
     omnibus.commit{value: _totalNativeForCommit(alice)}(
-      lock, alice, bob, CommitAuth({signer: abi.encodePacked(ALICE), signature: '', walletBinding: bytes32(0)})
+      lock, alice, bob, CommitAuth({signer: abi.encodePacked(ALICE), signature: ''})
     );
   }
 
@@ -787,25 +759,19 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_revertsWhen_signerEmpty() public {
     _expectCommitAliceSideRevert(
-      ALICE,
-      CommitAuth({signer: '', signature: '', walletBinding: bytes32(0)}),
-      abi.encodePacked(IOmnibus.MalformedSigner.selector)
+      ALICE, CommitAuth({signer: '', signature: ''}), abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
   }
 
   function test_commit_revertsWhen_signerOneByte() public {
     _expectCommitAliceSideRevert(
-      ALICE,
-      CommitAuth({signer: hex'01', signature: '', walletBinding: bytes32(0)}),
-      abi.encodePacked(IOmnibus.MalformedSigner.selector)
+      ALICE, CommitAuth({signer: hex'01', signature: ''}), abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
   }
 
   function test_commit_revertsWhen_signerNineteenBytes() public {
     _expectCommitAliceSideRevert(
-      ALICE,
-      CommitAuth({signer: new bytes(19), signature: '', walletBinding: bytes32(0)}),
-      abi.encodePacked(IOmnibus.MalformedSigner.selector)
+      ALICE, CommitAuth({signer: new bytes(19), signature: ''}), abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
   }
 
@@ -814,7 +780,7 @@ contract Omnibus_commit is OmnibusTest {
     // msg.sender's own address is malformed — keyed identities only
     _expectCommitAliceSideRevert(
       ALICE,
-      CommitAuth({signer: abi.encodePacked(ALICE), signature: '', walletBinding: bytes32(0)}),
+      CommitAuth({signer: abi.encodePacked(ALICE), signature: ''}),
       abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
   }
@@ -824,7 +790,7 @@ contract Omnibus_commit is OmnibusTest {
     // 20-byte address is malformed like any other
     _expectCommitAliceSideRevert(
       CHARLIE,
-      CommitAuth({signer: abi.encodePacked(address(verifierA)), signature: 'sig', walletBinding: bytes32(0)}),
+      CommitAuth({signer: abi.encodePacked(address(verifierA)), signature: 'sig'}),
       abi.encodePacked(IOmnibus.MalformedSigner.selector)
     );
   }
@@ -832,11 +798,11 @@ contract Omnibus_commit is OmnibusTest {
   // ============ ERC-7913 keyed route ============
 
   function test_commit_keyed_revertsWhen_verifierNotActive() public {
+    // NB: non-empty signature — an empty one would select the WALLET route,
+    // which never consults the verifier's activity
     bytes memory signer = abi.encodePacked(address(verifierB), bytes('alice-key'));
     _expectCommitAliceSideRevert(
-      ALICE,
-      CommitAuth({signer: signer, signature: '', walletBinding: bytes32(0)}),
-      abi.encodePacked(IOmnibus.VerifierNotActive.selector)
+      ALICE, CommitAuth({signer: signer, signature: 'envelope'}), abi.encodePacked(IOmnibus.VerifierNotActive.selector)
     );
   }
 
@@ -853,9 +819,7 @@ contract Omnibus_commit is OmnibusTest {
     assertEq(mirror, _aliceDigestFor(aliceSigner), 'mirror must equal the commitDigest view');
     _mockVerifierAcceptsOnly(bytes('alice-key'), mirror, bytes('envelope'));
 
-    _commitAliceSideAs(
-      ALICE, CommitAuth({signer: aliceSigner, signature: bytes('envelope'), walletBinding: bytes32(0)})
-    );
+    _commitAliceSideAs(ALICE, CommitAuth({signer: aliceSigner, signature: bytes('envelope')}));
     _assertLockState(lock, LockState.Free);
   }
 
@@ -864,7 +828,7 @@ contract Omnibus_commit is OmnibusTest {
 
     _expectCommitAliceSideRevert(
       ALICE,
-      CommitAuth({signer: aliceSigner, signature: bytes('envelope'), walletBinding: bytes32(0)}),
+      CommitAuth({signer: aliceSigner, signature: bytes('envelope')}),
       abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
   }
@@ -877,11 +841,7 @@ contract Omnibus_commit is OmnibusTest {
   }
 
   function test_commit_keyed_revertsWhen_verifierReverts_bubbles() public {
-    vm.mockCallRevert(
-      address(verifierA),
-      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
-      abi.encodeWithSignature('Error(string)', 'verifier reverted')
-    );
+    _mockVerifierReverts('verifier reverted');
     _expectCommitAliceSideRevert(
       ALICE, AuthHelper.auth(aliceSigner), abi.encodeWithSignature('Error(string)', 'verifier reverted')
     );
@@ -889,11 +849,7 @@ contract Omnibus_commit is OmnibusTest {
 
   function test_commit_keyed_revertsWhen_wrongMagicReturned() public {
     // a plausible-but-wrong selector must NOT be treated as valid
-    vm.mockCall(
-      address(verifierA),
-      abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector),
-      abi.encode(bytes4(0x12345678))
-    );
+    _mockVerifierReturns(bytes4(0x12345678));
     _expectCommitAliceSideRevert(
       ALICE, AuthHelper.auth(aliceSigner), abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
@@ -917,7 +873,7 @@ contract Omnibus_commit is OmnibusTest {
     Terms memory cp
   ) internal returns (CommitAuth memory) {
     _mockVerifierAcceptsOnly(bytes('alice-key'), _mirrorCommitDigest(_lock, party, cp, aliceSigner), bytes('envelope'));
-    return CommitAuth({signer: aliceSigner, signature: bytes('envelope'), walletBinding: bytes32(0)});
+    return CommitAuth({signer: aliceSigner, signature: bytes('envelope')});
   }
 
   function _expectTamperedCommitRejected(
@@ -959,7 +915,7 @@ contract Omnibus_commit is OmnibusTest {
 
     _expectCommitAliceSideRevert(
       CHARLIE,
-      CommitAuth({signer: swappedSigner, signature: bytes('envelope'), walletBinding: bytes32(0)}),
+      CommitAuth({signer: swappedSigner, signature: bytes('envelope')}),
       abi.encodePacked(IOmnibus.InvalidCommitSignature.selector)
     );
   }
@@ -980,101 +936,54 @@ contract Omnibus_commit is OmnibusTest {
     _expectTamperedCommitRejected(auth, lock, aliceOn999, bobOn999);
   }
 
-  // ============ Attested route: wiring + envelope binding ============
-  // The guard's attested verdicts are unit-tested in _enforceCommitAuth.t.sol;
-  // these prove commit wires the SAME recomputed digest into the envelope, that
-  // the route pins msg.sender to the attesting account, and that the lock state
-  // machine consumes an attestation on first use (the route has no nonce — this
-  // IS its intra-transaction replay scope). Real single-transaction
-  // verifyAndAttest flows run in integration/ShrincsVerifierIntegration.t.sol
+  // ============ Wallet route: wiring + sender membership ============
+  // The guard's wallet-route verdicts are unit-tested in
+  // _enforceCommitAuth.t.sol; these prove commit wires the factory check to the
+  // ACTUAL msg.sender, and that replay dies at the lock state machine
+  // (posted[lock][partyDigest] is the route's nonce). A real factory-deployed
+  // stub runs in integration/ShrincsVerifierIntegration.t.sol
 
-  /// @dev verifierA attests EXACTLY (account, keyHash, hash) and denies all else
-  function _mockAttestedOnly(address account, bytes32 keyHash, bytes32 hash) internal {
-    vm.mockCall(
-      address(verifierA), abi.encodeWithSelector(IERC7913TransientAttestation.wasVerified.selector), abi.encode(false)
-    );
-    vm.mockCall(
-      address(verifierA),
-      abi.encodeCall(IERC7913TransientAttestation.wasVerified, (account, keyHash, hash)),
-      abi.encode(true)
-    );
-  }
-
-  /// @dev the attested route's composite envelope hash — spec re-derivation
-  function _envelopeHash(bytes32 walletBinding, bytes32 digest) internal view returns (bytes32) {
-    return keccak256(abi.encode(omnibus.ENVELOPE_TYPEHASH(), walletBinding, digest));
-  }
-
-  bytes32 internal constant WALLET_BINDING = keccak256('some wallet binding');
-
-  /// @dev attestation exists for exactly (ALICE, alice's key, envelope over
-  /// alice's true commit digest)
-  function _attestAliceSide() internal returns (CommitAuth memory) {
-    bytes32 envelope = _envelopeHash(WALLET_BINDING, _aliceDigestFor(aliceSigner));
-    _mockAttestedOnly(ALICE, keccak256(bytes('alice-key')), envelope);
-    return AuthHelper.attestedAuth(aliceSigner, WALLET_BINDING);
-  }
-
-  function test_commit_attested_succeeds() public {
-    _commitAliceSideAs(ALICE, _attestAliceSide());
+  function test_commit_wallet_succeeds() public {
+    _registerWallet(ALICE);
+    _commitAliceSideAs(ALICE, AuthHelper.walletAuth(aliceSigner));
     _assertLockState(lock, LockState.Free);
   }
 
-  function test_commit_attested_revertsWhen_noAttestation() public {
-    vm.mockCall(
-      address(verifierA), abi.encodeWithSelector(IERC7913TransientAttestation.wasVerified.selector), abi.encode(false)
-    );
+  function test_commit_wallet_revertsWhen_senderNotRegistered() public {
     _expectCommitAliceSideRevert(
-      ALICE,
-      AuthHelper.attestedAuth(aliceSigner, WALLET_BINDING),
-      abi.encodePacked(IOmnibus.AttestationNotFound.selector)
+      ALICE, AuthHelper.walletAuth(aliceSigner), abi.encodePacked(IOmnibus.NotQuipWallet.selector)
     );
   }
 
-  function test_commit_attested_revertsWhen_senderIsNotAttestingAccount() public {
-    // the attestation names ALICE as account: CHARLIE cannot spend it even with
-    // the identical auth — on this route the permissionless-sender model
-    // deliberately collapses to sender == attesting wallet
-    CommitAuth memory auth = _attestAliceSide();
-    _expectCommitAliceSideRevert(CHARLIE, auth, abi.encodePacked(IOmnibus.AttestationNotFound.selector));
-  }
-
-  function test_commit_attested_revertsWhen_payloadTampered() public {
-    // attested for the true digest; tampering any commit parameter recomputes a
-    // different digest, hence a different envelope, and the lookup misses
-    CommitAuth memory auth = _attestAliceSide();
-    Terms memory tampered = _aliceTermsOn(block.chainid, _makeNativeAssets(DEFAULT_AMOUNT + 1));
-    vm.warp(AT_PROPOSER_COMMIT);
-    vm.expectRevert(IOmnibus.AttestationNotFound.selector);
-    vm.prank(ALICE);
-    omnibus.commit{value: _totalNativeForCommit(tampered)}(lock, tampered, _bobTerms(), auth);
-  }
-
-  function test_commit_attested_revertsWhen_walletBindingTampered() public {
-    _attestAliceSide();
+  function test_commit_wallet_revertsWhen_senderIsNotTheRegisteredWallet() public {
+    // membership is checked against the ACTUAL msg.sender: ALICE being a
+    // registered wallet does not let CHARLIE relay her identity blob on this
+    // route — the permissionless-sender model deliberately collapses to
+    // sender == quip wallet
+    _registerWallet(ALICE);
     _expectCommitAliceSideRevert(
-      ALICE,
-      AuthHelper.attestedAuth(aliceSigner, keccak256('other binding')),
-      abi.encodePacked(IOmnibus.AttestationNotFound.selector)
+      CHARLIE, AuthHelper.walletAuth(aliceSigner), abi.encodePacked(IOmnibus.NotQuipWallet.selector)
     );
   }
 
-  function test_commit_attested_replay_revertsOnLockState() public {
-    // the attestation stays queryable for the whole transaction (a PUBLIC
-    // transient fact), but a second identical commit dies at the lock state
-    // machine: posted[lock][partyDigest] is the route's nonce
-    CommitAuth memory auth = _attestAliceSide();
+  function test_commit_wallet_replay_revertsOnLockState() public {
+    // factory membership is PERMANENT (write-once registry), so the route has
+    // no auth-level nonce: a second identical commit dies at the lock state
+    // machine instead
+    _registerWallet(ALICE);
+    CommitAuth memory auth = AuthHelper.walletAuth(aliceSigner);
     _commitAliceSideAs(ALICE, auth);
     _assertLockState(lock, LockState.Free);
 
     _expectCommitAliceSideRevert(ALICE, auth, abi.encodePacked(IOmnibus.TermsAlreadyPosted.selector));
   }
 
-  function test_commit_attested_emitsSignerBlobForAttribution() public {
-    // attribution is route-independent: the Commitment event carries the SAME
-    // declared identity blob the envelope was bound to
+  function test_commit_wallet_emitsSignerBlobForAttribution() public {
+    // attribution is route-independent: the Commitment event carries the
+    // declared identity blob even though the wallet route never verified it
+    _registerWallet(ALICE);
     vm.recordLogs();
-    _commitAliceSideAs(ALICE, _attestAliceSide());
+    _commitAliceSideAs(ALICE, AuthHelper.walletAuth(aliceSigner));
     Vm.Log[] memory logs = vm.getRecordedLogs();
     _assertEventEmitted(logs, IOmnibus.Commitment.selector, lock);
   }
