@@ -20,24 +20,27 @@ import type {Address, PublicClient, WalletClient} from 'viem'
 import {beforeEach, describe, expect, it} from 'vitest'
 import {createOmnibusClient} from '../../src/client.js'
 import type {OmnibusClient} from '../../src/client.js'
-import {buildKeyedSigner} from '../../src/index.js'
+import {buildKeyedSigner, erc20Asset} from '../../src/index.js'
 import type {CommitAuth} from '../../src/index.js'
 import {QuipSwapError} from '../../src/errors.js'
 import {omnibusAbi} from '../../src/generated/omnibusAbi.js'
-import {digestTerms, digestTermsCanonically, generateLock} from '../../src/hashing.js'
+import {digestTerms, digestTermsCanonically, generateLock, swapId, swapIdFromDigest} from '../../src/hashing.js'
 import {LockState} from '../../src/types.js'
+import {getSameChainSwapStatus, planSameChainSwap} from '../../src/workflows/sameChain.js'
 import {claimLog} from '../helpers/logs.js'
 import {
   aliceTerms,
   AT_PROPOSER_CLAIM,
   AT_PROPOSER_COMMIT,
   AT_PROPOSER_RECLAIM,
+  AT_TAKER_CLAIM,
   AT_TAKER_COMMIT,
   bobTerms,
   CHAIN_A,
   CHAIN_B,
   FOUNDRY_LOCK,
   FOUNDRY_SECRET,
+  withOverrides,
 } from '../helpers/fixtures.js'
 
 const OMNIBUS: Address = '0x9990000000000000000000000000000000000999'
@@ -66,6 +69,8 @@ interface CallLog {
   readonly estimations: Record<string, unknown>[]
   /** Captured writeContract requests. */
   readonly writes: Record<string, unknown>[]
+  /** Captured keys of lockState/termsHash/posted reads (the swap-scoped state). */
+  readonly stateReads: {functionName: string; key: unknown}[]
 }
 
 interface MockSetup {
@@ -84,6 +89,12 @@ function setup(
     termsHash?: `0x${string}`
     posted?: boolean
     lockState?: LockState
+    /** Side terms digests that have already reclaimed (per-side reclaim); default none. */
+    reclaimedDigests?: readonly `0x${string}`[]
+    /** Token targets that answer as a genuine ERC721 via ERC165 (the collision trap). */
+    erc721Targets?: readonly Address[]
+    /** Token targets that return true for EVERY interface id (the ERC165 liar). */
+    erc165AllTrueTargets?: readonly Address[]
     balance?: bigint
     withWallet?: boolean
     estimateError?: unknown
@@ -102,8 +113,11 @@ function setup(
     withWallet = true,
   } = options
   const termsHash = options.termsHash ?? digestTermsCanonically(alice, bob)
+  const reclaimedDigests = new Set((options.reclaimedDigests ?? []).map(d => d.toLowerCase()))
+  const erc721Targets = new Set((options.erc721Targets ?? []).map(a => a.toLowerCase()))
+  const erc165AllTrueTargets = new Set((options.erc165AllTrueTargets ?? []).map(a => a.toLowerCase()))
 
-  const log: CallLog = {sequence: [], estimations: [], writes: []}
+  const log: CallLog = {sequence: [], estimations: [], writes: [], stateReads: []}
 
   const publicClient = {
     getChainId: async () => Number(chainId),
@@ -115,8 +129,16 @@ function setup(
     // NOTE: no estimateFeesPerGas mock — prepareTx must never need fee data
     // (the balance preflight checks the bare call value only); an attempt to
     // call it fails loudly here
-    readContract: async (args: {address: Address; functionName: string}) => {
+    readContract: async (args: {address: Address; functionName: string; args?: readonly unknown[]}) => {
       log.sequence.push(`read:${args.functionName}`)
+      if (
+        args.functionName === 'lockState' ||
+        args.functionName === 'termsHash' ||
+        args.functionName === 'posted' ||
+        args.functionName === 'reclaimed'
+      ) {
+        log.stateReads.push({functionName: args.functionName, key: args.args?.[0]})
+      }
       switch (args.functionName) {
         case 'verifierActive':
           return verifierIsActive
@@ -135,6 +157,19 @@ function setup(
           return termsHash
         case 'posted':
           return posted
+        case 'reclaimed':
+          return reclaimedDigests.has(String(args.args?.[1]).toLowerCase())
+        case 'supportsInterface': {
+          // ERC165 probe against a token target (not the omnibus). A liar returns
+          // true for every id; a genuine ERC721 answers 0x01ffc9a7=true,
+          // 0xffffffff=false, 0x80ac58cd=true; anything unconfigured has no ERC165,
+          // so the real call would revert — modeled by throwing (the SDK swallows it).
+          const target = args.address.toLowerCase()
+          const interfaceId = String(args.args?.[0]).toLowerCase()
+          if (erc165AllTrueTargets.has(target)) return true
+          if (erc721Targets.has(target)) return interfaceId === '0x01ffc9a7' || interfaceId === '0x80ac58cd'
+          throw new Error('no ERC165')
+        }
         default:
           throw new Error(`unexpected read: ${args.functionName}`)
       }
@@ -342,6 +377,92 @@ describe('commit orchestration', () => {
   })
 })
 
+describe('commit ERC20-vs-ERC721 asset-type probe', () => {
+  const TOKEN: Address = '0x00000000000000000000000000000000c0111de0'
+
+  it('rejects ASSET_TYPE_MISMATCH when a party ERC20 target answers as ERC721, before estimation', async () => {
+    const mocks = setup({lockState: LockState.Unused, erc721Targets: [TOKEN]})
+    const party = aliceTerms(CHAIN_A, [erc20Asset(TOKEN, 1n)])
+    expect(await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party, counterparty: bob, auth: AUTH}))).toBe(
+      'ASSET_TYPE_MISMATCH',
+    )
+    // the probe ran, but nothing was estimated or written
+    expect(mocks.log.sequence).toContain('read:supportsInterface')
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('allows a genuine ERC20 party leg (no ERC165) through to the write', async () => {
+    const mocks = setup({lockState: LockState.Unused}) // TOKEN unconfigured => supportsInterface reverts => plain ERC20
+    const party = aliceTerms(CHAIN_A, [erc20Asset(TOKEN, 1n)])
+    const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party, counterparty: bob, auth: AUTH})
+    expect(hash).toBe(TX_HASH)
+    expect(mocks.log.writes).toHaveLength(1)
+  })
+
+  it('does NOT flag a contract that returns true for every interface id (ERC165Checker 0xffffffff guard)', async () => {
+    const mocks = setup({lockState: LockState.Unused, erc165AllTrueTargets: [TOKEN]})
+    const party = aliceTerms(CHAIN_A, [erc20Asset(TOKEN, 1n)])
+    // an all-true liar fails the genuine-ERC165 check (0xffffffff must be false), so it is
+    // NOT treated as ERC721 — the SDK verdict matches the contract's ERC165Checker exactly
+    const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party, counterparty: bob, auth: AUTH})
+    expect(hash).toBe(TX_HASH)
+  })
+
+  it('does NOT probe the remote counterparty leg (local-leg-only, matching the contract)', async () => {
+    const mocks = setup({lockState: LockState.Unused, erc721Targets: [TOKEN]})
+    // party is native (default); the ERC721-trap ERC20 is on the COUNTERPARTY (remote) leg
+    const counterparty = bobTerms(CHAIN_A, [erc20Asset(TOKEN, 1n)])
+    const hash = await mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty, auth: AUTH})
+    expect(hash).toBe(TX_HASH)
+    // no probe happened at all — the counterparty leg is validated on its own chain
+    expect(mocks.log.sequence).not.toContain('read:supportsInterface')
+  })
+})
+
+describe('commit reclaimRelease horizon guard', () => {
+  // mock chain time is AT_PROPOSER_COMMIT (500); the 2-week horizon puts the cutoff far above
+  // the default fixtures' 5000/6000, so a value like 2_000_000 is safely "distant"
+  const DISTANT = 2_000_000n
+
+  it('rejects RECLAIM_RELEASE_TOO_DISTANT when the COUNTERPARTY leg is beyond the horizon', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    // party (alice) within horizon, counterparty (bob) distant — proves both legs are checked
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT})
+    expect(
+      await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: alice, counterparty: distantBob, auth: AUTH})),
+    ).toBe('RECLAIM_RELEASE_TOO_DISTANT')
+    // rejected before any estimate/write
+    expect(mocks.log.sequence).not.toContain('estimate:commit')
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('rejects RECLAIM_RELEASE_TOO_DISTANT when the PARTY leg is beyond the horizon', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    // both distant (interleave requires party.reclaim < counterparty.reclaim); party matched first
+    const distantAlice = withOverrides(alice, {reclaimRelease: DISTANT})
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT + 1n})
+    expect(
+      await codeOf(mocks.client.commit({lock: FOUNDRY_LOCK, party: distantAlice, counterparty: distantBob, auth: AUTH})),
+    ).toBe('RECLAIM_RELEASE_TOO_DISTANT')
+  })
+
+  it('allows a distant schedule when allowDistantReclaimRelease is set', async () => {
+    const mocks = setup({lockState: LockState.Unused})
+    const distantAlice = withOverrides(alice, {reclaimRelease: DISTANT})
+    const distantBob = withOverrides(bob, {reclaimRelease: DISTANT + 1n})
+    const hash = await mocks.client.commit({
+      lock: FOUNDRY_LOCK,
+      party: distantAlice,
+      counterparty: distantBob,
+      auth: AUTH,
+      allowDistantReclaimRelease: true,
+    })
+    expect(hash).toBe(TX_HASH)
+    expect(mocks.log.writes).toHaveLength(1)
+  })
+})
+
 describe('commit lock-state preflight', () => {
   it('Spent and Committed locks reject with INVALID_LOCK_STATE before estimation', async () => {
     for (const state of [LockState.Spent, LockState.Committed]) {
@@ -411,6 +532,12 @@ describe('claim orchestration', () => {
     expect(mocks.log.sequence).toContain('read:termsHash')
     expect(mocks.log.sequence).toContain('read:posted')
     expect(generateLock(FOUNDRY_SECRET)).toBe(FOUNDRY_LOCK)
+    // every swap-state read is keyed by the SWAP ID (lock + canonical digest), not the bare lock
+    const expectedKey = swapId(FOUNDRY_LOCK, alice, bob)
+    expect(mocks.log.stateReads).toHaveLength(3)
+    for (const stateRead of mocks.log.stateReads) {
+      expect(stateRead.key).toBe(expectedKey)
+    }
   })
 
   it.each([
@@ -483,6 +610,78 @@ describe('claim orchestration', () => {
   })
 })
 
+describe('getSameChainSwapStatus (window-derived statuses)', () => {
+  // the canonical 1000s-gap schedule is tighter than the default buffer, so
+  // the plan is built with the buffer floor lowered — buffer sizing is not
+  // under test here
+  const plan = planSameChainSwap(alice, bob, {minimumBufferSeconds: 0n})
+
+  it("reports 'claimable' inside the proposer claim window", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('claimable')
+  })
+
+  it("REGRESSION (audit): reports 'claim-expired' between proposer.claimDeadline and proposer.reclaimRelease", async () => {
+    // this region previously reported 'late-claimable', advertising the
+    // role-swapped claim the contract has since closed; nothing can happen
+    // here until reclaim opens
+    const mocks = setup({timestamp: AT_TAKER_CLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('claim-expired')
+  })
+
+  it("reports 'reclaimable' once proposer.reclaimRelease passes", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Committed})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('reclaimable')
+  })
+
+  it("reports 'partially-reclaimed' when a Spent lock has exactly one side reclaimed", async () => {
+    // per-side reclaim: after one side pulls its leg the lock is Spent, but the
+    // OTHER side still needs to reclaim — status must not read as terminal
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [plan.proposerDigest],
+    })
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('partially-reclaimed')
+    expect(report.proposerReclaimed).toBe(true)
+    expect(report.takerReclaimed).toBe(false)
+  })
+
+  it("reports 'settled' when a Spent lock has BOTH sides reclaimed", async () => {
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [plan.proposerDigest, plan.takerDigest],
+    })
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('settled')
+    expect(report.proposerReclaimed).toBe(true)
+    expect(report.takerReclaimed).toBe(true)
+  })
+
+  it("reports 'settled' for a claim-settled Spent lock (neither side reclaimed)", async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Spent})
+    const report = await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    expect(report.status).toBe('settled')
+    expect(report.proposerReclaimed).toBe(false)
+    expect(report.takerReclaimed).toBe(false)
+  })
+
+  it('keys every state read by the swap id derived from the plan', async () => {
+    const mocks = setup({timestamp: AT_PROPOSER_CLAIM, lockState: LockState.Committed})
+    await getSameChainSwapStatus(mocks.client, FOUNDRY_LOCK, plan)
+    const expectedKey = swapIdFromDigest(FOUNDRY_LOCK, plan.canonicalDigest)
+    expect(mocks.log.stateReads.length).toBeGreaterThan(0)
+    for (const stateRead of mocks.log.stateReads) {
+      expect(stateRead.key).toBe(expectedKey)
+    }
+  })
+})
+
 describe('reclaim orchestration', () => {
   it('selects the reclaim function and validates the release window', async () => {
     const mocks = setup({timestamp: AT_PROPOSER_RECLAIM})
@@ -494,11 +693,13 @@ describe('reclaim orchestration', () => {
     expectAbiTerms(est.args[2], bob)
   })
 
-  it('accepts Free and Committed locks; rejects Unused and Spent with INVALID_LOCK_STATE', async () => {
+  it('accepts Free and Committed locks; rejects Unused and claim-settled Spent with INVALID_LOCK_STATE', async () => {
     for (const state of [LockState.Free, LockState.Committed]) {
       const ok = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
       await expect(ok.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
     }
+    // Unused => never committed here; Spent with NO counterparty reclaim => claim-settled.
+    // Both reject; a Spent lock mid-reclaim (counterparty already reclaimed) is covered separately.
     for (const state of [LockState.Unused, LockState.Spent]) {
       const bad = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: state})
       try {
@@ -506,7 +707,7 @@ describe('reclaim orchestration', () => {
         expect.unreachable()
       } catch (error) {
         expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
-        expect((error as QuipSwapError).details).toMatchObject({lockState: state, required: 'Free or Committed'})
+        expect((error as QuipSwapError).details).toMatchObject({lockState: state})
       }
       expect(bad.log.writes).toHaveLength(0)
     }
@@ -518,6 +719,56 @@ describe('reclaim orchestration', () => {
       mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob, verifyOnChainState: false}),
     ).resolves.toBe(TX_HASH)
     expect(mocks.log.sequence).not.toContain('read:lockState')
+  })
+
+  it('reads BOTH sides reclaimed flags in the state batch (per-side reclaim)', async () => {
+    // mirrors Omnibus.reclaim: it consults reclaimed[party] (AlreadyReclaimed)
+    // AND reclaimed[counterparty] (to allow a Spent lock only mid-reclaim)
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Committed})
+    await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+    const reclaimedReads = mocks.log.sequence.filter(s => s === 'read:reclaimed')
+    expect(reclaimedReads).toHaveLength(2)
+  })
+
+  it('accepts a Spent lock mid-reclaim (the counterparty already reclaimed its own leg)', async () => {
+    // Committed -> first reclaim advances to Spent and flags that side; the
+    // OTHER side must still be able to reclaim its own leg from Spent
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [digestTerms(bob)],
+    })
+    await expect(mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})).resolves.toBe(TX_HASH)
+  })
+
+  it('rejects when THIS side already reclaimed (contract AlreadyReclaimed)', async () => {
+    const mocks = setup({
+      timestamp: AT_PROPOSER_RECLAIM,
+      lockState: LockState.Spent,
+      reclaimedDigests: [digestTerms(alice)],
+    })
+    try {
+      await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('already reclaimed')
+    }
+    expect(mocks.log.writes).toHaveLength(0)
+  })
+
+  it('rejects a claim-settled Spent lock — Spent with no counterparty reclaim (contract InvalidLockState)', async () => {
+    // a claim leaves the lock Spent with NEITHER reclaimed flag set; a reclaim
+    // here would revert InvalidLockState, and the preflight names that cause
+    const mocks = setup({timestamp: AT_PROPOSER_RECLAIM, lockState: LockState.Spent})
+    try {
+      await mocks.client.reclaim({lock: FOUNDRY_LOCK, party: alice, counterparty: bob})
+      expect.unreachable()
+    } catch (error) {
+      expect((error as QuipSwapError).code).toBe('INVALID_LOCK_STATE')
+      expect((error as QuipSwapError).message).toContain('Spent from a claim')
+    }
+    expect(mocks.log.writes).toHaveLength(0)
   })
 
   it('rejects before the reclaimRelease', async () => {

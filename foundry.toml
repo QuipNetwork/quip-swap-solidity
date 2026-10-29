@@ -22,8 +22,11 @@ ignored_warnings_from = ["dependencies/"]
 gas_limit = "18446744073709551615" # u64::MAX
 memory_limit = 268_435_456
 # Allow VerifyOmnibus.s.sol to read the SDK's canonical address file (default) and
-# any repo-relative ADDRESS_JSON override (read-only verify script).
-fs_permissions = [{access = "read", path = "./"}]
+# any repo-relative DEPLOYMENTS_JSON override (read-only verify script).
+# SyncRegistry regenerates the deployment registry, so that ONE file is
+# writable. Scoped to the path rather than widening the tree: nothing else in
+# the repo should be machine-written.
+fs_permissions = [{access = "read", path = "./"}, {access = "read-write", path = "./sdk/src/deployments.json"}]
 # hashsigs-solidity compiles itself with via_ir (UXMSS.sol is stack-too-deep
 # without it). Restricting its implementation sources pins every compilation
 # unit that includes them (the SHRINCS integration suite) to the via-ir
@@ -42,6 +45,34 @@ exclude_lints = ["mixed-case-function", "mixed-case-variable"]
 via_ir = true
 out = 'out-via-ir'
 
+# Production deployment profile — the only profile DeployOmnibus accepts.
+#
+# Foundry profiles INHERIT from [profile.default] (verify with
+# `FOUNDRY_PROFILE=prod forge config`), so solc_version, evm_version,
+# optimizer_runs, libs, src, fs_permissions and the hashsigs via-ir
+# compilation_restrictions all carry over. Do NOT repeat them here: a copy would
+# silently drift from default and change the shipped artifact.
+#
+# Only two things differ, and both are about not shipping a dev build:
+#   * metadata off — otherwise the runtime bytecode embeds an IPFS hash that
+#     moves when a comment or an absolute source path changes, so the same source
+#     would produce different bytecode on different machines.
+#   * a dedicated out dir — out/ is what `forge test`, `make build` and
+#     `sdk-generate` consume. Sharing it means an interleaved test run can
+#     overwrite the artifact a deploy is about to broadcast, and you cannot tell
+#     a prod build from a dev build after the fact.
+#
+# NOTE: none of this affects the deployed ADDRESS. CREATE3 hashes only the proxy
+# initcode, so Omnibus's creation code never enters the address derivation.
+[profile.prod]
+out = 'out-prod'
+bytecode_hash = 'none'
+cbor_metadata = false
+
+# .github/workflows/test.yml sets FOUNDRY_PROFILE: ci. Declared explicitly so it
+# resolves to a real profile instead of silently falling back to default.
+[profile.ci]
+
 [dependencies]
 forge-std = "1.14.0"
 solady = "0.1.26"
@@ -53,12 +84,14 @@ solady = "0.1.26"
 "@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "6f0fb103e026e19d056db8d5bf292f4a69e9935b" }
 
 [rpc_endpoints]
+base = "${API_URL_BASE}"
 base_sepolia = "${API_URL_BASE_SEPOLIA}"
 op_sepolia = "${API_URL_OP_SEPOLIA}"
 
 # No explicit `url`: forge then uses the Etherscan API V2 multichain endpoint
 # (the old per-chain V1 URLs are deprecated and return NOTOK).
 [etherscan]
+base = { key = "${ETHERSCAN_API_KEY}", chain = 8453 }
 base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }
 op_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155420 }
 

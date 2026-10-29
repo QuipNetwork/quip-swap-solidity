@@ -17,7 +17,7 @@ contract Omnibus_claim is OmnibusTest {
 
   // ============ Success Cases ============
 
-  function test_claim_sameChainSwap() public {
+  function test_claim_sameChain_settlesBothLegs() public {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
@@ -78,21 +78,34 @@ contract Omnibus_claim is OmnibusTest {
     uint256 aliceRecipientERC20Before = mockERC20.balanceOf(ALICE_RECIPIENT);
 
     // party = bob (off-chain), counterparty = alice (on-chain); alice's assets -> bob.recipient
+    vm.recordLogs();
     omnibus.claim(SECRET, bob, alice);
 
     assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, DEFAULT_AMOUNT);
     // bob is cross-chain, so no transfer of bob's assets on this chain
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT), aliceRecipientERC20Before);
+
+    // exactly ONE Claim leg is emitted cross-chain, naming the single paid recipient
+    Vm.Log[] memory logs = vm.getRecordedLogs();
+    uint256 claimCount = 0;
+    for (uint256 i = 0; i < logs.length; i++) {
+      if (logs[i].topics[0] == IOmnibus.Claim.selector) {
+        assertEq(address(uint160(uint256(logs[i].topics[2]))), bob.recipient);
+        claimCount++;
+      }
+    }
+    assertEq(claimCount, 1, 'cross-chain claim emits exactly one Claim leg');
   }
 
-  function test_claim_sameChainTakerClaim_settlesBothLegs() public {
-    // the "should never occur" same-chain taker claim (taker somehow holds the secret and
-    // claims first, in the taker window): both legs must still settle to the right recipients
+  function test_claim_sameChain_settlesBothLegs_regardlessOfTermsParameterOrderingInCalldata() public {
+    // argument order carries no meaning same-chain: a claim with the terms role-swapped
+    // (taker's terms as `party`) inside the proposer window must settle both legs to the
+    // right recipients, exactly like the conventional order
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _warpToTakerClaim();
+    _warpToProposerClaim();
 
     uint256 bobRecipientBefore = BOB_RECIPIENT.balance;
     uint256 aliceRecipientBefore = mockERC20.balanceOf(ALICE_RECIPIENT);
@@ -104,7 +117,7 @@ contract Omnibus_claim is OmnibusTest {
     // alice's native assets -> bob.recipient; bob's ERC20 assets -> alice.recipient
     assertEq(BOB_RECIPIENT.balance - bobRecipientBefore, DEFAULT_AMOUNT);
     assertEq(mockERC20.balanceOf(ALICE_RECIPIENT) - aliceRecipientBefore, DEFAULT_AMOUNT);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_claim_emitsClaimEvent() public {
@@ -119,19 +132,26 @@ contract Omnibus_claim is OmnibusTest {
     omnibus.claim(SECRET, alice, bob);
 
     Vm.Log[] memory logs = vm.getRecordedLogs();
-    bool foundEvent = false;
+    // same-chain claim pays BOTH recipients, so it emits one Claim per leg naming the
+    // terms-pinned recipient (NOT the caller CHARLIE); lock and recipient are indexed
+    uint256 claimCount = 0;
+    bool sawPartyRecipient = false;
+    bool sawCounterpartyRecipient = false;
     for (uint256 i = 0; i < logs.length; i++) {
       if (logs[i].topics[0] == IOmnibus.Claim.selector) {
         assertEq(logs[i].topics[1], lock);
-        // recipient (non-indexed) then secret (non-indexed) live in data
-        (address emittedRecipient, bytes32 emittedSecret) = abi.decode(logs[i].data, (address, bytes32));
-        assertEq(emittedRecipient, CHARLIE); // the claimer, not a terms recipient
+        address emittedRecipient = address(uint160(uint256(logs[i].topics[2])));
+        bytes32 emittedSecret = abi.decode(logs[i].data, (bytes32));
         assertEq(emittedSecret, SECRET);
-        foundEvent = true;
-        break;
+        assertTrue(emittedRecipient != CHARLIE, 'recipient must be a terms recipient, not the caller');
+        if (emittedRecipient == alice.recipient) sawPartyRecipient = true;
+        if (emittedRecipient == bob.recipient) sawCounterpartyRecipient = true;
+        claimCount++;
       }
     }
-    assertTrue(foundEvent, 'Claim event not emitted');
+    assertEq(claimCount, 2, 'same-chain claim emits one Claim per leg');
+    assertTrue(sawPartyRecipient, 'party.recipient leg not emitted');
+    assertTrue(sawCounterpartyRecipient, 'counterparty.recipient leg not emitted');
   }
 
   function test_claim_anyoneCanClaim() public {
@@ -145,7 +165,7 @@ contract Omnibus_claim is OmnibusTest {
     vm.prank(CHARLIE);
     omnibus.claim(SECRET, alice, bob);
 
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_claim_withERC20Assets() public {
@@ -196,11 +216,11 @@ contract Omnibus_claim is OmnibusTest {
     Terms memory bob = _bobTerms();
 
     _commitBothParties(lock, alice, bob);
-    _assertLockState(lock, LockState.Committed);
+    _assertSwapState(lock, alice, bob, LockState.Committed);
 
     _warpToProposerClaim();
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   // ============ Revert Cases ============
@@ -237,7 +257,7 @@ contract Omnibus_claim is OmnibusTest {
 
     // Only first commit (Free state)
     _commitFor(ALICE, lock, alice, bob);
-    _assertLockState(lock, LockState.Free);
+    _assertSwapState(lock, alice, bob, LockState.Free);
 
     _warpToProposerClaim();
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
@@ -248,7 +268,7 @@ contract Omnibus_claim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    _assertLockState(lock, LockState.Unused);
+    _assertSwapState(lock, alice, bob, LockState.Unused);
 
     // no terms posted for the lock -> canonical digest mismatch surfaces first
     vm.expectRevert(IOmnibus.TermsMismatch.selector);
@@ -262,7 +282,7 @@ contract Omnibus_claim is OmnibusTest {
     _commitBothParties(lock, alice, bob);
     _warpToProposerClaim();
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
 
     vm.expectRevert(IOmnibus.InvalidLockState.selector);
     omnibus.claim(SECRET, alice, bob);
@@ -275,8 +295,8 @@ contract Omnibus_claim is OmnibusTest {
 
     // set a committed lock with the matching canonical digest
     bytes32 hash = omnibus.computeTermsHash(alice, bob);
-    omnibus.setLockState(lock, LockState.Committed);
-    omnibus.setTermsHash(lock, hash);
+    omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
+    omnibus.setTermsHash(_swapIdFor(lock, alice, bob), hash);
 
     vm.expectRevert(TermsLib.ChainIdMismatch.selector);
     omnibus.claim(SECRET, alice, bob);
@@ -288,9 +308,9 @@ contract Omnibus_claim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    omnibus.setTermsHash(lock, omnibus.computeTermsHash(alice, bob));
-    omnibus.setLockState(lock, LockState.Committed);
-    omnibus.setPosted(lock, omnibus.computeTermsDigest(alice), true); // party side only
+    omnibus.setTermsHash(_swapIdFor(lock, alice, bob), omnibus.computeTermsHash(alice, bob));
+    omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
+    omnibus.setPosted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(alice), true); // party side only
 
     _warpToProposerClaim();
     vm.expectRevert(IOmnibus.TermsNotPosted.selector);
@@ -303,9 +323,9 @@ contract Omnibus_claim is OmnibusTest {
     Terms memory alice = _aliceTerms();
     Terms memory bob = _bobTerms();
 
-    omnibus.setTermsHash(lock, omnibus.computeTermsHash(alice, bob));
-    omnibus.setLockState(lock, LockState.Committed);
-    omnibus.setPosted(lock, omnibus.computeTermsDigest(bob), true); // counterparty side only
+    omnibus.setTermsHash(_swapIdFor(lock, alice, bob), omnibus.computeTermsHash(alice, bob));
+    omnibus.setLockState(_swapIdFor(lock, alice, bob), LockState.Committed);
+    omnibus.setPosted(_swapIdFor(lock, alice, bob), omnibus.computeTermsDigest(bob), true); // counterparty side only
 
     _warpToProposerClaim();
     vm.expectRevert(IOmnibus.TermsNotPosted.selector);
@@ -348,7 +368,7 @@ contract Omnibus_claim is OmnibusTest {
     // lower bound (BOB_COMMIT_DEADLINE) is inclusive
     vm.warp(BOB_COMMIT_DEADLINE);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_claim_succeedsJustBeforeUpperBound() public {
@@ -359,7 +379,7 @@ contract Omnibus_claim is OmnibusTest {
 
     vm.warp(ALICE_CLAIM_DEADLINE - 1);
     omnibus.claim(SECRET, alice, bob);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   // ============ Taker-Claim Window Cases ============
@@ -378,7 +398,7 @@ contract Omnibus_claim is OmnibusTest {
     // lower bound (ALICE_CLAIM_DEADLINE) is inclusive
     vm.warp(ALICE_CLAIM_DEADLINE);
     omnibus.claim(SECRET, bob, alice);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   function test_claim_takerClaim_revertsWhen_beforeWindow() public {
@@ -404,7 +424,91 @@ contract Omnibus_claim is OmnibusTest {
 
     vm.warp(ALICE_RECLAIM_RELEASE - 1);
     omnibus.claim(SECRET, bob, alice);
-    _assertLockState(lock, LockState.Spent);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
+  }
+
+  // ============ Role-Swapped Same-Chain Window Cases (audit regression) ============
+
+  /// @dev audit finding: same-chain, the claim window is selected from which struct the
+  ///      caller passes as `party` vs `counterparty`. Submitting the identical terms
+  ///      role-swapped used to flip the check into the cross-chain taker window
+  ///      [ALICE_CLAIM_DEADLINE, ALICE_RECLAIM_RELEASE), extending the secret holder's
+  ///      effective window to the union [BOB_COMMIT_DEADLINE, ALICE_RECLAIM_RELEASE).
+  ///      Roles are now derived from the terms' deadlines, so both argument orders must
+  ///      enforce the one proposer window [BOB_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE).
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_inTakerWindow() public {
+    // the original exploit transaction: role-swapped claim inside what used to be the
+    // reachable taker window must now revert
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    _warpToTakerClaim();
+
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_atProposerClaimUpperBound() public {
+    // upper bound (ALICE_CLAIM_DEADLINE) is exclusive for the swapped order too; this exact
+    // timestamp used to be the start of the extended window
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_CLAIM_DEADLINE);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_justBeforeProposerReclaimRelease() public {
+    // the far end of the previously-exploitable range: one second before the proposer could
+    // reclaim, the role-swapped claim must still be closed
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_RECLAIM_RELEASE - 1);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_revertsWhen_beforeWindow() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // proposer window opens at BOB_COMMIT_DEADLINE regardless of argument order
+    vm.warp(BOB_COMMIT_DEADLINE - 1);
+    vm.expectRevert(TermsLib.WindowViolated.selector);
+    omnibus.claim(SECRET, bob, alice);
+  }
+
+  function test_claim_sameChainRoleSwapped_succeedsAtProposerClaimLowerBound() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    // lower bound (BOB_COMMIT_DEADLINE) is inclusive for the swapped order too
+    vm.warp(BOB_COMMIT_DEADLINE);
+    omnibus.claim(SECRET, bob, alice);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
+  }
+
+  function test_claim_sameChainRoleSwapped_succeedsJustBeforeUpperBound() public {
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+
+    vm.warp(ALICE_CLAIM_DEADLINE - 1);
+    omnibus.claim(SECRET, bob, alice);
+    _assertSwapState(lock, alice, bob, LockState.Spent);
   }
 
   // ============ Fuzz Tests ============
@@ -420,6 +524,35 @@ contract Omnibus_claim is OmnibusTest {
 
     _warpToProposerClaim();
     omnibus.claim(secret, alice, bob);
-    _assertLockState(_lock, LockState.Spent);
+    _assertSwapState(_lock, alice, bob, LockState.Spent);
+  }
+
+  function testFuzz_claim_sameChain_windowIsArgumentOrderIndependent(uint256 timestamp) public {
+    // at every timestamp, both argument orders must agree on accept/reject, and both must
+    // accept exactly inside the proposer window [BOB_COMMIT_DEADLINE, ALICE_CLAIM_DEADLINE)
+    timestamp = bound(timestamp, 0, BOB_RECLAIM_RELEASE + 1000);
+
+    Terms memory alice = _aliceTerms();
+    Terms memory bob = _bobTerms();
+
+    _commitBothParties(lock, alice, bob);
+    vm.warp(timestamp);
+
+    uint256 snapshot = vm.snapshotState();
+    bool conventionalOrderSucceeds;
+    try omnibus.claim(SECRET, alice, bob) {
+      conventionalOrderSucceeds = true;
+    } catch {}
+
+    vm.revertToState(snapshot);
+    bool swappedOrderSucceeds;
+    try omnibus.claim(SECRET, bob, alice) {
+      swappedOrderSucceeds = true;
+    } catch {}
+
+    assertEq(conventionalOrderSucceeds, swappedOrderSucceeds);
+
+    bool inProposerWindow = timestamp >= BOB_COMMIT_DEADLINE && timestamp < ALICE_CLAIM_DEADLINE;
+    assertEq(conventionalOrderSucceeds, inProposerWindow);
   }
 }

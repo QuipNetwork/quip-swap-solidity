@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Omnibus} from '../src/Omnibus.sol';
 import {Constants} from './Constants.sol';
+import {DeployConstants} from './DeployConstants.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 
 /**
@@ -12,9 +13,11 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  *      that enables keyed commit authorization through that verifier.
  *
  *      The verifier is passed as a script ARGUMENT (via `--sig`). The Omnibus
- *      address is never passed in: it is predictable, so the script computes
- *      it from (CreateX, DEPLOYER_ADDRESS, salt) — the same math DeployOmnibus
- *      uses.
+ *      address is never passed in: `DeployConstants.labelFor(block.chainid)`
+ *      picks the family label for the CONNECTED chain and the script derives
+ *      the address with the same math the deploy scripts use. Pointing at an
+ *      undeclared chain therefore reverts rather than activating a verifier on
+ *      whatever happens to sit at a hardcoded address.
  *
  *      Idempotent: if the verifier is already active, logs and exits without
  *      broadcasting.
@@ -27,14 +30,15 @@ import {Script, console} from 'forge-std-1.14.0/Script.sol';
  * Environment:
  *   OMNIBUS_OWNER_PK - Private key of the Omnibus owner (broadcasting EOA;
  *                      setVerifierActivity is onlyOwner)
- *   DEPLOYER_ADDRESS - Deployer EOA, used to predict the Omnibus address
  */
 contract ActivateVerifier is Script {
   function run(address verifier) external {
     uint256 ownerPk = vm.envUint('OMNIBUS_OWNER_PK');
-    address omnibusAddr = Constants.predictOmnibus(vm.envAddress('DEPLOYER_ADDRESS'));
+    string memory versionLabel = DeployConstants.labelFor(block.chainid);
+    address omnibusAddr = Constants.predictOmnibus(versionLabel);
     Omnibus omnibus = Omnibus(payable(omnibusAddr));
 
+    console.log('Version:  ', versionLabel);
     require(omnibusAddr.code.length > 0, 'Omnibus not deployed at predicted address');
     require(verifier.code.length > 0, 'Verifier not deployed on this chain');
     require(omnibus.owner() == vm.addr(ownerPk), 'OMNIBUS_OWNER_PK is not the Omnibus owner');

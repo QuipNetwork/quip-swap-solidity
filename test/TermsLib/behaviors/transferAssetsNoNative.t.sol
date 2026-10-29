@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {Asset, Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {Asset, AssetType, Terms, TermsLib} from '../../../src/TermsLib.sol';
+import {ERC20Mock} from '../../mocks/ERC20Mock.sol';
+import {ERC721Mock} from '../../mocks/ERC721Mock.sol';
 import {FeeOnTransferERC20Mock} from '../../mocks/FeeOnTransferERC20Mock.sol';
 import {AssetHelper} from '../../utils/AssetHelper.sol';
 import {TermsHelper} from '../../utils/TermsHelper.sol';
@@ -114,6 +116,42 @@ contract TermsLib_transferAssetsNoNative is TermsLibTest {
     Terms memory terms = _makeTermsWithAssets(assets);
 
     vm.expectRevert(TermsLib.UnexpectedAmountReceived.selector);
+    harness.exposed_transferAssetsNoNative(terms, address(harness), BOB);
+  }
+
+  /// @notice an ERC20-declared leg pointing at a stock ERC721 is rejected at deposit.
+  /// Without the guard this collision reconciles cleanly (transferFrom moves token id
+  /// `amount`=1, balanceOf delta reads 1 == amount) yet every later payout via
+  /// transfer() reverts forever — so it must be blocked here.
+  function test_transferAssetsNoNative_revertsWhen_erc20TargetIsERC721() public {
+    // fresh NFT so the harness owns token id 1 (base setUp gives token 1 to ALICE)
+    ERC721Mock nft = new ERC721Mock('Collide', 'CLD');
+    nft.mint(address(harness), 1);
+
+    // declared ERC20, target is the ERC721, amount 1 == the token id that gets moved
+    Asset memory trap = Asset({assetType: AssetType.ERC20, target: address(nft), id: 0, amount: 1});
+    Terms memory terms = _makeTermsWithAssets(trap.toArray());
+
+    vm.expectRevert(TermsLib.AssetTypeMismatch.selector);
+    harness.exposed_transferAssetsNoNative(terms, address(harness), BOB);
+  }
+
+  /// @notice the reverse mis-typing fails CLOSED at deposit on its own: an ERC721-declared
+  /// leg pointing at an ERC20 calls ERC721.safeTransferFrom (selector 0x42842e0e), which a
+  /// stock ERC20 does not implement, so the deposit reverts before any escrow is recorded.
+  /// No AssetTypeMismatch guard is needed for this direction (documents the asymmetry).
+  function test_transferAssetsNoNative_erc721TargetIsERC20_failsClosed() public {
+    ERC20Mock token = new ERC20Mock('Plain', 'PLN', 18);
+    token.mint(address(harness), 1000 ether);
+
+    Asset memory trap = Asset({assetType: AssetType.ERC721, target: address(token), id: 1, amount: 1});
+    Terms memory terms = _makeTermsWithAssets(trap.toArray());
+
+    // the deposit calls ERC721.safeTransferFrom(address,address,uint256) = selector
+    // 0x42842e0e, which a stock ERC20 does not implement and has no fallback for, so the
+    // dispatcher reverts with EMPTY data. Pin that exact reason (not "any revert") so a
+    // future change that made this path revert for some other cause would be caught.
+    vm.expectRevert(bytes(''));
     harness.exposed_transferAssetsNoNative(terms, address(harness), BOB);
   }
 

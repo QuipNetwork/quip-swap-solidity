@@ -20,6 +20,11 @@ export const omnibusAbi = [
         "name": "walletFactory",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "version",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "nonpayable"
@@ -74,8 +79,8 @@ export const omnibusAbi = [
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -582,7 +587,7 @@ export const omnibusAbi = [
     "name": "lockState",
     "inputs": [
       {
-        "name": "lock",
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -739,7 +744,7 @@ export const omnibusAbi = [
     "name": "posted",
     "inputs": [
       {
-        "name": "lock",
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -901,10 +906,34 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
+    "name": "reclaimed",
+    "inputs": [
+      {
+        "name": "swapId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "sideDigest",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "isReclaimed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -958,10 +987,157 @@ export const omnibusAbi = [
   },
   {
     "type": "function",
-    "name": "termsHash",
+    "name": "swapId",
     "inputs": [
       {
         "name": "lock",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "party",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "counterparty",
+        "type": "tuple",
+        "internalType": "struct Terms",
+        "components": [
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRecipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "commitmentDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "claimDeadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "reclaimRelease",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "assets",
+            "type": "tuple[]",
+            "internalType": "struct Asset[]",
+            "components": [
+              {
+                "name": "assetType",
+                "type": "uint8",
+                "internalType": "enum AssetType"
+              },
+              {
+                "name": "target",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "id",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "amount",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "termsHash",
+    "inputs": [
+      {
+        "name": "swapId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1025,16 +1201,16 @@ export const omnibusAbi = [
     "name": "Claim",
     "inputs": [
       {
-        "name": "recipient",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
         "name": "lock",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
       },
       {
         "name": "secret",
@@ -1257,6 +1433,16 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "AlreadyReclaimed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AssetTypeMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ChainIdMismatch",
     "inputs": []
   },
@@ -1322,7 +1508,17 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidReclaimRelease",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "MalformedSigner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NativeNotAccepted",
     "inputs": []
   },
   {
@@ -1354,6 +1550,11 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "RenounceDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TermsAlreadyPosted",
     "inputs": []
   },
@@ -1365,6 +1566,11 @@ export const omnibusAbi = [
   {
     "type": "error",
     "name": "TermsNotPosted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyAssets",
     "inputs": []
   },
   {
@@ -1409,7 +1615,17 @@ export const omnibusAbi = [
   },
   {
     "type": "error",
+    "name": "ZeroFeeRecipient",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroVerifier",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroVersion",
     "inputs": []
   }
 ] as const

@@ -133,7 +133,7 @@ contract Omnibus_Reentrancy is Test {
     assertEq(address(attacker).balance, BOB_AMOUNT);
     assertEq(BOB_RECIPIENT.balance, ALICE_AMOUNT);
     assertEq(address(omnibus).balance, 0);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 
   /// @notice a reclaim recipient that re-enters reclaim mid-refund fails on the spent lock
@@ -149,17 +149,22 @@ contract Omnibus_Reentrancy is Test {
 
     uint256 bobBalBefore = BOB.balance;
 
+    // Alice's leg refunds to the attacker, which re-enters reclaim(alice, bob) mid-transfer
     vm.warp(AT_PROPOSER_RECLAIM);
     omnibus.reclaim(lock, alice, bob);
 
-    // the re-entry ran and failed: the lock was already Spent when it fired
+    // the re-entry ran and failed: Alice's side was already flagged / the lock already Spent
     assertTrue(attacker.reentered());
     assertFalse(attacker.innerSucceeded());
+    assertEq(address(attacker).balance, ALICE_AMOUNT); // Alice's leg, exactly once
 
-    // exactly one refund per side
-    assertEq(address(attacker).balance, ALICE_AMOUNT);
+    // Bob independently reclaims his own leg afterwards
+    vm.warp(B_RECLAIM + 500);
+    vm.prank(BOB);
+    omnibus.reclaim(lock, bob, alice);
+
     assertEq(BOB.balance - bobBalBefore, BOB_AMOUNT);
     assertEq(address(omnibus).balance, 0);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(omnibus.swapId(lock, alice, bob))), uint8(LockState.Spent));
   }
 }

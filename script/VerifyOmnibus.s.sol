@@ -2,49 +2,76 @@
 pragma solidity ^0.8.33;
 
 import {Constants} from './Constants.sol';
+import {Deployments} from './Deployments.sol';
 import {Script, console} from 'forge-std-1.14.0/Script.sol';
 
 /**
  * @title VerifyOmnibus
- * @dev Predicts the Omnibus CREATE3 address from (CreateX, deployer EOA,
- *      salt) and asserts it equals `omnibusAddress` in the SDK address-json.
- *      Keeps the SDK's pinned address (`sdk/src/address.json`, surfaced as
- *      `OMNIBUS_CREATE3_ADDRESS`) in sync with what DeployOmnibus would deploy.
+ * @dev Recomputes every row in the deployment registry and asserts the recorded
+ *      address is the one its recorded `version` label derives to. Keeps
+ *      `sdk/src/deployments.json` — what `sdk/src/deployments.ts` ships to every
+ *      SDK consumer — honest about what the salt math actually produces.
  *
- *      Pure offline math — no RPC, no on-chain calls. The address is solely a
- *      function of (CreateX, deployer EOA, salt) via the CreateX-guarded salt
- *      and the standard CREATE3 proxy, all known locally. The salt math lives
- *      in `Constants` and is shared with DeployOmnibus, so they cannot drift.
+ *      Pure offline math — no RPC, no on-chain calls, no environment. An
+ *      address is solely a function of (CreateX, Constants.DEPLOYER, salt), and
+ *      the salt math lives in `Constants`, shared with DeployOmnibus, so the two
+ *      cannot drift.
  *
- *      ANY divergence throws loudly — INCLUDING the zero placeholder, so a
- *      not-yet-populated address.json fails rather than passing silently
+ *      WHAT THIS DOES NOT CHECK: that the recorded contract is really there, or
+ *      that its `walletFactory` matches the row. Both need an RPC. A row can be
+ *      arithmetically perfect and still describe a deployment that was never
+ *      broadcast — CREATE3 addresses are predictable, which is the point.
+ *
+ *      ANY divergence throws loudly — INCLUDING a zero address, so a
+ *      declared-but-not-yet-deployed row fails rather than passing silently
  *      (usable as a hard pre-publish gate).
  *
+ *      This same assertion also runs in CI as
+ *      `Constants_predictOmnibus.test_predictOmnibus_matchesRegistry`. This
+ *      script exists for the DEPLOYMENTS_JSON override — vetting a candidate
+ *      file before publishing it — and for operator-facing output.
+ *
  * Usage:
- *   forge script script/VerifyOmnibus.s.sol --rpc-url $RPC -v   (RPC unused; any works)
- *   ADDRESS_JSON=path/to/other.json forge script script/VerifyOmnibus.s.sol -v
+ *   forge script script/VerifyOmnibus.s.sol -v                   (no RPC needed)
+ *   DEPLOYMENTS_JSON=path/to/other.json forge script script/VerifyOmnibus.s.sol -v
  *
  * Environment:
- *   DEPLOYER_ADDRESS - Deployer EOA the salt is permissioned to (the address
- *                      of DEPLOYER_PK used by DeployOmnibus)
- *   ADDRESS_JSON     - optional; overrides sdk/src/address.json (absolute or repo-root-relative)
+ *   DEPLOYMENTS_JSON - optional; overrides sdk/src/deployments.json (absolute or
+ *                      repo-root-relative)
  */
 contract VerifyOmnibus is Script {
   function run() external view {
-    address deployerEoa = vm.envAddress('DEPLOYER_ADDRESS');
+    string memory path = vm.envOr('DEPLOYMENTS_JSON', Deployments.defaultPath());
+    Deployments.Deployment[] memory rows = Deployments.readAll(path);
 
-    string memory defaultPath = string.concat(vm.projectRoot(), '/sdk/src/address.json');
-    string memory path = vm.envOr('ADDRESS_JSON', defaultPath);
-    address fromJson = vm.parseJsonAddress(vm.readFile(path), '.omnibusAddress');
+    console.log('Registry path:', path);
+    console.log('Deployer EOA: ', Constants.DEPLOYER);
+    console.log('Rows:         ', rows.length);
+    require(rows.length > 0, 'VerifyOmnibus: registry is empty');
 
-    address predicted = Constants.predictOmnibus(deployerEoa);
+    for (uint256 i; i < rows.length; i++) {
+      Deployments.Deployment memory row = rows[i];
+      console.log('');
+      console.log('  chain id:      ', row.chainId);
+      console.log('  version:       ', row.version);
+      console.log('  omnibus:       ', row.omnibus);
+      console.log('  wallet factory:', row.walletFactory);
+      console.log('  deployed:      ', row.deployed);
+      console.log('  predicted:     ', Constants.predictOmnibus(row.version));
 
-    console.log('address.json path:', path);
-    console.log('Deployer EOA:     ', deployerEoa);
-    console.log('Predicted Omnibus:', predicted);
-    console.log('address.json:     ', fromJson);
+      // One row per chain. A duplicate would make resolution order-dependent —
+      // and the SDK's Map build would silently keep only the last one.
+      for (uint256 j = i + 1; j < rows.length; j++) {
+        require(rows[j].chainId != row.chainId, 'VerifyOmnibus: duplicate row for the same chain id');
+      }
+    }
 
-    require(fromJson == predicted, 'VerifyOmnibus: address.json does not match predicted Omnibus address');
-    console.log('OK - address.json matches predicted Omnibus address');
+    // THE check: the committed file must be exactly what DeployConstants
+    // derives. Every per-field assertion lives in one place so this script and
+    // the CI test cannot disagree about what "correct" means.
+    Deployments.requireDerived(rows);
+
+    console.log('');
+    console.log('OK - registry matches DeployConstants (addresses, versions, wallet factory)');
   }
 }

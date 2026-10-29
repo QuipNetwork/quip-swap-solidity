@@ -14,6 +14,14 @@
  * congestion, and relayer latency — most critically the taker's post-reveal
  * reaction buffer (`proposer.reclaimRelease - proposer.claimDeadline`).
  *
+ * One hazard this generic per-gap check does NOT cover is cross-chain CLOCK
+ * SKEW between the two chains: the reaction buffer is the only gap judged
+ * across both chains' clocks (it opens on the taker chain at the reveal and
+ * closes on the proposer chain at `reclaimRelease`), so skew is a
+ * reaction-buffer-only concern. It is enforced separately by
+ * `validateCrossChainSchedule`'s `maxClockSkewSeconds`, not folded into this
+ * uniform size check (which would wrongly demand every gap absorb skew).
+ *
  * The {@link DEFAULT_BUFFERS} presets are conservative STARTING POINTS keyed
  * to a chain's finality profile, not authoritative values — tune them to the
  * chains you actually operate on.

@@ -125,4 +125,64 @@ describe('validateCrossChainSchedule', () => {
       ),
     ).toBe('CHAIN_ID_MISMATCH')
   })
+
+  // ---- clock skew: the reaction buffer must also absorb the chain pair's skew ----
+  // canonical layout: gaps are 1000s each and the reaction buffer
+  // (alice.reclaimRelease - alice.claimDeadline) spans two of them = 2000s.
+
+  it('the default maxClockSkewSeconds of 0n adds no constraint', () => {
+    // min=1000 clears every 1000s gap; with no skew the 2000s reaction buffer passes
+    expect(() =>
+      validateCrossChainSchedule({proposerTerms: alice, takerTerms: bob, minimumBufferSeconds: 1000n}),
+    ).not.toThrow()
+  })
+
+  it('accepts when the reaction buffer exactly covers minimumBufferSeconds + maxClockSkewSeconds', () => {
+    // required reaction = 1000 + 1000 = 2000; reaction buffer is exactly 2000 (boundary is inclusive).
+    // the non-reaction 1000s gaps are NOT tightened by skew — only the reaction buffer carries it.
+    expect(() =>
+      validateCrossChainSchedule({
+        proposerTerms: alice,
+        takerTerms: bob,
+        minimumBufferSeconds: 1000n,
+        maxClockSkewSeconds: 1000n,
+      }),
+    ).not.toThrow()
+  })
+
+  it('rejects INSUFFICIENT_REACTION_BUFFER when the reaction buffer is below min + skew', () => {
+    // required reaction = 1000 + 1001 = 2001 > the 2000s reaction buffer. Every adjacent gap
+    // still clears min=1000, so this fails on the reaction constraint specifically, NOT INSUFFICIENT_BUFFER.
+    expect(
+      codeOf(() =>
+        validateCrossChainSchedule({
+          proposerTerms: alice,
+          takerTerms: bob,
+          minimumBufferSeconds: 1000n,
+          maxClockSkewSeconds: 1001n,
+        }),
+      ),
+    ).toBe('INSUFFICIENT_REACTION_BUFFER')
+  })
+
+  it('reports the required and actual reaction buffer in the error details', () => {
+    let err: QuipSwapError | undefined
+    try {
+      validateCrossChainSchedule({
+        proposerTerms: alice,
+        takerTerms: bob,
+        minimumBufferSeconds: 1000n,
+        maxClockSkewSeconds: 1001n,
+      })
+    } catch (e) {
+      if (e instanceof QuipSwapError) err = e
+    }
+    expect(err?.code).toBe('INSUFFICIENT_REACTION_BUFFER')
+    expect(err?.details).toMatchObject({
+      reactionBufferSeconds: ALICE_RECLAIM_RELEASE - ALICE_CLAIM_DEADLINE,
+      requiredReactionBufferSeconds: 2001n,
+      minimumBufferSeconds: 1000n,
+      maxClockSkewSeconds: 1001n,
+    })
+  })
 })

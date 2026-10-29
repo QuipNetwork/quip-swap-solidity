@@ -67,8 +67,14 @@ interface IOmnibus {
   /// @notice thrown when a verifier address is zero
   error ZeroVerifier();
 
+  /// @notice thrown when the fee-withdrawal recipient address is zero
+  error ZeroFeeRecipient();
+
   /// @notice thrown at construction when the wallet factory address is zero
   error ZeroFactory();
+
+  /// @notice thrown at construction when the version label is zero
+  error ZeroVersion();
 
   /// @notice thrown when a signer blob is not an ERC-7913 keyed identity (20 bytes or shorter)
   error MalformedSigner();
@@ -82,6 +88,15 @@ interface IOmnibus {
   /// @notice thrown on the wallet route when msg.sender is not a wallet
   /// deployed by the quip WalletFactory
   error NotQuipWallet();
+
+  /// @notice thrown when a side attempts to reclaim its leg twice
+  error AlreadyReclaimed();
+
+  /// @notice thrown by renounceOwnership: Omnibus has no ownerless mode
+  error RenounceDisabled();
+
+  /// @notice thrown by receive: bare native transfers are rejected; native must flow through commit
+  error NativeNotAccepted();
 
   /// @notice emitted when commitment fee is updated
   /// @param oldFee the previous fee
@@ -105,11 +120,14 @@ interface IOmnibus {
   /// @param sender the address that submitted and FUNDED the commit
   event Commitment(bytes32 indexed lock, Terms party, bytes signer, address indexed sender);
 
-  /// @notice emitted when a swap is executed
-  /// @param recipient address receiving assets of claim
+  /// @notice emitted once for each leg paid out by claim: once for a cross-chain claim
+  ///   (the counterparty's assets to party.recipient), twice for a same-chain claim
+  ///   (additionally the party's assets to counterparty.recipient). The submitting
+  ///   caller is intentionally not a field — it is the transaction sender.
   /// @param lock the hashlock identifier
+  /// @param recipient the terms-pinned address that received this leg's assets
   /// @param secret the preimage that unlocked the swap
-  event Claim(address recipient, bytes32 indexed lock, bytes32 secret);
+  event Claim(bytes32 indexed lock, address indexed recipient, bytes32 secret);
 
   /// @notice emitted when a party reclaims their assets
   /// @param caller address which initiated reclaim
@@ -117,21 +135,40 @@ interface IOmnibus {
   /// @param recipient the address that received the reclaim
   event Reclaimed(address caller, bytes32 indexed lock, address indexed recipient);
 
-  /// @notice returns the state of a lock
-  /// @param lock the hashlock identifier
+
+  /// @notice returns the state of a swap
+  /// @dev state is keyed by swap id, not by bare lock: swapId =
+  /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), where
+  /// canonicalTermsDigest is TermsLib.digestTermsCanonically over the pairing.
+  /// binding the key to the negotiated terms means an unrelated pairing reusing
+  /// an observed lock occupies its own slot and cannot block or alter another
+  /// swap's state
+  /// @param swapId the swap identifier
   /// @return state the lock state
-  function lockState(bytes32 lock) external view returns (LockState state);
+  function lockState(bytes32 swapId) external view returns (LockState state);
 
-  /// @notice returns the terms hash for a lock
-  /// @param lock the hashlock identifier
-  /// @return canonicalDigest the canonical terms hash
-  function termsHash(bytes32 lock) external view returns (bytes32 canonicalDigest);
+  /// @notice returns the canonical terms digest recorded for a swap
+  /// @dev keyed by swap id (see lockState); nonzero iff the pairing has been
+  /// committed on this chain, and then always equal to the digest the swap id
+  /// itself was derived from
+  /// @param swapId the swap identifier
+  /// @return canonicalDigest the canonical hash of the swap's term pairing
+  function termsHash(bytes32 swapId) external view returns (bytes32 canonicalDigest);
 
-  /// @notice returns whether a side was posted for a lock
-  /// @param lock the hashlock identifier
-  /// @param termsDigest the side's terms digest
-  /// @return isPosted whether that side has been posted
-  function posted(bytes32 lock, bytes32 termsDigest) external view returns (bool isPosted);
+  /// @notice returns whether a side was posted for a swap
+  /// @dev keyed by swap id (see lockState)
+  /// @param swapId the swap identifier
+  /// @param termsDigest the digest of the side's terms
+  /// @return isPosted whether that side has been committed
+  function posted(bytes32 swapId, bytes32 termsDigest) external view returns (bool isPosted);
+
+  /// @notice returns whether a side has reclaimed its own leg
+  /// @dev each side reclaims independently and exactly once. keyed by swap id (see lockState)
+  /// and the side's digestTerms
+  /// @param swapId the swap identifier
+  /// @param sideDigest the digestTerms of the side
+  /// @return isReclaimed true once the side has reclaimed
+  function reclaimed(bytes32 swapId, bytes32 sideDigest) external view returns (bool isReclaimed);
 
   /// @notice returns whether an ERC-7913 verifier is active for the keyed route
   /// @param verifier the verifier address
@@ -139,6 +176,15 @@ interface IOmnibus {
   function verifierActive(address verifier) external view returns (bool active);
 
   /// @notice sets the activity status of an ERC-7913 verifier (owner only)
+  /// @dev takes effect immediately (no grace window); commit reads it live on every
+  /// keyed-route call. Deactivating a verifier mid-swap STALLS any keyed leg already
+  /// escrowed under it: a same-chain swap needs two commits and nothing binds the
+  /// second to the verifier state that admitted the first, so once it is deactivated
+  /// the counterparty can no longer complete the keyed route and the first leg stays
+  /// escrowed until that party reaches its own reclaimRelease (the commitmentFee is
+  /// forfeited either way). The wallet route never reads this mapping, so a
+  /// factory-wallet counterparty can still settle. Off-chain clients should avoid
+  /// deactivating a verifier while swaps under it are in flight, or warn affected users.
   /// @param verifier the verifier address (non-zero)
   /// @param active the new activity status
   function setVerifierActivity(address verifier, bool active) external;
@@ -156,6 +202,18 @@ interface IOmnibus {
   /// baked immutably at construction (the factory proxy address is permanent)
   /// @return factory the wallet factory registry
   function WALLET_FACTORY() external view returns (IWalletFactory factory);
+
+  /// @notice computes the swap id binding a lock to a term pairing
+  /// @dev the key all swap state (lockState, termsHash, posted) is stored under:
+  /// keccak256(abi.encodePacked(lock, canonicalTermsDigest)), with
+  /// canonicalTermsDigest = TermsLib.digestTermsCanonically over the pairing —
+  /// so the result is independent of which side is passed as `party` vs
+  /// `counterparty`
+  /// @param lock the hashlock identifier
+  /// @param party the first party's terms
+  /// @param counterparty the second party's terms
+  /// @return id the swap identifier
+  function swapId(bytes32 lock, Terms calldata party, Terms calldata counterparty) external pure returns (bytes32 id);
 
   /// @notice computes the digest a committer's identity must sign
   /// @dev pure function of caller-known data; the SDK computes it locally and
@@ -181,6 +239,37 @@ interface IOmnibus {
   /// verifier; with an empty auth.signature msg.sender must be a wallet deployed
   /// by the quip WalletFactory (see CommitAuth — on that route the identity is
   /// attribution only, not a proven endorsement)
+  ///
+  /// TOKEN COMPATIBILITY / FUND-LOSS WARNING: escrow accounting assumes balances
+  /// change only via transfers. Fee-on-transfer, deflationary, and rounding-lossy
+  /// tokens (e.g. stETH's 1-2 wei transfer corner) are rejected at commit by
+  /// exact-receipt reconciliation (UnexpectedAmountReceived). Balance-mutable
+  /// tokens — rebasing, slashable, admin-burnable — and transfer-blockable tokens
+  /// (blacklisting, pausable) are UNSUPPORTED: a post-commit balance reduction
+  /// makes claim revert (see claim), positive rebases strand the accrued yield in
+  /// the contract with no recovery path, and a token that blocks transfers can
+  /// freeze every asset escrowed in the same terms. Escrow the non-rebasing
+  /// wrapper instead (e.g. wstETH, not stETH)
+  ///
+  /// Deposits are reconciled but PAYOUTS are not: claim and reclaim trust that a
+  /// successful transfer moved exactly the declared amount. A token whose transfer
+  /// behavior is address-dependent or otherwise dishonest — honest at deposit, then
+  /// returning success while delivering nothing (or over-debiting this contract) on
+  /// the way out — is UNSUPPORTED. A party can only be harmed by an asset they
+  /// AGREED to receive as the counter-leg, so vet the counterparty's asset contract
+  /// before committing; the protocol guarantees atomicity, not that the counter-leg
+  /// is well-behaved. This cannot be enforced on-chain for cross-chain swaps: the
+  /// legs settle independently on separate chains, so there is no atomic point at
+  /// which under-delivery of one leg can undo receipt of the other — you trust the
+  /// counter-leg's value
+  ///
+  /// ERC721 has no deposit reconciliation (unlike ERC20/ERC1155, whose balance
+  /// delta is checked): safeTransferFrom returns nothing, and a custody (ownerOf)
+  /// probe would be defeated by the same dishonest-contract case above (a token
+  /// that lies about ownership lies about its transfer too). There is no honest
+  /// lossy ERC721 behavior to catch (unlike fee-on-transfer for fungibles), so an
+  /// NFT contract that no-ops its transfer or lies about ownerOf falls under the
+  /// same UNSUPPORTED / vet-the-counter-leg rule — it is not separately checked
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
@@ -193,24 +282,59 @@ interface IOmnibus {
   ) external payable;
 
   /// @notice executes the swap by revealing the secret
-  /// @dev a cross-chain claim is gated only on the local (party) leg's deadline; the
-  /// counterparty leg's deadline is enforced only when it settles on this chain too.
-  /// for a cross-chain swap the secret holder claims the counterparty's leg first, so
-  /// the leg the secret holder claims must expire BEFORE the other leg: set the secret
-  /// holder's own deposit with the later deadline and the counterparty's deposit (the
-  /// one the secret holder takes) with the earlier deadline. the gap between the two is
-  /// the buffer the second claimant has after the secret is revealed; mis-ordering it
-  /// lets the secret holder take both legs
+  /// @dev permissionless: anyone holding the secret may claim, and the transaction
+  /// makes the secret public. the counterparty leg is the leg being claimed and must
+  /// be on this chain; a same-chain claim settles BOTH legs atomically.
+  ///
+  /// the enforced window derives from the terms themselves — the proposer is the side
+  /// with the earlier commitment deadline — never from which side is passed as `party`
+  /// vs `counterparty`, so submitting the terms role-swapped cannot select a different
+  /// window. which window applies depends only on whose assets this chain holds:
+  /// - the taker's assets are here (every same-chain claim, and the proposer's
+  ///   cross-chain leg): the proposer's reveal window
+  ///   [taker.commitmentDeadline, proposer.claimDeadline)
+  /// - only the proposer's assets are here (the cross-chain taker leg): the taker's
+  ///   redeem window [proposer.claimDeadline, proposer.reclaimRelease)
+  ///
+  /// the redeem window's width, proposer.reclaimRelease - proposer.claimDeadline, is
+  /// the cross-chain taker's reaction buffer after the secret is revealed; size it to
+  /// cover finality and downtime, since a missed redeem strands the taker's leg until
+  /// its reclaimRelease.
+  ///
+  /// FUND-LOSS WARNING: in a cross-chain swap the secret holder MUST be the proposer.
+  /// a taker who knows the secret can withhold their own commitment, wait for the
+  /// redeem window on the proposer's chain, and take the proposer's leg while giving
+  /// nothing — the contract cannot verify the remote leg, so this is enforceable only
+  /// off-chain when the terms are negotiated
+  ///
+  /// claim payouts are exact-or-revert: it never pays less than the declared
+  /// amounts, so revealing the secret is conditional on receiving exactly what was
+  /// priced (a clamped claim would let a balance-mutable token's shortfall buy the
+  /// secret at a discount). If the pooled escrow was externally reduced (negative
+  /// rebase, slash), claim reverts and the swap falls through to reclaim, which
+  /// clamps — the trade aborts, but no funds are frozen
   /// @param secret the preimage of the lock
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function claim(bytes32 secret, Terms calldata party, Terms calldata counterparty) external;
 
   /// @notice reclaims assets after deadline expires
+  /// @dev permissionless: assets go to the terms' reclaimRecipient regardless of
+  /// caller. Valid from party.reclaimRelease onward; when the counterparty leg is
+  /// also local and the lock is Committed, one call returns BOTH legs.
+  ///
+  /// reclaim is the terminal backstop — nothing exists after it — so it must never
+  /// brick: fungible (ERC20/ERC1155) payouts are clamped to the balance actually
+  /// held (TermsLib.transferAssetsClamped). With well-behaved tokens the clamp
+  /// never engages; it only matters when a balance-mutable token shrank the pooled
+  /// escrow in place. Loss allocation across swaps pooled in the same token is
+  /// first-come-first-served: earlier reclaims are paid the declared amounts in
+  /// full and the last is paid the remainder
   /// @param lock the hashlock identifier
   /// @param party the first party's terms
   /// @param counterparty the second party's terms
   function reclaim(bytes32 lock, Terms calldata party, Terms calldata counterparty) external;
+
 
   /// @notice the maximum allowed commitment fee
   /// @return the max fee in wei
@@ -229,6 +353,7 @@ interface IOmnibus {
   function setCommitmentFee(uint256 newFee) external;
 
   /// @notice withdraws accumulated fees to recipient (owner only)
-  /// @param to the recipient address
+  /// @param to the recipient address (must be non-zero; a zero `to` reverts ZeroFeeRecipient
+  ///   rather than irrecoverably burning the accrued balance)
   function withdrawFees(address to) external;
 }

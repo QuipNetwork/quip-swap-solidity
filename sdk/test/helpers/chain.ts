@@ -20,7 +20,7 @@
 import {readFileSync} from 'node:fs'
 import {dirname, join} from 'node:path'
 import {fileURLToPath} from 'node:url'
-import {createPublicClient, createTestClient, createWalletClient, defineChain, getAddress, http} from 'viem'
+import {createPublicClient, createTestClient, createWalletClient, defineChain, getAddress, http, stringToHex} from 'viem'
 import type {Abi, Address, Hex, PublicClient, TestClient, WalletClient} from 'viem'
 import {privateKeyToAccount} from 'viem/accounts'
 import type {PrivateKeyAccount} from 'viem/accounts'
@@ -183,12 +183,16 @@ export interface Fixture {
  * @returns The deployed addresses.
  */
 export async function deployFixture(ctx: ChainContext): Promise<Fixture> {
-  // 1. the wallet-factory registry double, then the two-argument constructor:
-  // (initialOwner, walletFactory); verifiers are activated post-deploy via
-  // setVerifierActivity (owner action)
+  // 1. the wallet-factory registry double, then the three-argument constructor:
+  // (initialOwner, walletFactory, version); verifiers are activated post-deploy
+  // via setVerifierActivity (owner action)
   const walletFactory = await ctx.deploy(loadArtifact('WalletFactoryMock.sol', 'WalletFactoryMock'))
   const omnibusArtifact = loadArtifact('Omnibus.sol', 'Omnibus')
-  const omnibus = await ctx.deploy(omnibusArtifact, [ctx.deployer.address, walletFactory])
+  const omnibus = await ctx.deploy(omnibusArtifact, [
+    ctx.deployer.address,
+    walletFactory,
+    stringToHex('QUIP:Omnibus:sdk-test', {size: 32}),
+  ])
 
   // an AcceptAll ERC-7913 verifier mock backs the keyed commit route
   const verifier = await ctx.deploy(loadArtifact('VerifierMock.sol', 'VerifierMock'))

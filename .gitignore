@@ -5,6 +5,8 @@
 # Compiler files
 cache/
 out/
+out-prod/
+out-via-ir/
 
 # Ignores development broadcast logs
 !/broadcast

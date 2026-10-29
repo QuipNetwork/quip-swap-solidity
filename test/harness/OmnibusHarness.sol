@@ -8,10 +8,17 @@ import {CommitAuth, LockState} from '../../src/interfaces/IOmnibus.sol';
 /// @title Omnibus Harness
 /// @dev Wrapper contract to expose Omnibus internal functions for testing
 contract OmnibusHarness is Omnibus {
+  /// @notice the version label every harness instance is built with
+  /// @dev Deliberately NOT a real deployment label. The harness takes no
+  ///      version argument so the suite's ~15 construction sites stay unchanged
+  ///      and no test accidentally asserts against a production version; the
+  ///      real constructor path is covered in behaviors/constructor.t.sol.
+  bytes32 public constant HARNESS_VERSION = 'QUIP:Omnibus:harness';
+
   /// @notice initializes the harness with an owner and wallet factory
   /// @param initialOwner the address that will own the contract
   /// @param walletFactory the wallet factory the wallet route trusts
-  constructor(address initialOwner, address walletFactory) Omnibus(initialOwner, walletFactory) {}
+  constructor(address initialOwner, address walletFactory) Omnibus(initialOwner, walletFactory, HARNESS_VERSION) {}
 
   /// @notice exposes _enforceCommitAuthorized (the identity router)
   function exposed_enforceCommitAuthorized(CommitAuth calldata auth, bytes32 digest) external view {
@@ -71,5 +78,10 @@ contract OmnibusHarness is Omnibus {
   /// @notice exposes _generateLock
   function exposed_generateLock(bytes32 secret) external pure returns (bytes32) {
     return _generateLock(secret);
+  }
+
+  /// @notice exposes _swapId
+  function exposed_swapId(bytes32 lock, bytes32 canonicalDigest) external pure returns (bytes32) {
+    return _swapId(lock, canonicalDigest);
   }
 }

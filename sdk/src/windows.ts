@@ -125,8 +125,8 @@ export function takerCommitWindow(taker: Terms, proposer: Terms): TimeWindow {
  * The proposer's claim window:
  * `[taker.commitmentDeadline, proposer.claimDeadline)`.
  *
- * Enforced by `Omnibus.claim` when the claimant role is the proposer:
- * `enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, block.timestamp)`.
+ * Enforced by `Omnibus.claim` for every same-chain claim (regardless of
+ * argument order) and for the proposer's cross-chain reveal leg.
  *
  * @param proposer - The proposer's terms.
  * @param taker - The taker's terms.
@@ -141,9 +141,9 @@ export function proposerClaimWindow(proposer: Terms, taker: Terms): TimeWindow {
  * The taker's claim window:
  * `[proposer.claimDeadline, proposer.reclaimRelease)`.
  *
- * Enforced by `Omnibus.claim` when the claimant role is the taker:
- * `enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, block.timestamp)`
- * (the counterparty is the proposer on this path). The width of this
+ * Enforced by `Omnibus.claim` for the CROSS-CHAIN taker redeem leg only —
+ * a same-chain claim never uses this window (it settles both legs at once,
+ * so only the proposer window applies). The width of this
  * window, `proposer.reclaimRelease - proposer.claimDeadline`, is the
  * taker's post-reveal reaction buffer in a cross-chain swap.
  *
@@ -201,11 +201,19 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
 }
 
 /**
- * Validates that `currentTimestamp` lies inside the claim window for the
- * role `party` plays — exactly the check `Omnibus.claim` performs:
+ * Validates that `currentTimestamp` lies inside the window `Omnibus.claim`
+ * enforces for this pairing. Mirrors the contract exactly: roles (proposer =
+ * earlier `commitmentDeadline`) and the window come from the TERMS, never
+ * from argument order, so swapping `party`/`counterparty` cannot change the
+ * result. The claim executes on the chain holding the counterparty's assets
+ * (the client enforces `counterparty.chainId` === connected chain before
+ * this preflight); the window depends only on whose assets that chain holds:
  *
- * - `party` is the proposer: `[counterparty.commitmentDeadline, party.claimDeadline)`
- * - `party` is the taker: `[counterparty.claimDeadline, counterparty.reclaimRelease)`
+ * - the taker's assets are on the claim chain (every same-chain claim, and
+ *   the proposer's cross-chain leg — the reveal):
+ *   `[taker.commitmentDeadline, proposer.claimDeadline)`
+ * - only the proposer's assets are on the claim chain (the cross-chain taker
+ *   redeem leg): `[proposer.claimDeadline, proposer.reclaimRelease)`
  *
  * @param party - The claimant role's terms (the side the claimant acts for).
  * @param counterparty - The other side's terms (the leg being claimed).
@@ -215,10 +223,13 @@ export function validateCommitWindow(party: Terms, counterparty: Terms, currentT
  * @see Omnibus.claim
  */
 export function validateClaimWindow(party: Terms, counterparty: Terms, currentTimestamp: bigint): void {
-  if (proposedBy(party, counterparty) === 'party') {
-    enforceWithin(counterparty.commitmentDeadline, party.claimDeadline, currentTimestamp)
+  const partyProposed = proposedBy(party, counterparty) === 'party'
+  const proposer = partyProposed ? party : counterparty
+  const taker = partyProposed ? counterparty : party
+  if (taker.chainId === counterparty.chainId) {
+    enforceWithin(taker.commitmentDeadline, proposer.claimDeadline, currentTimestamp)
   } else {
-    enforceWithin(counterparty.claimDeadline, counterparty.reclaimRelease, currentTimestamp)
+    enforceWithin(proposer.claimDeadline, proposer.reclaimRelease, currentTimestamp)
   }
 }
 

@@ -34,5 +34,14 @@ jobs:
       - name: Run Forge build
         run: forge build --sizes
 
+      # The deployment artifact is compiled under a different profile (metadata
+      # stripped, separate out dir), so a prod-only compile or size regression is
+      # invisible to the build above. Catch it in PRs rather than at broadcast.
+      - name: Run Forge build (prod deployment profile)
+        run: FOUNDRY_PROFILE=prod forge build --sizes
+
+      # The CreateX fork tests self-skip without API_URL_BASE_SEPOLIA, which CI
+      # does not have. They still compile and typecheck here; the guard is
+      # actually exercised by `make test-fork` before any broadcast.
       - name: Run Forge tests
         run: forge test -vvv

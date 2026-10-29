@@ -28,15 +28,16 @@ import {
   ALICE_CLAIM_DEADLINE,
   ALICE_COMMIT_DEADLINE,
   ALICE_RECLAIM_RELEASE,
-  aliceTerms,
   AT_PROPOSER_CLAIM,
   AT_PROPOSER_COMMIT,
   AT_PROPOSER_RECLAIM,
   AT_TAKER_CLAIM,
   AT_TAKER_COMMIT,
   BOB_COMMIT_DEADLINE,
-  bobTerms,
   CHAIN_A,
+  CHAIN_B,
+  aliceTerms,
+  bobTerms,
 } from '../helpers/fixtures.js'
 
 function codeOf(fn: () => unknown): string {
@@ -135,20 +136,55 @@ describe('validateCommitWindow', () => {
 })
 
 describe('validateClaimWindow', () => {
-  it('accepts the proposer role inside [taker.commitmentDeadline, proposer.claimDeadline)', () => {
+  // ---- same-chain: ONE window, [taker.commitmentDeadline, proposer.claimDeadline),
+  // enforced identically for BOTH argument orders (mirrors the contract fix:
+  // roles derive from the terms' deadlines, never from argument order) ----
+
+  it('same-chain: accepts the conventional order inside [taker.commitmentDeadline, proposer.claimDeadline)', () => {
     expect(() => validateClaimWindow(alice, bob, AT_PROPOSER_CLAIM)).not.toThrow()
   })
 
-  it('rejects the proposer role before the taker commitment deadline', () => {
+  it('same-chain: accepts the SWAPPED order in the same window', () => {
+    expect(() => validateClaimWindow(bob, alice, AT_PROPOSER_CLAIM)).not.toThrow()
+  })
+
+  it('same-chain: rejects both orders before the taker commitment deadline', () => {
     expect(codeOf(() => validateClaimWindow(alice, bob, AT_TAKER_COMMIT))).toBe('WINDOW_VIOLATED')
+    expect(codeOf(() => validateClaimWindow(bob, alice, AT_TAKER_COMMIT))).toBe('WINDOW_VIOLATED')
   })
 
-  it('accepts the taker role inside [proposer.claimDeadline, proposer.reclaimRelease)', () => {
-    expect(() => validateClaimWindow(bob, alice, AT_TAKER_CLAIM)).not.toThrow()
+  it('REGRESSION (audit): same-chain SWAPPED order is rejected in what used to be the taker window', () => {
+    // pre-fix, (bob, alice) selected the taker branch and accepted here,
+    // extending the secret holder's window through proposer.reclaimRelease
+    expect(codeOf(() => validateClaimWindow(bob, alice, AT_TAKER_CLAIM))).toBe('WINDOW_VIOLATED')
+    expect(codeOf(() => validateClaimWindow(bob, alice, ALICE_RECLAIM_RELEASE - 1n))).toBe('WINDOW_VIOLATED')
   })
 
-  it('rejects the taker role at proposer.reclaimRelease (upper exclusive)', () => {
-    expect(codeOf(() => validateClaimWindow(bob, alice, ALICE_RECLAIM_RELEASE))).toBe('WINDOW_VIOLATED')
+  it('same-chain: rejects both orders at proposer.claimDeadline (upper exclusive)', () => {
+    expect(codeOf(() => validateClaimWindow(alice, bob, ALICE_CLAIM_DEADLINE))).toBe('WINDOW_VIOLATED')
+    expect(codeOf(() => validateClaimWindow(bob, alice, ALICE_CLAIM_DEADLINE))).toBe('WINDOW_VIOLATED')
+  })
+
+  // ---- cross-chain: the redeem window survives, selected by CHAIN, not order ----
+
+  const remoteBob = bobTerms(CHAIN_B)
+
+  it('cross-chain: accepts the proposer reveal leg inside [taker.commitmentDeadline, proposer.claimDeadline)', () => {
+    // claim on the taker's chain: counterparty is the taker (remote-schedule bob)
+    expect(() => validateClaimWindow(alice, remoteBob, AT_PROPOSER_CLAIM)).not.toThrow()
+  })
+
+  it('cross-chain: accepts the taker redeem leg inside [proposer.claimDeadline, proposer.reclaimRelease)', () => {
+    // claim on the proposer's chain: counterparty is the proposer
+    expect(() => validateClaimWindow(remoteBob, alice, AT_TAKER_CLAIM)).not.toThrow()
+  })
+
+  it('cross-chain: rejects the taker redeem leg before proposer.claimDeadline', () => {
+    expect(codeOf(() => validateClaimWindow(remoteBob, alice, AT_PROPOSER_CLAIM))).toBe('WINDOW_VIOLATED')
+  })
+
+  it('cross-chain: rejects the taker redeem leg at proposer.reclaimRelease (upper exclusive)', () => {
+    expect(codeOf(() => validateClaimWindow(remoteBob, alice, ALICE_RECLAIM_RELEASE))).toBe('WINDOW_VIOLATED')
   })
 })
 

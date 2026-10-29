@@ -26,9 +26,12 @@ export type QuipSwapErrorCode =
   | 'INVALID_ERC1155_ASSET'
   | 'INVALID_ASSET_TYPE'
   | 'EMPTY_ASSETS'
+  | 'TOO_MANY_ASSETS'
   | 'ZERO_ADDRESS_RECIPIENT'
   | 'ZERO_DEADLINE'
   | 'DISORDERED_DEADLINES'
+  // reclaimRelease == 2^256-1 makes reclaim's window degenerate (TermsLib.InvalidReclaimRelease)
+  | 'INVALID_RECLAIM_RELEASE'
   | 'ZERO_CHAIN_ID'
   // pairing / window validation (mirrors TermsLib.validateTermPairing / enforceWithin)
   | 'INVALID_RANGE'
@@ -38,6 +41,12 @@ export type QuipSwapErrorCode =
   // client preflight
   | 'CHAIN_ID_MISMATCH'
   | 'MALFORMED_SIGNER'
+  // an ERC20-declared asset whose target answers as an ERC721 via ERC165 — the
+  // selector-collision trap the contract rejects at deposit (TermsLib.AssetTypeMismatch)
+  | 'ASSET_TYPE_MISMATCH'
+  // a reclaimRelease more than MAX_RECLAIM_HORIZON_SECONDS beyond the chain's current time;
+  // SDK-only reasonableness guard (no contract equivalent), overridable per commit
+  | 'RECLAIM_RELEASE_TOO_DISTANT'
   // wallet-route preflight: empty auth.signature with a sender that is not a
   // factory-deployed quip wallet (mirrors the contract's NotQuipWallet)
   | 'NOT_QUIP_WALLET'
@@ -54,6 +63,7 @@ export type QuipSwapErrorCode =
   // cross-chain schedule validation
   | 'SECRET_HOLDER_NOT_PROPOSER'
   | 'INSUFFICIENT_BUFFER'
+  | 'INSUFFICIENT_REACTION_BUFFER'
   // deployments
   | 'UNKNOWN_DEPLOYMENT'
   // receipts / events

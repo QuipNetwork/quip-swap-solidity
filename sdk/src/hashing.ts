@@ -173,6 +173,41 @@ export function generateLock(secret: Hex32): Hex32 {
 }
 
 /**
+ * Computes the swap id from a lock and an already-computed canonical terms
+ * digest. The swap id is the key ALL Omnibus swap state (`lockState`,
+ * `termsHash`, `posted`) is stored under — state is scoped to the (lock,
+ * pairing) combination, so an unrelated pairing reusing an observed lock
+ * occupies its own slot and cannot block or alter another swap's state.
+ *
+ * Transcribes `Omnibus._swapId`:
+ * `keccak256(abi.encodePacked(lock, canonicalDigest))`.
+ *
+ * @param lock - The hashlock (`generateLock(secret)`).
+ * @param canonicalDigest - `digestTermsCanonically` over the pairing.
+ * @returns The 32-byte swap id.
+ * @see Omnibus.swapId
+ */
+export function swapIdFromDigest(lock: Hex32, canonicalDigest: Hex32): Hex32 {
+  return keccak256(concat([lock, canonicalDigest]))
+}
+
+/**
+ * Computes the swap id for a term pairing — the key ALL Omnibus swap state
+ * is stored under (see {@link swapIdFromDigest}). Canonical digesting makes
+ * the result independent of which side is passed as `party` vs
+ * `counterparty`. Mirrors the on-chain `Omnibus.swapId` view.
+ *
+ * @param lock - The hashlock (`generateLock(secret)`).
+ * @param party - One side's terms.
+ * @param counterparty - The other side's terms.
+ * @returns The 32-byte swap id.
+ * @see Omnibus.swapId
+ */
+export function swapId(lock: Hex32, party: Terms, counterparty: Terms): Hex32 {
+  return swapIdFromDigest(lock, digestTermsCanonically(party, counterparty))
+}
+
+/**
  * Asserts a value is exactly 32 bytes of valid hex (`0x` + 64 hex chars).
  *
  * @param value - The value to check.

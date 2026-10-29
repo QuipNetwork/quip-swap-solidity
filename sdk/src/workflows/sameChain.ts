@@ -22,7 +22,8 @@
  *
  * Unhappy paths: reclaim from `Free` (only the proposer committed) is valid
  * once the proposer's `reclaimRelease` passes; reclaim from `Committed`
- * returns BOTH legs in one transaction when the counterparty leg is local.
+ * returns ONLY the caller's own leg — each side reclaims independently in a
+ * separate transaction once its own `reclaimRelease` passes (Finding 4).
  *
  * These helpers never hide wallet signing, never auto-approve, and never
  * submit transactions on their own — every transaction is an explicit
@@ -37,7 +38,7 @@
  * on their own terms before acting — it is per-party self-protection.
  */
 import {DEFAULT_SAME_CHAIN_BUFFER_SECONDS, checkScheduleBuffers} from '../buffers.js'
-import {digestTerms, digestTermsCanonically} from '../hashing.js'
+import {digestTerms, digestTermsCanonically, swapIdFromDigest} from '../hashing.js'
 import {proposedBy, validateTermPairing, validateTerms} from '../terms.js'
 import {LockState} from '../types.js'
 import type {Hex32, Terms} from '../types.js'
@@ -46,7 +47,6 @@ import {
   proposerClaimWindow,
   proposerCommitWindow,
   reclaimWindow,
-  takerClaimWindow,
   takerCommitWindow,
 } from '../windows.js'
 import type {TimeWindow} from '../windows.js'
@@ -178,13 +178,25 @@ export type SameChainSwapStatus =
   | 'awaiting-claim-window'
   /** Both committed; the claim window is open — the secret holder should claim. */
   | 'claimable'
-  /** Both committed; the proposer-claim window closed (taker-claim window may run until proposer.reclaimRelease). */
-  | 'late-claimable'
+  /**
+   * Both committed; the claim window closed with no claim. Nothing can
+   * happen until `proposer.reclaimRelease` opens reclaim — the contract
+   * derives claim roles from the terms themselves, so no argument ordering
+   * reopens a claim path in this region.
+   */
+  | 'claim-expired'
   /** Both committed; no claim landed and a leg's reclaim window is open. */
   | 'reclaimable'
   /** Lock Free and the proposer's reclaim window is open (reclaim-from-Free). */
   | 'reclaimable-from-free'
-  /** Terminal: the lock is Spent (claimed or reclaimed). */
+  /**
+   * The lock is Spent because ONE side already reclaimed its own leg, but
+   * the other side has not — that side should still call reclaim to recover
+   * its escrowed leg (per-side reclaim, Finding 4). Not terminal for the
+   * un-reclaimed side.
+   */
+  | 'partially-reclaimed'
+  /** Terminal: the lock is Spent and fully settled (claimed, or both sides reclaimed). */
   | 'settled'
 
 /** The full status report returned by {@link getSameChainSwapStatus}. */
@@ -197,6 +209,10 @@ export interface SameChainSwapStatusReport {
   readonly proposerPosted: boolean
   /** Whether the taker's side is posted on-chain. */
   readonly takerPosted: boolean
+  /** Whether the proposer's side has reclaimed its own leg (per-side reclaim). */
+  readonly proposerReclaimed: boolean
+  /** Whether the taker's side has reclaimed its own leg (per-side reclaim). */
+  readonly takerReclaimed: boolean
   /** The chain timestamp the report was computed at. */
   readonly timestamp: bigint
 }
@@ -222,10 +238,13 @@ export async function getSameChainSwapStatus(
   lock: Hex32,
   plan: SameChainSwapPlan,
 ): Promise<SameChainSwapStatusReport> {
-  const [state, proposerPosted, takerPosted, block] = await Promise.all([
-    client.getLockState(lock),
-    client.getPosted(lock, plan.proposerDigest),
-    client.getPosted(lock, plan.takerDigest),
+  const id = swapIdFromDigest(lock, plan.canonicalDigest)
+  const [state, proposerPosted, takerPosted, proposerReclaimed, takerReclaimed, block] = await Promise.all([
+    client.getLockState(id),
+    client.getPosted(id, plan.proposerDigest),
+    client.getPosted(id, plan.takerDigest),
+    client.getReclaimed(id, plan.proposerDigest),
+    client.getReclaimed(id, plan.takerDigest),
     client.publicClient.getBlock(),
   ])
   const timestamp = block.timestamp
@@ -256,9 +275,10 @@ export async function getSameChainSwapStatus(
       } else if (isWithinWindow(plan.proposerReclaimWindow, timestamp)) {
         status = 'reclaimable'
       } else if (timestamp >= plan.proposerTerms.claimDeadline) {
-        // between proposer.claimDeadline and proposer.reclaimRelease the
-        // taker-role claim path is still open (it settles both legs too)
-        status = 'late-claimable'
+        // between proposer.claimDeadline and proposer.reclaimRelease nothing
+        // can happen: the claim window is closed for BOTH argument orderings
+        // and reclaim has not opened yet
+        status = 'claim-expired'
       } else {
         // Committed before taker.commitmentDeadline: the taker committed
         // early in its window; the proposer-claim window opens at
@@ -267,9 +287,12 @@ export async function getSameChainSwapStatus(
       }
       break
     case LockState.Spent:
-      status = 'settled'
+      // Spent via claim -> neither side reclaimed -> fully settled. Spent via
+      // reclaim -> at least one side reclaimed; when exactly one has, the
+      // other still needs to reclaim its own leg (per-side reclaim).
+      status = proposerReclaimed !== takerReclaimed ? 'partially-reclaimed' : 'settled'
       break
   }
 
-  return {status, lockState: state, proposerPosted, takerPosted, timestamp}
+  return {status, lockState: state, proposerPosted, takerPosted, proposerReclaimed, takerReclaimed, timestamp}
 }

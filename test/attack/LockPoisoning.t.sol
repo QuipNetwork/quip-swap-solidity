@@ -12,18 +12,16 @@ import {AssetHelper} from '../utils/AssetHelper.sol';
 import {AuthHelper} from '../utils/AuthHelper.sol';
 import {TermsHelper} from '../utils/TermsHelper.sol';
 
-/// @title Lock Poisoning (accepted, non-exploitable grief)
+/// @title Lock Poisoning (neutralized by swap-scoped state)
 /// @dev The lock (`hash(secret)`) becomes public the moment the first party commits. Anyone
-/// who learns it can front-run with the SAME lock but their own cheap, valid terms, setting
-/// `termsHash[lock]` first and making the legitimate `commit` revert `TermsMismatch`. This is
-/// pure griefing, NOT theft:
-///   1. the attacker must escrow real assets, which they can fully reclaim after their window;
-///   2. payouts always target addresses fixed in the (attacker's own) terms;
-///   3. the victim simply retries with a fresh secret -> fresh lock, which the attacker cannot
-///      predict ahead of time.
-/// The poisoning economics are UNCHANGED by commit authorization: a poisoner simply signs
-/// with its own keyed identity, so the commit signature adds attribution, not a gate.
-/// These tests pin that behavior so a future change that turns this into something worse is
+/// who learns it can commit the SAME lock with their own cheap, valid terms — but state is
+/// keyed by swapId = hash(lock, canonicalTermsDigest), so such a pairing occupies its OWN
+/// slot: it can neither block nor alter the negotiated swap. Occupying the victim's slot
+/// would require committing the victim's exact terms, i.e. actually funding the real leg.
+/// Before swap-scoped keys, the dust commit set `termsHash[lock]` first and made the
+/// legitimate commit revert TermsMismatch; cross-chain the victim proposer was already
+/// escrowed on the origin chain and could only wait out her reclaimRelease (the audited
+/// grief). These tests pin the neutralization so a regression back to lock-keyed state is
 /// caught.
 contract Omnibus_LockPoisoning is Test {
   using AssetHelper for *;
@@ -74,10 +72,14 @@ contract Omnibus_LockPoisoning is Test {
     );
   }
 
-  /// @notice an attacker who commits the lock first with their own terms blocks the legitimate
-  /// commit (TermsMismatch), but the victim sidesteps with a fresh lock and the attacker can
-  /// reclaim their griefing escrow
-  function test_lockPoisoning_blocksLegitCommit_butIsRecoverableAndSidesteppable() public {
+  function _swapIdFor(bytes32 _lock, Terms memory a, Terms memory b) internal view returns (bytes32) {
+    return omnibus.swapId(_lock, a, b);
+  }
+
+  /// @notice a dust pairing on the same lock lands in its own swap slot: the legitimate
+  /// same-chain swap commits and settles untouched, and the attacker only ever moves their
+  /// own dust
+  function test_lockPoisoning_dustPairing_cannotBlockSameChainSwap() public {
     // attacker front-runs with a cheap, valid pairing bound to the SAME lock
     Terms memory attackerParty = _proposer(ATTACKER, ATTACKER, 1 wei);
     Terms memory attackerCounter = _taker(ATTACKER, ATTACKER, 1 wei);
@@ -87,28 +89,66 @@ contract Omnibus_LockPoisoning is Test {
     omnibus.commit{value: 1 wei}(
       lock, attackerParty, attackerCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER)
     );
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Free));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, attackerParty, attackerCounter))), uint8(LockState.Free));
 
-    // the legitimate commit on the poisoned lock now reverts on the stored terms hash
+    // the legitimate commit on the same lock proceeds under its own swap id
     Terms memory alice = _proposer(ALICE, ALICE_RECIPIENT, 1 ether);
     Terms memory bob = _taker(BOB, BOB_RECIPIENT, 1 ether);
 
-    vm.expectRevert(IOmnibus.TermsMismatch.selector);
     vm.prank(ALICE);
     omnibus.commit{value: 1 ether}(lock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, alice, bob))), uint8(LockState.Free));
 
-    // victim sidesteps with a fresh secret -> fresh lock (attacker cannot predict it)
-    bytes32 freshLock = omnibus.exposed_generateLock(keccak256('alice-fresh-secret'));
-    vm.prank(ALICE);
-    omnibus.commit{value: 1 ether}(freshLock, alice, bob, AuthHelper.keyedAuth(address(verifier), ALICE));
-    assertEq(uint8(omnibus.lockState(freshLock)), uint8(LockState.Free));
+    // taker leg and settlement complete, untouched by the dust swap
+    vm.deal(BOB, 1 ether);
+    vm.warp(1500); // taker commit window [A_COMMIT, B_COMMIT)
+    vm.prank(BOB);
+    omnibus.commit{value: 1 ether}(lock, bob, alice, AuthHelper.keyedAuth(address(verifier), BOB));
 
-    // the grief cost the attacker reclaimable capital: they recover it after their window
+    vm.warp(2500); // proposer claim window [B_COMMIT, A_CLAIM)
+    omnibus.claim(SECRET, alice, bob);
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, alice, bob))), uint8(LockState.Spent));
+    assertEq(ALICE_RECIPIENT.balance, 1 ether);
+    assertEq(BOB_RECIPIENT.balance, 1 ether);
+
+    // the attacker's dust swap stays isolated; they merely reclaim their own escrow later
     vm.warp(A_RECLAIM + 1);
     uint256 attackerBalBefore = ATTACKER.balance;
     vm.prank(ATTACKER);
     omnibus.reclaim(lock, attackerParty, attackerCounter);
-    assertEq(uint8(omnibus.lockState(lock)), uint8(LockState.Spent));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, attackerParty, attackerCounter))), uint8(LockState.Spent));
     assertEq(ATTACKER.balance - attackerBalBefore, 1 wei);
+  }
+
+  /// @notice REGRESSION (audit): the cross-chain grief. The proposer's origin-chain commit
+  /// publishes the lock; the attacker poisons it on the destination chain before the taker
+  /// commits there. With swap-scoped state the taker's commit lands Committed under the
+  /// pairing's own swap id regardless
+  function test_lockPoisoning_crossChain_takerCommitUnblocked() public {
+    // attacker poisons the observed lock on this (destination) chain with a dust pairing
+    Terms memory attackerParty = _proposer(ATTACKER, ATTACKER, 1 wei);
+    Terms memory attackerCounter = _taker(ATTACKER, ATTACKER, 1 wei);
+    vm.warp(AT_PROPOSER_COMMIT);
+    vm.prank(ATTACKER);
+    omnibus.commit{value: 1 wei}(
+      lock, attackerParty, attackerCounter, AuthHelper.keyedAuth(address(verifier), ATTACKER)
+    );
+
+    // the real pairing: the proposer's leg lives on another chain, the taker's leg here
+    Terms memory proposerRemote = TermsHelper.makeTerms(
+      block.chainid + 1, ALICE, ALICE_RECIPIENT, A_COMMIT, A_CLAIM, A_RECLAIM, AssetHelper.makeNative(1 ether).toArray()
+    );
+    Terms memory takerLocal = _taker(BOB, BOB_RECIPIENT, 1 ether);
+
+    // the taker commits the destination leg in the taker window; cross-chain advances
+    // straight to Committed under its own swap id, despite the poisoned lock
+    vm.deal(BOB, 1 ether);
+    vm.warp(1500); // taker commit window [A_COMMIT, B_COMMIT)
+    vm.prank(BOB);
+    omnibus.commit{value: 1 ether}(lock, takerLocal, proposerRemote, AuthHelper.keyedAuth(address(verifier), BOB));
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, takerLocal, proposerRemote))), uint8(LockState.Committed));
+
+    // the attacker's dust swap sits untouched in its own slot
+    assertEq(uint8(omnibus.lockState(_swapIdFor(lock, attackerParty, attackerCounter))), uint8(LockState.Free));
   }
 }

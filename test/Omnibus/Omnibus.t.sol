@@ -115,7 +115,7 @@ contract OmnibusTest is TestBase {
     assertNotEq(address(mockERC20), address(0));
     assertNotEq(address(mockERC721), address(0));
     assertNotEq(address(mockERC1155), address(0));
-    assertEq(omnibus.VERSION(), 0);
+    assertEq(omnibus.VERSION(), omnibus.HARNESS_VERSION());
     assertTrue(omnibus.verifierActive(address(verifierA)));
     assertFalse(omnibus.verifierActive(address(verifierB)));
     assertEq(address(omnibus.WALLET_FACTORY()), address(walletFactory));
@@ -323,9 +323,19 @@ contract OmnibusTest is TestBase {
     omnibus.claim(SECRET, alice, bob);
   }
 
+  /// @notice Compute the swap id (the state key) binding a lock to a pairing
+  function _swapIdFor(bytes32 _lock, Terms memory a, Terms memory b) internal view returns (bytes32) {
+    return omnibus.swapId(_lock, a, b);
+  }
+
   // ============ Assertion Helpers ============
 
-  /// @notice Assert lock state
+  /// @notice Assert the state of the (lock, pairing) swap
+  function _assertSwapState(bytes32 _lock, Terms memory a, Terms memory b, LockState expected) internal view {
+    _assertLockState(_swapIdFor(_lock, a, b), expected);
+  }
+
+  /// @notice Assert lock state at a raw state key (swap id)
   function _assertLockState(bytes32 _lock, LockState expected) internal view {
     assertEq(uint8(omnibus.lockState(_lock)), uint8(expected));
   }
