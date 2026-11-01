@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {IERC721Errors} from '@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC6093.sol';
+import {IERC721Errors} from '@openzeppelin-contracts-5.7.0/interfaces/draft-IERC6093.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 
 import {Asset, Terms} from '../../../src/TermsLib.sol';

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ERC20} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC20/ERC20.sol';
+import {ERC20} from '@openzeppelin-contracts-5.7.0/token/ERC20/ERC20.sol';
 
 /// @title Fee-on-transfer ERC20 Mock
 /// @dev skims a fixed basis-point fee on every transfer, so the recipient receives

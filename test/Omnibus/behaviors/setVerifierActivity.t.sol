@@ -5,7 +5,7 @@ import {Terms} from '../../../src/TermsLib.sol';
 import {IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
-import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
+import {Ownable} from '@openzeppelin-contracts-5.7.0/access/Ownable.sol';
 
 /// @title Omnibus setVerifierActivity Tests
 /// @dev Admin + lifecycle behavior of the ERC-7913 verifier allowlist. Activity is

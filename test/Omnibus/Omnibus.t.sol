@@ -13,7 +13,7 @@ import {TermsHelper} from '../utils/TermsHelper.sol';
 import {TestBase} from '../utils/TestBase.sol';
 import {
   IERC7913SignatureVerifier
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
+} from '@quip.network/hashsigs-solidity-0.3.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 
 /// @title Omnibus Base Test

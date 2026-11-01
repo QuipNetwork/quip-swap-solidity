@@ -2,8 +2,8 @@
 pragma solidity 0.8.33;
 
 import {Asset, Terms, TermsLib} from '../../src/TermsLib.sol';
-import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
-import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
+import {IERC1155Receiver} from '@openzeppelin-contracts-5.7.0/token/ERC1155/IERC1155Receiver.sol';
+import {IERC721Receiver} from '@openzeppelin-contracts-5.7.0/token/ERC721/IERC721Receiver.sol';
 
 /// @title TermsLib Harness
 /// @dev Wrapper contract to expose TermsLib library functions for testing
