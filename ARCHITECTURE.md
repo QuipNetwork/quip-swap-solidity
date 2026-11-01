@@ -299,7 +299,7 @@ Deploy order per chain: the quip `WalletFactory` must already exist (it is baked
 |---|---|---|
 | `forge-std` | 1.14.0 | Test and script harness |
 | `solady` | 0.1.26 | `SafeTransferLib`, `EfficientHashLib`, `CREATE3` (address prediction) |
-| `@openzeppelin-contracts` | 5.6.0-rc.1 | `Ownable2Step`, ERC-721/1155 receivers, ERC-165 |
+| `@openzeppelin-contracts` | 5.7.0 | `Ownable2Step`, ERC-721/1155 receivers, ERC-165 |
 | `@quip.network/hashsigs-solidity` | 0.2.0 (git rev-pinned) | `IERC7913SignatureVerifier`; SHRINCS/XMSS PQ verifier |
 
 Managed by [soldeer](https://soldeer.xyz) under `dependencies/` — there is no `lib/`. Compiled with solc 0.8.33, `evm_version = prague`, `optimizer_runs = 10_000`.

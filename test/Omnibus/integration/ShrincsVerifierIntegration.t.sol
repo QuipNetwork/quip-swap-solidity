@@ -5,9 +5,10 @@ import {Terms} from '../../../src/TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from '../../../src/interfaces/IOmnibus.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
-import {SHRINCS} from '@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol';
-import {SHRINCSVerifier} from '@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCSVerifier.sol';
-import {SHRINCSTestSigner} from '@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol';
+import {SHRINCS} from '@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol';
+import {SHRINCSVerifier} from '@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCSVerifier.sol';
+import {SHRINCSTestCodec} from '@quip.network/hashsigs-solidity-0.3.0/test/helpers/SHRINCSTestCodec.sol';
+import {SHRINCSTestSigner} from '@quip.network/hashsigs-solidity-0.3.0/test/helpers/SHRINCSTestSigner.sol';
 
 /// @dev minimal concrete instance of the abstract profile base (mirrors the
 /// dependency's own test harness): the stateful verify path is
@@ -88,17 +89,23 @@ contract Omnibus_ShrincsVerifierIntegration is OmnibusTest {
     signer = abi.encodePacked(address(shrincs), word);
   }
 
-  /// @dev sign exactly the 32 packed bytes of `digest` at an explicit leaf
+  /// @dev sign the commitment-bound message hash of `digest` at an explicit leaf
   function _signStatefulEnvelope(
     SHRINCS.SigningKey memory sk,
     SHRINCS.PublicKey memory pk,
     bytes32 digest,
     uint32 leafIndex
   ) internal view returns (bytes memory) {
-    (SHRINCS.Signature memory sig, bool ok) =
-      SHRINCSTestSigner.signStatefulRawAtLeaf(sk, leafIndex, abi.encodePacked(digest));
+    bytes memory commitmentBytes = pk.publicKeyCommitment;
+    bytes32 commitment;
+    assembly {
+      commitment := mload(add(commitmentBytes, 32))
+    }
+    (SHRINCS.Signature memory sig, bool ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(
+      sk, leafIndex, abi.encodePacked(SHRINCS.statefulRawMessageHash(commitment, digest))
+    );
     require(ok, 'stateful signing must succeed');
-    return SHRINCS.encodeStatefulEnvelope(pk, sig);
+    return SHRINCSTestCodec.encodeStatefulEnvelope(pk, sig);
   }
 
   // ============ Keyed route (signature over commitDigest) ============

@@ -4,13 +4,13 @@ pragma solidity 0.8.33;
 import {Terms, TermsLib} from './TermsLib.sol';
 import {CommitAuth, IOmnibus, LockState} from './interfaces/IOmnibus.sol';
 import {IWalletFactory} from './interfaces/IWalletFactory.sol';
-import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol';
-import {IERC1155Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol';
-import {IERC721Receiver} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721Receiver.sol';
-import {IERC165} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IERC165.sol';
+import {Ownable, Ownable2Step} from '@openzeppelin-contracts-5.7.0/access/Ownable2Step.sol';
+import {IERC1155Receiver} from '@openzeppelin-contracts-5.7.0/token/ERC1155/IERC1155Receiver.sol';
+import {IERC721Receiver} from '@openzeppelin-contracts-5.7.0/token/ERC721/IERC721Receiver.sol';
+import {IERC165} from '@openzeppelin-contracts-5.7.0/utils/introspection/IERC165.sol';
 import {
   IERC7913SignatureVerifier
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
+} from '@quip.network/hashsigs-solidity-0.3.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 

@@ -34,7 +34,7 @@ fs_permissions = [{access = "read", path = "./"}, {access = "read-write", path =
 # default pipeline, so production artifacts are unchanged.
 additional_compiler_profiles = [{name = "via-ir", via_ir = true}]
 compilation_restrictions = [
-  {paths = "dependencies/@quip.network-hashsigs-solidity-0.2.0/contracts/UXMSS.sol", via_ir = true},
+  {paths = "dependencies/@quip.network-hashsigs-solidity-0.3.0/contracts/UXMSS.sol", via_ir = true},
 ]
 
 [lint]
@@ -76,12 +76,8 @@ cbor_metadata = false
 [dependencies]
 forge-std = "1.14.0"
 solady = "0.1.26"
-"@openzeppelin-contracts" = "5.6.0-rc.1"
-# Temporary rev pin — hashsigs-solidity with the IERC7913TransientAttestation
-# registry (verifyAndAttest/wasVerified). Re-pin to the release tag once it
-# ships; keep the branch alive (or merge with a merge commit) until then — a
-# squash-merge + branch delete orphans this rev.
-"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "6f0fb103e026e19d056db8d5bf292f4a69e9935b" }
+"@openzeppelin-contracts" = "5.7.0"
+"@quip.network/hashsigs-solidity" = { version = "0.3.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", tag = "v0.3.0" }
 
 [rpc_endpoints]
 base = "${API_URL_BASE}"

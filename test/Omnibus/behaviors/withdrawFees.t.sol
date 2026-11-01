@@ -5,7 +5,7 @@ import {Terms} from '../../../src/TermsLib.sol';
 import {IOmnibus} from '../../../src/interfaces/IOmnibus.sol';
 import {AuthHelper} from '../../utils/AuthHelper.sol';
 import {OmnibusTest} from '../Omnibus.t.sol';
-import {Ownable} from '@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol';
+import {Ownable} from '@openzeppelin-contracts-5.7.0/access/Ownable.sol';
 import {Vm} from 'forge-std-1.14.0/Vm.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSE
 pragma solidity 0.8.33;
 
-import {ERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/ERC1155.sol';
+import {ERC1155} from '@openzeppelin-contracts-5.7.0/token/ERC1155/ERC1155.sol';
 
 contract ERC1155Mock is ERC1155 {
   constructor(string memory uri_) ERC1155(uri_) {}

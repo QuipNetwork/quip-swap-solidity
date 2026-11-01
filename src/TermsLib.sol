@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.8.33;
 
-import {IERC1155} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol';
-import {IERC721} from '@openzeppelin-contracts-5.6.0-rc.1/token/ERC721/IERC721.sol';
-import {ERC165Checker} from '@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/ERC165Checker.sol';
+import {IERC1155} from '@openzeppelin-contracts-5.7.0/token/ERC1155/IERC1155.sol';
+import {IERC721} from '@openzeppelin-contracts-5.7.0/token/ERC721/IERC721.sol';
+import {ERC165Checker} from '@openzeppelin-contracts-5.7.0/utils/introspection/ERC165Checker.sol';
 import {EfficientHashLib} from 'solady-0.1.26/utils/EfficientHashLib.sol';
 import {SafeTransferLib} from 'solady-0.1.26/utils/SafeTransferLib.sol';
 

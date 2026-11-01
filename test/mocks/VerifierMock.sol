@@ -3,7 +3,7 @@ pragma solidity 0.8.33;
 
 import {
   IERC7913SignatureVerifier
-} from '@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
+} from '@quip.network/hashsigs-solidity-0.3.0/contracts/interfaces/IERC7913SignatureVerifier.sol';
 
 /// @title ERC-7913 Verifier Mock
 /// @dev stateless accept-all test double: `verify` returns the magic value for
