@@ -5,6 +5,7 @@ include:
 
 stages:
   - test
+  - publish
 
 # Run on MRs and on pushes to main; skip branch pipelines for branches that
 # already have an open MR so each push triggers one pipeline, not two.
@@ -15,6 +16,11 @@ workflow:
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+default:
+  # Instance runners are on for publish:npm only. These tags keep every other job on the
+  # group runners.
+  tags: [linux, docker]
 
 variables:
   FOUNDRY_VERSION: v1.8.1
@@ -72,6 +78,21 @@ sdk-test:
     - cd sdk
     - bun install --frozen-lockfile
     - bun run test
+    # Pack the release tarball. A stable tag vX.Y.Z must match package.json. Every other
+    # pipeline gets a -ci suffix, a version that npm has not published, for release-check:npm.
+    - |
+      VERSION=$(node -p 'require("./package.json").version')
+      if [[ "$CI_COMMIT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        test "v$VERSION" = "$CI_COMMIT_TAG"
+      else
+        npm version "$VERSION-ci.$CI_PIPELINE_IID" --no-git-tag-version --ignore-scripts
+      fi
+    - bun run build
+    - mkdir -p ../pkg
+    - npm pack --pack-destination ../pkg
+  artifacts:
+    paths: [pkg/]
+    expire_in: 1 week
 
 # Integration and cross-chain suites deploy real Foundry artifacts to local
 # Anvil nodes, so they need forge + anvil alongside Node and bun.
@@ -93,3 +114,44 @@ sdk-integration-test:
     - bun install --frozen-lockfile
     - bun run test:integration
     - bun run test:cross-chain
+
+# ── publish ───────────────────────────────────────────────────────
+# A stable tag vX.Y.Z publishes @quip.network/quip-swap-sdk to npm through trusted
+# publishing (OIDC). npm accepts the OIDC token only from a GitLab.com hosted runner, so
+# sdk-test builds the tarball on the group runners and publish:npm only uploads it.
+# Trusted publishing needs npm 11.5.1 and Node 22.14 or later, so both jobs use Node 24.
+
+.npm-upload:
+  stage: publish
+  image: node:24-bookworm
+  cache: []
+  variables:
+    GIT_STRATEGY: none
+
+publish:npm:
+  extends: .npm-upload
+  tags: [saas-linux-small-amd64]
+  interruptible: false
+  environment: npm
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  id_tokens:
+    NPM_ID_TOKEN:
+      aud: "npm:registry.npmjs.org"
+    # SIGSTORE_ID_TOKEN lets npm sign the provenance statement.
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  script:
+    # ./ makes npm read a file path. Without it, pkg/x.tgz parses as GitHub shorthand.
+    - npm publish ./pkg/*.tgz --access public
+
+# Runs the publish:npm command as a dry run, so a fault in the release path fails the MR
+# instead of the tag. npm requires --tag for the -ci prerelease.
+release-check:npm:
+  extends: .npm-upload
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: never
+    - when: on_success
+  script:
+    - npm publish ./pkg/*.tgz --access public --tag ci --dry-run
