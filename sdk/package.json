@@ -1,9 +1,14 @@
 {
   "name": "@quip.network/quip-swap-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for the Quip Swap Omnibus protocol (hashlocked same-chain and cross-chain swaps)",
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/quip.network/quip-swap-solidity.git",
+    "directory": "sdk"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "module": "./dist/index.js",
