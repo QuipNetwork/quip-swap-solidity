@@ -99,6 +99,7 @@ sdk-test:
 sdk-integration-test:
   stage: test
   image: node:22-bookworm
+  tags: [linux, docker, amd64]
   cache:
     - *soldeer-cache
     - *sdk-cache
